@@ -1,0 +1,16 @@
+# Isolated local TTS environment; TITAN RTX / driver 535 / CUDA 12.1.
+# Install the torch pair from https://download.pytorch.org/whl/cu121 first.
+torch==2.5.1+cu121
+torchaudio==2.5.1+cu121
+qwen-tts==0.1.1
+transformers==4.57.3
+accelerate==1.12.0
+soundfile>=0.13,<0.14
+numpy>=1.26,<3
+huggingface-hub>=0.34,<1
+# Optional blind transcript quality check (runs on CPU).
+faster-whisper==1.2.1
+ctranslate2==4.8.2
+av==13.1.0
+opencc-python-reimplemented==0.1.7
+pypinyin==0.55.0

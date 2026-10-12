@@ -1,0 +1,30 @@
+{
+  "女": {
+    "speaker": "Serena",
+    "language": "Chinese"
+  },
+  "女主": {
+    "speaker": "Serena",
+    "language": "Chinese"
+  },
+  "female": {
+    "speaker": "Serena",
+    "language": "Chinese"
+  },
+  "男": {
+    "speaker": "Uncle_Fu",
+    "language": "Chinese"
+  },
+  "男主": {
+    "speaker": "Uncle_Fu",
+    "language": "Chinese"
+  },
+  "male": {
+    "speaker": "Uncle_Fu",
+    "language": "Chinese"
+  },
+  "narrator": {
+    "speaker": "Uncle_Fu",
+    "language": "Chinese"
+  }
+}

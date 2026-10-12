@@ -1,0 +1,4 @@
+# Optional official SyncNet evaluation dependencies, added to envs/lipsync only.
+# Versions match the pinned LatentSync vendor requirements.txt.
+python_speech_features==0.6
+scenedetect==0.6.1

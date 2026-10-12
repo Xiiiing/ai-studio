@@ -1,0 +1,9 @@
+#!/bin/sh
+# Resolve this checkout so the same entry point works after a Git clone.
+set -eu
+workflow_root=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+cd "$workflow_root"
+if [ -x "$workflow_root/envs/factory/bin/python" ]; then
+    exec "$workflow_root/envs/factory/bin/python" -m factory.cli "$@"
+fi
+exec python3 -m factory.cli "$@"

@@ -1,0 +1,39 @@
+{
+  "checked_date_utc": "2026-10-09",
+  "scope": "Local production research and preview; no commercial-release clearance is claimed.",
+  "components": [
+    {
+      "component": "LatentSync source code",
+      "license": "Apache-2.0",
+      "source": "https://github.com/bytedance/LatentSync/blob/a229c3948406bc2cf6eaf4873e662e70c6a04746/LICENSE",
+      "applies_to": "code"
+    },
+    {
+      "component": "ByteDance/LatentSync-1.6 model repository",
+      "declared_model_card_license": "openrail++",
+      "source": "https://huggingface.co/ByteDance/LatentSync-1.6",
+      "applies_to": "model repository declaration"
+    },
+    {
+      "component": "stabilityai/sd-vae-ft-mse",
+      "declared_model_card_license": "mit",
+      "source": "https://huggingface.co/stabilityai/sd-vae-ft-mse",
+      "applies_to": "VAE model repository declaration"
+    },
+    {
+      "component": "InsightFace buffalo_l pretrained detector and landmarks",
+      "files": [
+        "checkpoints/auxiliary/models/buffalo_l/det_10g.onnx",
+        "checkpoints/auxiliary/models/buffalo_l/2d106det.onnx"
+      ],
+      "code_license": "MIT",
+      "pretrained_weight_policy": "non-commercial research purposes only",
+      "source": "https://github.com/deepinsight/insightface#license",
+      "release_source": "https://github.com/deepinsight/insightface/releases/tag/v0.7",
+      "note": "The upstream policy explicitly covers both manually downloaded and automatically downloaded pretrained models. A permissive source-code license does not clear these pretrained weights for commercial use."
+    }
+  ],
+  "commercial_release_cleared": false,
+  "contains_noncommercial_pretrained_weights": true,
+  "current_verified_face_backend": "Official LatentSync 1.6 FaceDetector directly uses InsightFace detection and landmark_2d_106. No equivalent officially provided replacement backend has been verified in this deployment."
+}

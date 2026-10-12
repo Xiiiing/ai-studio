@@ -1,0 +1,21 @@
+[Unit]
+Description=AI Drama Factory Producer Console
+After=network.target
+
+[Service]
+Type=simple
+User=@SERVICE_USER@
+UMask=0077
+EnvironmentFile=-@PROJECT_ROOT@/config/runtime.env
+WorkingDirectory=@PROJECT_ROOT@
+ExecStart=@PROJECT_ROOT@/envs/factory/bin/python -u -m factory.web
+Restart=on-failure
+RestartSec=3
+Environment=PYTHONUNBUFFERED=1
+Environment=LANGSMITH_TRACING=false
+Environment=OMP_NUM_THREADS=4
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

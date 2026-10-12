@@ -1,0 +1,138 @@
+{
+  "schema_version": 1,
+  "llm": {
+    "provider": "llama_cpp",
+    "enabled": true,
+    "network_mode": "loopback",
+    "base_url": "http://127.0.0.1:8090/v1",
+    "model": "drama-writer",
+    "context_tokens": 32768,
+    "vision": true,
+    "response_format": "llama_json_schema",
+    "context_validation": "llama_tokenize",
+    "request_timeout_seconds": 480,
+    "chat_template_kwargs": {
+      "enable_thinking": false
+    }
+  },
+  "creative": {
+    "max_review_rounds": 2,
+    "separate_storyboard": true
+  },
+  "research": {
+    "provider": "google_news_rss",
+    "max_sources": 8,
+    "timeout_seconds": 15
+  },
+  "production": {
+    "gpu_cards": [
+      0
+    ],
+    "image_min_free_mib": 15000,
+    "gpu_min_free_mib": 15000,
+    "max_gpu_workers": 1,
+    "max_parallel": 1,
+    "max_attempts": 3,
+    "max_wall_seconds": 10800,
+    "max_gpu_seconds": 7200,
+    "image_width": 736,
+    "image_height": 1312,
+    "output_width": 720,
+    "output_height": 1280,
+    "comfy_start_port": 8340,
+    "video_profile": "fastwan"
+  },
+  "web": {
+    "host": "127.0.0.1",
+    "port": 8787
+  },
+  "quality": {
+    "semantic_enabled": true,
+    "minimum_score": 60
+  },
+  "optimization": {
+    "strategy": "render_evaluate_repair",
+    "dspy_enabled": false,
+    "vbench_enabled": false
+  },
+  "llm_profiles": {
+    "writer_local": {
+      "provider": "llama_cpp",
+      "enabled": true,
+      "network_mode": "loopback",
+      "base_url": "http://127.0.0.1:8090/v1",
+      "model": "drama-writer",
+      "context_tokens": 32768,
+      "vision": true,
+      "response_format": "llama_json_schema",
+      "context_validation": "llama_tokenize",
+      "request_timeout_seconds": 480,
+      "chat_template_kwargs": {
+        "enable_thinking": false
+      }
+    },
+    "critic_local": {
+      "provider": "llama_cpp",
+      "enabled": true,
+      "network_mode": "loopback",
+      "base_url": "http://127.0.0.1:8092/v1",
+      "model": "drama-critic",
+      "context_tokens": 32768,
+      "vision": false,
+      "response_format": "llama_json_schema",
+      "context_validation": "llama_tokenize",
+      "request_timeout_seconds": 480,
+      "chat_template_kwargs": {
+        "enable_thinking": false
+      },
+      "temperature_override": 0.25,
+      "top_p": 0.8
+    },
+    "ollama_example": {
+      "provider": "ollama",
+      "enabled": false,
+      "network_mode": "loopback",
+      "base_url": "http://127.0.0.1:11434/v1",
+      "model": "qwen3:8b",
+      "context_tokens": 32768,
+      "vision": false
+    },
+    "vllm_example": {
+      "provider": "vllm",
+      "enabled": false,
+      "network_mode": "loopback",
+      "base_url": "http://127.0.0.1:8000/v1",
+      "model": "drama-local-vllm",
+      "context_tokens": 32768,
+      "vision": false
+    },
+    "remote_example": {
+      "provider": "openai_compatible",
+      "enabled": false,
+      "network_mode": "remote",
+      "allowed_hosts": [
+        "api.example.com"
+      ],
+      "base_url": "https://api.example.com/v1",
+      "model": "replace-with-served-model-id",
+      "context_tokens": 32768,
+      "vision": false,
+      "api_key_env": "MY_MODEL_API_KEY",
+      "response_format": "json_object"
+    }
+  },
+  "llm_roles": {
+    "researcher": "writer_local",
+    "creator": "writer_local",
+    "story_editor": "writer_local",
+    "story_critic": "critic_local",
+    "screenwriter": "writer_local",
+    "storyboard_director": "writer_local",
+    "independent_critic": "critic_local",
+    "visual_designer": "writer_local",
+    "prompt_style_compiler": "writer_local",
+    "visual_critic": "writer_local",
+    "dialogue_editor": "writer_local",
+    "edit_director": "writer_local"
+  }
+}

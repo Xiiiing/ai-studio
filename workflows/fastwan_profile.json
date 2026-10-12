@@ -1,0 +1,127 @@
+{
+  "name": "FastWan2.2 TI2V 5B FullAttn — native ComfyUI 3-step profile",
+  "version": 2,
+  "status": "benchmarked_candidate_for_per_shot_production_review",
+  "lora": "Wan2_2_5B_FastWanFullAttn_lora_rank_128_bf16.safetensors",
+  "sigmas": [
+    1,
+    0.757,
+    0.522,
+    0
+  ],
+  "sampler": "lcm",
+  "shift": 8,
+  "strength": 1,
+  "cfg": 1,
+  "steps": 3,
+  "noise_multiplier": 1,
+  "guider": "BasicGuider",
+  "schedule_node": "ManualSigmas",
+  "model_patch_node": "ModelSamplingSD3",
+  "lora_node": "LoraLoaderModelOnly",
+  "base_model": "wan2.2_ti2v_5B_fp16.safetensors",
+  "text_encoder": "umt5_xxl_fp16.safetensors",
+  "vae": "wan2.2_vae.safetensors",
+  "precision": {
+    "dit": "float16",
+    "lora_storage": "bfloat16",
+    "lora_computation": "cast_to_model_float16",
+    "attention": "pytorch_sdpa",
+    "requires_flash_attention": false,
+    "vae": "float32",
+    "vae_decode_node": "WanTiledVAEDecode"
+  },
+  "recommended_benchmark": {
+    "width": 704,
+    "height": 1280,
+    "frames": 121,
+    "fps": 24,
+    "seconds": 5.041666666666667,
+    "trained_landscape_width": 1280,
+    "trained_landscape_height": 704,
+    "trained_frames": 121,
+    "portrait_quality_requires_validation": true,
+    "six_second_frames": 145,
+    "six_second_quality_requires_validation": true,
+    "portrait_121_frame_benchmark_completed": true,
+    "production_736x1312_145_frame_benchmark_completed": true,
+    "validation_scope": "Each production shot still requires visual and performance review."
+  },
+  "native_mapping": {
+    "source_dmd_timesteps": [
+      1000,
+      757,
+      522
+    ],
+    "source_training_noise_shift": 8,
+    "source_training_table_raw_timesteps": [
+      1000,
+      280,
+      120
+    ],
+    "source_training_table_sigmas": [
+      1,
+      0.7567567229270935,
+      0.52173912525177
+    ],
+    "native_model_timesteps": [
+      1000,
+      757,
+      522
+    ],
+    "sigma_absolute_error": [
+      0,
+      0.00024327707290650036,
+      0.00026087474823
+    ],
+    "mapping": "Comfy ModelSamplingDiscreteFlow.timestep(sigma) = 1000 * sigma. Explicit ManualSigmas values are already the final noise levels and must not be shifted a second time.",
+    "reason_for_lcm": "The official DMD loop predicts x0 = x - sigma * v, then draws fresh Gaussian noise and sets x_next = (1 - sigma_next) * x0 + sigma_next * noise. Native sample_lcm with CONST uses these same operations. Euler advances the same noisy state and is not the official DMD update.",
+    "equivalence_limit": "Native sigma values match the exact integer timesteps sent to the source DiT. The source uses the nearest entry of its shift-8, 1000-entry training table for denoising/re-noising coefficients. This native profile differs in those coefficients by at most 0.000260875. It is a documented native approximation, not bitwise parity with FastVideo. RNG layout, LoRA reconstruction and FP16 also differ.",
+    "lora_alpha": "The checkpoint has rank-128 up/down tensors and no alpha tensors. Use Comfy native strength_model=1.0; do not multiply strength by 128."
+  },
+  "checkpoint": {
+    "repo": "Kijai/WanVideo_comfy",
+    "revision": "8260d429d19fd7a72304cad059160b95d843913f",
+    "path": "FastWan/Wan2_2_5B_FastWanFullAttn_lora_rank_128_bf16.safetensors",
+    "bytes": 660874456,
+    "sha256": "79290493711b022e1c6e655d803715cd8a91a75cdb139856cad46f354e2f681c",
+    "receipt": "models/loras/Wan2_2_5B_FastWanFullAttn_lora_rank_128_bf16.source.json"
+  },
+  "source": {
+    "model_repo": "FastVideo/FastWan2.2-TI2V-5B-FullAttn-Diffusers",
+    "model_revision": "3e187042a324f6f5fb68fd22110a78725253de8f",
+    "license": "apache-2.0",
+    "model_card": "https://huggingface.co/FastVideo/FastWan2.2-TI2V-5B-FullAttn-Diffusers",
+    "blog": "https://haoailab.com/blogs/fastvideo_post_training/",
+    "code_repo": "https://github.com/hao-ai-lab/FastVideo",
+    "code_revision": "2b164405c3d15ed2d222d0582d6db09ffc5ee6b2",
+    "code_receipts": "workflows/upstream/fastwan/sources.json",
+    "local_comfy_git_head": "9a9fdb10ed144ce760d9682cb247526ea23cc525"
+  },
+  "quality_limits": [
+    "FastVideo's current support matrix reports I2V quality issues for Wan2.2 TI2V 5B; inspect face identity and motion before production batches.",
+    "The 3-step student and extracted LoRA are speed-oriented and do not establish equivalence to the full-step base model.",
+    "TITAN RTX measured render times: 368.28 s for 704x1280/121 frames and 520.43 s for 736x1312/145 frames. VAE remains FP32 and took 298.761 s in the second run; these are single-run measurements, not batch latency guarantees.",
+    "Both local FastWan samples showed visible brightening and stronger cyan/amber saturation during the first second. Identity and clothing were usable in the inspected sample frames; hands, props and walking need independent per-shot review."
+  ],
+  "local_benchmark_evidence": {
+    "first": "runtime/benchmarks/fastwan_121_native_v1/benchmark_result.json",
+    "production_size": "runtime/benchmarks/fastwan_s01_145_tiled_v1/benchmark_result.json",
+    "production_size_render_seconds": 520.43,
+    "production_size_wall_seconds": 573.33,
+    "production_size_full_decode_frames": 145,
+    "vae_peak_allocated_bytes": 17049510675,
+    "vae_peak_reserved_bytes": 18991808512,
+    "vae_memory_measurement_scope": "PyTorch CUDA allocator in isolated worker; not driver-wide GPU memory",
+    "production_use": "Non-critical-lipsync shots with individual visual review; root director owns adoption and retakes."
+  },
+  "fallback": {
+    "profile": null,
+    "steps": 20,
+    "sampler": "uni_pc",
+    "scheduler": "simple",
+    "shift": 8,
+    "cfg": 5,
+    "note": "Project baseline measured on S01 quality_01: 1196.89 s render at 736x1312/145 frames with native VAE decode. Color was more stable, but sustained closed eyes failed the intended attentive performance, so quality_02 was requested. This is not a claim of equivalence to the upstream 50-step pipeline."
+  }
+}
