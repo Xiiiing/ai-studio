@@ -71,6 +71,8 @@ def initialize():
         """)
         from .cloud_budget import initialize as initialize_cloud_budget
         initialize_cloud_budget(db)
+        from .series_bible import initialize as initialize_series
+        initialize_series(db)
         from .remote_tasks import migrate as migrate_remote_tasks
         migrate_remote_tasks(db)
 
@@ -180,6 +182,10 @@ def create(payload):
             rows = db.execute("SELECT value FROM memories WHERE key LIKE ? ORDER BY updated DESC LIMIT 5",
                               ("series:" + project["series_key"] + ":%",)).fetchall()
             project["memory"] = [json.loads(r["value"]) for r in rows]
+            from .series_bible import bible
+            pinned = bible(db, project["series_key"])
+            if pinned:
+                project["series_bible"] = pinned
         db.execute("INSERT INTO projects(id,updated,revision,snapshot) VALUES(?,?,?,?)",
                    (pid, time.time(), 1, encoded(project)))
         _event(db, pid, "已建立制片项目，开始检索和原创提案。", "created")

@@ -348,10 +348,24 @@ def report(checkpoint, **patch):
         checkpoint(patch)
 
 
+def series_bible_schema():
+    """The optional series contract does not alter legacy episode JSON."""
+    ident = {"type": "string", "pattern": r"^[A-Za-z][A-Za-z0-9_-]{0,63}$"}
+    character = object_schema({"character_id": ident, "name": text_schema(1, 100),
+                     "identity_constraints": text_schema(1, 2000), "default_wardrobe": text_schema(1, 1000)})
+    entity = object_schema({"entity_id": ident, "name": text_schema(1, 100), "description": text_schema(1, 2000)})
+    return object_schema({"schema_version": {"const": 1}, "world": text_schema(1, 8000),
+                "visual_rules": text_schema(1, 4000), "characters": array_schema(character, 1, 16),
+                "scenes": array_schema(entity, 0, 32), "props": array_schema(entity, 0, 32)})
+
+
 def project_context(project):
-    return {key: copy.deepcopy(project.get(key)) for key in (
+    context = {key: copy.deepcopy(project.get(key)) for key in (
         "id", "title", "brief", "format", "duration_seconds", "creation_mode",
         "memory", "proposal_generation", "script_generation", "story_feedback", "script_feedback")}
+    if project.get("series_bible"):
+        context["series_bible"] = copy.deepcopy(project["series_bible"])
+    return context
 
 
 def cached_json_call(project, config, role, stage, system, payload, schema,

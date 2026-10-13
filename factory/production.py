@@ -20,6 +20,7 @@ from studio.graphs import flux_image, wan_video
 from .audio_editor import AudioEditorMixin
 from .speech import SpeechMixin
 from .video_production import VideoProductionMixin
+from .series_production import SeriesProductionMixin
 from .video_providers import LOCAL_PROFILE, normalize_video_profile
 from .minimax_video import video_identity, validate_video_plan
 from .quality import combine, inspect_image, inspect_video, repair_plan, semantic_review
@@ -168,7 +169,7 @@ class ProductionEngine:
         return generate_project(project, self.config, checkpoint, control, semantic_evaluator, dialogue_rewriter)
 
 
-class _Run(VideoProductionMixin, SpeechMixin, AudioEditorMixin):
+class _Run(SeriesProductionMixin, VideoProductionMixin, SpeechMixin, AudioEditorMixin):
     receipt_path = staticmethod(_receipt_path)
     media_url = staticmethod(media_url)
 
@@ -462,7 +463,8 @@ class _Run(VideoProductionMixin, SpeechMixin, AudioEditorMixin):
                                            video_identity(self.video_connection) if self.video_connection["provider"] == "minimax"
                                            else "Wan2.2-TI2V-5B"),
                                  "seconds": extra.get("seconds"),
-                                 "mode": self.mode, "profile": self.config.get("video_profile", "quality")})
+                                 "mode": self.mode, "profile": self.config.get("video_profile", "quality"),
+                                 **({"asset_references": extra["asset_references"]} if extra.get("asset_references") else {})})
         shot = extra.get("shot") or {}
         expected = {key: shot.get(key) for key in (
             "id", "seconds", "prompt", "motion_prompt", "dialogue", "reference_group",
@@ -528,6 +530,8 @@ class _Run(VideoProductionMixin, SpeechMixin, AudioEditorMixin):
                                  "steps": 4 if target["kind"] == "image" else 20},
                   "references": [media_receipt(p) for p in target["references"]],
                   "started_at": time.time()}
+        if target.get("asset_references"):
+            record["asset_references"] = copy.deepcopy(target["asset_references"])
         if self._remote_video(target):
             record.update(provider="minimax", profile=self.video_connection["profile"],
                           model=self.video_connection["model"],
@@ -651,6 +655,9 @@ class _Run(VideoProductionMixin, SpeechMixin, AudioEditorMixin):
                          "review_signature": target["review_signature"] if required else None,
                          "generation_kind": ("local_diffusion_image" if target["kind"] == "image" else
                                              "cloud_diffusion_video" if self._remote_video(target) else "local_diffusion_video")}
+                if target.get("asset_references"):
+                    saved["asset_references"] = copy.deepcopy(target["asset_references"])
+                    record["output"] = copy.deepcopy(saved)
                 write_json(path.parent / "result.json", saved)
                 self._save_attempt(target, record)
                 selection_file = target["folder"] / "selected.json"
@@ -738,6 +745,10 @@ class _Run(VideoProductionMixin, SpeechMixin, AudioEditorMixin):
         targets = []
         for role, description in self.cast.items():
             references = [preview] if role == preview_role else []
+            approved = self._series_character(role)
+            if approved:
+                self.assets["characters"][role] = approved
+                continue
             identity = ("Preserve the exact face, age, hairstyle, clothing and visual design of the person in the approved reference image. "
                         if references else "")
             prompt = self.style_prompt + "\nCharacter reference, medium close-up, both shoulders visible, relaxed closed lips, uncluttered background. " + identity + description
@@ -761,6 +772,9 @@ class _Run(VideoProductionMixin, SpeechMixin, AudioEditorMixin):
                 roles = [r for r in roles if r in self.cast]
                 references = [_receipt_path(self.assets["characters"][r]) for r in roles]
                 identity = "Preserve the exact identity, age, hairstyle and clothing of each corresponding person in the character reference images. "
+                references, series_prompt, asset_references = self._series_shot_inputs(shot, roles, references)
+                if series_prompt:
+                    identity = series_prompt
                 for ref in shot.get("reference_shots", []):
                     references.append(_receipt_path(lookup[ref]["image"]))
                     identity += "The additional image establishes the exact set, props and lighting continuity. "
@@ -769,7 +783,8 @@ class _Run(VideoProductionMixin, SpeechMixin, AudioEditorMixin):
                     raise ValueError("render_style_prompt must be a non-empty string")
                 prompt = shot_style + "\n" + identity + "Create a single clear story frame: " + shot["prompt"]
                 targets.append(self._target(shot["id"], self.folder / "assets/shots" / shot["id"],
-                                            prompt, references, shot=shot, review=True, reference_roles=roles))
+                                            prompt, references, shot=shot, review=True, reference_roles=roles,
+                                            **({"asset_references": asset_references} if asset_references else {})))
             self._render_targets(targets, "story_frames")
             for shot in batch:
                 done.add(shot["id"])
@@ -784,6 +799,8 @@ class _Run(VideoProductionMixin, SpeechMixin, AudioEditorMixin):
                 record = self._camera_clip(shot)
                 # Camera movement does not animate speech or acting.
                 record["semantic_source"] = shot["image"].get("qa", {}).get("semantic", {})
+                if shot["image"].get("asset_references"):
+                    record["asset_references"] = copy.deepcopy(shot["image"]["asset_references"])
                 shot.update(video=record, video_path=record["path"],
                             video_url=media_url(_receipt_path(record)), status="passed",
                             generation_kind="procedural_camera_motion",
@@ -801,7 +818,9 @@ class _Run(VideoProductionMixin, SpeechMixin, AudioEditorMixin):
                 prompt += " Visible people keep relaxed closed lips; dialogue may be off-screen voiceover."
             targets.append(self._target(shot["id"], self.folder / "renders" / shot["id"],
                                         prompt, [image], kind="video", seconds=shot["seconds"],
-                                        shot=shot, review=True))
+                                        shot=shot, review=True,
+                                        **({"asset_references": shot["image"]["asset_references"]}
+                                           if shot["image"].get("asset_references") else {})))
         self._render_targets(targets, "diffusion_video")
 
     def run(self):
