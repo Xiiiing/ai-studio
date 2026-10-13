@@ -10,6 +10,7 @@ from .minimax_video import VideoFailed, VideoPending, generate_video
 from .providers import redact_secrets
 from .quality import inspect_image
 from .scheduler import ProductionNeedsDecision, ProductionPaused
+from . import cloud_budget
 from studio.graphs import flux_image
 
 
@@ -57,11 +58,29 @@ class VideoProductionMixin:
             self._save_attempt(target, record)
         return frame
 
-    def _render_remote_targets(self, targets, phase):
-        ready = []
+    def _prepare_cloud_targets(self, targets):
+        prepared = []
+        fresh = []
         for target in targets:
             self.boundary()
             record = target.pop("resume_attempt", None) or self._new_attempt(target)
+            frame = self._remote_first_frame(target, record)
+            line = cloud_budget.request_line(self.ident, target["key"], record, sha256(frame),
+                                             self.video_connection, target["seconds"])
+            journal = target["folder"] / record["take"] / "remote_task.json"
+            if journal.exists():
+                cloud_budget.reconcile_task(self.ident, line, read_json(journal), self.video_connection)
+            else:
+                fresh.append(line)
+            prepared.append((target, record, frame, line))
+        batch = cloud_budget.ensure_batch(self.project, self.video_connection, fresh) if fresh else None
+        return prepared, batch
+
+    def _render_remote_targets(self, targets, phase):
+        ready = []
+        prepared, batch = self._prepare_cloud_targets(targets)
+        for target, record, frame, line in prepared:
+            self.boundary()
             shot = target.get("shot")
             if shot is not None:
                 shot["status"] = "rendering" if record["attempt"] == 1 else "retrying"
@@ -69,15 +88,18 @@ class VideoProductionMixin:
             started = time.monotonic()
             folder = target["folder"] / record["take"]
             def event(task):
+                cloud_budget.reconcile_task(self.ident, line, task, self.video_connection)
                 record["remote_task"] = task
                 self._save_attempt(target, record)
                 self.emit(phase)
             try:
-                frame = self._remote_first_frame(target, record)
+                def authorize(request):
+                    cloud_budget.validate_live_profile(self.video_connection)
+                    return cloud_budget.reserve(self.ident, batch["id"], line, self.video_connection, request)
                 raw, task = generate_video(self.video_connection, record["prompt"], frame, folder,
                                            source_signature=target["signature"], check=self.boundary,
                                            timeout=self.budget.timeout(self.video_connection["max_wait_seconds"]),
-                                           event=event)
+                                           event=event, before_submit=authorize)
                 # Keep the original artifact and adapt fps/size/duration to the
                 # existing timeline. Failed conversion resumes this same download.
                 width, height = self.video_size
@@ -93,6 +115,7 @@ class VideoProductionMixin:
                 receipt = media_receipt(target_path, provider="minimax",
                                         profile=self.video_connection["profile"], model=task["model"],
                                         task_id=task["task_id"], file_id=task["file_id"],
+                                        cloud_intent_id=line["intent_id"], authorization=task.get("authorization"),
                                         provider_receipt=str((folder / "remote_task.json").relative_to(self.folder.parent.parent)),
                                         original=media_receipt(raw), expected_seconds=target["seconds"],
                                         generation_kind="cloud_diffusion_video")

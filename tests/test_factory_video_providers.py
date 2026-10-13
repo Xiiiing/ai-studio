@@ -128,6 +128,9 @@ def video_server():
 
 
 def generate(profile, frame, folder, **kwargs):
+    # Transport tests explicitly provide a test authorizer. Real ledger coverage
+    # is in test_factory_cloud_budget.py; the adapter has no implicit bypass.
+    kwargs.setdefault("before_submit", lambda request: {"test_authorization": True})
     return video.generate_video(profile, "A quiet shot with a slowly opening door.", frame, folder,
                                 source_signature="approved-shot-v1", **kwargs)
 

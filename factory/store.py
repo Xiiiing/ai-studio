@@ -33,6 +33,7 @@ def connection():
     db = sqlite3.connect(str(DATABASE), timeout=30)
     db.row_factory = sqlite3.Row
     db.execute("PRAGMA journal_mode=WAL")
+    db.execute("PRAGMA synchronous=FULL")
     db.execute("PRAGMA foreign_keys=ON")
     db.execute("PRAGMA busy_timeout=30000")
     try:
@@ -68,6 +69,8 @@ def initialize():
         CREATE TABLE IF NOT EXISTS idempotency(
           key TEXT PRIMARY KEY, project_id TEXT NOT NULL, request_hash TEXT NOT NULL);
         """)
+        from .cloud_budget import initialize as initialize_cloud_budget
+        initialize_cloud_budget(db)
 
 
 def _read(db, pid):

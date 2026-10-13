@@ -23,7 +23,9 @@ export function decisionPanel(project, busy = false) {
   if (!decision) return '';
   const header = (number, title, copy) => '<div class="decision-top"><div><div class="eyebrow">PRODUCER DECISION / 出品人决策</div><h2>' + title + '</h2><p>' + copy + '</p></div><span class="decision-token">' + number + ' / 03</span></div>';
   let content = '';
-  if (decision.type === 'story') {
+  if (String(decision.code || '').startsWith('cloud_')) {
+    content = '<h2>云视频需要明确授权或核对</h2><p>' + h(decision.message) + '</p><button class="button primary" data-action="tab" data-tab="costs">查看批次估价与累计账本</button>';
+  } else if (decision.type === 'story') {
     const proposals = list(project.proposals);
     content = header('01', '下一部故事，由你选择', '选定后，编剧与导演继续完成剧本、人物和分镜。') + (proposals.length ? '<div class="proposal-grid">' + proposals.map((p, i) => proposalCard(p, i, busy)).join('') + '</div>' : empty('故事提案正在准备', '待研究和评审完成后，这里将展示可选方案。')) + '<div class="decision-bottom"><span>后续只在视觉方案与成片验收时等待你的决定。</span><details><summary>想换一个方向？</summary><form data-form="repropose" class="feedback-form"><textarea name="feedback" data-preserve="repropose-feedback" aria-label="新的创意方向" placeholder="说明希望加强的题材、冲突或风格…" maxlength="3000"></textarea><button class="button small" ' + (busy ? 'disabled' : '') + '>重新提案</button></form></details></div>';
   } else if (decision.type === 'style') {

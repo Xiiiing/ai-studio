@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import base64
 import copy
+import hashlib
+import io
 import json
 import os
 import time
@@ -57,12 +59,18 @@ def _identifier(value, label):
     return value
 
 
-def _first_frame(path):
+def _first_frame(path, expected_sha256=None):
     path = Path(path)
     if not path.is_file() or path.stat().st_size > 5 * 1024 * 1024:
         raise ValueError("The first-frame image must be a local image of at most 5 MiB")
+    with path.open("rb") as handle:
+        content = handle.read(5 * 1024 * 1024 + 1)
+    if len(content) > 5 * 1024 * 1024:
+        raise ValueError("The first-frame image exceeds 5 MiB")
+    if expected_sha256 and hashlib.sha256(content).hexdigest() != expected_sha256:
+        raise ValueError("The first-frame image changed before authorization")
     from PIL import Image
-    with Image.open(path) as image:
+    with Image.open(io.BytesIO(content)) as image:
         width, height = image.size
         if min(width, height) <= 300 or not .4 <= width / height <= 2.5:
             raise ValueError("MiniMax first frame needs a short side over 300px and an aspect ratio within 2:5–5:2")
@@ -70,11 +78,11 @@ def _first_frame(path):
         mime = Image.MIME.get(image.format)
     if mime not in ("image/jpeg", "image/png", "image/webp"):
         raise ValueError("MiniMax first frame must be JPEG, PNG or WebP")
-    return "data:" + mime + ";base64," + base64.b64encode(path.read_bytes()).decode("ascii")
+    return "data:" + mime + ";base64," + base64.b64encode(content).decode("ascii")
 
 
 def generate_video(profile, prompt, first_frame, folder, *, source_signature, check=None,
-                   timeout=None, event=None):
+                   timeout=None, event=None, before_submit=None):
     """Serialize one take across processes; a competing caller never submits."""
     import fcntl
     folder = Path(folder)
@@ -85,11 +93,11 @@ def generate_video(profile, prompt, first_frame, folder, *, source_signature, ch
         except BlockingIOError:
             raise VideoPending("This video task is already being handled", "video_task_busy") from None
         return _generate_video(profile, prompt, first_frame, folder, source_signature=source_signature,
-                               check=check, timeout=timeout, event=event)
+                               check=check, timeout=timeout, event=event, before_submit=before_submit)
 
 
 def _generate_video(profile, prompt, first_frame, folder, *, source_signature, check=None,
-                    timeout=None, event=None):
+                    timeout=None, event=None, before_submit=None):
     """Return a downloaded local source and public receipt; journals survive all pauses."""
     clean = normalize_video_profile({key: value for key, value in profile.items() if key != "profile"})
     if clean["provider"] != "minimax":
@@ -147,11 +155,18 @@ def _generate_video(profile, prompt, first_frame, folder, *, source_signature, c
         check()
         payload = {"model": clean["model"], "prompt": prompt, "duration": clean["duration"],
                    "resolution": clean["resolution"], "prompt_optimizer": clean["prompt_optimizer"],
-                   "first_frame_image": _first_frame(first_frame)}
+                   "first_frame_image": _first_frame(first_frame, frame_hash)}
+        if not callable(before_submit):
+            raise VideoPending("A new paid task requires explicit project authorization", "cloud_authorization_required")
+        # Reserve in the project ledger before the journal and the sole POST.
+        # A crash in either gap fails closed; it never creates retry permission.
+        authorization = before_submit({"request_fingerprint": request_id,
+                                       "source_signature": source_signature})
         receipt = {"schema_version": 1, "provider": "minimax", "profile": profile.get("profile"),
                    "model": clean["model"], "connection": clean,
                    "source_signature": source_signature, "request_fingerprint": request_id,
-                   "first_frame_sha256": frame_hash, "status": "submitting", "started_at": time.time()}
+                   "first_frame_sha256": frame_hash, "status": "submitting", "started_at": time.time(),
+                   "authorization": authorization}
         write_json(folder / "request_summary.json", redact_secrets(
             {key: value for key, value in payload.items() if key != "first_frame_image"}, clean))
         # The intent is durable before the sole effectful POST.

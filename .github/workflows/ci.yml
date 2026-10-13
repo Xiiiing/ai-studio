@@ -25,4 +25,4 @@ jobs:
       - name: Verify workflow and provider contracts
         run: python -m pytest -q tests/test_factory_*.py
       - name: Verify producer UI
-        run: node --test tests/test_factory_ui.mjs
+        run: node --test tests/test_factory*.mjs
