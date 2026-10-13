@@ -18,6 +18,7 @@ from pathlib import Path
 from studio.core import ROOT, fingerprint, media_receipt, read_json, sha256, within, write_json
 from studio.media import SR
 from .scheduler import ProductionNeedsDecision, ProductionPaused
+from .production_profiles import explicit as explicit_profile, voices_for, profile_signature
 
 
 def spoken_length(text):
@@ -58,6 +59,8 @@ class SpeechMixin:
             source = {"line": line, "settings": settings, "seed": line_seed}
             source_sha = hashlib.sha256(driver.canonical(source).encode("utf-8")).hexdigest()
             key = fingerprint({"source_sha256": source_sha, "model_state": model_state, "schema": 2})
+            if explicit_profile(self.project):
+                key = fingerprint({"source": key, "production_profile": profile_signature(self.project)})
             expected[line["id"]] = {"source": source, "source_sha256": source_sha, "key": key,
                                     "model_state": model_state}
         return expected
@@ -242,8 +245,11 @@ class SpeechMixin:
             return {}
         voices = read_json(ROOT / "audio/voices.json")
         voices.update(self.episode.get("voices") or {})
-        for role in self.cast:
-            voices.setdefault(role, {"speaker": "Serena" if role == "female" else "Uncle_Fu", "language": "Chinese"})
+        if explicit_profile(self.project):
+            voices = voices_for(self.project, voices)
+        else:
+            for role in self.cast:
+                voices.setdefault(role, {"speaker": "Serena" if role == "female" else "Uncle_Fu", "language": "Chinese"})
         expected = self._speech_sources(lines, voices)
         previous = {line["id"]: line for line in self.assets.get("audio", {}).get("lines", [])}
         records, missing = {}, []
@@ -264,6 +270,8 @@ class SpeechMixin:
         self.assets["audio"] = {"source_signature": fingerprint([expected[line["id"]]["key"] for line in lines]),
                                 "lines": [records[line["id"]] for line in lines],
                                 "model": "local Qwen3-TTS CustomVoice", "cache": "verified_per_line_source_v2"}
+        if explicit_profile(self.project):
+            self.assets["audio"]["production_profile_signature"] = profile_signature(self.project)
         self.emit("voice_complete")
         return {ident: self.receipt_path(record) for ident, record in records.items()}
 

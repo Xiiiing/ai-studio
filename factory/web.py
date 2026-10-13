@@ -36,6 +36,9 @@ class Handler(LegacyHandler):
                 rejected=self._local_request()
                 if rejected:
                     return self.json({"error":rejected},403)
+            if path=="/api/factory/production-profiles":
+                from .production_profiles import catalog
+                return self.json(catalog())
             if path=="/api/factory/workflow":
                 from .workflow_spec import export_spec
                 return self.json(export_spec())

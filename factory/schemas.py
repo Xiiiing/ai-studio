@@ -266,7 +266,11 @@ STYLES_SCHEMA = object_schema({
 })
 
 
-def episode_schema(shot_count=15):
+def episode_schema(shot_count=15, project=None):
+    if project is not None:
+        from .production_profiles import explicit, resolve
+        if explicit(project):
+            shot_count = resolve(project)["shot_count"]
     dialogue = object_schema({
         "role": {"type": "string", "enum": ["female", "male"]},
         "text": text_schema(1, 10),
@@ -286,7 +290,7 @@ def episode_schema(shot_count=15):
         "continuity": text_schema(1, 500),
         "sfx": text_schema(0, 200),
     })
-    return object_schema({
+    schema = object_schema({
         "title": text_schema(2, 40),
         "logline": text_schema(10, 250),
         "synopsis": text_schema(60, 1600),
@@ -300,6 +304,8 @@ def episode_schema(shot_count=15):
                                "male": text_schema(40, 1600)}),
         "shots": array_schema(shot, shot_count, shot_count),
     })
+    from .profile_creative import adapt_schema
+    return adapt_schema(schema, project or {})
 
 
 def utc_now():
@@ -363,6 +369,9 @@ def project_context(project):
     context = {key: copy.deepcopy(project.get(key)) for key in (
         "id", "title", "brief", "format", "duration_seconds", "creation_mode",
         "memory", "proposal_generation", "script_generation", "story_feedback", "script_feedback")}
+    if project.get("production_profile") is not None:
+        from .production_profiles import resolve
+        context["production_profile"] = resolve(project)
     if project.get("series_bible"):
         context["series_bible"] = copy.deepcopy(project["series_bible"])
     return context
@@ -375,6 +384,8 @@ def cached_json_call(project, config, role, stage, system, payload, schema,
     from factory.llm import json_call
     from factory.config import llm_identity
     model_identity = llm_identity(config, role)
+    from .profile_creative import adapt_schema, adapt_system
+    schema, system = adapt_schema(schema, project), adapt_system(system, project)
     signature = fingerprint({"schema_version": SCHEMA_VERSION,
         "context": project_context(project), "model": model_identity,
         "role": role, "stage": stage, "system": system, "payload": payload,
@@ -399,15 +410,8 @@ def cached_json_call(project, config, role, stage, system, payload, schema,
 
 
 def duration_plan(project):
-    raw = project.get("duration_seconds", 60)
-    if isinstance(raw, bool):
-        raise ValueError("短剧时长须为 60 至 90 秒的整数")
-    duration = float(raw)
-    if not math.isfinite(duration) or duration != int(duration) or not 60 <= duration <= 90:
-        raise ValueError("短剧时长须为 60 至 90 秒的整数")
-    seconds, remainder = divmod(int(duration), 15)
-    return [seconds + (1 if i < remainder else 0) for i in range(15)]
-
+    from .production_profiles import resolve
+    return resolve(project)["shot_seconds"]
 
 def spoken_chars(text):
     return len(re.findall(r"[\u3400-\u9fffA-Za-z0-9]", str(text)))
@@ -432,7 +436,7 @@ def technical_issues(episode, project):
     shots = episode.get("shots", [])
     plan = duration_plan(project)
     if len(shots) != len(plan):
-        add("shot_count", "镜头数量不等于 15")
+        add("shot_count", "镜头数量不等于规格的 %d" % len(plan))
     if sum(float(s.get("seconds", 0)) for s in shots) != sum(plan):
         add("duration", "逐镜时长之和不等于项目目标时长")
     seen = set()
@@ -441,19 +445,29 @@ def technical_issues(episode, project):
         if sid != "S%02d" % (i + 1) or sid in seen:
             add("shot_id", "镜头编号无效或重复", [sid])
         seen.add(sid)
-        if shot.get("seconds") not in (4, 5, 6):
+        from .production_profiles import explicit, roles, speech_limit
+        if explicit(project):
+            if i >= len(plan) or shot.get("seconds") != plan[i]:
+                add("shot_duration", "单镜时长不符合固定规格", [sid])
+        elif shot.get("seconds") not in (4, 5, 6):
             add("shot_duration", "单镜须为 4 至 6 秒", [sid])
         if len(shot.get("dialogue", [])) > 1:
             add("voice_overlap", "当前制作配置每镜最多一条画外音", [sid])
         for line in shot.get("dialogue", []):
-            maximum = 10 if project.get("format") == "motion_comic" else 12
+            maximum = speech_limit(project, shot.get("seconds")) if explicit(project) else 10 if project.get("format") == "motion_comic" else 12
             if spoken_chars(line.get("text", "")) > maximum:
                 add("voice_too_long", "台词超过当前音频槽位的 %d 字上限" % maximum, [sid])
-            if line.get("role") not in ("female", "male"):
+            if line.get("role") not in roles(project):
                 add("voice_role", "台词声音角色未定义", [sid])
-        if shot.get("reference_group") not in ("female", "male", "two"):
+        groups = roles(project) + (["ensemble", "none", "two"] if explicit(project) else ["two"])
+        if shot.get("reference_group") not in groups:
             add("character_reference", "镜头人物参考组未定义", [sid])
         prompt = shot.get("prompt", "")
         if len(re.findall(r"[A-Za-z]", prompt)) < 25:
             add("image_prompt_language", "图片提示词缺少可执行的英文画面描述", [sid])
+    from .production_profiles import validate_episode
+    try:
+        validate_episode(episode, project)
+    except ValueError as exc:
+        add("production_profile", str(exc))
     return issues

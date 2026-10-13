@@ -1,4 +1,5 @@
 import { cloudAuthorizationPayload } from './cloud-budget.js';
+import { applyProductionProfile } from './production-profile.js';
 import { api } from './api.js';
 import { h, list, numeric, safeUrl, pendingDecisions, canReviseProduction } from './format.js';
 import { createForm, capabilitiesDialog, budgetForm } from './views.js';
@@ -26,7 +27,7 @@ export function bindActions(state, ui) {
   }
   function openCreate() {
     if (state.busy) return;
-    open('project-dialog', createForm());
+    open('project-dialog', createForm(state.productionProfiles));
     const form = document.getElementById('create-form');
     if (createDraft) {
       form.dataset.requestId = createDraft.requestId;
@@ -90,6 +91,8 @@ export function bindActions(state, ui) {
       if (sources.some(url => !/^https?:\/\//i.test(url) || !safeUrl(url))) { errorBox.textContent = '资料来源请填写完整的 http:// 或 https:// 链接，每行一条。'; errorBox.hidden = false; return; }
       if (sources.length > 12) { errorBox.textContent = '每个项目最多添加 12 条素材来源。'; errorBox.hidden = false; return; }
       const payload = { request_id: form.dataset.requestId || requestId(), title: String(values.title || '').trim(), brief: String(values.brief || '').trim(), format: values.format, duration_seconds: Number(values.duration_seconds), budget: { gpu_minutes: Number(values.gpu_minutes), wall_minutes: Number(values.wall_minutes), max_attempts: Number(values.max_attempts) }, sources: sources.map(url => ({ url, title: new URL(url).hostname, rights: values.rights })) };
+      try { applyProductionProfile(payload, values, state.productionProfiles); }
+      catch (error) { errorBox.textContent = error.message; errorBox.hidden = false; return; }
       if (String(values.series_key || '').trim()) payload.series_key = String(values.series_key).trim();
       createDraft = { requestId: payload.request_id, values };
       setBusy(true);

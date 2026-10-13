@@ -20,6 +20,7 @@ from studio.media import SR, chunks, font, piano, stamp, write_wav
 from .quality import combine, inspect_video, semantic_review
 from .scheduler import ProductionNeedsDecision
 from .shot_workbench import plan_signature
+from .production_profiles import explicit as explicit_profile, resolve as resolve_profile, profile_signature
 
 FFMPEG = imageio_ffmpeg.get_ffmpeg_exe()
 
@@ -47,7 +48,8 @@ class AudioEditorMixin:
         signature = fingerprint({"image": sha256(image), "seconds": shot["seconds"],
                                  "output": self.output_size, "motion": motion, "engine": "ffmpeg_zoompan_v1",
                                  **({"render_revision": shot["render_revisions"]["video"]}
-                                    if shot.get("render_revisions", {}).get("video") else {})})
+                                    if shot.get("render_revisions", {}).get("video") else {}),
+                                 **({"production_profile": profile_signature(self.project)} if explicit_profile(self.project) else {})})
         pin = self.project.get("shot_selections", {}).get(shot["id"], {}).get("video")
         if pin:
             if pin["plan_signature"] != plan_signature(self.project, shot, "video") or pin["receipt"].get("source_signature") != signature:
@@ -88,6 +90,8 @@ class AudioEditorMixin:
                                source_image=shot["image"], qa=qa, plan_signature=plan_signature(self.project, shot, "video"),
                                take=folder.name, model="ffmpeg_zoompan_v1", shot_revision=shot.get("shot_revision", 1),
                                elapsed_seconds=round(time.monotonic() - started, 3))
+        if explicit_profile(self.project):
+            record["production_profile_signature"] = profile_signature(self.project)
         write_json(receipt_path, record)
         return record
 
@@ -316,7 +320,8 @@ class AudioEditorMixin:
                                  "edit_feedback": self.project.get("edit_feedback"),
                                  "music_gain": self.config.get("music_gain", .12), "editor_version": 2,
                                  "semantic_required": self.semantic_enabled,
-                                 "semantic_policy": self.review_policy if self.semantic_enabled else None})
+                                 "semantic_policy": self.review_policy if self.semantic_enabled else None,
+                                 **({"production_profile": profile_signature(self.project)} if explicit_profile(self.project) else {})})
         release = self.folder / "release" / f"v{revision}-{signature[:12]}"
         manifest_file = release / "manifest.json"
         if manifest_file.exists():
@@ -383,7 +388,8 @@ class AudioEditorMixin:
         write_json(timeline, {"fps": 24, "duration_seconds": duration, "shots": sources,
                               "audio": media_receipt(mix), "subtitles": cues,
                               "edit_feedback": self.project.get("edit_feedback"),
-                              "edit_plan": self.project.get("edit_plan", {})})
+                              "edit_plan": self.project.get("edit_plan", {}),
+                              **({"production_profile": resolve_profile(self.project)} if explicit_profile(self.project) else {})})
         semantics = [s.get("qa", {}).get("semantic", {}) for s in self.shots]
         semantic_status = "pass" if semantics and all(s.get("status") == "pass" for s in semantics) else "review_required"
         artifacts = [media_receipt(p) for p in (final, clean, srt, ass, cover, mix, timeline,
@@ -409,6 +415,8 @@ class AudioEditorMixin:
                         "semantic": "Sampled VLM review is separate from technical decode checks; final producer review is still required.",
                         "vbench": "VBench and DSPy optimization are not claimed by this renderer.",
                         "subtitles": "Timing follows measured speech spans with proportional text segmentation; no forced-alignment guarantee."}}
+        if explicit_profile(self.project):
+            delivery.update(production_profile=resolve_profile(self.project), production_profile_signature=profile_signature(self.project))
         write_json(release / "manifest.json", delivery)
         self.emit("delivery_ready", delivery=delivery)
         return delivery

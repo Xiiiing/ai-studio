@@ -6,6 +6,7 @@ import re
 
 from studio.core import write_json
 from factory.config import llm_identity
+from .profile_creative import adapt_system
 from factory.schemas import (
     CreativeReviewError, cached_json_call, episode_schema,
     fingerprint, object_schema, planning_dir, relative_path, report, text_schema,
@@ -36,8 +37,8 @@ blocked_shots没有条目只表示你未发现制作阻断，不代表剧本或�
 锁定镜头仅供连续性上下文，不能在输出中添加，也不能要求重做。严格输出给定JSON。"""
 
 
-def storyboard_schema(shot_ids):
-    source = episode_schema()["properties"]["shots"]["items"]["properties"]
+def storyboard_schema(shot_ids, project=None):
+    source = episode_schema(project=project)["properties"]["shots"]["items"]["properties"]
     fields = object_schema({key: copy.deepcopy(source[key]) for key in DIRECTOR_FIELDS})
     problem = object_schema({"reason": text_schema(8, 500),
                              "suggestion": text_schema(8, 500)})
@@ -80,9 +81,9 @@ def _episode_context(episode):
     keys = tuple(episode_schema()["properties"])
     value = {key: copy.deepcopy(episode[key]) for key in keys if key in episode and key != "shots"}
     value.update({key: copy.deepcopy(episode[key]) for key in (
-        "format", "total_seconds", "fps", "width", "height") if key in episode})
+        "format", "total_seconds", "fps", "width", "height", "production_profile", "characters") if key in episode})
     shot_keys = tuple(episode_schema()["properties"]["shots"]["items"]["properties"]) + (
-        "id", "seconds", "lip_sync", "delivery_method", "render_style_prompt")
+        "id", "seconds", "lip_sync", "delivery_method", "render_style_prompt", "characters", "character_states")
     value["shots"] = [{key: copy.deepcopy(shot[key]) for key in shot_keys if key in shot}
                       for shot in episode["shots"]]
     return value
@@ -126,9 +127,10 @@ def direct_storyboard(project, config, episode, checkpoint=None, *,
     report(checkpoint, stage="storyboard_direction", progress=32 + round_index,
            message="独立分镜导演正在编排%d镜的构图、运镜和人物参考（第%d版）" %
                    (len(selected), round_index))
-    schema = storyboard_schema(selected)
+    schema = storyboard_schema(selected, project)
+    system = adapt_system(DIRECTOR_SYSTEM, project)
     raw = cached_json_call(project, config, "storyboard_director", stage,
-                           DIRECTOR_SYSTEM, payload, schema, checkpoint,
+                           system, payload, schema, checkpoint,
                            max_tokens=6500, temperature=0.35)
     directed, issues = copy.deepcopy(episode), []
     applied = []
@@ -160,7 +162,7 @@ def direct_storyboard(project, config, episode, checkpoint=None, *,
             shot["prompt"] = shot["prompt"].rstrip() + suffix
         applied.append(sid)
     identity = llm_identity(config, "storyboard_director")
-    signature = fingerprint({"stage": stage, "system": DIRECTOR_SYSTEM, "payload": payload,
+    signature = fingerprint({"stage": stage, "system": system, "payload": payload,
                              "schema": schema, "model": identity, "max_tokens": 6500,
                              "temperature": 0.35})
     receipt = {
