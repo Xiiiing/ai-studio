@@ -58,10 +58,12 @@ async function refresh({ force = false, notify = false } = {}) {
   clearTimeout(timer);
   const request = ++generation, epoch = state.epoch, projectId = state.projectId;
   document.getElementById('sync-state').textContent = '正在同步';
-  const results = await Promise.allSettled([api.overview(), projectId ? api.project(projectId) : Promise.resolve(null), api.models(), api.workflow(), projectId ? api.flow(projectId) : Promise.resolve(null), projectId ? api.cloudBudget(projectId) : Promise.resolve(null), projectId ? api.series(projectId) : Promise.resolve(null), projectId ? api.shots(projectId) : Promise.resolve(null)]);
+  const results = await Promise.allSettled([api.overview(), projectId ? api.project(projectId) : Promise.resolve(null), api.models(), api.workflow(), projectId ? api.flow(projectId) : Promise.resolve(null), projectId ? api.cloudBudget(projectId) : Promise.resolve(null), projectId ? api.series(projectId) : Promise.resolve(null), projectId ? api.shots(projectId) : Promise.resolve(null), api.productionProfiles()]);
   if (request !== generation || epoch !== state.epoch) { schedule(); return; }
-  const [overviewResult, projectResult, modelsResult, workflowResult, flowResult, cloudResult, seriesResult, shotsResult] = results;
+  const [overviewResult, projectResult, modelsResult, workflowResult, flowResult, cloudResult, seriesResult, shotsResult, profileResult] = results;
   let error = '';
+  if (profileResult.status === 'fulfilled') state.productionProfiles = profileResult.value;
+  else error = profileResult.reason.message;
   if (overviewResult.status === 'fulfilled') state.overview = overviewResult.value;
   else error = overviewResult.reason.message;
   if (projectId && projectId === state.projectId && projectResult.status === 'fulfilled') state.project = projectResult.value?.project || projectResult.value;

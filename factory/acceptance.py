@@ -61,7 +61,12 @@ def validate(pid):
     checks["script_passed"]=bool(p.get("script_review",{}).get("passed"))
     checks["three_real_style_previews"]=(report["styles"]["count"]==3 and report["styles"]["generated"]==3
         and all(s.get("preview_path") and confined(s["preview_path"]).is_file() for s in p.get("styles",[])))
-    checks["all_fifteen_planned_shots_present"]=(report["script_shots"]==15
+    from .production_profiles import explicit, resolve
+    profile = resolve(p)
+    report["expected_shots"] = profile["shot_count"]
+    if explicit(p):
+        report["production_profile"] = profile
+    checks["all_profile_planned_shots_present" if explicit(p) else "all_fifteen_planned_shots_present"]=(report["script_shots"]==profile["shot_count"]
         and [s.get("id") for s in p.get("shots",[])]==[s.get("id") for s in (p.get("script") or {}).get("shots",[])])
     checks["script_matches_requested_duration"]=abs(report["planned_duration_seconds"]-float(report["requested_duration_seconds"] or 0))<0.001
     checks["all_shots_semantically_passed"]=bool(p.get("shots")) and all(s.get("qa",{}).get("semantic",{}).get("status")=="pass" for s in p.get("shots",[]))

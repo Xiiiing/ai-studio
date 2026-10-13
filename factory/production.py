@@ -22,6 +22,7 @@ from .speech import SpeechMixin
 from .video_production import VideoProductionMixin
 from .series_production import SeriesProductionMixin
 from .shot_workbench import plan_signature, pinned_selection
+from .production_profiles import explicit as explicit_profile, resolve as resolve_profile, profile_signature, validate_episode
 from .video_providers import LOCAL_PROFILE, normalize_video_profile
 from .minimax_video import video_identity, validate_video_plan
 from .quality import combine, inspect_image, inspect_video, repair_plan, semantic_review
@@ -230,6 +231,8 @@ class _Run(SeriesProductionMixin, VideoProductionMixin, SpeechMixin, AudioEditor
         if self.mode not in ("motion_comic", "animation", "live_action"):
             raise ValueError("Unsupported production format")
         self.episode = copy.deepcopy(self.project.get("episode") or self.project.get("script") or {})
+        if explicit_profile(self.project):
+            self.episode["production_profile"] = resolve_profile(self.project)
         if not isinstance(self.episode, dict):
             raise ValueError("A structured episode/script is required")
         self.cast = self.episode.get("cast") or self.project.get("cast") or {}
@@ -471,7 +474,8 @@ class _Run(SeriesProductionMixin, VideoProductionMixin, SpeechMixin, AudioEditor
                                  "mode": self.mode, "profile": self.config.get("video_profile", "quality"),
                                  **({"asset_references": extra["asset_references"]} if extra.get("asset_references") else {}),
                                  **({"render_revision": extra["shot"]["render_revisions"][kind]}
-                                    if (extra.get("shot") or {}).get("render_revisions", {}).get(kind) else {})})
+                                    if (extra.get("shot") or {}).get("render_revisions", {}).get(kind) else {}),
+                                 **({"production_profile": profile_signature(self.project)} if explicit_profile(self.project) else {})})
         shot = extra.get("shot") or {}
         expected = {key: shot.get(key) for key in (
             "id", "seconds", "prompt", "motion_prompt", "dialogue", "reference_group",
@@ -537,6 +541,9 @@ class _Run(SeriesProductionMixin, VideoProductionMixin, SpeechMixin, AudioEditor
                                  "steps": 4 if target["kind"] == "image" else 20},
                   "references": [media_receipt(p) for p in target["references"]],
                   "started_at": time.time()}
+        if explicit_profile(self.project):
+            record["production_profile"] = resolve_profile(self.project)
+            record["production_profile_signature"] = profile_signature(self.project)
         if target.get("shot"):
             record.update(plan_signature=plan_signature(self.project, target["shot"], target["kind"]),
                           shot_revision=target["shot"].get("shot_revision", 1),
@@ -666,6 +673,8 @@ class _Run(SeriesProductionMixin, VideoProductionMixin, SpeechMixin, AudioEditor
                          "review_signature": target["review_signature"] if required else None,
                          "generation_kind": ("local_diffusion_image" if target["kind"] == "image" else
                                              "cloud_diffusion_video" if self._remote_video(target) else "local_diffusion_video")}
+                if record.get("production_profile_signature"):
+                    saved.update(production_profile_signature=record["production_profile_signature"])
                 if record.get("plan_signature"):
                     saved.update(plan_signature=record["plan_signature"], shot_revision=record.get("shot_revision"),
                                  production_revision=record.get("production_revision"))
@@ -709,7 +718,7 @@ class _Run(SeriesProductionMixin, VideoProductionMixin, SpeechMixin, AudioEditor
     def previews(self):
         if len(self.styles) != 3:
             raise ValueError("Visual development requires exactly three structured style candidates")
-        role = "female" if "female" in self.cast else next(iter(self.cast))
+        role = resolve_profile(self.project)["characters"][0]["character_id"] if explicit_profile(self.project) else "female" if "female" in self.cast else next(iter(self.cast))
         targets = []
         for style in self.styles:
             ident = _safe_id(style["id"])
@@ -728,7 +737,7 @@ class _Run(SeriesProductionMixin, VideoProductionMixin, SpeechMixin, AudioEditor
         if self.selected_style is None:
             return None, None
         style = self.selected_style
-        role = "female" if "female" in self.cast else next(iter(self.cast))
+        role = resolve_profile(self.project)["characters"][0]["character_id"] if explicit_profile(self.project) else "female" if "female" in self.cast else next(iter(self.cast))
         details = {"style_id": style.get("id"), "role": role}
 
         def invalid(problem):
@@ -844,6 +853,9 @@ class _Run(SeriesProductionMixin, VideoProductionMixin, SpeechMixin, AudioEditor
             raise ValueError("The approved episode contains no shots")
         if len(self.shots) > 80:
             raise ValueError("This bounded episode profile supports at most 80 shots")
+        validate_episode({**self.episode, "shots": self.shots}, self.project,
+                         self.video_connection if self.mode != "motion_comic" else None,
+                         allow_trim=bool(self.project.get("edit_plan")))
         if self.semantic_enabled and self.evaluator is None:
             raise ProductionNeedsDecision("Semantic review is enabled but no evaluator is connected",
                                           "semantic_unavailable", {"resume_action": "connect_evaluator_and_resume"})

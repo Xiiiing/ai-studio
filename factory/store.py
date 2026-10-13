@@ -122,9 +122,15 @@ def create(payload):
     format_name = payload.get("format", "motion_comic")
     if format_name not in ALLOWED_FORMATS:
         raise ValueError("不支持的视频形态")
-    duration = payload.get("duration_seconds", 60)
-    if isinstance(duration, bool) or not isinstance(duration, (int, float)) or duration != int(duration) or not 60 <= duration <= 90:
-        raise ValueError("时长应为 60–90 秒的整数")
+    profile = None
+    if "production_profile" in payload:
+        from .production_profiles import normalize
+        profile = normalize(payload["production_profile"], payload.get("duration_seconds"))
+        duration = profile["duration_seconds"]
+    else:
+        duration = payload.get("duration_seconds", 60)
+        if isinstance(duration, bool) or not isinstance(duration, (int, float)) or duration != int(duration) or not 60 <= duration <= 90:
+            raise ValueError("时长应为 60–90 秒的整数")
     raw_budget = payload.get("budget", {})
     if not isinstance(raw_budget, dict):
         raise ValueError("预算格式错误")
@@ -152,7 +158,7 @@ def create(payload):
     timestamp = now()
     project = {
         "id": pid, "slug": "factory-" + pid, "title": str(payload.get("title", "")).strip()[:100] or "未命名短剧",
-        "brief": brief, "format": format_name, "duration_seconds": int(duration),
+        "brief": brief, "format": format_name, "duration_seconds": duration if profile else int(duration),
         "creation_mode": mode, "status": "queued", "stage": "queued", "progress": 0,
         "created_at": timestamp, "updated_at": timestamp, "revision": 1,
         "sources": sources, "submitted_sources": copy.deepcopy(sources),
@@ -165,6 +171,8 @@ def create(payload):
         "is_validation": bool(payload.get("is_validation", False)),
         "series_key": str(payload.get("series_key", "")).strip()[:100],
     }
+    if profile is not None:
+        project["production_profile"] = profile
     import hashlib
     request_key = payload.get("request_id")
     request_hash = hashlib.sha256(encoded({k:v for k,v in payload.items() if k != "request_id"}).encode()).hexdigest()
@@ -186,6 +194,9 @@ def create(payload):
             pinned = bible(db, project["series_key"])
             if pinned:
                 project["series_bible"] = pinned
+        if profile is not None:
+            from .profile_references import validated
+            validated(db, project)
         db.execute("INSERT INTO projects(id,updated,revision,snapshot) VALUES(?,?,?,?)",
                    (pid, time.time(), 1, encoded(project)))
         _event(db, pid, "已建立制片项目，开始检索和原创提案。", "created")
@@ -236,6 +247,9 @@ def update(pid, patch):
                 p.setdefault(key, {}).update(value)
             else:
                 p[key] = value
+        if "episode" in patch and p.get("production_profile"):
+            from .profile_references import synchronize
+            synchronize(db, p)
         gpu_seconds = p.get("production", {}).get("gpu_seconds")
         if isinstance(gpu_seconds, (float, int)) and math.isfinite(gpu_seconds):
             p["budget"]["spent_gpu_minutes"] = round(gpu_seconds / 60, 3)

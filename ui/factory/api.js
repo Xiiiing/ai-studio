@@ -24,6 +24,7 @@ async function request(path, body, timeout = 30000) {
 }
 export const api = {
   overview: () => request('/overview'),
+  productionProfiles: () => request('/production-profiles'),
   workflow: () => request('/workflow'),
   models: () => request('/models'),
   testModel: (profile_id, kind) => request('/models/test', kind ? { profile_id, kind } : { profile_id }, 15000),

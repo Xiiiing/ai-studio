@@ -13,6 +13,10 @@ def shot_roles(shot, cast):
     roles = shot.get("cast") or shot.get("characters")
     if not isinstance(roles, list):
         group = shot.get("reference_group", "")
+        if group == "none":
+            return []
+        if group == "ensemble":
+            return list(cast)
         roles = ([role for role in ("female", "male") if role in cast] if group == "two" else
                  [group] if group in cast else
                  list(dict.fromkeys(line.get("role") for line in shot.get("dialogue", []) if line.get("role") in cast))) or list(cast)[:1]

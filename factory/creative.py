@@ -9,6 +9,7 @@ from studio.core import write_json
 from studio.planning import export_storyboard
 from factory.storyboard import direct_storyboard
 from factory.schemas import resolved_review_schema
+from .production_profiles import roles as profile_roles, explicit as explicit_profile, resolve as resolve_profile, speech_limit
 from factory.schemas import (
     CreativeReviewError, ISSUE_SCHEMA, PROPOSALS_SCHEMA, PROPOSAL_REVIEW_SCHEMA,
     SCORE_KEYS, SCRIPT_REVIEW_SCHEMA, RESOLVED_STORY_SCHEMA, RESOLVED_REVIEW_SCHEMA, STYLES_SCHEMA, UPSTREAM_REFERENCES,
@@ -184,8 +185,8 @@ def create_proposals(project, config, checkpoint):
     payload = {"project": _safe_context(project),
                "research": project.get("research", {}),
                "authorized_adaptation_material": _adaptation_material(project),
-               "production_constraints": {"shots": 15, "roles": ["female", "male"],
-                                           "max_dialogue_chars_per_shot": 10}}
+               "production_constraints": {"shots": len(duration_plan(project)), "roles": profile_roles(project),
+                                           "max_dialogue_chars_per_shot": speech_limit(project)}}
     proposals, history = [], []
     for round_index in range(1, maximum_rounds + 1):
         report(checkpoint, stage="story_creation", progress=13 + round_index * 3,
@@ -221,8 +222,8 @@ def create_proposals(project, config, checkpoint):
                 review = {"proposal_id": proposal["id"], "scores": {key: 0 for key in SCORE_KEYS},
                     "summary": "独立评审未唯一覆盖本方案", "strengths": [],
                     "issues": [_review_issue("review_coverage", "缺少有效且唯一的独立评审")]}
-            if {c["role"] for c in proposal["characters"]} != {"female", "male"}:
-                review["issues"].append(_review_issue("character_roles", "固定制作角色未覆盖female和male"))
+            if {c["role"] for c in proposal["characters"]} != set(profile_roles(project)):
+                review["issues"].append(_review_issue("character_roles", "故事人物未覆盖创作规格中的稳定角色"))
             if title_counts[proposal["title"].strip()] > 1:
                 review["issues"].append(_review_issue("duplicate_proposal", "多个候选方案标题完全相同"))
             proposal["scores"] = review["scores"]
@@ -266,7 +267,14 @@ def _canonical_episode(raw, project):
     episode.update({"slug": project["slug"], "fps": 24, "width": 720, "height": 1280,
                     "generation": {"width": 736, "height": 1312},
                     "total_seconds": sum(plan), "format": project.get("format", "motion_comic")})
-    for role, noun in (("female", "woman"), ("male", "man")):
+    if len(episode.get("shots", [])) != len(plan):
+        raise CreativeReviewError("生成的镜头数不符合创作规格")
+    if explicit_profile(project):
+        episode["production_profile"] = resolve_profile(project)
+        episode["characters"] = copy.deepcopy(episode["production_profile"]["characters"])
+        episode["character_names"] = {item["character_id"]: item["name"] for item in episode["characters"]}
+    for role in profile_roles(project):
+        noun = {"female": "woman", "male": "man"}.get(role, "person")
         if not re.search(r"\badult\b", episode["cast"][role], re.I):
             episode["cast"][role] = "Fictional adult " + noun + ". " + episode["cast"][role]
     for i, shot in enumerate(episode["shots"]):
@@ -305,13 +313,13 @@ def _script_doc(episode, review):
     for key, label in structure_names.items():
         lines.append("- " + label + "：" + episode.get("story_structure", {}).get(key, ""))
     lines.extend(["", "## 人物设定", ""])
-    for role in ("female", "male"):
+    for role in episode["cast"]:
         lines.extend(["### " + episode["character_names"][role] + " (" + role + ")",
                       episode["cast"][role], ""])
     lines.extend(["## 逐镜制作稿", ""])
     elapsed = 0
     for shot in episode["shots"]:
-        lines.extend(["### %s · %d–%d秒 · %s" % (
+        lines.extend(["### %s · %g–%g秒 · %s" % (
             shot["id"], elapsed, elapsed + shot["seconds"], shot.get("location", "")),
             "**剧情节拍**：" + shot.get("dramatic_beat", ""),
             "**可见画面**：" + shot.get("action", ""),
@@ -339,7 +347,7 @@ def _shot_metadata(episode, project):
     previous = {s["id"]: s for s in project.get("shots", []) if isinstance(s, dict) and "id" in s}
     result = []
     for shot in episode["shots"]:
-        signature = fingerprint(shot)
+        signature = fingerprint({"shot": shot, "production_profile": resolve_profile(project)}) if explicit_profile(project) else fingerprint(shot)
         old = previous.get(shot["id"], {})
         kept = copy.deepcopy(old) if old.get("script_signature") == signature else {}
         result.append({**kept, **copy.deepcopy(shot), "script_signature": signature,
@@ -455,7 +463,8 @@ source_quote中的删除目标只用于追溯，禁止在新故事正文中把�
                "task": "先按反馈完成全局改稿，之后编剧只会收到这份新目标，不再收到旧提案或旧全文。"}
     folder = planning_dir(project)
     source_signature = fingerprint({"reference": reference, "producer_feedback": directions,
-                                    "schema": "resolved-story-brief.v3"})
+                                    "schema": "resolved-story-brief.v3",
+                                    **({"production_profile": resolve_profile(project)} if explicit_profile(project) else {})})
     review_system = """你是独立短剧因果审稿人，只评估当前紧凑目标的实际剧情，不写新故事。
 六项逐项核查：时间/地点/物品持有变化的因果链；误会与责任；物品认领证据；出品人要求；结局；制作可行性。
 requirements_review必须逐个R编号判断实际落实；每条要求单独选择正文证据，不能以其他条已满足代替。若要求被合并成整段、遗漏或扩大原反馈，应在producer_requirements中指出。
@@ -537,7 +546,7 @@ evidence_catalog由程序从正文提取。每项check的evidence_ids只能选�
                     entry["forbidden_terms"] = [term for term in terms if any(
                         compact(term) in compact(source) for source in sources.values())]
                     entry["semantic_only_terms"] = [term for term in terms if term not in entry["forbidden_terms"]]
-        if {character["role"] for character in value["characters"]} != {"female", "male"}:
+        if {character["role"] for character in value["characters"]} != set(profile_roles(project)):
             raise CreativeReviewError("修订后的故事目标缺少固定制作角色")
         catalog = _resolved_evidence_catalog(value)
         catalog_path = folder / ("resolved-story-evidence-catalog-" + fingerprint(catalog)[:16] + ".json")
@@ -708,7 +717,7 @@ def _make_script(project, config, checkpoint, feedback=None):
                 request["rewrite_instruction"] = "保留requirements和删除项，在已选主题内重构AI工作方案；可重新设计回馈机制与后半结构。用实际setup/choice/payoff解决原创和结局问题，不依赖换礼物或追加尾声。逐项处理独立评审证据。"
             request["independent_feedback"] = final_review
         raw = cached_json_call(project, config, "screenwriter", "screenplay-%d" % index,
-            writer_system, request, episode_schema(len(plan)), checkpoint,
+            writer_system, request, episode_schema(len(plan), project), checkpoint,
             max_tokens=11500, temperature=0.65)
         episode = _canonical_episode(raw, project)
         if affected and previous:

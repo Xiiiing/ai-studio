@@ -15,6 +15,7 @@ import os
 from pathlib import Path
 import re
 import tempfile
+from .core import fingerprint
 
 FIELDS = [
     "id", "timeline_start", "timeline_end", "seconds", "frames", "trim_frames",
@@ -32,6 +33,11 @@ def number(value):
 
 def storyboard_rows(data):
     generation = data.get("generation", {})
+    profile = data.get("production_profile")
+    if profile:
+        from factory.production_profiles import normalize
+        profile = normalize(profile)
+    character_map = {item["character_id"]: item for item in (profile or {}).get("characters", [])}
     elapsed = Decimal("0")
     for shot in data["shots"]:
         seconds = Decimal(str(shot["seconds"]))
@@ -42,6 +48,9 @@ def storyboard_rows(data):
         # Mirror the current generator's logical reference order; do not inspect selected assets.
         roles = ["male"] if group == "male" else (
             ["female", "male"] if group == "two" else ["female"])
+        if profile:
+            from factory.series_bindings import shot_roles
+            roles = shot_roles(shot, data.get("cast", {}))
         if mode == "scene":
             roles = []
         references = ["characters/" + role for role in roles]
@@ -62,6 +71,9 @@ def storyboard_rows(data):
             "configured_seed": shot.get("seed", ""), "reference_mode": mode,
             "references": json.dumps(references, ensure_ascii=False, separators=(",", ":")),
         }
+        if profile:
+            base.update(production_profile=json.dumps(profile, ensure_ascii=False, sort_keys=True),
+                        profile_signature=fingerprint(profile))
         for line in shot.get("dialogue", []) or [{}]:
             text = line.get("text", "")
             yield {
@@ -69,6 +81,8 @@ def storyboard_rows(data):
                 "dialogue": text, "emotion": line.get("emotion", ""),
                 "dialogue_start": line.get("start", ""),
                 "chinese_chars": len(re.findall(r"[\u4e00-\u9fff]", text)),
+                **({"character_id": line.get("role", ""), "voice_id": character_map.get(line.get("role"), {}).get("voice_id", "")}
+                   if profile else {}),
             }
         elapsed = end
 
@@ -82,7 +96,8 @@ def export_storyboard(data, path):
     rows = 0
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8", newline="") as stream:
-            writer = csv.DictWriter(stream, fieldnames=FIELDS, quoting=csv.QUOTE_ALL,
+            fields = FIELDS + (["production_profile", "profile_signature", "character_id", "voice_id"] if data.get("production_profile") else [])
+            writer = csv.DictWriter(stream, fieldnames=fields, quoting=csv.QUOTE_ALL,
                                     lineterminator="\n")
             writer.writeheader()
             for row in storyboard_rows(data):
