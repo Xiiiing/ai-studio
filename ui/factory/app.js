@@ -7,7 +7,7 @@ import { ingestProjectFlow } from './team.js';
 
 const state = { overview: null, projectId: '', project: null, view: 'workflow', tab: 'overview', busy: false, epoch: 0, models: null, modelsDraft: null, modelsDirty: false, modelTests: {}, workflow: null, projectFlow: null, projectFlowError: '' };
 const workspace = document.getElementById('workspace');
-const validTabs = ['overview', 'team', 'script', 'quality', 'delivery'];
+const validTabs = ['overview', 'team', 'script', 'quality', 'costs', 'delivery'];
 let timer, toastTimer, generation = 0, lastPaint = '', lastError = '', lastCapabilities = '';
 function toast(message, error = false) {
   const element = document.getElementById('toast');
@@ -57,14 +57,16 @@ async function refresh({ force = false, notify = false } = {}) {
   clearTimeout(timer);
   const request = ++generation, epoch = state.epoch, projectId = state.projectId;
   document.getElementById('sync-state').textContent = '正在同步';
-  const results = await Promise.allSettled([api.overview(), projectId ? api.project(projectId) : Promise.resolve(null), api.models(), api.workflow(), projectId ? api.flow(projectId) : Promise.resolve(null)]);
+  const results = await Promise.allSettled([api.overview(), projectId ? api.project(projectId) : Promise.resolve(null), api.models(), api.workflow(), projectId ? api.flow(projectId) : Promise.resolve(null), projectId ? api.cloudBudget(projectId) : Promise.resolve(null)]);
   if (request !== generation || epoch !== state.epoch) { schedule(); return; }
-  const [overviewResult, projectResult, modelsResult, workflowResult, flowResult] = results;
+  const [overviewResult, projectResult, modelsResult, workflowResult, flowResult, cloudResult] = results;
   let error = '';
   if (overviewResult.status === 'fulfilled') state.overview = overviewResult.value;
   else error = overviewResult.reason.message;
   if (projectId && projectId === state.projectId && projectResult.status === 'fulfilled') state.project = projectResult.value?.project || projectResult.value;
   if (projectId && projectResult.status === 'rejected') error = projectResult.reason.message;
+  if (projectId && state.project && cloudResult.status === 'fulfilled') state.project.cloud_budget = cloudResult.value;
+  if (projectId && cloudResult.status === 'rejected') error = cloudResult.reason.message;
   if (modelsResult.status === 'fulfilled') ingestInventory(state, modelsResult.value);
   else state.modelsError = modelsResult.reason.message;
   if (workflowResult.status === 'fulfilled') state.workflow = workflowResult.value;

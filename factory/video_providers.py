@@ -19,7 +19,7 @@ LOCAL_PROFILE = {"provider": "comfyui_wan", "enabled": True, "model": "Wan2.2-TI
 _COMMON = {"provider", "enabled", "model", "revision"}
 _REMOTE = {"base_url", "network_mode", "allowed_hosts", "api_key_env", "download_hosts",
            "duration", "resolution", "prompt_optimizer", "request_timeout_seconds",
-           "poll_interval_seconds", "max_wait_seconds", "max_download_bytes"}
+           "poll_interval_seconds", "max_wait_seconds", "max_download_bytes", "pricing"}
 
 
 def normalize_video_profile(value):
@@ -43,6 +43,10 @@ def normalize_video_profile(value):
         if profile["model"] != LOCAL_PROFILE["model"]:
             raise ValueError("The managed ComfyUI adapter currently runs Wan2.2-TI2V-5B")
         return profile
+    if "pricing" in profile:
+        from .cloud_budget import pricing
+        quote = pricing(profile["pricing"])
+        profile["pricing"] = {key: quote[key] for key in ("unit_cost_micros", "currency", "source")}
     profile.setdefault("network_mode", "remote")
     profile.setdefault("duration", 6)
     profile.setdefault("resolution", "768P")

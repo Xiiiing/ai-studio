@@ -34,6 +34,11 @@ def remote_profile():
 def run_fixture(tmp_path, monkeypatch):
     import factory.production as production
     import factory.audio_editor as audio_editor
+    # These normalization tests mock the remote transport and its authorization
+    # boundary. Separate ledger tests exercise the real transactional boundary.
+    from factory import cloud_budget
+    monkeypatch.setattr(cloud_budget, "ensure_batch", lambda *args: {"id": "fixture"})
+    monkeypatch.setattr(cloud_budget, "reconcile_task", lambda *args: None)
     monkeypatch.setattr(core, "ROOT", tmp_path)
     monkeypatch.setattr(production, "ROOT", tmp_path)
     monkeypatch.setattr(audio_editor, "ROOT", tmp_path)

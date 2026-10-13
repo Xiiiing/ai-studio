@@ -1,3 +1,4 @@
+import { cloudAuthorizationPayload } from './cloud-budget.js';
 import { api } from './api.js';
 import { h, list, numeric, safeUrl, pendingDecisions, canReviseProduction } from './format.js';
 import { createForm, capabilitiesDialog, budgetForm } from './views.js';
@@ -75,6 +76,13 @@ export function bindActions(state, ui) {
     event.preventDefault();
     if (state.busy || !form.reportValidity()) return;
     const values = Object.fromEntries(new FormData(form));
+    if (form.dataset.form === 'cloud-authorize') {
+      try {
+        const payload = cloudAuthorizationPayload(form, values);
+        await mutate(() => api.cloudAuthorize(state.projectId, payload), '批次授权已记录，累计用量继续保留。');
+      } catch (error) { ui.toast(error.message, true); }
+      return;
+    }
     if (form.dataset.form === 'create') {
       const errorBox = document.getElementById('create-error');
       errorBox.hidden = true;

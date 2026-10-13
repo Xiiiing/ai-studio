@@ -42,7 +42,7 @@ def handle(job):
             return
         is_budget=name=="ProductionBudgetExceeded"
         needs={"type":"budget" if is_budget else "production" if name=="ProductionNeedsDecision" else "review",
-               "message":str(exc),"details":details}
+               "message":str(exc),"details":details,"code":getattr(exc,"code",getattr(exc,"reason",None))}
         if is_budget:
             state=details if isinstance(details,dict) else {}
             needs["exhausted_limits"]=[label for label,used,cap in [("wall","elapsed_seconds","max_wall_seconds"),("gpu","gpu_seconds","max_gpu_seconds")] if state.get(used,0)>=state.get(cap,float("inf"))] or ["gpu"]

@@ -50,6 +50,10 @@ class Handler(LegacyHandler):
                                   "queue":store.queue_summary(),"version":__version__})
             if path=="/api/factory/capabilities":
                 return self.json(snapshot())
+            match=re.fullmatch(r"/api/factory/projects/([a-f0-9]{12})/cloud-budget",path)
+            if match:
+                from .cloud_budget import summary
+                return self.json(summary(match.group(1)))
             match=re.fullmatch(r"/api/factory/projects/([a-f0-9]{12})/flow",path)
             if match:
                 from .team_flow import build_flow
@@ -137,6 +141,14 @@ class Handler(LegacyHandler):
                                                payload["expected_revision"],**video))
             if route=="/api/factory/projects":
                 return self.json({"project":store.create(payload)},202)
+            match=re.fullmatch(r"/api/factory/projects/([a-f0-9]{12})/(cloud-authorize|cloud-confirm-cost)",route)
+            if match:
+                from .cloud_budget import authorize, confirm_cost
+                from .video_providers import resolve_video
+                pid, operation = match.groups()
+                result = (authorize(pid,payload,resolve_video(load_config())) if operation == "cloud-authorize"
+                          else confirm_cost(pid,payload))
+                return self.json({"project":result} if operation == "cloud-authorize" else result,202)
             match=re.fullmatch(r"/api/factory/projects/([a-f0-9]{12})/(decision|action)",route)
             if match:
                 pid,action=match.groups()
