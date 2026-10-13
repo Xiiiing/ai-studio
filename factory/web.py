@@ -50,6 +50,10 @@ class Handler(LegacyHandler):
                                   "queue":store.queue_summary(),"version":__version__})
             if path=="/api/factory/capabilities":
                 return self.json(snapshot())
+            match=re.fullmatch(r"/api/factory/projects/([a-f0-9]{12})/series",path)
+            if match:
+                from .series_bible import summary as series_summary
+                return self.json(series_summary(match.group(1)))
             match=re.fullmatch(r"/api/factory/projects/([a-f0-9]{12})/cloud-budget",path)
             if match:
                 from .cloud_budget import summary
@@ -141,6 +145,10 @@ class Handler(LegacyHandler):
                                                payload["expected_revision"],**video))
             if route=="/api/factory/projects":
                 return self.json({"project":store.create(payload)},202)
+            match=re.fullmatch(r"/api/factory/projects/([a-f0-9]{12})/series",route)
+            if match:
+                from .series_bible import mutate as series_mutate
+                return self.json({"result":series_mutate(match.group(1),payload)},202)
             match=re.fullmatch(r"/api/factory/projects/([a-f0-9]{12})/(cloud-authorize|cloud-confirm-cost)",route)
             if match:
                 from .cloud_budget import authorize, confirm_cost

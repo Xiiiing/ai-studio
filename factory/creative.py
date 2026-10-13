@@ -85,6 +85,11 @@ palette提供3至5个#RRGGBB颜色。人物均为虚构成年人。只返回指�
 
 def _safe_context(project):
     context = project_context(project)
+    if context.get("series_bible"):
+        context["series_reference_policy"] = (
+            "Use the pinned Series Bible as immutable identity/world constraints. "
+            "Per-shot wardrobe, held props, position and plot state are separate. "
+            "Only explicitly approved asset versions may be treated as reusable visual references.")
     memory = context.get("memory")
     if memory is not None and len(json.dumps(memory, ensure_ascii=False)) > 12000:
         context["memory"] = {"excerpt": json.dumps(memory, ensure_ascii=False)[:12000],

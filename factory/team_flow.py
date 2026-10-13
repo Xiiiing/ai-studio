@@ -424,6 +424,13 @@ def build_flow(project, config=None):
     item("prompt_style_compiler", "outputs", "视觉约束记录", artifact=artifacts.get("visual_traits"))
     item("image_generator", "inputs", "镜头分镜", len(shots), artifacts.get("storyboard"))
     item("video_generator", "inputs", "视频形态", project.get("format"))
+    pinned = _object(project.get("series_bible"))
+    if pinned:
+        item("screenwriter", "inputs", "固定系列设定版本", str(pinned.get("version")))
+    for shot_id, references in _object(project.get("series_references")).items():
+        for reference in _rows(references, 6):
+            item("image_generator", "inputs", str(shot_id) + " 系列参考",
+                 str(reference.get("asset_id")) + " v" + str(reference.get("version")) + " / " + str(reference.get("sha256")))
     image_count = video_count = 0
     for shot in shots:
         for kind, role in (("image", "image_generator"), ("video", "video_generator")):

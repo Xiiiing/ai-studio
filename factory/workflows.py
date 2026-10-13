@@ -36,6 +36,7 @@ class State(TypedDict, total=False):
     story_answer: dict
     style_answer: dict
     final_answer: dict
+    direct_production_revision: int
 
 
 def _project(state):
@@ -341,6 +342,9 @@ def _advance(pid):
     with durable_graph() as graph:
         config={"configurable":{"thread_id":pid},"recursion_limit":100}
         snap=graph.get_state(config)
+        if p.get("production_edit_revision"):
+            from .production_edits import resume_edited_graph
+            snap=resume_edited_graph(graph,snap,p,config)
         if not snap.values:
             return graph.invoke({"project_id":pid},config)
         pending=[i for task in snap.tasks for i in task.interrupts]
