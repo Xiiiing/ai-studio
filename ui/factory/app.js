@@ -66,14 +66,22 @@ async function refresh({ force = false, notify = false } = {}) {
   else error = profileResult.reason.message;
   if (overviewResult.status === 'fulfilled') state.overview = overviewResult.value;
   else error = overviewResult.reason.message;
+  const previousProject = state.project;
   if (projectId && projectId === state.projectId && projectResult.status === 'fulfilled') state.project = projectResult.value?.project || projectResult.value;
   if (projectId && projectResult.status === 'rejected') error = projectResult.reason.message;
   if (projectId && state.project && cloudResult.status === 'fulfilled') state.project.cloud_budget = cloudResult.value;
   if (projectId && cloudResult.status === 'rejected') error = cloudResult.reason.message;
   if (projectId && state.project && seriesResult.status === 'fulfilled') state.project.series_library = seriesResult.value;
   if (projectId && state.project && seriesResult.status === 'rejected') state.project.series_error = seriesResult.reason.message;
-  if (projectId && state.project && shotsResult.status === 'fulfilled') state.project.workbench = shotsResult.value;
-  if (projectId && shotsResult.status === 'rejected') error = shotsResult.reason.message;
+  if (projectId && state.project && shotsResult.status === 'fulfilled') {
+    state.project.workbench = shotsResult.value;
+    state.project.workbench_error = '';
+  }
+  if (projectId && state.project && shotsResult.status === 'rejected') {
+    error = shotsResult.reason.message;
+    if (previousProject?.id === projectId) state.project.workbench = previousProject.workbench;
+    state.project.workbench_error = error;
+  }
   if (modelsResult.status === 'fulfilled') ingestInventory(state, modelsResult.value);
   else state.modelsError = modelsResult.reason.message;
   if (workflowResult.status === 'fulfilled') state.workflow = workflowResult.value;

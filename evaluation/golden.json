@@ -1,0 +1,24 @@
+{
+  "schema": "ai-studio.golden.v1",
+  "version": "2026-10-13.1",
+  "purpose": "Repeatable protocol and positive/negative controls, not a claim that real generated films have passed",
+  "media_policy": "CPU controls are synthesized locally. Real clips must be explicitly attached with checksum and independent human labels; no downloaded model or paid generation in CI.",
+  "dimensions": {
+    "causality": {"label": "剧情因果", "review": "vlm_and_human", "pass_rule": "Visible setup, choice and consequence in the approved order; no unsupported knowledge or missing causal event", "repair": "补充可见前因、动机或主动选择；仅返修相关剧情镜头"},
+    "identity": {"label": "角色一致性", "review": "vlm_and_human", "pass_rule": "Same stable identity across time, shots and pinned character references; state/wardrobe changes judged separately", "repair": "固定身份参考版本，简化构图，重制发生漂移的关键帧"},
+    "props": {"label": "道具连续性", "review": "vlm_and_human", "pass_rule": "Prop count, identity and owner changes have visible or approved narrative support", "repair": "明确交接镜头及持物状态，不用参考图背景代替实际画面证据"},
+    "dialogue": {"label": "对白清晰度", "review": "asr_and_human", "pass_rule": "Blind ASR CER reported separately from tone-marked phonetic error; no clipping, overlap or truncation; human listening still required", "repair": "复听低置信片段，改写长对白或调整录音与混音；不要只提高语速"},
+    "action": {"label": "镜头动作", "review": "temporal_vlm_and_human", "pass_rule": "Requested single action readable across temporal samples; camera-only movement is not character acting", "repair": "拆分或简化动作，减少同时运动的人物与物体"},
+    "subtitles": {"label": "字幕", "review": "deterministic_and_human", "pass_rule": "SRT time bounds, ordering and text match delivered dialogue; visibility and occlusion need visual review", "repair": "修复字幕时间、文字或安全区；必要时仅重合成，不重生成视频"},
+    "delivery": {"label": "完整交付", "review": "deterministic_and_human", "pass_rule": "All planned shots and required exports decode and match immutable receipts; correct duration, dimensions and audio", "repair": "恢复已完成素材下载，修复编码或漏剪，不重投未知云任务"}
+  },
+  "cases": [
+    {"id": "causal-order", "dimension": "causality", "positive": "S01拾得书籍；S02核对特征；S03归还并得到回应", "negative": "归还发生在拾得之前且没有倒叙依据", "expected_issue": "causality", "human_required": true},
+    {"id": "stable-character", "dimension": "identity", "positive": "同一成年人短发和脸型不变，明确换外套", "negative": "无叙事依据改变年龄、脸型和人物身份", "expected_issue": "identity", "human_required": true},
+    {"id": "prop-transfer", "dimension": "props", "positive": "一本书从A递给B，之后仅由B持有", "negative": "无交接或复制依据，下一镜A与B同时各持同一本书", "expected_issue": "props", "human_required": true},
+    {"id": "blind-dialogue", "dimension": "dialogue", "positive": "请把书给我。", "negative": "请把伞给我。", "expected_issue": "dialogue", "human_required": true},
+    {"id": "readable-action", "dimension": "action", "positive": "缓慢递出书籍，一个可见动作", "negative": "只产生相机推近却声称完成递书表演", "expected_issue": "action", "human_required": true},
+    {"id": "subtitle-bounds", "dimension": "subtitles", "positive": "对白起止位于对应镜头内，字幕文字完整", "negative": "字幕结束超出成片末尾或漏一条对白", "expected_issue": "subtitles", "human_required": true},
+    {"id": "delivery-integrity", "dimension": "delivery", "positive": "全部镜头与主版、净版、字幕、项目文件校验一致", "negative": "主版损坏或漏交净版，仍标完整交付", "expected_issue": "delivery", "human_required": true}
+  ]
+}

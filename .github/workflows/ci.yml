@@ -21,10 +21,23 @@ jobs:
         with:
           node-version: '24'
       - name: Install control dependencies
-        run: python -m pip install -r requirements-factory.txt
+        run: python -m pip install -r requirements-factory.txt -r requirements-evaluation.txt
       - name: Verify workflow and provider contracts
         run: python -m pytest -q tests/test_factory_*.py
       - name: Install UI test dependencies
         run: npm ci --ignore-scripts
       - name: Verify producer UI
         run: node --test tests/test_factory*.mjs
+      - name: Build synthetic browser media
+        run: python scripts/browser_fixtures.py
+      - name: Install browser runtime only
+        run: npx playwright install --with-deps chromium
+      - name: Real browser mock smoke
+        run: npm run test:browser
+      - name: Preserve browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-smoke-evidence
+          path: runtime/browser-report/
+          if-no-files-found: ignore

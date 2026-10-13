@@ -154,6 +154,10 @@ def production_config(project, config):
     result["semantic_enabled"] = bool(config.get("quality",{}).get("semantic_enabled",True))
     result["semantic_model_identity"] = llm_identity(config, "visual_critic")
     result["semantic_model"] = result["semantic_model_identity"].get("model")
+    from .evaluation_sampling import POLICY, sample_times
+    count = config.get("quality", {}).get("temporal_samples", 8)
+    sample_times(1, count)
+    result["temporal_sampling"] = {"policy": POLICY, "count": count}
     budget = project["budget"]
     result.update(
         max_gpu_seconds=float(budget["gpu_minutes"]) * 60,
