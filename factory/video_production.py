@@ -11,6 +11,7 @@ from .providers import redact_secrets
 from .quality import inspect_image
 from .scheduler import ProductionNeedsDecision, ProductionPaused
 from . import cloud_budget
+from .remote_tasks import ProductionDeferred, phase_for
 from studio.graphs import flux_image
 
 
@@ -91,7 +92,7 @@ class VideoProductionMixin:
                 cloud_budget.reconcile_task(self.ident, line, task, self.video_connection)
                 record["remote_task"] = task
                 self._save_attempt(target, record)
-                self.emit(phase)
+                self.emit(phase_for(task))
             try:
                 def authorize(request):
                     cloud_budget.validate_live_profile(self.video_connection)
@@ -99,7 +100,8 @@ class VideoProductionMixin:
                 raw, task = generate_video(self.video_connection, record["prompt"], frame, folder,
                                            source_signature=target["signature"], check=self.boundary,
                                            timeout=self.budget.timeout(self.video_connection["max_wait_seconds"]),
-                                           event=event, before_submit=authorize)
+                                           event=event, before_submit=authorize,
+                                           step=bool(self.config.get("remote_step", False)))
                 # Keep the original artifact and adapt fps/size/duration to the
                 # existing timeline. Failed conversion resumes this same download.
                 width, height = self.video_size
@@ -130,7 +132,7 @@ class VideoProductionMixin:
                     shot["status"] = "retrying"
             except VideoPending as exc:
                 raise ProductionNeedsDecision(str(exc), exc.code, exc.details) from None
-            except (ProductionPaused, ProductionNeedsDecision):
+            except (ProductionPaused, ProductionNeedsDecision, ProductionDeferred):
                 raise
             except Exception as exc:
                 record["error"] = redact_secrets(str(exc), self.video_connection)[:1000]

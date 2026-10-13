@@ -14,6 +14,7 @@ from studio.core import fingerprint, read_json, sha256, write_json
 from .providers import ProviderError, redact_secrets
 from .video_providers import normalize_video_profile
 from .video_transport import download_video, video_request
+from .remote_tasks import ProductionDeferred, MAX_POLL_FAILURES, phase_for
 
 
 class VideoPending(RuntimeError):
@@ -82,7 +83,7 @@ def _first_frame(path, expected_sha256=None):
 
 
 def generate_video(profile, prompt, first_frame, folder, *, source_signature, check=None,
-                   timeout=None, event=None, before_submit=None):
+                   timeout=None, event=None, before_submit=None, step=False):
     """Serialize one take across processes; a competing caller never submits."""
     import fcntl
     folder = Path(folder)
@@ -93,11 +94,11 @@ def generate_video(profile, prompt, first_frame, folder, *, source_signature, ch
         except BlockingIOError:
             raise VideoPending("This video task is already being handled", "video_task_busy") from None
         return _generate_video(profile, prompt, first_frame, folder, source_signature=source_signature,
-                               check=check, timeout=timeout, event=event, before_submit=before_submit)
+                               check=check, timeout=timeout, event=event, before_submit=before_submit, step=step)
 
 
 def _generate_video(profile, prompt, first_frame, folder, *, source_signature, check=None,
-                    timeout=None, event=None, before_submit=None):
+                    timeout=None, event=None, before_submit=None, step=False):
     """Return a downloaded local source and public receipt; journals survive all pauses."""
     clean = normalize_video_profile({key: value for key, value in profile.items() if key != "profile"})
     if clean["provider"] != "minimax":
@@ -131,6 +132,7 @@ def _generate_video(profile, prompt, first_frame, folder, *, source_signature, c
         clean = normalize_video_profile(receipt["connection"])
     def save(**updates):
         receipt.update(updates, updated_at=time.time())
+        receipt["phase"] = phase_for(receipt)
         write_json(journal_path, redact_secrets(receipt, clean))
         directories = [folder, *folder.parents] if receipt.get("status") == "submitting" else [folder]
         for directory in directories:
@@ -140,10 +142,21 @@ def _generate_video(profile, prompt, first_frame, folder, *, source_signature, c
             finally:
                 os.close(descriptor)
         event({key: copy.deepcopy(receipt.get(key)) for key in
-               ("provider", "profile", "model", "task_id", "file_id", "status", "provider_status", "updated_at")})
+               ("provider", "profile", "model", "task_id", "file_id", "status", "provider_status", "updated_at",
+                "phase", "next_poll_at", "poll_failures")})
     def pending(message, code):
         raise VideoPending(message, code, {"task_id": receipt.get("task_id"),
                                           "file_id": receipt.get("file_id")})
+    def defer(phase, delay, **updates):
+        due = time.time() + max(0, min(300, delay))
+        save(next_poll_at=due, **updates)
+        raise ProductionDeferred(due, phase, {"task_id": receipt.get("task_id"),
+                                             "file_id": receipt.get("file_id")})
+    def backoff(phase, error):
+        failures = int(receipt.get("poll_failures") or 0) + 1
+        save(poll_failures=failures, error_code=error.code)
+        if step and failures < MAX_POLL_FAILURES and error.code not in {"task_mismatch", "file_mismatch", "unknown_status", "invalid_response"}:
+            defer(phase, clean["poll_interval_seconds"] * 2 ** failures)
     deadline = time.monotonic() + min(clean["max_wait_seconds"], float(timeout or clean["max_wait_seconds"]))
     def remaining():
         check()
@@ -180,11 +193,16 @@ def _generate_video(profile, prompt, first_frame, folder, *, source_signature, c
             pending("Video submission could not be confirmed; no automatic resubmission will occur",
                     "video_submission_rejected" if known_rejection else "video_submission_unknown")
         save(task_id=task_id, status="submitted")
+        if step:
+            defer("remote_poll", clean["poll_interval_seconds"], poll_failures=0)
     raw = folder / "source.mp4"
     if receipt.get("download_sha256") and raw.exists():
         if sha256(raw) != receipt["download_sha256"]:
             pending("Downloaded video no longer matches its checksum", "video_cache_integrity")
         return raw, copy.deepcopy(receipt)
+    if step and float(receipt.get("next_poll_at") or 0) > time.time():
+        raise ProductionDeferred(receipt["next_poll_at"], phase_for(receipt),
+                                 {"task_id": receipt["task_id"], "file_id": receipt.get("file_id")})
     while not receipt.get("file_id"):
         try:
             answer = video_request(clean, "/query/video_generation",
@@ -198,15 +216,19 @@ def _generate_video(profile, prompt, first_frame, folder, *, source_signature, c
                 file_id = _identifier(answer.get("file_id"), "file_id")
                 save(status="generated", provider_status=state, file_id=file_id,
                      video_width=answer.get("video_width"), video_height=answer.get("video_height"))
+                if step:
+                    defer("remote_download", 0, poll_failures=0)
                 break
             save(status="failed" if state == "Fail" else "running" if state == "Processing" else "queued",
-                 provider_status=state)
+                 provider_status=state, poll_failures=0)
             if state == "Fail":
                 raise VideoFailed("MiniMax reported that the video generation failed")
         except ProviderError as exc:
-            save(error_code=exc.code)
+            backoff("remote_poll", exc)
             pending("Video status is temporarily unavailable; the original task is retained",
                     "video_status_unavailable")
+        if step:
+            defer("remote_poll", clean["poll_interval_seconds"])
         wait_until = time.monotonic() + min(clean["poll_interval_seconds"], remaining())
         while time.monotonic() < wait_until:
             check()
@@ -222,8 +244,9 @@ def _generate_video(profile, prompt, first_frame, folder, *, source_signature, c
         download_video(clean, file.get("download_url"), raw, timeout=remaining())
     except ProviderError as exc:
         save(status="download_pending", error_code=exc.code)
+        backoff("remote_download", exc)
         pending("Video is generated; its download will resume without a new generation",
                 "video_download_pending")
     save(status="downloaded", download_sha256=sha256(raw), bytes=raw.stat().st_size,
-         finished_at=time.time())
+         finished_at=time.time(), poll_failures=0, next_poll_at=None)
     return raw, copy.deepcopy(receipt)
