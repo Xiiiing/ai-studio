@@ -8,7 +8,8 @@ import threading
 import time
 from pathlib import Path
 
-from .providers import list_models, model_matches
+from .providers import check_model, model_matches
+from .video_providers import resolve_video, probe_video_profile
 from studio.core import ROOT, COMFY
 from .config import DATA, load_config, resolve_llm
 
@@ -40,17 +41,27 @@ def _observe(config):
           "gpus":[],"observed_at":time.time(),"orchestrator":"LangGraph + SQLite WAL",
           "worker":{"available":False},"lipsync":{"available":False,"model":"LatentSync 1.6","message":"保留旧管线；需要可独占且显存充足的GPU5"}}
     try:
-        models=list_models(llm,timeout=3)
-        if not any(model_matches(llm,m.get("id")) for m in models.get("data",[])):
-            raise ValueError("配置的模型未在服务中列出")
-        info["llm"].update(available=True,message="已连通配置的模型接口；实际内容质量按逐次调用和评审回执记录")
+        models=check_model(llm,timeout=3)
+        if models.get("discovery")=="skipped":
+            info["llm"].update(available=None,status="unverified",message="模型已配置；未探测目录，实际调用能力以执行回执为准")
+        else:
+            info["llm"].update(available=True,message="已连通配置的模型接口；实际内容质量按逐次调用和评审回执记录")
     except Exception as exc:
         info["llm"]["message"]=str(exc)[:220]
     try:
-        visual_models=models if visual==llm and info["llm"]["available"] else list_models(visual,timeout=3)
-        info["quality"]["available"]=any(model_matches(visual,m.get("id")) for m in visual_models.get("data",[]))
+        visual_models=models if visual==llm and info["llm"].get("available") is not False else check_model(visual,timeout=3)
+        if visual_models.get("discovery")=="skipped":
+            info["quality"].update(available=None,status="unverified",message="视觉模型已配置；语义质量由实际评审回执确认")
+        else:
+            info["quality"]["available"]=any(model_matches(visual,m.get("id")) for m in visual_models.get("data",[]))
     except Exception:
         info["quality"]["available"]=False
+    video=resolve_video(config)
+    if video["provider"]=="minimax":
+        preflight=probe_video_profile(video["profile"],config)
+        info["video"].update(available=None,status=preflight["status"],configured=preflight["status"]=="configured",
+                             model=video["model"],provider=video["provider"],profile=video["profile"],
+                             message="已选择云视频连接；任务提交、生成和下载由实际回执确认。动态漫仍使用程序运镜。")
     try:
         p=subprocess.run(["nvidia-smi","--query-gpu=index,name,memory.total,memory.free,utilization.gpu","--format=csv,noheader,nounits"],
                          capture_output=True,text=True,timeout=45,check=True)

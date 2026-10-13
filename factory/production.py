@@ -19,6 +19,9 @@ from studio.core import ROOT, fingerprint, media_receipt, read_json, sha256, wit
 from studio.graphs import flux_image, wan_video
 from .audio_editor import AudioEditorMixin
 from .speech import SpeechMixin
+from .video_production import VideoProductionMixin
+from .video_providers import LOCAL_PROFILE, normalize_video_profile
+from .minimax_video import video_identity, validate_video_plan
 from .quality import combine, inspect_image, inspect_video, repair_plan, semantic_review
 from .scheduler import (Budget, ProductionBudgetExceeded, ProductionNeedsDecision,
                         ProductionPaused, Scheduler)
@@ -165,7 +168,7 @@ class ProductionEngine:
         return generate_project(project, self.config, checkpoint, control, semantic_evaluator, dialogue_rewriter)
 
 
-class _Run(SpeechMixin, AudioEditorMixin):
+class _Run(VideoProductionMixin, SpeechMixin, AudioEditorMixin):
     receipt_path = staticmethod(_receipt_path)
     media_url = staticmethod(media_url)
 
@@ -175,6 +178,9 @@ class _Run(SpeechMixin, AudioEditorMixin):
     def __init__(self, project, config, checkpoint, control, evaluator=None, dialogue_rewriter=None):
         self.project = copy.deepcopy(project)
         self.config = dict(config or {})
+        connection = self.config.get("video_connection", {"profile": "local_wan", **LOCAL_PROFILE})
+        self.video_connection = {"profile": connection.get("profile", "local_wan"),
+                                 **normalize_video_profile({k: v for k, v in connection.items() if k != "profile"})}
         self.checkpoint = checkpoint or (lambda patch: None)
         self.control, self.evaluator = control, evaluator
         self.dialogue_rewriter = dialogue_rewriter
@@ -452,7 +458,9 @@ class _Run(SpeechMixin, AudioEditorMixin):
         dimensions = self.image_size if kind == "image" else self.video_size
         signature = fingerprint({"prompt": prompt, "references": [media_receipt(p) for p in refs],
                                  "dimensions": dimensions, "kind": kind,
-                                 "model": "FLUX.2-klein-4B" if kind == "image" else "Wan2.2-TI2V-5B",
+                                 "model": ("FLUX.2-klein-4B" if kind == "image" else
+                                           video_identity(self.video_connection) if self.video_connection["provider"] == "minimax"
+                                           else "Wan2.2-TI2V-5B"),
                                  "seconds": extra.get("seconds"),
                                  "mode": self.mode, "profile": self.config.get("video_profile", "quality")})
         shot = extra.get("shot") or {}
@@ -465,6 +473,7 @@ class _Run(SpeechMixin, AudioEditorMixin):
                 "kind": kind, "signature": signature, "review_signature": review_signature, **extra}
 
     def _unfinished_candidate(self, target):
+        self._guard_remote_submissions(target)
         for record in reversed(self._attempts(target)):
             folder = target["folder"] / record["take"]
             result = folder / "result.json"
@@ -472,6 +481,9 @@ class _Run(SpeechMixin, AudioEditorMixin):
                 media = read_json(result)
                 _receipt_path(media)
                 return record, media
+            if self._remote_video(target) and record.get("state") == "rendering":
+                target["resume_attempt"] = record
+                return None
             if record.get("state") == "rendering" and (folder / "submission.json").exists():
                 history = read_json(folder / "history.json") if (folder / "history.json").exists() else {}
                 if history.get("status", {}).get("status_str") == "error" or (folder / "submission_error.json").exists():
@@ -516,6 +528,12 @@ class _Run(SpeechMixin, AudioEditorMixin):
                                  "steps": 4 if target["kind"] == "image" else 20},
                   "references": [media_receipt(p) for p in target["references"]],
                   "started_at": time.time()}
+        if self._remote_video(target):
+            record.update(provider="minimax", profile=self.video_connection["profile"],
+                          model=self.video_connection["model"],
+                          parameters={"duration": self.video_connection["duration"],
+                                      "resolution": self.video_connection["resolution"],
+                                      "timeline_seconds": target.get("seconds"), "timeline_fps": 24})
         self._save_attempt(target, record)
         return record
 
@@ -539,6 +557,10 @@ class _Run(SpeechMixin, AudioEditorMixin):
                     ready.append((target, *candidate))
                 else:
                     generate.append(target)
+            remote_targets = [target for target in generate if self._remote_video(target)]
+            if remote_targets:
+                ready.extend(self._render_remote_targets(remote_targets, phase))
+            generate = [target for target in generate if not self._remote_video(target)]
             if generate:
                 self.boundary(gpu=True)
                 with self.scheduler.worker(self.slug + "_" + phase, self.control) as worker:
@@ -613,7 +635,8 @@ class _Run(SpeechMixin, AudioEditorMixin):
                     frames = round(target["seconds"] * 24)
                     while frames % 4 != 1:
                         frames += 1
-                    technical = inspect_video(path, frames / 24, self.video_size)
+                    expected_seconds = target["seconds"] if self._remote_video(target) else frames / 24
+                    technical = inspect_video(path, expected_seconds, self.video_size)
                 required = self._review_required(target)
                 semantic = None
                 if required and technical["status"] == "pass":
@@ -626,7 +649,8 @@ class _Run(SpeechMixin, AudioEditorMixin):
                 saved = {**receipt, "source_signature": target["signature"], "qa": qa,
                          "attempt": record["attempt"], "take": record["take"],
                          "review_signature": target["review_signature"] if required else None,
-                         "generation_kind": "local_diffusion_image" if target["kind"] == "image" else "local_diffusion_video"}
+                         "generation_kind": ("local_diffusion_image" if target["kind"] == "image" else
+                                             "cloud_diffusion_video" if self._remote_video(target) else "local_diffusion_video")}
                 write_json(path.parent / "result.json", saved)
                 self._save_attempt(target, record)
                 selection_file = target["folder"] / "selected.json"
@@ -788,6 +812,8 @@ class _Run(SpeechMixin, AudioEditorMixin):
         if self.semantic_enabled and self.evaluator is None:
             raise ProductionNeedsDecision("Semantic review is enabled but no evaluator is connected",
                                           "semantic_unavailable", {"resume_action": "connect_evaluator_and_resume"})
+        if self.mode != "motion_comic":
+            validate_video_plan(self.video_connection, self.shots)
         self._approved_preview_reference()
         episode = {**self.episode, "slug": self.slug, "factory_project_id": self.ident,
                    "cast": self.cast, "shots": self.shots, "fps": 24,

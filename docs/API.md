@@ -12,6 +12,7 @@
 | GET `/api/factory/overview` | 项目列表、队列、后台资源快照 |
 | GET `/api/factory/capabilities` | 有时间戳的资源观察；不等同于艺术质量验证 |
 | GET `/api/factory/projects/{id}` | 项目状态、决策、预算、镜头与交付 |
+| GET `/api/factory/projects/{id}/flow` | 当前分工、实际执行回执、输入输出与任务交接 |
 | GET `/api/factory/models` | 模型目录、角色绑定、可编辑配置、当前配置版本 |
 | GET `/api/factory/workflow` | 实际 LangGraph 节点/边、角色、决策点与制作接口 |
 
@@ -21,6 +22,8 @@ curl http://127.0.0.1:8787/api/factory/workflow
 ```
 
 `models` 的 `profiles` 用于展示，`editable_profiles` 用于编辑后完整保存，`role_assignments` 是角色引用。不要只提交页面显示的几个基础字段而丢失原配置的高级参数。
+
+视频配置独立返回 `video_profiles`（可编辑连接字典）、`video_roles`（`video_generator` 绑定）、`video_providers` 和 `video_role_options`。文本与视频共享同一个完整配置 `revision`。旧配置未声明视频目录时，兼容为现有本地 Wan 连接。
 
 工作流导出是可检查的执行图说明；当前不接受上传任意图来替换 Python 节点代码。
 
@@ -36,6 +39,10 @@ POST `/api/factory/models/test`：
 
 测试失败会在结果中给出稳定的错误原因；接口本身正常返回并不代表连接通过。检测不会生成文本、图片或视频。
 
+对于 `model_discovery: "skip"` 的文本连接，返回 `status: "unverified"`、`model_match: false`，不请求模型目录。百炼默认使用此模式；它不代表服务离线，也不代表已证明在线。
+
+视频配置预检使用 `{"profile_id":"minimax_example","kind":"video"}`。只检查已保存配置和密钥环境变量是否存在，返回 `status: "configured"`、`network_checked: false`、`generation: false`；不提交收费任务，不验证视频模型可用性。
+
 ## 保存模型目录
 
 POST `/api/factory/models`：
@@ -50,7 +57,19 @@ POST `/api/factory/models`：
 
 这是字段形状示意，实际应提交完整目录与角色绑定。未分配角色只有在有效旧版默认 LLM 存在时才能继续使用默认模型；正常工作台保存会保留全部角色。视觉角色须满足能力约束。
 
-成功返回新目录和版本。旧版本、无效配置、缺失角色引用或禁用连接被角色引用时拒绝保存。只替换 `llm_profiles` 与 `llm_roles`，不覆盖制作预算、GPU、质量策略等配置。
+成功返回新目录和版本。旧版本、无效配置、缺失角色引用或禁用连接被角色引用时拒绝保存。默认只替换 `llm_profiles` 与 `llm_roles`；请求可以同时提交 `video_profiles` 与 `video_roles` 更新视频配置。两字段必须一起出现，并在同一次 CAS 下原子保存。旧客户端省略视频字段时保留当前视频绑定；无效视频配置会阻止整次写入。制作预算、GPU、质量策略等配置保留。
+
+## 团队工作数据流
+
+`GET /api/factory/projects/{id}/flow` 返回：
+
+- `project_id`、`revision`、`assignment_mode: "orchestrator"`：对应项目与总控分工方式。
+- `teams`：当前角色及模型绑定，包括编剧、审稿、分镜、视频、配音和剪辑等职责。
+- `nodes`：角色任务状态、`inputs`、`outputs`、`executions`。执行项中的模型、时间和回执均来自已保存记录；缺失证据保持空值。
+- `edges`：输入输出交接关系，不替换实际 LangGraph 拓扑。
+- `evidence`：回执读取范围、数量、截断或不可读取的说明。
+
+当前任务状态取项目阶段和版本完成标记，历史回执标为 `scope: "project_history"`。修改当前模型绑定不会改写旧执行记录；原回执没有记录的 stage/generation 不会被推断出来。客户端刷新项目时同时刷新 flow，并确认 `project_id` 一致。
 
 ## 创建项目
 
@@ -99,6 +118,8 @@ POST `/api/factory/projects/{id}/action`，例如：
 ```
 
 暂停在可恢复边界生效。制作预算耗尽时，需要明确提高相应总上限；提高预算不删除已发生用量。
+
+MiniMax 任务提交后持久化 `task_id`，生成成功后持久化 `file_id`。状态查询或下载失败时，恢复使用原任务及原执行连接，不重复提交。POST 结果不确定且未得到任务 ID 时，项目进入待处理状态，需要先核对供应商任务；不会自动创建另一笔任务。暂停本地等待不等于供应商已取消生成。
 
 复杂的局部返修请使用项目详情页，或 `./drama revise --help`；它要求明确镜号和当前项目版本，避免旧页面修改了新一版剧本。
 

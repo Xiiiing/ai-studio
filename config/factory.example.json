@@ -119,6 +119,52 @@
       "vision": false,
       "api_key_env": "MY_MODEL_API_KEY",
       "response_format": "json_object"
+    },
+    "ollama_native_example": {
+      "provider": "ollama_native",
+      "enabled": false,
+      "network_mode": "loopback",
+      "base_url": "http://127.0.0.1:11434",
+      "model": "deepseek-r1:8b",
+      "context_tokens": 32768,
+      "vision": false
+    },
+    "lm_studio_example": {
+      "provider": "lm_studio",
+      "enabled": false,
+      "network_mode": "loopback",
+      "base_url": "http://127.0.0.1:1234/v1",
+      "model": "replace-with-served-model-id",
+      "context_tokens": 32768,
+      "vision": false
+    },
+    "deepseek_example": {
+      "provider": "deepseek",
+      "enabled": false,
+      "network_mode": "remote",
+      "allowed_hosts": [
+        "api.deepseek.com"
+      ],
+      "base_url": "https://api.deepseek.com",
+      "model": "deepseek-chat",
+      "api_key_env": "DEEPSEEK_API_KEY",
+      "context_tokens": 32768,
+      "vision": false
+    },
+    "dashscope_example": {
+      "provider": "dashscope",
+      "enabled": false,
+      "network_mode": "remote",
+      "allowed_hosts": [
+        "dashscope.aliyuncs.com"
+      ],
+      "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      "model": "qwen-plus",
+      "api_key_env": "DASHSCOPE_API_KEY",
+      "context_tokens": 32768,
+      "vision": false,
+      "thinking": false,
+      "model_discovery": "skip"
     }
   },
   "llm_roles": {
@@ -134,5 +180,33 @@
     "visual_critic": "writer_local",
     "dialogue_editor": "writer_local",
     "edit_director": "writer_local"
+  },
+  "video_profiles": {
+    "local_wan": {
+      "provider": "comfyui_wan",
+      "enabled": true,
+      "model": "Wan2.2-TI2V-5B"
+    },
+    "minimax_example": {
+      "provider": "minimax",
+      "enabled": false,
+      "network_mode": "remote",
+      "allowed_hosts": [
+        "api.minimax.io"
+      ],
+      "base_url": "https://api.minimax.io/v1",
+      "model": "MiniMax-Hailuo-2.3",
+      "api_key_env": "MINIMAX_API_KEY",
+      "duration": 6,
+      "resolution": "768P",
+      "download_hosts": [],
+      "prompt_optimizer": false,
+      "request_timeout_seconds": 60,
+      "poll_interval_seconds": 5,
+      "max_wait_seconds": 1800
+    }
+  },
+  "video_roles": {
+    "video_generator": "local_wan"
   }
 }
