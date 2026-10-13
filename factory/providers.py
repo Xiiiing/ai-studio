@@ -5,6 +5,8 @@ start a shell, install a model, follow redirects, or silently change providers.
 """
 from __future__ import annotations
 
+import base64
+import binascii
 import copy
 import hashlib
 import http.client
@@ -26,21 +28,38 @@ MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 MAX_REQUEST_BYTES = 8 * 1024 * 1024
 _DNS_SLOTS = threading.BoundedSemaphore(4)
 PROVIDERS = {
-    "llama_cpp": {"label": "llama.cpp", "response_format": "llama_json_schema",
-                  "context_validation": "llama_tokenize"},
-    "ollama": {"label": "Ollama /v1", "response_format": "openai_json_schema",
-               "context_validation": "conservative_estimate"},
-    "vllm": {"label": "vLLM", "response_format": "openai_json_schema",
-             "context_validation": "conservative_estimate"},
-    "openai_compatible": {"label": "OpenAI-compatible API", "response_format": "json_object",
-                          "context_validation": "conservative_estimate"},
+    "llama_cpp": {"label": "llama.cpp", "protocol": "openai",
+                  "base_url_example": "http://127.0.0.1:8090/v1",
+                  "response_format": "llama_json_schema", "context_validation": "llama_tokenize"},
+    "ollama": {"label": "Ollama /v1", "protocol": "openai",
+               "base_url_example": "http://127.0.0.1:11434/v1",
+               "response_format": "openai_json_schema", "context_validation": "conservative_estimate"},
+    "ollama_native": {"label": "Ollama native", "protocol": "ollama",
+                      "base_url_example": "http://127.0.0.1:11434",
+                      "response_format": "openai_json_schema", "context_validation": "conservative_estimate"},
+    "vllm": {"label": "vLLM", "protocol": "openai",
+             "base_url_example": "http://127.0.0.1:8000/v1",
+             "response_format": "openai_json_schema", "context_validation": "conservative_estimate"},
+    "lm_studio": {"label": "LM Studio", "protocol": "openai",
+                  "base_url_example": "http://127.0.0.1:1234/v1",
+                  "response_format": "openai_json_schema", "context_validation": "conservative_estimate"},
+    "deepseek": {"label": "DeepSeek API", "protocol": "openai",
+                 "base_url_example": "https://api.deepseek.com",
+                 "response_format": "json_object", "context_validation": "conservative_estimate"},
+    "dashscope": {"label": "Qwen / DashScope", "protocol": "openai",
+                  "base_url_example": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+                  "model_discovery": "skip",
+                  "response_format": "json_object", "context_validation": "conservative_estimate"},
+    "openai_compatible": {"label": "OpenAI-compatible API", "protocol": "openai",
+                          "base_url_example": "http://127.0.0.1:8000/v1",
+                          "response_format": "json_object", "context_validation": "conservative_estimate"},
 }
 PROFILE_FIELDS = frozenset({
     "provider", "enabled", "network_mode", "allowed_hosts", "base_url", "model",
     "context_tokens", "vision", "api_key_env", "response_format", "context_validation",
     "model_aliases", "revision", "request_timeout_seconds", "max_schema_attempts",
     "chat_template_kwargs", "temperature_override", "top_p", "system_prompt_mode",
-    "image_token_budget", "max_tokens_field", "send_sampling_parameters",
+    "image_token_budget", "max_tokens_field", "send_sampling_parameters", "thinking", "model_discovery",
     # Legacy defaults are preserved; role-specific calls still set an explicit budget.
     "max_tokens", "temperature",
 })
@@ -201,6 +220,11 @@ def normalize_profile(value, *, legacy=False):
     if provider not in PROVIDERS:
         raise ValueError("Unsupported model provider")
     profile["provider"] = provider
+    discovery = profile.setdefault("model_discovery", "skip" if provider == "dashscope" else "required")
+    if discovery not in ("required", "skip"):
+        raise ValueError("model_discovery must be required or skip")
+    if discovery == "skip" and provider in ("llama_cpp", "ollama_native"):
+        raise ValueError("This provider requires model discovery")
     mode = profile.get("network_mode", "loopback")
     if mode != "loopback" and "enabled" not in profile:
         raise ValueError("Non-loopback profiles require explicit enabled")
@@ -213,6 +237,10 @@ def normalize_profile(value, *, legacy=False):
         raise ValueError("allowed_hosts must be a bounded list")
     profile["allowed_hosts"] = sorted(set(_canonical_host(host) for host in profile["allowed_hosts"]))
     profile["base_url"] = validate_endpoint(profile)
+    if provider == "ollama_native":
+        path = urlsplit(profile["base_url"]).path
+        if path.endswith(("/v1", "/api/chat", "/api/tags")):
+            raise ValueError("Ollama native base_url must be a service root or /api prefix")
     profile["model"] = _valid_text(profile.get("model"), "model")
     profile["context_tokens"] = _number(profile.get("context_tokens"), "context_tokens",
                                         1024, 2000000, integer=True)
@@ -250,6 +278,13 @@ def normalize_profile(value, *, legacy=False):
                                    {"enable_thinking": False} if provider == "llama_cpp" else {})
     if not isinstance(template, dict) or len(_json_bytes(template)) > 4096:
         raise ValueError("chat_template_kwargs must be a bounded object")
+    if provider in ("ollama_native", "dashscope") and template:
+        raise ValueError("Use thinking instead of chat_template_kwargs for this provider")
+    if provider == "dashscope":
+        profile.setdefault("thinking", False)
+    if "thinking" in profile:
+        if provider not in ("ollama_native", "dashscope") or not isinstance(profile["thinking"], bool):
+            raise ValueError("thinking must be boolean and requires Ollama native or DashScope")
     if "temperature_override" in profile:
         _number(profile["temperature_override"], "temperature_override", 0, 2)
     if "temperature" in profile:
@@ -270,7 +305,28 @@ def normalize_profile(value, *, legacy=False):
 
 
 def model_matches(profile, actual):
-    return isinstance(actual, str) and actual in [profile["model"], *profile.get("model_aliases", [])]
+    if not isinstance(actual, str) or not actual:
+        return False
+    expected = [profile["model"], *profile.get("model_aliases", [])]
+    if actual in expected:
+        return True
+    if profile.get("provider") in ("ollama", "ollama_native"):
+        # Ollama's omitted tag means :latest. Preserve every namespace and all
+        # explicit tags; no prefix guessing or substitution of another model.
+        def tagged(name):
+            return name if ":" in name.rsplit("/", 1)[-1] else name + ":latest"
+        return tagged(actual) in {tagged(name) for name in expected}
+    return False
+
+
+def model_route(profile, operation):
+    """Join a protocol route onto the operator's complete, unchanged API prefix."""
+    if operation not in ("models", "chat"):
+        raise ValueError("Unsupported model operation")
+    if profile.get("provider") == "ollama_native":
+        prefix = "" if urlsplit(profile["base_url"]).path.rstrip("/").endswith("/api") else "/api"
+        return prefix + ("/tags" if operation == "models" else "/chat")
+    return "/models" if operation == "models" else "/chat/completions"
 
 
 def _resolve_addresses(host, port, mode, *, timeout=8):
@@ -392,7 +448,10 @@ def request_json(base, route, payload=None, timeout=30, api_key_env=None, *, pro
         allowed_bases.add(configured_base[:-3])
     if base.rstrip("/") not in allowed_bases:
         raise ValueError("Request base differs from configured model endpoint")
-    if route not in ("/models", "/chat/completions", "/props", "/apply-template", "/tokenize"):
+    routes = {model_route(policy, "models"), model_route(policy, "chat")}
+    if policy.get("provider", "llama_cpp") == "llama_cpp":
+        routes.update(("/props", "/apply-template", "/tokenize"))
+    if route not in routes:
         raise ValueError("Unsupported model API route")
     if not policy.get("enabled", True):
         raise ProviderError("disabled", "Model profile is disabled")
@@ -493,8 +552,15 @@ def request_json(base, route, payload=None, timeout=30, api_key_env=None, *, pro
 
 
 def list_models(profile, *, timeout=10):
-    result = request_json(profile["base_url"], "/models", timeout=timeout,
+    result = request_json(profile["base_url"], model_route(profile, "models"), timeout=timeout,
                           api_key_env=profile.get("api_key_env"), profile=profile)
+    if profile.get("provider") == "ollama_native":
+        models = result.get("models")
+        if not isinstance(models, list) or any(
+                not isinstance(item, dict) or not isinstance(item.get("model", item.get("name")), str)
+                or not item.get("model", item.get("name")) for item in models):
+            raise ProviderError("invalid_models", "Model endpoint returned an invalid model list")
+        result = {"data": [{"id": item.get("model", item.get("name"))} for item in models]}
     data = result.get("data")
     if not isinstance(data, list) or any(not isinstance(item, dict) or
                                        not isinstance(item.get("id"), str) for item in data):
@@ -503,6 +569,12 @@ def list_models(profile, *, timeout=10):
 
 
 def check_model(profile, *, timeout=10):
+    if not profile.get("enabled", True):
+        raise ProviderError("disabled", "Model profile is disabled")
+    if profile.get("model_discovery") == "skip":
+        # Some compatibility gateways expose chat but no matching model catalog.
+        # The completion's actual model remains mandatory and is checked by llm.
+        return {"data": [], "discovery": "skipped"}
     result = list_models(profile, timeout=timeout)
     if not any(model_matches(profile, item["id"]) for item in result["data"]):
         raise ProviderError("model_missing", "Configured model or explicit alias is not served")
@@ -518,6 +590,8 @@ def _text_and_images(messages):
             text.append(content)
         elif isinstance(content, list):
             for part in content:
+                if not isinstance(part, dict):
+                    raise ValueError("Unsupported model message content")
                 if part.get("type") in ("image_url", "input_image", "video_url"):
                     images += 1
                 elif isinstance(part.get("text"), str):
@@ -583,6 +657,91 @@ def response_format(profile, schema, role):
     return {"type": "json_object", "schema": schema}
 
 
+def _ollama_messages(messages):
+    """Translate inline review images without fetching URLs or reading files."""
+    translated = []
+    for message in messages:
+        content = message.get("content", "")
+        row = {"role": message["role"], "content": content}
+        if isinstance(content, list):
+            text, images = [], []
+            for part in content:
+                if not isinstance(part, dict):
+                    raise ValueError("Unsupported Ollama message content")
+                if part.get("type") == "text" and isinstance(part.get("text"), str):
+                    text.append(part["text"])
+                elif part.get("type") == "image_url":
+                    image = part.get("image_url")
+                    url = image.get("url") if isinstance(image, dict) else image
+                    match = re.fullmatch(
+                        r"data:image/(?:png|jpeg|jpg|webp|gif);base64,([A-Za-z0-9+/]+={0,2})",
+                        url if isinstance(url, str) else "")
+                    if not match:
+                        raise ValueError("Ollama review images must use inline base64 image data")
+                    encoded = match.group(1)
+                    try:
+                        base64.b64decode(encoded, validate=True)
+                    except (binascii.Error, ValueError):
+                        raise ValueError("Ollama review image contains invalid base64 data") from None
+                    images.append(encoded)
+                else:
+                    raise ValueError("Unsupported Ollama message content")
+            row["content"] = "\n".join(text)
+            if images:
+                row["images"] = images
+        elif not isinstance(content, str):
+            raise ValueError("Unsupported Ollama message content")
+        translated.append(row)
+    return translated
+
+
+def chat_request(profile, messages, schema, role, parameters):
+    """Build one protocol's request; never infer a different endpoint or model."""
+    fmt = response_format(profile, schema, role)
+    if profile.get("provider") == "ollama_native":
+        options = {"num_predict": parameters["max_tokens"], "num_ctx": profile["context_tokens"]}
+        if parameters["send_sampling_parameters"]:
+            options.update(temperature=parameters["temperature"], top_p=parameters["top_p"])
+        request = {"model": profile["model"], "messages": _ollama_messages(messages),
+                   "stream": False, "options": options}
+        if fmt is not None:
+            request["format"] = ("json" if profile["response_format"] == "json_object" else schema)
+        if "thinking" in profile:
+            request["think"] = profile["thinking"]
+        return model_route(profile, "chat"), request
+    request = {"model": profile["model"], "messages": messages, "stream": False,
+               parameters["max_tokens_field"]: parameters["max_tokens"]}
+    if parameters["send_sampling_parameters"]:
+        request.update(temperature=parameters["temperature"], top_p=parameters["top_p"])
+    if fmt is not None:
+        request["response_format"] = fmt
+    if parameters["chat_template_kwargs"]:
+        request["chat_template_kwargs"] = parameters["chat_template_kwargs"]
+    if profile.get("provider") == "dashscope":
+        request["enable_thinking"] = profile.get("thinking", False)
+    return model_route(profile, "chat"), request
+
+
+def chat_response(profile, result):
+    """Normalize native Ollama telemetry while keeping the reported model intact."""
+    if profile.get("provider") != "ollama_native":
+        return result
+    message = result.get("message")
+    finish = result.get("done_reason") if result.get("done") is True else "incomplete"
+    choices = [{"message": message, "finish_reason": finish}] if isinstance(message, dict) else []
+    usage = {}
+    for remote, field in (("prompt_eval_count", "prompt_tokens"), ("eval_count", "completion_tokens")):
+        value = result.get(remote)
+        if type(value) is int and value >= 0:
+            usage[field] = value
+    if len(usage) == 2:
+        usage["total_tokens"] = usage["prompt_tokens"] + usage["completion_tokens"]
+    timings = {field: result[field] for field in (
+        "total_duration", "load_duration", "prompt_eval_duration", "eval_duration")
+        if type(result.get(field)) is int and result[field] >= 0}
+    return {"model": result.get("model"), "choices": choices, "usage": usage, "timings": timings}
+
+
 def validate_registry(profiles, roles, base_config=None):
     """Validate a complete registry without connecting to providers or changing files."""
     from .config import ROLE_LABELS, resolve_llm
@@ -620,6 +779,7 @@ def validate_registry(profiles, roles, base_config=None):
 
 def public_inventory(config=None):
     from .config import load_config, list_roles
+    from .video_providers import public_video_inventory
     current = load_config() if config is None else copy.deepcopy(config)
     normalized = {name: normalize_profile(profile)
                   for name, profile in current.get("llm_profiles", {}).items()}
@@ -629,7 +789,7 @@ def public_inventory(config=None):
                "auth_configured": bool(profile.get("api_key_env") and os.environ.get(profile["api_key_env"])),
                "roles": [role for role, selected in current.get("llm_roles", {}).items() if selected == name]}
         rows.append(row)
-    return {"revision": config_revision(current), "profiles": rows,
+    return {**public_video_inventory(current), "revision": config_revision(current), "profiles": rows,
             "editable_profiles": {name: redact_secrets(profile, profile) for name, profile in normalized.items()},
             "role_assignments": copy.deepcopy(current.get("llm_roles", {})),
             "roles": list_roles(current),
@@ -637,6 +797,7 @@ def public_inventory(config=None):
             "capabilities": {"network_modes": ["loopback", "lan", "remote"],
                              "health_generates_content": False, "starts_model_processes": False,
                              "response_formats": ["llama_json_schema", "openai_json_schema", "json_object", "prompt"],
+                             "model_discovery_modes": ["required", "skip"],
                              "configuration_effect": "Each execution batch keeps its snapshot until the next human gate; the next job reads the saved configuration."}}
 
 
@@ -648,10 +809,14 @@ def probe_profile(profile_id, config=None, timeout=8):
         raise ValueError("Unknown model profile")
     profile = normalize_profile(current["llm_profiles"][profile_id])
     result = {"profile": profile_id, "status": "error", "models": [],
-              "configured_model": profile["model"], "model_match": False, "generation": False}
+              "configured_model": profile["model"], "model_match": False, "generation": False,
+              "model_discovery": profile["model_discovery"]}
     try:
         if not profile["enabled"]:
             result["status"] = "disabled"
+        elif profile["model_discovery"] == "skip":
+            result.update(status="unverified", message=(
+                "Configuration is valid; endpoint connectivity and model identity have not been checked"))
         else:
             served = list_models(profile, timeout=max(1, min(15, timeout)))
             result["models"] = [item["id"] for item in served["data"]]
@@ -667,7 +832,8 @@ def probe_profile(profile_id, config=None, timeout=8):
     return redact_secrets(result, profile)
 
 
-def save_registry(profiles, roles, expected_revision, *, config_path=None):
+def save_registry(profiles, roles, expected_revision, *, config_path=None,
+                  video_profiles=None, video_roles=None):
     """Compare-and-swap registry update; running jobs retain their in-memory snapshot."""
     import fcntl
     from .config import config_read_path, config_write_path
@@ -684,6 +850,12 @@ def save_registry(profiles, roles, expected_revision, *, config_path=None):
         if config_revision(current) != expected_revision:
             raise ConfigConflict("Model configuration changed; reload before saving")
         updated = validate_registry(profiles, roles, current)
+        if video_profiles is not None or video_roles is not None:
+            from .video_providers import validate_video_registry
+            updated = validate_video_registry(video_profiles, video_roles, updated)
+        else:
+            from .video_providers import video_registry
+            video_registry(updated)
         data = (json.dumps(updated, ensure_ascii=False, indent=2, allow_nan=False) + "\n").encode("utf-8")
         descriptor, temporary = tempfile.mkstemp(prefix="." + target.name + ".", dir=target.parent)
         try:

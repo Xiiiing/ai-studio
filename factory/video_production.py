@@ -1,0 +1,123 @@
+"""Cloud video execution inside the existing shot/QA loop, without local GPU leases."""
+from __future__ import annotations
+
+import copy
+import os
+import time
+
+from studio.core import media_receipt, read_json, sha256, write_json
+from .minimax_video import VideoFailed, VideoPending, generate_video
+from .providers import redact_secrets
+from .quality import inspect_image
+from .scheduler import ProductionNeedsDecision, ProductionPaused
+from studio.graphs import flux_image
+
+
+class VideoProductionMixin:
+    def _remote_video(self, target):
+        return target["kind"] == "video" and self.video_connection.get("provider") == "minimax"
+
+    def _guard_remote_submissions(self, target):
+        if target["kind"] != "video":
+            return
+        for path in sorted(target["folder"].glob("take_*/remote_task.json")):
+            task = read_json(path)
+            # A changed role/model must not hide a task that might still be charging.
+            if task.get("status") not in ("failed", "rejected", "downloaded") and task.get("source_signature") != target["signature"]:
+                raise ProductionNeedsDecision(
+                    "An earlier video task is unresolved and uses different inputs or model settings",
+                    "unresolved_video_submission", {"task_id": task.get("task_id"),
+                                                    "receipt": str(path.relative_to(self.folder))})
+
+    def _remote_first_frame(self, target, record):
+        frame = target["references"][0]
+        if not record.get("repair", {}).get("regenerate_keyframe"):
+            return frame
+        if record.get("repair_keyframe"):
+            return self.receipt_path(record["repair_keyframe"])
+        # A diagnosed action/identity issue may require a new first frame. This is
+        # the only local GPU lease in the cloud route; remote polling holds none.
+        with self.scheduler.worker(self.slug + "_repair_keyframe", self.control) as worker:
+            refs = list(target["references"])
+            refs += [self.receipt_path(value) for value in self.assets.get("characters", {}).values()]
+            names = [worker.copy_input(path) for path in refs[:4]]
+            prompt = ((record["repair"].get("prompt_prefix") or
+                       record["repair"].get("prompt_suffix", "")) + "\n" +
+                      self.style_prompt + " " + target["shot"]["prompt"] +
+                      " Preserve each corresponding character identity and wardrobe.")
+            graph = flux_image(prompt, record["seed"], *self.image_size, references=names,
+                               prefix=self.slug + "/repair/" + target["key"])
+            frame = worker.execute(graph, target["folder"] / record["take"] / "repair_keyframe",
+                                   "image", timeout=self.budget.timeout(1800, 1))
+            qa = inspect_image(frame, self.image_size)
+            if qa["status"] != "pass":
+                raise ProductionNeedsDecision("Replacement first frame failed technical QA",
+                                              "video_repair_keyframe")
+            record["repair_keyframe"] = media_receipt(frame, technical_qa=qa)
+            self._save_attempt(target, record)
+        return frame
+
+    def _render_remote_targets(self, targets, phase):
+        ready = []
+        for target in targets:
+            self.boundary()
+            record = target.pop("resume_attempt", None) or self._new_attempt(target)
+            shot = target.get("shot")
+            if shot is not None:
+                shot["status"] = "rendering" if record["attempt"] == 1 else "retrying"
+            self.emit(phase)
+            started = time.monotonic()
+            folder = target["folder"] / record["take"]
+            def event(task):
+                record["remote_task"] = task
+                self._save_attempt(target, record)
+                self.emit(phase)
+            try:
+                frame = self._remote_first_frame(target, record)
+                raw, task = generate_video(self.video_connection, record["prompt"], frame, folder,
+                                           source_signature=target["signature"], check=self.boundary,
+                                           timeout=self.budget.timeout(self.video_connection["max_wait_seconds"]),
+                                           event=event)
+                # Keep the original artifact and adapt fps/size/duration to the
+                # existing timeline. Failed conversion resumes this same download.
+                width, height = self.video_size
+                temporary = folder / "normalized.part.mp4"
+                target_path = folder / "video.mp4"
+                self.ffmpeg(["-y", "-i", raw, "-vf",
+                             f"fps=24,scale={width}:{height}:force_original_aspect_ratio=increase,crop={width}:{height},setsar=1",
+                             "-frames:v", round(target["seconds"] * 24), "-an",
+                             "-c:v", "libx264", "-preset", "fast", "-crf", "18",
+                             "-pix_fmt", "yuv420p", "-movflags", "+faststart", temporary],
+                            limit=300)
+                os.replace(temporary, target_path)
+                receipt = media_receipt(target_path, provider="minimax",
+                                        profile=self.video_connection["profile"], model=task["model"],
+                                        task_id=task["task_id"], file_id=task["file_id"],
+                                        provider_receipt=str((folder / "remote_task.json").relative_to(self.folder.parent.parent)),
+                                        original=media_receipt(raw), expected_seconds=target["seconds"],
+                                        generation_kind="cloud_diffusion_video")
+                write_json(folder / "result.json", receipt)
+                record.update(state="generated", output=receipt,
+                              elapsed_seconds=round(time.monotonic() - started, 3))
+                ready.append((target, record, receipt))
+            except VideoFailed as exc:
+                record.update(state="failed", error=str(exc),
+                              qa={"status": "fail", "issues": [{"code": "generation", "detail": str(exc)}]})
+                if shot is not None:
+                    shot["status"] = "retrying"
+            except VideoPending as exc:
+                raise ProductionNeedsDecision(str(exc), exc.code, exc.details) from None
+            except (ProductionPaused, ProductionNeedsDecision):
+                raise
+            except Exception as exc:
+                record["error"] = redact_secrets(str(exc), self.video_connection)[:1000]
+                # A local/configuration failure is not proof that a paid task failed.
+                # Preserve this attempt and its source for resume, including no-ID intent.
+                raise ProductionNeedsDecision(
+                    "Video processing needs attention; the existing task and download are preserved",
+                    "video_processing_pending", {"error": record["error"],
+                                                 "receipt": str((folder / "remote_task.json").relative_to(self.folder))}) from None
+            finally:
+                self._save_attempt(target, record)
+                self.emit(phase)
+        return ready

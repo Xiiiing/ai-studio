@@ -50,6 +50,10 @@ class Handler(LegacyHandler):
                                   "queue":store.queue_summary(),"version":__version__})
             if path=="/api/factory/capabilities":
                 return self.json(snapshot())
+            match=re.fullmatch(r"/api/factory/projects/([a-f0-9]{12})/flow",path)
+            if match:
+                from .team_flow import build_flow
+                return self.json(build_flow(store.get(match.group(1))))
             match=re.fullmatch(r"/api/factory/projects/([a-f0-9]{12})",path)
             if match:
                 return self.json(store.get(match.group(1)))
@@ -111,15 +115,26 @@ class Handler(LegacyHandler):
                 raise ValueError("JSON请求应为对象")
             if route=="/api/factory/models/test":
                 from .providers import probe_profile
-                if set(payload)!={"profile_id"} or not isinstance(payload["profile_id"],str):
-                    raise ValueError("请指定一个已保存的连接编号")
+                if (set(payload) not in ({"profile_id"}, {"profile_id","kind"}) or
+                        not isinstance(payload["profile_id"],str) or
+                        payload.get("kind","text") not in ("text","video")):
+                    raise ValueError("请指定一个已保存的连接编号和连接类型")
+                if payload.get("kind")=="video":
+                    from .video_providers import probe_video_profile
+                    return self.json(probe_video_profile(payload["profile_id"],load_config()))
                 return self.json(probe_profile(payload["profile_id"],timeout=8))
             if route=="/api/factory/models":
                 from .providers import save_registry
-                if set(payload)!={"profiles","roles","expected_revision"}:
+                required={"profiles","roles","expected_revision"}
+                if set(payload) not in (required, required | {"video_profiles","video_roles"}):
                     raise ValueError("保存需要完整连接、角色分配和当前配置版本")
+                video={}
+                if "video_profiles" in payload:
+                    if not isinstance(payload["video_profiles"],dict) or not isinstance(payload["video_roles"],dict):
+                        raise ValueError("视频连接和分工应为对象")
+                    video={"video_profiles":payload["video_profiles"],"video_roles":payload["video_roles"]}
                 return self.json(save_registry(payload["profiles"],payload["roles"],
-                                               payload["expected_revision"]))
+                                               payload["expected_revision"],**video))
             if route=="/api/factory/projects":
                 return self.json({"project":store.create(payload)},202)
             match=re.fullmatch(r"/api/factory/projects/([a-f0-9]{12})/(decision|action)",route)

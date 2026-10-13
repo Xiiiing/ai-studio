@@ -3,10 +3,11 @@ import { list, isRunning } from './format.js';
 import { dashboard, projectView, renderSidebar, connectionError, capabilitiesDialog } from './views.js';
 import { bindActions } from './actions.js';
 import { bindModelActions, ingestInventory, modelsView } from './models.js';
+import { ingestProjectFlow } from './team.js';
 
-const state = { overview: null, projectId: '', project: null, view: 'workflow', tab: 'overview', busy: false, epoch: 0, models: null, modelsDraft: null, modelsDirty: false, modelTests: {}, workflow: null };
+const state = { overview: null, projectId: '', project: null, view: 'workflow', tab: 'overview', busy: false, epoch: 0, models: null, modelsDraft: null, modelsDirty: false, modelTests: {}, workflow: null, projectFlow: null, projectFlowError: '' };
 const workspace = document.getElementById('workspace');
-const validTabs = ['overview', 'script', 'quality', 'delivery'];
+const validTabs = ['overview', 'team', 'script', 'quality', 'delivery'];
 let timer, toastTimer, generation = 0, lastPaint = '', lastError = '', lastCapabilities = '';
 function toast(message, error = false) {
   const element = document.getElementById('toast');
@@ -17,7 +18,7 @@ function toast(message, error = false) {
   toastTimer = setTimeout(() => { element.hidden = true; }, error ? 10000 : 5500);
 }
 function paint(force = false) {
-  const key = JSON.stringify({ view: state.view, id: state.projectId, tab: state.tab, project: state.project, overview: state.projectId || state.view === 'models' ? null : state.overview, models: state.models, draft: state.modelsDraft, dirty: state.modelsDirty, tests: state.modelTests, pending: state.modelTestPending, saving: state.modelsSaving, modelError: state.modelsError, saveError: state.modelSaveError, remoteChanged: state.modelsRemoteChanged, workflow: state.workflow });
+  const key = JSON.stringify({ view: state.view, id: state.projectId, tab: state.tab, project: state.project, overview: state.projectId || state.view === 'models' ? null : state.overview, models: state.models, draft: state.modelsDraft, dirty: state.modelsDirty, tests: state.modelTests, pending: state.modelTestPending, saving: state.modelsSaving, modelError: state.modelsError, saveError: state.modelSaveError, remoteChanged: state.modelsRemoteChanged, workflow: state.workflow, flow: state.projectFlow, flowError: state.projectFlowError });
   if (!force && key === lastPaint) return;
   const video = workspace.querySelector('video');
   if (!force && video && !video.paused && !video.ended) return;
@@ -25,6 +26,7 @@ function paint(force = false) {
   const active = workspace.contains(document.activeElement) ? document.activeElement : null;
   const focusKey = active?.dataset.preserve;
   const selection = focusKey ? [active.selectionStart, active.selectionEnd] : null;
+  const details = new Map(Array.from(workspace.querySelectorAll('details[data-flow-detail]')).map(element => [element.dataset.flowDetail, element.open]));
   workspace.innerHTML = state.view === 'models' ? modelsView(state) : state.projectId ? projectView(state) : dashboard(state);
   for (const [key, value] of preserve) {
     const field = Array.from(workspace.querySelectorAll('[data-preserve]')).find(element => element.dataset.preserve === key);
@@ -33,6 +35,9 @@ function paint(force = false) {
       if (value.checked !== null) field.checked = value.checked;
       if (focusKey === key) { field.focus({ preventScroll: true }); if (selection && Number.isInteger(selection[0])) field.setSelectionRange(...selection); }
     }
+  }
+  for (const detail of workspace.querySelectorAll('details[data-flow-detail]')) {
+    if (details.has(detail.dataset.flowDetail)) detail.open = details.get(detail.dataset.flowDetail);
   }
   if (state.busy) workspace.querySelectorAll('[data-action="decide"],[data-action="project-action"],form button').forEach(button => { button.disabled = true; });
   lastPaint = key;
@@ -52,9 +57,9 @@ async function refresh({ force = false, notify = false } = {}) {
   clearTimeout(timer);
   const request = ++generation, epoch = state.epoch, projectId = state.projectId;
   document.getElementById('sync-state').textContent = '正在同步';
-  const results = await Promise.allSettled([api.overview(), projectId ? api.project(projectId) : Promise.resolve(null), api.models(), api.workflow()]);
+  const results = await Promise.allSettled([api.overview(), projectId ? api.project(projectId) : Promise.resolve(null), api.models(), api.workflow(), projectId ? api.flow(projectId) : Promise.resolve(null)]);
   if (request !== generation || epoch !== state.epoch) { schedule(); return; }
-  const [overviewResult, projectResult, modelsResult, workflowResult] = results;
+  const [overviewResult, projectResult, modelsResult, workflowResult, flowResult] = results;
   let error = '';
   if (overviewResult.status === 'fulfilled') state.overview = overviewResult.value;
   else error = overviewResult.reason.message;
@@ -63,6 +68,8 @@ async function refresh({ force = false, notify = false } = {}) {
   if (modelsResult.status === 'fulfilled') ingestInventory(state, modelsResult.value);
   else state.modelsError = modelsResult.reason.message;
   if (workflowResult.status === 'fulfilled') state.workflow = workflowResult.value;
+  if (projectId && flowResult.status === 'fulfilled') ingestProjectFlow(state, flowResult.value, projectId);
+  if (projectId && flowResult.status === 'rejected') state.projectFlowError = flowResult.reason.message;
   if (state.overview || state.view === 'models') {
     renderSidebar(state);
     if (state.view === 'models' || !projectId || state.project) paint(force);
@@ -90,7 +97,7 @@ async function refresh({ force = false, notify = false } = {}) {
   schedule();
 }
 async function selectProject(id, project = null) {
-  state.epoch += 1; state.view = 'workflow'; state.projectId = id || ''; state.project = project; state.tab = 'overview';
+  state.epoch += 1; state.view = 'workflow'; state.projectId = id || ''; state.project = project; state.projectFlow = null; state.projectFlowError = ''; state.tab = 'overview';
   lastPaint = ''; updateHash(); workspace.innerHTML = '';
   if (state.overview) { renderSidebar(state); paint(true); }
   await refresh({ force: true });
@@ -98,7 +105,7 @@ async function selectProject(id, project = null) {
 }
 async function selectView(view) {
   if (view !== 'models') return selectProject('');
-  state.epoch += 1; state.view = 'models'; state.projectId = ''; state.project = null; state.tab = 'overview';
+  state.epoch += 1; state.view = 'models'; state.projectId = ''; state.project = null; state.projectFlow = null; state.projectFlowError = ''; state.tab = 'overview';
   updateHash(); renderSidebar(state); paint(true);
   await refresh({ force: true });
   workspace.focus({ preventScroll: true }); window.scrollTo({ top: 0, behavior: 'instant' });
@@ -115,7 +122,7 @@ function readLocation() {
   state.view = params.get('view') === 'models' ? 'models' : 'workflow';
   const id = params.get('project') || '';
   state.projectId = state.view !== 'models' && /^[a-f0-9]{12}$/.test(id) ? id : '';
-  state.project = null;
+  state.project = null; state.projectFlow = null; state.projectFlowError = '';
   state.tab = validTabs.includes(params.get('tab')) ? params.get('tab') : 'overview';
 }
 window.addEventListener('hashchange', async () => {

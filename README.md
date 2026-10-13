@@ -1,14 +1,16 @@
 # AI Studio · 多模型短剧工作流
 
-让不同模型分别负责故事策划、编剧、审稿、分镜和画面质检，用本地制作引擎完成图像、视频、配音、剪辑与交付。
+让不同模型分别负责故事策划、编剧、审稿、分镜和画面质检，组合本地图像、配音与剪辑，以及本地或云端视频生成，完成短剧交付。
 
 **AI Studio 的核心是一条可恢复的制作工作流。** 出品人主要选择故事、选择视觉方案、审阅初版成片；普通的结构修复、镜头重试和预算检查由执行器处理。CLI 和中文工作台共用同一套状态与任务队列。
 
 ## 这版解决什么问题
 
-- **模型通过接口调用。** 同一角色可配置 llama.cpp、Ollama、vLLM 或 OpenAI-compatible 服务；模型服务可以在本机、明确配置的局域网地址或远程 HTTPS 地址。
+- **模型通过接口调用。** 同一角色可配置 llama.cpp、Ollama 原生或兼容接口、vLLM、LM Studio、DeepSeek、百炼或其他 OpenAI-compatible 服务；部署位置与协议分开配置。
 - **角色和模型分开。** 编剧、独立审稿、分镜导演、视觉质检有各自绑定；多个角色共用模型时也会明确显示。
-- **配置可查看、测试、导出和保存。** 连接测试只读取模型列表，不生成内容。配置用版本校验保存；已开始的执行批次持有自己的快照。
+- **团队工作数据流可查看。** 每个项目展示当前角色分配、任务状态、输入输出、上下游交接，以及当次实际模型的执行回执。总控沿现有工作流分工，用户可调整角色绑定。
+- **视频引擎可选择。** `video_generator` 可以绑定本地 ComfyUI / Wan 或 MiniMax 视频接口；云端任务按 ID 持久化并恢复查询、下载，再进入现有逐镜质检和剪辑。
+- **配置可查看、测试、导出和保存。** 文本连接可以探测模型列表；显式跳过发现和视频连接只做配置预检，不生成内容。配置用版本校验保存；已开始的执行批次持有自己的快照。
 - **工作流可中断和恢复。** LangGraph + SQLite 保存状态；后台 worker 执行长任务，关闭页面不丢失任务。
 - **制作按镜头追踪。** 保存参考图、提示词、模型身份、参数、生成任务 ID、质检和修复回执，复用仍有效的素材。
 - **输出完整交付。** MP4、字幕、时间线、剧本、分镜和制作清单保存在制作工程中；初版生成和出品人终审是两个状态。
@@ -17,8 +19,9 @@
 
 | 环节 | 当前调用接口 | 模型在哪里运行 |
 | --- | --- | --- |
-| 策划、编剧、审稿、导演、视觉理解 | OpenAI-compatible HTTP，主要使用 `/v1/chat/completions` | 独立 llama.cpp / Ollama / vLLM 服务，或显式配置的远程服务 |
-| 图像、视频 | ComfyUI HTTP，提交 `/prompt` 后按 `prompt_id` 查询历史 | 本机受 GPU 租约管理的 ComfyUI 进程 |
+| 策划、编剧、审稿、导演、视觉理解 | OpenAI-compatible Chat Completions 或 Ollama 原生 `/api/chat` | 本机、LAN 或远程模型服务，按角色配置 |
+| 图像 | ComfyUI HTTP，提交 `/prompt` 后按 `prompt_id` 查询历史 | 本机受 GPU 租约管理的 ComfyUI 进程 |
+| 扩散视频 | 本地 ComfyUI / Wan，或 MiniMax `video_generation` → 查询任务 → 获取文件 | 本地 GPU，或显式选择的远程 HTTPS 视频服务 |
 | 角色配音 | 受控本地进程，结构化输入、WAV 和回执 | 独立 Qwen3-TTS Python 环境 |
 | 剪辑、混音、字幕、媒体检查 | 本地 FFmpeg / PyAV | 本机 CPU |
 
@@ -38,7 +41,7 @@ python3.12 scripts/bootstrap.py
 ./drama workflow --json
 ```
 
-初始化仅在缺失时创建 `config/factory.json`，保留已有配置。公开示例中的模型 ID 是示例别名，需改成你的服务实际提供的 ID。Ollama、vLLM、远程连接示例默认禁用。
+初始化仅在缺失时创建 `config/factory.json`，保留已有配置。公开示例中的模型 ID 是示例别名，需改成你的服务实际提供的 ID。Ollama、vLLM、LM Studio、DeepSeek、百炼和 MiniMax 示例连接默认禁用，启用前填写实际服务与模型 ID。
 
 启动工作台和后台执行器，分别在两个终端运行：
 
@@ -60,12 +63,19 @@ envs/factory/bin/python -m factory.worker
 2. 为各个角色选择模型，视觉质检必须绑定支持视觉输入的配置。
 3. 点击“保存配置”。保存不开始生产，也不会自动下载或启动模型。
 4. 对已保存的连接点击“测试连接”，核对模型列表和 ID；测试失败时修改配置、重新保存后再测试。草稿不能直接进行连接测试。
+5. 在“视频模型”中添加 MiniMax 连接或选择本地 Wan，为“视频生成”指定连接；点击“预检配置”检查保存的配置和密钥变量。
+6. 进入项目的“团队与数据流”，查看角色的输入、产物和执行记录。成员卡显示当前分配；历史回执保留当次实际模型，不随默认配置变化。
+
+Base URL 是完整 API 前缀，不统一追加 `/v1`。例如 DeepSeek 可使用服务根，百炼保留 `/compatible-mode/v1`，Ollama 原生使用服务根或 `/api`。百炼等目录协议不同的服务可设 `model_discovery: "skip"`，预检会明确显示“未验证”，实际调用仍校验响应模型与 JSON 结构。
+
+MiniMax 的当前适配器使用 v1 图生视频协议，支持任务、文件 ID 与可恢复下载；这不表示自动支持所有其他视频供应商或 H3 的不同协议。`motion_comic` 仍使用关键帧与程序运镜，云视频选择用于真人和二维动画路线。详见模型文档中的支持组合与恢复说明。
 
 也可使用 CLI：
 
 ```bash
 ./drama roles
 ./drama models probe writer_local
+./drama models probe minimax_example --kind video
 ./drama models export --file runtime/models-edit.json
 # 编辑导出文件中的 llm_profiles 和 llm_roles
 ./drama models apply --file runtime/models-edit.json
@@ -126,6 +136,8 @@ flowchart TD
 | `factory/workflows.py` | 持久化执行图与人工决策 |
 | `factory/creative.py`、`storyboard.py` | 编剧、独立评审、分镜和反馈处理 |
 | `factory/production.py`、`scheduler.py` | 镜头生产、GPU 租约、预算、失败恢复 |
+| `factory/video_providers.py`、`video_transport.py`、`minimax_video.py`、`video_production.py` | 视频连接、受限网络、持久化云任务与逐镜生产接入 |
+| `factory/team_flow.py` | 当前分工、产物流转和有界历史回执投影 |
 | `factory/web.py`、`ui/factory/` | 中文工作台和业务 API |
 | `studio/`、`audio/` | 制作、媒体和配音适配器 |
 | `config/factory.example.json` | 可移植配置示例 |
@@ -139,7 +151,7 @@ flowchart TD
 ## 验证与边界
 
 - CPU 测试覆盖角色路由、连接配置、网络约束、结构化输出、状态恢复、决策重放、镜头返修和 UI 接口。
-- 连接测试证明服务可达、模型 ID 对应；它不证明模型的编剧质量、视觉能力或全部 schema 兼容性。
+- 成功的文本模型目录探测证明该接口可达、模型 ID 对应；`unverified` 和视频的 `configured` 只表示配置状态。生成质量、视觉能力和 schema 兼容性仍由实际调用确认。
 - 不同后端仍需使用实际 schema 和小规模图像输入验收。模型版本、GPU 和服务参数变化时应重新验证。
 - 生产预算目前约束 GPU 时间、制作墙钟时间和尝试次数；外部 API 的 token 用量写入回执，尚未提供按货币金额的硬限额。
 - 默认工作台绑定本机回环地址，定位是单机出品人工具。互联网多人访问需要另外配置认证代理，不能直接把本机接口开放到公网。
@@ -147,6 +159,7 @@ flowchart TD
 
 ```bash
 envs/factory/bin/python -m pytest -q tests/test_factory_*.py
+node --test tests/test_factory_ui.mjs
 ```
 
 ## 文档
@@ -154,5 +167,6 @@ envs/factory/bin/python -m pytest -q tests/test_factory_*.py
 - [模型接口与本地运行](docs/MODEL_PROVIDERS.md)
 - [部署、升级和恢复](docs/DEPLOYMENT.md)
 - [API 与工作流配置](docs/API.md)
+- [本轮问题、修复与验证范围](docs/AUDIT_2026-10-13.md)
 - [参考架构研究](docs/REFERENCE_ARCHITECTURES.md)
 - [第三方组件说明](THIRD_PARTY_NOTICES.md)

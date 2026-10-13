@@ -11,7 +11,7 @@ from pathlib import Path
 
 from jsonschema import Draft202012Validator
 from .providers import (check_model, context_budget, request_json, model_matches,
-                        response_format, redact_secrets, config_revision)
+                        chat_request, chat_response, redact_secrets, config_revision)
 from studio.core import ROOT, write_json
 from .config import TEXT_CRITIC_ROLES, llm_identity, resolve_llm
 
@@ -74,7 +74,11 @@ def _request(config, role, system, payload, schema, output_dir, max_tokens=4096,
                   "context_validation": llm.get("context_validation", "llama_tokenize"),
                   "request_timeout_seconds": llm.get("request_timeout_seconds", 480),
                   "send_sampling_parameters": llm.get("send_sampling_parameters", True),
-                  "chat_template_kwargs": llm.get("chat_template_kwargs", {"enable_thinking":False})}
+                  "chat_template_kwargs": llm.get("chat_template_kwargs", {"enable_thinking":False}),
+                  "thinking": llm.get("thinking"),
+                  "model_discovery": llm.get("model_discovery", "required")}
+    if llm.get("provider") == "ollama_native":
+        parameters["max_tokens_field"] = "options.num_predict"
     receipt = {"role":role,"profile":llm["profile"],
                "provider":llm.get("provider", "llama_cpp"),
                "model":llm["model"],"configured_model":llm["model"],
@@ -88,27 +92,22 @@ def _request(config, role, system, payload, schema, output_dir, max_tokens=4096,
         served = check_model(llm)
         receipt["served_model_ids"] = [item.get("id") for item in served.get("data", [])
                                       if isinstance(item,dict)] if isinstance(served,dict) else []
+        receipt["model_discovery"] = served.get("discovery", "verified")
         limit = llm.get("max_schema_attempts", 2)
         for attempt in range(1, limit + 1):
-            fmt = response_format(llm, schema, role)
-            request = {"model":llm["model"],"messages":messages,"stream":False,
-                       parameters["max_tokens_field"]:max_tokens}
-            if parameters["send_sampling_parameters"]:
-                request.update(temperature=parameters["temperature"], top_p=parameters["top_p"])
-            if fmt is not None:
-                request["response_format"] = fmt
-            if parameters["chat_template_kwargs"]:
-                request["chat_template_kwargs"] = parameters["chat_template_kwargs"]
+            route, request = chat_request(llm, messages, schema, role, parameters)
+            receipt["api_route"] = route
             budget = context_budget(llm, messages, max_tokens)
             receipt.setdefault("context_checks", []).append(budget)
             if not budget["fits"]:
                 raise ValueError("创作上下文超出模型窗口，请减少参考资料")
             save(f"request-{attempt:02d}.json", request)
-            response = request_json(llm["base_url"], "/chat/completions", request,
+            response = request_json(llm["base_url"], route, request,
                                     timeout=parameters["request_timeout_seconds"],
                                     api_key_env=llm.get("api_key_env"), profile=llm)
             response = redact_secrets(response, llm)
             save(f"response-{attempt:02d}.json", response)
+            response = chat_response(llm, response)
             choices = response.get("choices", [])
             choice = choices[0] if isinstance(choices, list) and len(choices) == 1 and isinstance(choices[0], dict) else {}
             response_model = response.get("model")
@@ -124,7 +123,8 @@ def _request(config, role, system, payload, schema, output_dir, max_tokens=4096,
                 raise ValueError("Model returned an invalid completion")
             if choice.get("finish_reason") != "stop":
                 raise ValueError("模型输出未完整结束：" + str(choice.get("finish_reason")))
-            raw = choice.get("message", {}).get("content")
+            message = choice.get("message")
+            raw = message.get("content") if isinstance(message, dict) else None
             if not isinstance(raw, str):
                 raise ValueError("Model returned no JSON text")
             errors = []

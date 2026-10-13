@@ -488,3 +488,77 @@ h1{font-size:26px}
 @media(max-width:760px){.main-nav{gap:4px;flex-wrap:wrap}.main-nav .nav-item{font-size:11px;white-space:nowrap}.main-nav .nav-item:last-child{margin-left:0}.page-heading h1{font-size:26px}.workflow-node{padding:16px 13px}.workflow-node.has-gate{padding-top:14px}.workflow-section .section-heading{align-items:flex-start}.workflow-section .section-heading>.button{font-size:10px;flex:none}.workflow-legend{font-size:9px;gap:7px}.workflow-node h3{font-size:14px}.config-savebar{position:static;flex-direction:column;padding:17px}.config-savebar>div:last-child{width:100%;justify-content:space-between}.role-assignment{grid-template-columns:minmax(108px,.8fr) minmax(0,1.4fr);gap:8px}.model-card{padding:20px}.step{padding:12px 8px}.model-card-heading>.badge{font-size:9px}.step .step-no{display:none}}
 @media(max-width:420px){.workflow-board{grid-template-columns:1fr}.workflow-node>p{min-height:0}.node-routes{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.main-nav .nav-item{font-size:10px;padding:7px 6px}.nav-icon{font-size:15px}.model-card-heading>.badge{margin-left:46px}.graph-edges{columns:1}.model-dialog .form-row{grid-template-columns:1fr}.role-assignment{grid-template-columns:1fr;gap:7px}}
 
+/* Project evidence and independent video connections. */
+.team-flow-entry{display:flex;align-items:center;justify-content:space-between;gap:20px;border:1px solid var(--line);border-left:3px solid #738866;border-radius:9px;background:#f0f3e9;padding:17px 20px;margin-bottom:22px}
+.team-flow-entry strong{font-size:13px}
+.team-flow-entry p{font-size:11px;line-height:1.7;color:var(--muted);margin:5px 0 0}
+.team-flow-entry .button{flex:none}
+.team-flow-heading{margin-top:6px}
+.team-flow-heading p{margin:6px 0 0;line-height:1.8}
+.flow-evidence-note{font-size:11px;line-height:1.8;color:#866440;background:#f5edde;border:1px solid #e6d8bd;border-radius:7px;padding:11px 15px;margin-bottom:15px}
+.flow-statusbar{display:flex;flex-wrap:wrap;align-items:center;gap:12px 22px;font-size:11px;padding:15px 17px;background:#eeefe5;border:1px solid var(--line);border-radius:9px;margin-bottom:17px}
+.flow-statusbar b{color:#41563a;margin-left:6px;font-size:14px}
+.flow-statusbar small{margin-left:auto;color:var(--muted)}
+.team-roster{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:26px}
+.team-member{padding:15px 16px;border:1px solid var(--line);border-radius:8px;background:var(--panel);min-width:0}
+.team-member>div{display:flex;justify-content:space-between;gap:8px;align-items:center}
+.team-member strong{font-size:12px}
+.team-member .badge{font-size:9px;white-space:nowrap}
+.team-role{font:9px/1.6 ui-monospace,monospace;color:var(--muted);margin:6px 0 13px;overflow-wrap:anywhere}
+.team-member>code{display:block;font:11px/1.65 ui-monospace,monospace;margin-top:3px;overflow-wrap:anywhere;color:#485e3e}
+.team-member>small{display:block;font:9px/1.6 ui-monospace,monospace;color:var(--muted);margin-top:4px;overflow-wrap:anywhere}
+.flow-section-label{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:8px;margin:0 0 14px}
+.flow-section-label h3{font-size:15px;margin:0}
+.flow-section-label>span{font-size:10px;color:var(--muted)}
+.flow-node-list{list-style:none;margin:0;padding:0;display:grid;gap:17px}
+.flow-node{min-width:0;padding:21px 24px;background:var(--panel);border:1px solid var(--line);border-radius:10px}
+.flow-node-heading{display:flex;align-items:center;gap:13px;margin-bottom:18px}
+.flow-order{display:grid;place-items:center;font:12px ui-monospace,monospace;background:#eaf0df;color:#697d56;border:1px solid #d9e2cb;border-radius:6px;width:31px;height:31px;flex:none}
+.flow-node-heading>div{flex:1;min-width:0}
+.flow-node-heading h3{font-size:15px;margin:0;overflow-wrap:anywhere}
+.flow-node-heading p{font-size:10px;color:var(--muted);margin:4px 0 0}
+.flow-io-grid{display:grid;grid-template-columns:1fr 1fr;gap:15px;margin:14px 0}
+.flow-io{min-width:0;padding:13px 15px;background:#f3f4ec;border:1px solid #e4e8d9;border-radius:7px}
+.flow-io h4{font-size:11px;letter-spacing:.02em;color:#607151;display:flex;justify-content:space-between;margin:0 0 10px}
+.flow-io h4>span{font:10px ui-monospace,monospace;color:var(--muted)}
+.flow-io ul{list-style:none;padding:0;margin:0}
+.flow-io li{margin:0;padding:9px 0;font-size:11px;overflow-wrap:anywhere}
+.flow-io li+li{border-top:1px solid #e1e6d6}
+.flow-io li:first-child{padding-top:0}
+.flow-io li:last-child{padding-bottom:0}
+.flow-io li>strong{display:block;font-weight:550;font-size:11px}
+.flow-io p{font-size:11px;line-height:1.7;margin:0}
+.flow-io li>.muted{display:block;margin-top:6px;font-size:10px}
+.flow-io a{display:inline-block;font-size:11px;color:#556c45;margin:7px 0 1px}
+.flow-data-value{font-family:inherit;font-size:11px;line-height:1.85;white-space:pre-wrap;overflow-wrap:anywhere;margin:5px 0 0;max-height:230px;overflow:auto;color:#4e5a45}
+.flow-handoff{display:flex;align-items:baseline;gap:12px;font-size:10px;color:var(--muted)}
+.flow-handoff>span{width:34px;flex:none}
+.flow-handoff ul{list-style:none;display:flex;flex-wrap:wrap;gap:6px 9px;margin:0;padding:0}
+.flow-handoff li{display:inline-flex;align-items:center;flex-wrap:wrap;gap:6px;padding:4px 8px;border:1px dashed #d5dfc8;background:#f2f4e9;border-radius:5px}
+.flow-handoff strong{font-size:10px;font-weight:500;color:#627652}
+.flow-handoff small{font-size:9px}
+.flow-handoff .badge{font-size:8px;padding:1px 4px;background:none}
+.flow-executions{padding:12px 0;border-top:1px solid var(--line);margin:12px 0 10px}
+.flow-executions>summary{cursor:pointer;font-size:11px;color:#5c7050}
+.flow-executions>summary>span{font-size:10px;color:var(--muted);margin-left:8px}
+.flow-execution{padding:13px 15px;background:#f6f4ec;border:1px solid #e4e0d0;border-radius:6px;margin-top:10px}
+.flow-execution-title{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.flow-execution-title strong{font:11px/1.7 ui-monospace,monospace;overflow-wrap:anywhere;min-width:0;color:#4c6140}
+.flow-execution-title>.badge{flex:none;font-size:9px}
+.flow-execution>p{font:10px/1.7 ui-monospace,monospace;color:var(--muted);margin:7px 0;overflow-wrap:anywhere}
+.flow-execution-meta{display:flex;flex-wrap:wrap;gap:6px 13px;font-size:10px;color:#7c806e}
+.flow-execution-meta code{font-size:10px;overflow-wrap:anywhere}
+.flow-receipt{display:flex;gap:11px;font-size:10px;align-items:baseline;margin-top:11px;padding-top:10px;border-top:1px dashed #dddccb}
+.flow-receipt>span{flex:none;color:var(--muted)}
+.flow-receipt>code,.flow-receipt>a{font:10px/1.6 ui-monospace,monospace;overflow-wrap:anywhere;color:#5e7550}
+.flow-no-execution{font-size:10px;color:var(--muted);margin:15px 0}
+.video-models{margin:27px 0 23px;padding-top:8px}
+.video-models .section-heading p{margin:7px 0 0;line-height:1.8}
+.video-role-grid{padding:0 20px 8px;border:1px solid var(--line);border-radius:9px;background:var(--panel);margin-top:-8px}
+.video-role-grid>.role-assignment:first-child{border:0}
+.video-remote-fields{border:0;margin:0;padding:0;min-width:0}
+.video-local-note{padding:12px 15px;background:#f0f3e9;border-radius:6px;line-height:1.8}
+.sr-only{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+@media(max-width:1180px){.team-roster{grid-template-columns:repeat(2,minmax(0,1fr))}.flow-statusbar{gap:10px 16px}}
+@media(max-width:760px){.tabbar{overflow-x:auto;gap:20px}.tab-button{flex:none;white-space:nowrap}.team-flow-entry{padding:15px;gap:12px;align-items:flex-start}.team-flow-entry .button{font-size:10px}.team-flow-heading{gap:12px;align-items:flex-start}.team-flow-heading .button{font-size:10px;flex:none}.flow-statusbar{padding:13px;gap:10px 15px}.flow-statusbar small{width:100%;margin-left:0}.team-member{padding:13px}.team-member>div{flex-wrap:wrap}.flow-node{padding:17px 15px}.flow-io-grid{grid-template-columns:1fr;gap:9px}.flow-node-heading{gap:9px}.flow-execution-title{align-items:flex-start}.flow-execution-title strong{font-size:10px}.flow-receipt{display:block}.flow-receipt>span{display:block;margin-bottom:4px}.video-models .section-heading{align-items:flex-start;gap:12px}.video-models .section-heading .button{font-size:10px;flex:none}}
+@media(max-width:420px){.team-roster{grid-template-columns:1fr}.team-member>div{flex-wrap:nowrap}.flow-order{display:none}.team-flow-entry{display:block}.team-flow-entry .button{margin-top:10px}.flow-handoff{gap:8px}.flow-section-label>span{line-height:1.8}.flow-executions>summary>span{display:block;margin:6px 0 0}}

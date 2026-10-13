@@ -90,6 +90,7 @@ def parser():
     models.add_argument("--file", help="导出或导入的 UTF-8 JSON 文件")
     models.add_argument("--expected-revision", help="apply 的 CAS 配置版本；省略则使用导出文件内的 revision")
     models.add_argument("--json", action="store_true")
+    models.add_argument("--kind", choices=["text", "video"], default="text", help="probe 的连接类型")
     workflow = sub.add_parser("workflow", help="导出实际执行图、角色与制作接口说明")
     workflow.add_argument("--json", action="store_true")
     outputs = sub.add_parser("outputs", aliases=["export"], help="列出当前交付版本已存在的本地文件")
@@ -246,6 +247,10 @@ def execute(args):
         if args.operation == "probe":
             if not args.profile:
                 raise ValueError("probe 需要明确的配置档 ID")
+            if getattr(args, "kind", "text") == "video":
+                from .config import load_config
+                from .video_providers import probe_video_profile
+                return probe_video_profile(args.profile, load_config())
             return probe_profile(args.profile)
         inventory = public_inventory()
         if args.operation == "list":
@@ -254,6 +259,8 @@ def execute(args):
             value = {"schema_version": 1, "revision": inventory["revision"],
                      "llm_profiles": inventory["editable_profiles"],
                      "llm_roles": inventory["role_assignments"]}
+            if "video_profiles" in inventory:
+                value.update(video_profiles=inventory["video_profiles"], video_roles=inventory["video_roles"])
             if args.file:
                 from studio.core import write_json
                 target = Path(args.file).expanduser().resolve()
@@ -275,7 +282,12 @@ def execute(args):
         revision = args.expected_revision or value.get("revision")
         if not revision:
             raise ValueError("请先 models export，或提供 --expected-revision")
-        return save_registry(value.get("llm_profiles"), value.get("llm_roles"), revision)
+        video = {}
+        if set(value) & {"video_profiles", "video_roles"}:
+            if not isinstance(value.get("video_profiles"), dict) or not isinstance(value.get("video_roles"), dict):
+                raise ValueError("视频连接导入需要完整的 video_profiles 和 video_roles 对象")
+            video = {"video_profiles": value["video_profiles"], "video_roles": value["video_roles"]}
+        return save_registry(value.get("llm_profiles"), value.get("llm_roles"), revision, **video)
     if command == "workflow":
         from .workflow_spec import export_spec
         return export_spec()

@@ -85,7 +85,7 @@ def llm_identity(config, role):
         "base_url", "model", "endpoint", "provider", "revision", "api_key_env",
         "network_mode", "enabled", "allowed_hosts", "context_validation", "model_aliases",
         "image_token_budget", "max_tokens_field", "send_sampling_parameters",
-        "max_schema_attempts")}
+        "max_schema_attempts", "thinking", "model_discovery")}
     identity.update(profile=lm["profile"], vision=lm["vision"],
                     context_tokens=lm.get("context_tokens"),
                     response_format=lm.get("response_format", "llama_json_schema"),
@@ -147,7 +147,9 @@ def config_snapshot(configuration=None):
 
 
 def production_config(project, config):
+    from .video_providers import resolve_video
     result = copy.deepcopy(config.get("production", {}))
+    result["video_connection"] = resolve_video(config)
     result["semantic_enabled"] = bool(config.get("quality",{}).get("semantic_enabled",True))
     result["semantic_model_identity"] = llm_identity(config, "visual_critic")
     result["semantic_model"] = result["semantic_model_identity"].get("model")

@@ -5,7 +5,11 @@ import { readFile } from 'node:fs/promises';
 import { api } from '../ui/factory/api.js';
 import { bindModelActions, ingestInventory, modelEditor, modelsView, profileFromForm, registryPayload } from '../ui/factory/models.js';
 import { workflowBoard } from '../ui/factory/workflow.js';
-import { projectView } from '../ui/factory/views.js';
+import { projectView, capabilities, capabilityStatus } from '../ui/factory/views.js';
+import { dateText } from '../ui/factory/format.js';
+import { videoModelEditor, videoProfileFromForm } from '../ui/factory/video-models.js';
+import { endpointHelp, switchTextProvider } from '../ui/factory/connections.js';
+import { ingestProjectFlow, teamFlowView } from '../ui/factory/team.js';
 
 globalThis.location = { origin: 'http://127.0.0.1:8787' };
 const clone = x => JSON.parse(JSON.stringify(x));
@@ -28,7 +32,7 @@ function browserHarness(s) {
   globalThis.window = { addEventListener() {} };
   const ui = { paint() { calls.push('paint'); }, toast(message) { toasts.push(message); }, async refresh() { calls.push('refresh'); } };
   bindModelActions(s, ui);
-  const click = action => listeners.click({ target: { closest() { return { disabled: false, dataset: { modelAction: action, profile: 'writer' } }; } } });
+  const click = (action, profile = 'writer') => listeners.click({ target: { closest() { return { disabled: false, dataset: { modelAction: action, profile } }; } } });
   return { listeners, dialog, click, toasts, calls };
 }
 test('model inventory is copied and preserves advanced profile fields', () => {
@@ -173,7 +177,7 @@ test('model and workflow reads use GET without request bodies', async () => {
   assert.ok(requests.every(r => r.options.method === 'GET' && r.options.body === undefined));
 });
 test('all deployed native JavaScript files parse', async () => {
-  const files = ['api.js', 'format.js', 'panels.js', 'views.js', 'actions.js', 'app.js', 'models.js', 'workflow.js'];
+  const files = ['api.js', 'format.js', 'panels.js', 'views.js', 'actions.js', 'app.js', 'models.js', 'workflow.js', 'connections.js', 'video-models.js', 'team.js'];
   const { SourceTextModule } = await import('node:vm');
   if (SourceTextModule) {
     for (const file of files) new SourceTextModule(await readFile(new URL('../ui/factory/' + file, import.meta.url), 'utf8'));
@@ -214,7 +218,7 @@ test('the real app navigates workflow, models and a pending project through read
   const project = { id: '012345abcdef', title: '待审项目', format: 'motion_comic', duration_seconds: 60, status: 'awaiting_final', stage: 'final_decision', decisions: [{ id: 'gate-app', type: 'final', status: 'pending' }], shots: [], budget: {}, delivery: {} };
   globalThis.fetch = async (url, options) => {
     requests.push({ url, method: options.method });
-    const result = url === '/api/factory/models' ? inventory() : url === '/api/factory/workflow' ? { nodes: [{ id: 'research' }], edges: [], orchestrator: 'LangGraph', version: '3.0.0' } : url === '/api/factory/overview' ? { projects: [project], capabilities: {}, queue: {} } : url === '/api/factory/projects/012345abcdef' ? project : {};
+    const result = url === '/api/factory/models' ? inventory() : url === '/api/factory/workflow' ? { nodes: [{ id: 'research' }], edges: [], orchestrator: 'LangGraph', version: '3.0.0' } : url === '/api/factory/overview' ? { projects: [project], capabilities: {}, queue: {} } : url === '/api/factory/projects/012345abcdef' ? project : url === '/api/factory/projects/012345abcdef/flow' ? flowFixture() : {};
     return new Response(JSON.stringify(result), { status: 200 });
   };
   try {
@@ -229,9 +233,219 @@ test('the real app navigates workflow, models and a pending project through read
     for (const listener of windowEvents.get('hashchange') || []) await listener();
     assert.ok(node('workspace').innerHTML.includes('待审项目'));
     assert.ok(node('workspace').innerHTML.includes('data-decision-id="gate-app"'));
+    const teamClick = { target: { closest(selector) { return selector === '[data-action]' ? { dataset: { action: 'tab', tab: 'team' }, disabled: false } : null; } } };
+    for (const listener of events.get('click') || []) await listener(teamClick);
+    assert.ok(node('workspace').innerHTML.includes('actual-history-model'));
+    assert.ok(node('workspace').innerHTML.includes('经审核的剧本'));
+    assert.ok(requests.some(request => request.url === '/api/factory/projects/012345abcdef/flow'));
     assert.ok(requests.every(request => request.method === 'GET'));
   } finally {
     Object.assign(globalThis, previous);
   }
 });
 
+function videoInventory(revision = 'video-config-a') {
+  const value = inventory(revision);
+  value.video_profiles = {
+    local_wan: { provider: 'comfyui_wan', enabled: true, model: 'Wan2.2-TI2V-5B' },
+    cloud_video: { provider: 'minimax', enabled: true, model: 'test-video-model', base_url: 'https://api.example.test/v1', network_mode: 'remote', allowed_hosts: ['api.example.test'], download_hosts: ['assets.example.test'], api_key_env: 'VIDEO_TEST_KEY', duration: 6, resolution: '768P', request_timeout_seconds: 60, poll_interval_seconds: 5, max_wait_seconds: 1800, prompt_optimizer: false }
+  };
+  value.video_roles = { video_generator: 'local_wan' };
+  value.video_providers = [{ id: 'comfyui_wan', label: 'ComfyUI / Wan' }, { id: 'minimax', label: 'MiniMax Video' }];
+  value.video_role_options = [{ role: 'video_generator', label: '视频生成' }];
+  return value;
+}
+function flowFixture(projectId = '012345abcdef') {
+  return {
+    project_id: projectId, revision: 7, assignment_mode: 'orchestrator',
+    teams: [{ id: 'screenwriter', role: 'screenwriter', label: '编剧', profile_id: 'new-default', model: 'current-default-model', provider: 'vllm', status: 'succeeded' }, { id: 'storyboard_director', role: 'storyboard_director', label: '分镜导演', profile_id: 'director', model: 'director-model', provider: 'ollama_native', status: 'running' }],
+    nodes: [
+      { id: 'screenwriter', role: 'screenwriter', label: '剧本创作', status: 'succeeded', inputs: [{ label: '创作方向', value: '一场雨中的重逢' }], outputs: [{ label: '剧本', value: '序场：车站', artifact_url: '/media/production/factory-' + projectId + '/script.json' }], executions: [{ id: 'receipt-1', profile_id: 'old-writer', provider: 'llama_cpp', model: 'actual-history-model', model_source: 'response', scope: 'project_history', status: 'succeeded', attempt: 1, started_at: null, finished_at: null, receipt: '/media/production/factory-' + projectId + '/llm/receipt.json' }] },
+      { id: 'storyboard_director', role: 'storyboard_director', label: '分镜设计', status: 'running', inputs: [{ label: '剧本', value: '序场：车站' }], outputs: [], executions: [] }
+    ],
+    edges: [{ source: 'screenwriter', target: 'storyboard_director', label: '经审核的剧本', status: 'succeeded' }]
+  };
+}
+test('video and text assignments share one revisioned payload without mutating inventory', () => {
+  const s = state(), original = videoInventory();
+  ingestInventory(s, original, true);
+  s.modelsDraft.video_roles.video_generator = 'cloud_video';
+  s.modelsDraft.video_profiles.cloud_video.download_hosts.push('second.example.test');
+  const payload = registryPayload(s);
+  assert.equal(payload.expected_revision, 'video-config-a');
+  assert.equal(payload.video_roles.video_generator, 'cloud_video');
+  assert.deepEqual(original.video_profiles.cloud_video.download_hosts, ['assets.example.test']);
+  assert.equal(original.video_roles.video_generator, 'local_wan');
+  assert.equal(payload.profiles.writer.temperature_override, 0.4);
+  assert.equal(payload.video_profiles.cloud_video.prompt_optimizer, false);
+});
+test('conflicting inventory refresh preserves a dirty video draft', () => {
+  const s = state();
+  ingestInventory(s, videoInventory(), true);
+  s.modelsDraft.video_roles.video_generator = 'cloud_video'; s.modelsDirty = true;
+  ingestInventory(s, videoInventory('video-config-b'));
+  assert.equal(s.models.revision, 'video-config-a');
+  assert.equal(s.modelsDraft.video_roles.video_generator, 'cloud_video');
+  assert.equal(s.modelsRemoteChanged, true);
+});
+test('video role changes remain drafts and video preflight uses its own non-generation route', async () => {
+  const s = state();
+  ingestInventory(s, videoInventory(), true);
+  const harness = browserHarness(s), requests = [];
+  globalThis.fetch = async (url, options) => {
+    requests.push({ url, options });
+    return new Response(JSON.stringify({ status: 'configured', message: '配置预检通过，尚未验证视频生成', generation: false }), { status: 200 });
+  };
+  harness.listeners.change({ target: { closest() { return { dataset: { roleAssignment: 'video_generator', roleKind: 'video' }, value: 'cloud_video' }; } } });
+  assert.equal(s.modelsDraft.video_roles.video_generator, 'cloud_video');
+  assert.equal(s.modelsDraft.roles.screenwriter, 'writer');
+  assert.equal(requests.length, 0);
+  assert.equal(s.modelsDirty, true);
+  await harness.click('video-test', 'cloud_video');
+  assert.equal(requests.length, 0);
+  ingestInventory(s, videoInventory(), true);
+  await harness.click('video-test', 'cloud_video');
+  assert.deepEqual(JSON.parse(requests[0].options.body), { profile_id: 'cloud_video', kind: 'video' });
+  assert.equal(s.modelTests['video:cloud_video'].generation, false);
+  const html = modelsView(s);
+  assert.ok(html.includes('配置预检通过'));
+  assert.ok(!html.includes('连接通过'));
+  assert.ok(!html.includes('已生成视频'));
+});
+test('video form preserves transport options and removes cloud fields when switching to managed local video', () => {
+  const previous = videoInventory().video_profiles.cloud_video;
+  const next = videoProfileFromForm({ provider: 'minimax', enabled: 'on', model: 'replacement-video-model', base_url: previous.base_url, api_key_env: previous.api_key_env, allowed_hosts: 'api.example.test', download_hosts: 'assets.example.test', duration: '10', resolution: '1080P', request_timeout_seconds: '90', poll_interval_seconds: '10', max_wait_seconds: '2400' }, previous);
+  assert.equal(next.duration, 10);
+  assert.equal(next.request_timeout_seconds, 90);
+  assert.equal(next.max_wait_seconds, 2400);
+  assert.equal(next.prompt_optimizer, false);
+  assert.deepEqual(next.download_hosts, ['assets.example.test']);
+  const local = videoProfileFromForm({ provider: 'comfyui_wan', enabled: 'on', model: 'Wan2.2-TI2V-5B' }, previous);
+  assert.deepEqual(local, { provider: 'comfyui_wan', enabled: true, model: 'Wan2.2-TI2V-5B' });
+  const html = videoModelEditor('local_wan', local);
+  assert.match(html, /id="video-model"[^>]*readonly/);
+  assert.match(html, /class="video-remote-fields"[^>]*hidden disabled/);
+  assert.ok(!/name="api_key"/.test(html));
+});
+test('unverified model-directory skips never claim an online connection', () => {
+  const s = state();
+  s.modelTests.writer = { status: 'unverified', model_discovery: 'skip', generation: false, message: '尚未验证连接' };
+  const html = modelsView(s);
+  assert.ok(html.includes('尚未验证连接'));
+  assert.ok(!html.includes('连接通过'));
+  assert.ok(!html.includes('模型目录返回了配置模型'));
+});
+test('native and cloud provider controls preserve exact API prefixes and remove incompatible options', () => {
+  const html = modelEditor('', { provider: 'ollama_native' });
+  for (const provider of ['ollama_native', 'lm_studio', 'deepseek', 'dashscope']) assert.ok(html.includes('value="' + provider + '"'));
+  assert.ok(html.includes('不需要 /v1'));
+  assert.ok(endpointHelp('dashscope').includes('/compatible-mode/v1'));
+  const previous = { ...inventory().editable_profiles.writer, thinking: true };
+  const next = profileFromForm({ provider: 'ollama_native', enabled: 'on', network_mode: 'loopback', base_url: 'http://127.0.0.1:11434/proxy/api', model: 'qwen-local', context_tokens: '32768', request_timeout_seconds: '120', response_format: 'openai_json_schema', model_discovery: 'skip', thinking: 'false' }, previous);
+  assert.equal(next.base_url, 'http://127.0.0.1:11434/proxy/api');
+  assert.equal(next.thinking, false);
+  assert.equal(next.model_discovery, 'required');
+  assert.equal(next.chat_template_kwargs, undefined);
+  assert.equal(next.context_validation, 'conservative_estimate');
+  const generic = profileFromForm({ provider: 'vllm', base_url: 'http://127.0.0.1:8000/v1', model: 'qwen', context_tokens: '32768', request_timeout_seconds: '120', response_format: 'openai_json_schema' }, previous);
+  assert.equal(generic.thinking, undefined);
+});
+test('provider presets never overwrite a custom proxy URL', () => {
+  const help = {}, skip = {};
+  const field = value => ({ value });
+  const form = { elements: { provider: { value: 'dashscope', dataset: { previousProvider: 'vllm' } }, base_url: field('https://gateway.example.test/team/compatible-mode/v1'), network_mode: field('remote'), allowed_hosts: field('gateway.example.test'), response_format: field('json_object'), model_discovery: { value: 'required', querySelector() { return skip; } }, thinking: field('') }, querySelector() { return help; } };
+  switchTextProvider(form);
+  assert.equal(form.elements.base_url.value, 'https://gateway.example.test/team/compatible-mode/v1');
+  assert.equal(form.elements.allowed_hosts.value, 'gateway.example.test');
+  assert.equal(form.elements.model_discovery.value, 'skip');
+  assert.equal(form.elements.thinking.value, 'false');
+  assert.ok(help.textContent.includes('完整兼容 API 前缀'));
+});
+test('flow APIs are read-only and a response from another project cannot replace current evidence', async () => {
+  const s = { projectId: '012345abcdef', project: { id: '012345abcdef' } };
+  assert.equal(ingestProjectFlow(s, flowFixture(), s.projectId), true);
+  const retained = s.projectFlow;
+  assert.equal(ingestProjectFlow(s, flowFixture('ffffffffffff'), s.projectId), false);
+  assert.equal(s.projectFlow, retained);
+  assert.ok(s.projectFlowError.includes('不匹配'));
+  assert.equal(ingestProjectFlow(s, flowFixture('ffffffffffff'), 'ffffffffffff'), false);
+  const requests = [];
+  globalThis.fetch = async (url, options) => { requests.push({ url, options }); return new Response(JSON.stringify(flowFixture()), { status: 200 }); };
+  await api.flow('012345abcdef');
+  assert.equal(requests[0].url, '/api/factory/projects/012345abcdef/flow');
+  assert.equal(requests[0].options.method, 'GET');
+  assert.equal(requests[0].options.body, undefined);
+});
+test('team flow shows real input, output, dependencies and historical models independently of current assignment', () => {
+  const s = { project: { id: '012345abcdef' }, projectFlow: flowFixture() };
+  const html = teamFlowView(s);
+  for (const text of ['总控自动分工', 'current-default-model', 'actual-history-model', '一场雨中的重逢', '序场：车站', '经审核的剧本', '接收自', '交给', '项目历史记录', '服务返回模型', '执行回执', '尚无已保存的模型调用记录']) assert.ok(html.includes(text), text);
+  assert.match(html, /href="http:\/\/127\.0\.0\.1:8787\/media\/production\/factory-012345abcdef\/llm\/receipt\.json"/);
+  assert.ok(!html.includes('开始 尚未记录'));
+  const executionArea = html.split('class="flow-execution"')[1].split('</details>')[0];
+  assert.ok(executionArea.includes('actual-history-model'));
+  assert.ok(!executionArea.includes('current-default-model'));
+  assert.ok(!/style="width:\d+%"/.test(html));
+});
+test('flow data is escaped, unsafe artifact URLs are omitted and stale snapshots stay explicit', () => {
+  const flow = flowFixture();
+  flow.nodes[0].inputs[0].value = '<script>alert(1)</script>';
+  flow.nodes[0].outputs[0].artifact_url = 'javascript:alert(1)';
+  flow.nodes[0].executions[0].receipt = '<img src=x onerror=alert(1)>';
+  const html = teamFlowView({ project: { id: flow.project_id }, projectFlow: flow, projectFlowError: '连接失败' });
+  assert.ok(html.includes('&lt;script&gt;'));
+  assert.ok(html.includes('&lt;img'));
+  assert.ok(!html.includes('<script>alert'));
+  assert.ok(!html.includes('href="javascript:'));
+  assert.ok(html.includes('上一次成功读取的记录'));
+  const mismatched = teamFlowView({ project: { id: 'ffffffffffff' }, projectFlow: flow });
+  assert.ok(!mismatched.includes('actual-history-model'));
+  assert.ok(mismatched.includes('正在读取工作数据流'));
+});
+
+test('configured and unverified capability rows stay distinct from an unavailable service', () => {
+  const rows = capabilities({ llm: { status: 'unverified', available: null, model: 'manual-model' }, video: { status: 'configured', available: null, model: 'video-model' }, audio: { available: false } });
+  assert.equal(capabilityStatus(rows.find(row => row.key === 'llm')), '未验证');
+  assert.equal(capabilityStatus(rows.find(row => row.key === 'video')), '已配置');
+  assert.equal(capabilityStatus(rows.find(row => row.key === 'audio')), '不可用');
+});
+test('flow timestamps render seconds and ISO UTC consistently without inventing missing times', () => {
+  const flow = flowFixture();
+  flow.nodes[0].executions[0].started_at = 1700000000;
+  flow.nodes[0].executions[0].finished_at = '2023-11-14T22:13:20Z';
+  const html = teamFlowView({ project: { id: flow.project_id }, projectFlow: flow });
+  assert.ok(html.includes('开始 ' + dateText('2023-11-14T22:13:20Z', true)));
+  assert.ok(html.includes('结束 ' + dateText('2023-11-14T22:13:20Z', true)));
+});
+test('older project revisions cannot replace current task evidence after a retry', () => {
+  const s = { projectId: '012345abcdef', project: { id: '012345abcdef', revision: 8 } };
+  assert.equal(ingestProjectFlow(s, flowFixture(), s.projectId), false);
+  assert.equal(s.projectFlow, undefined);
+  assert.ok(s.projectFlowError.includes('项目已更新'));
+  const current = flowFixture(); current.revision = 8;
+  assert.equal(ingestProjectFlow(s, current, s.projectId), true);
+  assert.equal(s.projectFlowError, '');
+});
+test('bounded history and human participation are displayed honestly', () => {
+  const flow = flowFixture();
+  flow.evidence = { truncated: true, unreadable_receipts: 2 };
+  flow.teams.push({ id: 'producer', role: 'producer', label: '出品人', provider: 'human', assignment_source: 'human', status: 'waiting', model: null });
+  const html = teamFlowView({ project: { id: flow.project_id }, projectFlow: flow });
+  assert.ok(html.includes('当前仅显示部分历史记录'));
+  assert.ok(html.includes('2 份回执暂时无法读取'));
+  assert.ok(html.includes('人工确认'));
+  assert.ok(html.includes('上游 · 已完成'));
+});
+test('changing a preset host does not forward the prior service credential variable', () => {
+  const skip = {}, help = {};
+  const form = { elements: { provider: { value: 'ollama_native', dataset: { previousProvider: 'deepseek' } }, base_url: { value: 'https://api.deepseek.com' }, api_key_env: { value: 'DEEPSEEK_API_KEY' }, network_mode: { value: 'remote' }, allowed_hosts: { value: 'api.deepseek.com' }, response_format: {}, model_discovery: { querySelector() { return skip; } }, thinking: {} }, querySelector() { return help; } };
+  switchTextProvider(form);
+  assert.equal(form.elements.base_url.value, 'http://127.0.0.1:11434');
+  assert.equal(form.elements.api_key_env.value, '');
+  assert.equal(form.elements.network_mode.value, 'loopback');
+  form.elements.provider.value = 'ollama';
+  form.elements.api_key_env.value = 'LOCAL_AUTH_KEY';
+  switchTextProvider(form);
+  assert.equal(form.elements.base_url.value, 'http://127.0.0.1:11434/v1');
+  assert.equal(form.elements.api_key_env.value, 'LOCAL_AUTH_KEY');
+});
