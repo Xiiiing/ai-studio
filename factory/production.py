@@ -195,11 +195,14 @@ class _Run(SeriesProductionMixin, VideoProductionMixin, SpeechMixin, AudioEditor
         self.review_policy = fingerprint({
             "policy": explicit_policy or "local_vlm_review_v2",
             "model": self.config.get("semantic_model"),
+            **({"temporal_sampling": self.config.get("temporal_sampling", {
+                "policy": "uniform_endpoints_and_cut_neighbors.v1", "count": 8})}
+               if "temporal_sampling" in self.config or not explicit_policy else {}),
             **({"model_identity": self.config["semantic_model_identity"]}
                if self.config.get("semantic_model_identity") is not None else {}),
             "implementation": {} if explicit_policy else {
                 name: sha256(ROOT / "factory" / name)
-                for name in ("llm.py", "quality.py") if (ROOT / "factory" / name).is_file()},
+                for name in ("llm.py", "quality.py", "evaluation_sampling.py") if (ROOT / "factory" / name).is_file()},
             "evaluator": (getattr(evaluator, "__module__", "") + "." +
                           getattr(evaluator, "__qualname__", type(evaluator).__name__)) if evaluator else None,
         })

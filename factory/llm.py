@@ -188,7 +188,7 @@ def _review_expectations(shot):
     """Keep prior verdicts and execution metadata out of independent review."""
     fields = ("id", "seconds", "dramatic_beat", "action", "location", "prompt",
               "motion_prompt", "camera_motion", "reference_group", "continuity",
-              "lip_sync", "delivery_method")
+              "lip_sync", "delivery_method", "characters", "character_states", "asset_references")
     expected = {key: shot[key] for key in fields if key in shot}
     if isinstance(shot.get("dialogue"), list):
         expected["dialogue"] = [
@@ -206,56 +206,54 @@ def _review_sequence(project):
         for item in episode.get("shots", [])[:80] if isinstance(item, dict)]
 
 
-def review_media(project, shot, path, references, config=None):
+def review_media(project, shot, path, references, config=None, *, output_dir=None):
     from .config import load_config
     config=config or load_config()
     if not config.get("quality",{}).get("semantic_enabled",True):
         return {"status":"unavailable","issues":[],"reason":"semantic_review_disabled","evaluator":"none"}
     path=Path(path)
-    record=ROOT/"production"/project["slug"]/"quality"/"semantic"
+    record=Path(output_dir) if output_dir is not None else ROOT/"production"/project["slug"]/"quality"/"semantic"
     content=[{"type":"text","text":json.dumps({
-        "任务":"评估新镜头与分镜的匹配及明确可见的严重瑕疵。先出现的是角色参考，后是候选帧；不要把画风差异误判为同一角色身份漂移。score使用0至100的整数百分制，90表示优良、60为及格，不要输出0至1的概率。",
+        "任务":"评估新镜头与分镜的匹配及明确可见的严重瑕疵。先出现的是角色参考，后是带时间点的候选帧；不要把画风差异误判为同一角色身份漂移。score使用0至100整数，不是概率；问题证据应标注实际样本时间。相机运动不等于人物完成动作，有限抽样不可证明全过程正确。",
         "format":project.get("format"),"shot":_review_expectations(shot),
         "approved_sequence":_review_sequence(project),
         "sequence_rule":"approved_sequence是批准剧情时序，只用于检查明显的道具提前出现或持有人矛盾；只要求本镜动作，不要求单帧演完整段事件。",
         "criteria":{"pass":"叙事主体/服装/构图足够匹配，无明显多肢/脸部崩坏或关键剧情错置",
                     "fail":"仅对清晰可见且影响剧情的严重错误判fail；不能从静态图推断口型或表演连续性"},
         "evidence_rule":"只用待评镜头样本判断当前人物动作、道具持有人、位置与构图；参考图仅用于身份和衣装对照，参考图中的持物或背景不代表候选帧已经具备。逐项根据本次可见证据判断，不猜测历史评审。",
-        "note":"这是抽帧视觉语言模型评审，不是VBench，分数是模型判断，不是客观真值。"
+        "note":"这是抽帧视觉语言模型评审，不是VBench，分数是模型判断，不是客观真值。",
+        "project_id":project.get("id"),"production_revision":project.get("production_revision"),
+        "production_profile":project.get("production_profile")
     },ensure_ascii=False)}]
-    for index, reference in enumerate((references or [])[:2]):
+    for index, reference in enumerate((references or [])[:4]):
         ref=reference.get("path") if isinstance(reference,dict) else reference
         if ref and Path(ref).is_file():
             content.extend([{"type":"text","text":f"角色或场景参考 {index+1}"},
                             {"type":"image_url","image_url":{"url":_image_url(ref)}}])
-    samples=[]
+    sampling = {"policy":"single_image","timestamps":[0.0]}
     if path.suffix.lower() in {".mp4",".webm",".mov"}:
-        import av
-        from PIL import Image
-        with av.open(str(path)) as container:
-            stream=container.streams.video[0]
-            count=int(stream.frames or max(1,round(float(shot.get("seconds",4))*24)))
-            wanted={0,max(0,count//2),max(0,count-2)}
-            for index, frame in enumerate(container.decode(stream)):
-                if index in wanted:
-                    samples.append(frame.to_image())
-                if index>=max(wanted):
-                    break
+        from .evaluation_sampling import sample_video
+        sampled, sampling = sample_video(path, count=config.get("quality",{}).get("temporal_samples",8))
+        samples = [item["image"] for item in sampled]
     else:
-        samples=[path]
+        samples = [path]
     for index,sample in enumerate(samples):
-        content.extend([{"type":"text","text":f"待评镜头样本 {index+1}/{len(samples)}"},
+        content.extend([{"type":"text","text":f"待评镜头样本 {index+1}/{len(samples)}，时间 {sampling['timestamps'][index]:.3f} 秒"},
                         {"type":"image_url","image_url":{"url":_image_url(sample)}}])
     if not samples:
         return {"status":"fail","issues":[{"code":"decode","detail":"没有可解码画面"}],"evaluator":"technical"}
     result=_request(config,"visual_critic","你是独立的短剧画面质检员。用中文给出简洁、具体、可执行的评审。",
                     None,REVIEW_SCHEMA,record,max_tokens=1600,temperature=.15,content=content)
+    errors = list(Draft202012Validator(REVIEW_SCHEMA).iter_errors(result))
+    if errors:
+        raise ValueError("VLM result does not match the visual review contract")
     blocking=[issue for issue in result["issues"] if issue["severity"]=="blocking"]
     if blocking or result["score"] < config.get("quality",{}).get("minimum_score",60):
         result["status"]="fail"
     selected_model = resolve_llm(config, "visual_critic", require_vision=True)
-    result.update(evaluator="local_vlm_sampled_frames",model=selected_model["model"],
+    result.update(evaluator="vlm_sampled_frames",model=selected_model["model"],
                   profile=selected_model["profile"],endpoint=selected_model.get("base_url"),
-                  sampled_frames=len(samples),reference_count=min(len(references or []),2),
-                  temporal_scope="sampled_frames_only",human_reviewed=False)
+                  sampled_frames=len(samples),reference_count=min(len(references or []),4), sampling=sampling,
+                  temporal_scope="sampled_frames_only",human_reviewed=False,
+                  project_id=project.get("id"),shot_id=shot.get("id"),config_revision=config_revision(config))
     return result

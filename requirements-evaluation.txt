@@ -1,0 +1,3 @@
+# Small text-normalization dependencies only; no ASR/VLM weights are installed.
+opencc-python-reimplemented==0.1.7
+pypinyin==0.55.0

@@ -1,7 +1,7 @@
 {
   "name": "ai-studio-ui-tests",
   "private": true,
-  "scripts": {"test": "node --test tests/test_factory*.mjs"},
+  "scripts": {"test": "node --test tests/test_factory*.mjs", "test:browser": "playwright test"},
   "engines": {"node": ">=20"},
-  "devDependencies": {"linkedom": "0.18.12"}
+  "devDependencies": {"linkedom": "0.18.12", "@playwright/test": "1.64.0"}
 }
