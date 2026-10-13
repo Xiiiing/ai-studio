@@ -21,6 +21,7 @@ from .audio_editor import AudioEditorMixin
 from .speech import SpeechMixin
 from .video_production import VideoProductionMixin
 from .series_production import SeriesProductionMixin
+from .shot_workbench import plan_signature, pinned_selection
 from .video_providers import LOCAL_PROFILE, normalize_video_profile
 from .minimax_video import video_identity, validate_video_plan
 from .quality import combine, inspect_image, inspect_video, repair_plan, semantic_review
@@ -352,6 +353,10 @@ class _Run(SeriesProductionMixin, VideoProductionMixin, SpeechMixin, AudioEditor
         self.budget.check(self.control, require_gpu=gpu)
 
     def _valid_selection(self, target):
+        pinned = pinned_selection(self.project, target)
+        if pinned:
+            _receipt_path(pinned)
+            return pinned
         selected = target["folder"] / "selected.json"
         if not selected.exists():
             return None
@@ -464,7 +469,9 @@ class _Run(SeriesProductionMixin, VideoProductionMixin, SpeechMixin, AudioEditor
                                            else "Wan2.2-TI2V-5B"),
                                  "seconds": extra.get("seconds"),
                                  "mode": self.mode, "profile": self.config.get("video_profile", "quality"),
-                                 **({"asset_references": extra["asset_references"]} if extra.get("asset_references") else {})})
+                                 **({"asset_references": extra["asset_references"]} if extra.get("asset_references") else {}),
+                                 **({"render_revision": extra["shot"]["render_revisions"][kind]}
+                                    if (extra.get("shot") or {}).get("render_revisions", {}).get(kind) else {})})
         shot = extra.get("shot") or {}
         expected = {key: shot.get(key) for key in (
             "id", "seconds", "prompt", "motion_prompt", "dialogue", "reference_group",
@@ -530,6 +537,10 @@ class _Run(SeriesProductionMixin, VideoProductionMixin, SpeechMixin, AudioEditor
                                  "steps": 4 if target["kind"] == "image" else 20},
                   "references": [media_receipt(p) for p in target["references"]],
                   "started_at": time.time()}
+        if target.get("shot"):
+            record.update(plan_signature=plan_signature(self.project, target["shot"], target["kind"]),
+                          shot_revision=target["shot"].get("shot_revision", 1),
+                          production_revision=self.project.get("production_revision", 1))
         if target.get("asset_references"):
             record["asset_references"] = copy.deepcopy(target["asset_references"])
         if self._remote_video(target):
@@ -655,6 +666,9 @@ class _Run(SeriesProductionMixin, VideoProductionMixin, SpeechMixin, AudioEditor
                          "review_signature": target["review_signature"] if required else None,
                          "generation_kind": ("local_diffusion_image" if target["kind"] == "image" else
                                              "cloud_diffusion_video" if self._remote_video(target) else "local_diffusion_video")}
+                if record.get("plan_signature"):
+                    saved.update(plan_signature=record["plan_signature"], shot_revision=record.get("shot_revision"),
+                                 production_revision=record.get("production_revision"))
                 if target.get("asset_references"):
                     saved["asset_references"] = copy.deepcopy(target["asset_references"])
                     record["output"] = copy.deepcopy(saved)
@@ -669,6 +683,8 @@ class _Run(SeriesProductionMixin, VideoProductionMixin, SpeechMixin, AudioEditor
                     # Retain the actual media and its receipt, but withdraw stale automatic approval.
                     if selection_file.exists() and read_json(selection_file).get("sha256") == saved["sha256"]:
                         selection_file.unlink()
+                    if receipt.get("producer_selection"):
+                        raise ProductionNeedsDecision("人工选定素材未通过当前复核，请重新审片；原文件保留", "manual_selection_review")
                     if shot is not None:
                         shot["qa"] = qa
                         shot["status"] = "reviewing" if awaiting_review else "retrying"

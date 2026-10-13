@@ -3,12 +3,14 @@ import { list, isRunning } from './format.js';
 import { dashboard, projectView, renderSidebar, connectionError, capabilitiesDialog } from './views.js';
 import { bindActions } from './actions.js';
 import { bindSeriesActions } from './series-actions.js';
+import { bindShotActions } from './shot-actions.js';
+import { patchWorkspace } from './dom-patch.js';
 import { bindModelActions, ingestInventory, modelsView } from './models.js';
 import { ingestProjectFlow } from './team.js';
 
 const state = { overview: null, projectId: '', project: null, view: 'workflow', tab: 'overview', busy: false, epoch: 0, models: null, modelsDraft: null, modelsDirty: false, modelTests: {}, workflow: null, projectFlow: null, projectFlowError: '' };
 const workspace = document.getElementById('workspace');
-const validTabs = ['overview', 'team', 'script', 'series', 'quality', 'costs', 'delivery'];
+const validTabs = ['overview', 'team', 'shots', 'script', 'series', 'quality', 'costs', 'delivery'];
 let timer, toastTimer, generation = 0, lastPaint = '', lastError = '', lastCapabilities = '';
 function toast(message, error = false) {
   const element = document.getElementById('toast');
@@ -19,16 +21,14 @@ function toast(message, error = false) {
   toastTimer = setTimeout(() => { element.hidden = true; }, error ? 10000 : 5500);
 }
 function paint(force = false) {
-  const key = JSON.stringify({ view: state.view, id: state.projectId, tab: state.tab, project: state.project, overview: state.projectId || state.view === 'models' ? null : state.overview, models: state.models, draft: state.modelsDraft, dirty: state.modelsDirty, tests: state.modelTests, pending: state.modelTestPending, saving: state.modelsSaving, modelError: state.modelsError, saveError: state.modelSaveError, remoteChanged: state.modelsRemoteChanged, workflow: state.workflow, flow: state.projectFlow, flowError: state.projectFlowError });
+  const key = JSON.stringify({ view: state.view, id: state.projectId, tab: state.tab, project: state.project, overview: state.projectId || state.view === 'models' ? null : state.overview, models: state.models, draft: state.modelsDraft, dirty: state.modelsDirty, tests: state.modelTests, pending: state.modelTestPending, saving: state.modelsSaving, modelError: state.modelsError, saveError: state.modelSaveError, remoteChanged: state.modelsRemoteChanged, workflow: state.workflow, flow: state.projectFlow, flowError: state.projectFlowError, shotId: state.shotId, shotDrafts: state.shotDrafts });
   if (!force && key === lastPaint) return;
-  const video = workspace.querySelector('video');
-  if (!force && video && !video.paused && !video.ended) return;
   const preserve = new Map(Array.from(workspace.querySelectorAll('[data-preserve]')).map(element => [element.dataset.preserve, { value: element.value, checked: element.type === 'checkbox' ? element.checked : null }]));
   const active = workspace.contains(document.activeElement) ? document.activeElement : null;
   const focusKey = active?.dataset.preserve;
   const selection = focusKey ? [active.selectionStart, active.selectionEnd] : null;
   const details = new Map(Array.from(workspace.querySelectorAll('details[data-flow-detail]')).map(element => [element.dataset.flowDetail, element.open]));
-  workspace.innerHTML = state.view === 'models' ? modelsView(state) : state.projectId ? projectView(state) : dashboard(state);
+  patchWorkspace(workspace, state.view === 'models' ? modelsView(state) : state.projectId ? projectView(state) : dashboard(state));
   for (const [key, value] of preserve) {
     const field = Array.from(workspace.querySelectorAll('[data-preserve]')).find(element => element.dataset.preserve === key);
     if (field) {
@@ -58,9 +58,9 @@ async function refresh({ force = false, notify = false } = {}) {
   clearTimeout(timer);
   const request = ++generation, epoch = state.epoch, projectId = state.projectId;
   document.getElementById('sync-state').textContent = '正在同步';
-  const results = await Promise.allSettled([api.overview(), projectId ? api.project(projectId) : Promise.resolve(null), api.models(), api.workflow(), projectId ? api.flow(projectId) : Promise.resolve(null), projectId ? api.cloudBudget(projectId) : Promise.resolve(null), projectId ? api.series(projectId) : Promise.resolve(null)]);
+  const results = await Promise.allSettled([api.overview(), projectId ? api.project(projectId) : Promise.resolve(null), api.models(), api.workflow(), projectId ? api.flow(projectId) : Promise.resolve(null), projectId ? api.cloudBudget(projectId) : Promise.resolve(null), projectId ? api.series(projectId) : Promise.resolve(null), projectId ? api.shots(projectId) : Promise.resolve(null)]);
   if (request !== generation || epoch !== state.epoch) { schedule(); return; }
-  const [overviewResult, projectResult, modelsResult, workflowResult, flowResult, cloudResult, seriesResult] = results;
+  const [overviewResult, projectResult, modelsResult, workflowResult, flowResult, cloudResult, seriesResult, shotsResult] = results;
   let error = '';
   if (overviewResult.status === 'fulfilled') state.overview = overviewResult.value;
   else error = overviewResult.reason.message;
@@ -70,6 +70,8 @@ async function refresh({ force = false, notify = false } = {}) {
   if (projectId && cloudResult.status === 'rejected') error = cloudResult.reason.message;
   if (projectId && state.project && seriesResult.status === 'fulfilled') state.project.series_library = seriesResult.value;
   if (projectId && state.project && seriesResult.status === 'rejected') state.project.series_error = seriesResult.reason.message;
+  if (projectId && state.project && shotsResult.status === 'fulfilled') state.project.workbench = shotsResult.value;
+  if (projectId && shotsResult.status === 'rejected') error = shotsResult.reason.message;
   if (modelsResult.status === 'fulfilled') ingestInventory(state, modelsResult.value);
   else state.modelsError = modelsResult.reason.message;
   if (workflowResult.status === 'fulfilled') state.workflow = workflowResult.value;
@@ -123,6 +125,7 @@ const ui = { refresh, selectProject, selectView, selectTab, toast, paint };
 bindActions(state, ui);
 bindModelActions(state, ui);
 bindSeriesActions(state, ui);
+bindShotActions(state, ui);
 function readLocation() {
   const params = new URLSearchParams(location.hash.slice(1));
   state.view = params.get('view') === 'models' ? 'models' : 'workflow';

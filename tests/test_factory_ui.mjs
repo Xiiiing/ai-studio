@@ -196,8 +196,11 @@ test('visual review selector disables a text-only connection', () => {
   assert.ok(row.includes('不支持图像输入'));
 });
 test('the real app navigates workflow, models and a pending project through read-only APIs', async () => {
+  const { parseHTML } = await import('linkedom');
+  const workspaceDocument = parseHTML('<html><body><main id="workspace"></main></body></html>').document;
   const previous = { document: globalThis.document, window: globalThis.window, location: globalThis.location, history: globalThis.history, fetch: globalThis.fetch, setTimeout: globalThis.setTimeout, clearTimeout: globalThis.clearTimeout };
   const events = new Map(), windowEvents = new Map(), nodes = new Map(), requests = [];
+  nodes.set('workspace', workspaceDocument.getElementById('workspace'));
   class Element {
     constructor() { this.innerHTML = ''; this.textContent = ''; this.dataset = {}; this.open = false; this.classList = { toggle() {} }; }
     querySelector() { return null; }

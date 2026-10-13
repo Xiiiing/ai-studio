@@ -19,6 +19,7 @@ from studio.core import ROOT, fingerprint, media_receipt, read_json, sha256, wri
 from studio.media import SR, chunks, font, piano, stamp, write_wav
 from .quality import combine, inspect_video, semantic_review
 from .scheduler import ProductionNeedsDecision
+from .shot_workbench import plan_signature
 
 FFMPEG = imageio_ffmpeg.get_ffmpeg_exe()
 
@@ -44,7 +45,15 @@ class AudioEditorMixin:
             raise ProductionNeedsDecision("The planned camera motion is unsupported", "camera_motion",
                                           {"shot": shot["id"], "motion": requested_motion})
         signature = fingerprint({"image": sha256(image), "seconds": shot["seconds"],
-                                 "output": self.output_size, "motion": motion, "engine": "ffmpeg_zoompan_v1"})
+                                 "output": self.output_size, "motion": motion, "engine": "ffmpeg_zoompan_v1",
+                                 **({"render_revision": shot["render_revisions"]["video"]}
+                                    if shot.get("render_revisions", {}).get("video") else {})})
+        pin = self.project.get("shot_selections", {}).get(shot["id"], {}).get("video")
+        if pin:
+            if pin["plan_signature"] != plan_signature(self.project, shot, "video") or pin["receipt"].get("source_signature") != signature:
+                raise ProductionNeedsDecision("人工运镜选片参数已变化，请重新确认", "manual_selection_stale")
+            self.receipt_path(pin["receipt"])
+            return {**pin["receipt"], "producer_selection": {k: v for k, v in pin.items() if k != "receipt"}}
         folder = self.folder / "renders" / shot["id"] / ("camera_" + signature[:16])
         target = folder / "video.mp4"
         receipt_path = folder / "result.json"
@@ -76,7 +85,8 @@ class AudioEditorMixin:
                                           {"shot": shot["id"], "qa": qa})
         record = media_receipt(target, source_signature=signature, origin="procedural_camera_motion",
                                motion=motion, requested_motion=requested_motion, diffusion_video=False, lip_sync=False,
-                               source_image=shot["image"], qa=qa,
+                               source_image=shot["image"], qa=qa, plan_signature=plan_signature(self.project, shot, "video"),
+                               take=folder.name, model="ffmpeg_zoompan_v1", shot_revision=shot.get("shot_revision", 1),
                                elapsed_seconds=round(time.monotonic() - started, 3))
         write_json(receipt_path, record)
         return record

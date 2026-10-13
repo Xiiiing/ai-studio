@@ -50,6 +50,10 @@ class Handler(LegacyHandler):
                                   "queue":store.queue_summary(),"version":__version__})
             if path=="/api/factory/capabilities":
                 return self.json(snapshot())
+            match=re.fullmatch(r"/api/factory/projects/([a-f0-9]{12})/shots",path)
+            if match:
+                from .shot_workbench import snapshot as shot_snapshot
+                return self.json(shot_snapshot(match.group(1)))
             match=re.fullmatch(r"/api/factory/projects/([a-f0-9]{12})/series",path)
             if match:
                 from .series_bible import summary as series_summary
@@ -145,6 +149,10 @@ class Handler(LegacyHandler):
                                                payload["expected_revision"],**video))
             if route=="/api/factory/projects":
                 return self.json({"project":store.create(payload)},202)
+            match=re.fullmatch(r"/api/factory/projects/([a-f0-9]{12})/shots/(S\d{2,3})",route)
+            if match:
+                from .shot_edits import mutate as mutate_shot
+                return self.json({"project":mutate_shot(*match.groups(),payload)},202)
             match=re.fullmatch(r"/api/factory/projects/([a-f0-9]{12})/series",route)
             if match:
                 from .series_bible import mutate as series_mutate
