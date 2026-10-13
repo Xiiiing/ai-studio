@@ -150,6 +150,7 @@ def production_config(project, config):
     from .video_providers import resolve_video
     result = copy.deepcopy(config.get("production", {}))
     result["video_connection"] = resolve_video(config)
+    result["remote_step"] = True  # Worker executions always yield remote waiting.
     result["semantic_enabled"] = bool(config.get("quality",{}).get("semantic_enabled",True))
     result["semantic_model_identity"] = llm_identity(config, "visual_critic")
     result["semantic_model"] = result["semantic_model_identity"].get("model")

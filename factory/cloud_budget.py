@@ -257,6 +257,10 @@ def reserve(pid, batch_id, line, profile, request):
         if count >= limits["max_submissions"] or (unit is None and not limits["confirm_unknown_cost"]) or (
                 unit is not None and limits["max_estimated_cost_micros"] is not None and cost + unit > limits["max_estimated_cost_micros"]):
             raise ProductionNeedsDecision("云视频提交超出授权范围", "cloud_budget_exceeded")
+        from .remote_tasks import MAX_REMOTE_INFLIGHT, ProductionDeferred
+        active = db.execute("SELECT count(*) FROM cloud_tasks WHERE status NOT IN ('downloaded','failed','rejected')").fetchone()[0]
+        if active >= MAX_REMOTE_INFLIGHT:
+            raise ProductionDeferred(time.time() + 5, "remote_submit", {"reason": "remote_capacity", "limit": MAX_REMOTE_INFLIGHT})
         now = time.time()
         db.execute("""INSERT INTO cloud_tasks(intent_id,project_id,batch_id,authorization_id,shot_id,attempt,take,
                    provider,model,request_signature,status,estimated_cost_micros,currency,created,updated)
@@ -290,6 +294,10 @@ def reconcile_task(pid, line, task, profile):
         db.execute("UPDATE cloud_tasks SET task_id=COALESCE(?,task_id),file_id=COALESCE(?,file_id),status=?,updated=? WHERE intent_id=?",
                    (str(task["task_id"]) if task.get("task_id") else None,
                     str(task["file_id"]) if task.get("file_id") else None, status, now, line["intent_id"]))
+        from .remote_tasks import phase_for
+        phase = phase_for({**task, "status": status})
+        db.execute("UPDATE cloud_tasks SET phase=?,next_poll_at=?,poll_failures=? WHERE intent_id=?",
+                   (phase, task.get("next_poll_at"), int(task.get("poll_failures") or 0), line["intent_id"]))
 
 
 def confirm_cost(pid, payload):

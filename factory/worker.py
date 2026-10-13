@@ -13,6 +13,7 @@ from studio.core import write_json
 from . import store
 from .config import DATA
 from .workflows import ProjectPaused, ReviewBlocked, advance
+from .remote_tasks import ProductionDeferred, defer_job, owns_job
 
 _stop=threading.Event()
 _current=None
@@ -26,19 +27,23 @@ def heartbeat():
 
 
 def handle(job):
+    if not owns_job(job):
+        return  # A completed/recovered claim is not permission to execute again.
     pid=job["project_id"]
     try:
         advance(pid)
-        store.finish_job(job["id"])
+        store.finish_job(job["id"], lease=job["lease"])
+    except ProductionDeferred as deferred:
+        defer_job(job, deferred)
     except ProjectPaused as exc:
         store.update(pid,{"status":"paused","error":None,"message":str(exc)})
-        store.finish_job(job["id"])
+        store.finish_job(job["id"], lease=job["lease"])
     except Exception as exc:
         name=type(exc).__name__
         details=getattr(exc,"details",None) or getattr(exc,"reason",None)
         if name=="ProductionPaused":
             store.update(pid,{"status":"paused","error":None,"message":str(exc)})
-            store.finish_job(job["id"])
+            store.finish_job(job["id"], lease=job["lease"])
             return
         is_budget=name=="ProductionBudgetExceeded"
         needs={"type":"budget" if is_budget else "production" if name=="ProductionNeedsDecision" else "review",
@@ -53,7 +58,7 @@ def handle(job):
         store.update(pid,{"status":"blocked","error":str(exc)[:2500],"needs_decision":needs,
                           "message":"制片已保留进度并暂停："+str(exc)[:1500]})
         store.event(pid,"异常详情已写入本地运行日志。","error",{"exception_type":name})
-        store.finish_job(job["id"],str(exc)[:2500])
+        store.finish_job(job["id"],str(exc)[:2500],lease=job["lease"])
         traceback.print_exc()
 
 

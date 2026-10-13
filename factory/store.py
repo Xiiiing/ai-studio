@@ -71,6 +71,8 @@ def initialize():
         """)
         from .cloud_budget import initialize as initialize_cloud_budget
         initialize_cloud_budget(db)
+        from .remote_tasks import migrate as migrate_remote_tasks
+        migrate_remote_tasks(db)
 
 
 def _read(db, pid):
@@ -340,6 +342,8 @@ def action(pid, payload):
         db.execute("BEGIN IMMEDIATE")
         p = _read(db, pid)
         if command == "pause":
+            from .remote_tasks import settle_wait
+            settle_wait(p)
             if p["status"] in TERMINAL:
                 raise ValueError("已完成项目不需要暂停")
             p["pause_requested"] = True
@@ -435,35 +439,18 @@ def queue_summary():
 
 
 def recover_jobs():
-    with connection() as db:
-        rows = db.execute("SELECT id,project_id FROM jobs WHERE status='running'").fetchall()
-        for row in rows:
-            db.execute("UPDATE jobs SET status='queued',started=NULL WHERE id=?", (row["id"],))
-            _event(db, row["project_id"], "生产进程已恢复，核对检查点和素材回执后继续。", "recovery")
-    return len(rows)
+    from .remote_tasks import recover_jobs as recover
+    return recover()
 
 
 def claim_job(project_id=None):
-    with connection() as db:
-        db.execute("BEGIN IMMEDIATE")
-        rows = db.execute("SELECT * FROM jobs WHERE status='queued' ORDER BY created").fetchall()
-        for row in rows:
-            if project_id is not None and row["project_id"] != project_id:
-                continue
-            p=_read(db,row["project_id"])
-            if p.get("pause_requested") or p["status"] in TERMINAL | {"paused","blocked","failed"} or p["status"].startswith("awaiting_"):
-                db.execute("UPDATE jobs SET status='cancelled',finished=? WHERE id=?", (time.time(),row["id"]))
-                continue
-            db.execute("UPDATE jobs SET status='running',started=? WHERE id=?", (time.time(),row["id"]))
-            return dict(row)
-        return None
+    from .remote_tasks import claim_job as claim
+    return claim(project_id)
 
 
-def finish_job(jid, error=None):
-    with connection() as db:
-        db.execute("UPDATE jobs SET status=?,finished=?,error=? WHERE id=?",
-                   ("failed" if error else "completed", time.time(), error, jid))
-
+def finish_job(jid, error=None, lease=None):
+    from .remote_tasks import finish_job as finish
+    return finish(jid, error, lease)
 
 def remember(pid):
     p = get(pid, False)
