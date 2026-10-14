@@ -60,7 +60,7 @@ def observations(project, root):
 
 
 def evaluate(project, root, *, golden=None, human=None, vbench=None, asr_model=None, transcriber=None,
-             vlm_config=None, observations_dir=None):
+             vlm_config=None, observations_dir=None, additional_checks=(), media_context=None):
     project = copy.deepcopy(project)
     root = Path(root).resolve(strict=True)
     if not isinstance(project, dict) or not isinstance(project.get("id"), str):
@@ -70,7 +70,11 @@ def evaluate(project, root, *, golden=None, human=None, vbench=None, asr_model=N
         raise ValueError("Golden set must define the seven versioned film dimensions")
     start = time.monotonic()
     checks, media = deterministic(project, root)
-    media_signature = fingerprint({"media":media, "dialogue":[{"id":shot.get("id"),"lines":shot.get("dialogue",[])} for shot in project.get("shots",[])]})
+    checks.extend(copy.deepcopy(additional_checks))
+    signature_input = {"media": media, "dialogue": [{"id": shot.get("id"), "lines": shot.get("dialogue", [])} for shot in project.get("shots", [])]}
+    if media_context is not None:
+        signature_input["evidence_receipts"] = media_context
+    media_signature = fingerprint(signature_input)
     checks.extend(asr_checks(project, root, asr_model, transcriber))
     if vlm_config is None:
         checks.extend(row(name,"vlm_review","not_run",source="vlm") for name in ("causality","identity","props","action"))
@@ -88,40 +92,66 @@ def evaluate(project, root, *, golden=None, human=None, vbench=None, asr_model=N
                 present = any(all(value.get(key) == reference.get(key) for key in ("asset_id","version","sha256")) for value in declared)
                 checks.append(row("identity","pinned_reference_receipt","pass" if present else "fail",shot_id=shot["id"],
                                   evidence=[reference],source="reference_metadata_not_visual_identity"))
-    measured = [check for check in checks if check["source"] == "deterministic"]
-    technical_passed = bool(measured) and all(check["status"] == "pass" for check in measured)
     human_rows = [check for check in checks if check["check"] == "producer_review"]
     human_passed = human is not None and human.get("decision") == "approve" and all(value["status"] == "pass" for value in human_rows)
-    failures = [value for value in checks if value["status"] == "fail"]
-    verdict = "needs_repair" if failures else "human_approved" if technical_passed and human_passed else "human_review_required"
+    outcome = conclusion(checks, human_passed, golden["dimensions"])
     code_files = [Path(__file__),ROOT/"factory/evaluation_media.py",ROOT/"factory/evaluation_sampling.py",ROOT/"factory/evaluation_external.py",ROOT/"factory/evaluation_semantic.py",ROOT/"factory/llm.py",ROOT/"audio/check_dialogue.py"]
     return {"schema":"ai-studio.film-evaluation.v1", "run_id":uuid.uuid4().hex, "created_at":datetime.now(timezone.utc).isoformat(),
             "project_id":project["id"], "production_revision":project.get("production_revision",1), "project_revision":project.get("revision"),
             "production_profile":project.get("production_profile"), "profile_signature":fingerprint(project.get("production_profile")),
             "protocol_version":golden["version"], "golden_signature":fingerprint(golden), "dimensions":golden["dimensions"],
-            "media_signature":media_signature,"media":media,"checks":checks,"verdict":verdict,
-            "technical_passed":technical_passed,"human_approved":human_passed,"artistic_quality_certified":False,
+            "media_signature":media_signature,"media":media,"checks":checks,**outcome,
+            "human_approved":human_passed,"artistic_quality_certified":False,
             "elapsed_seconds":round(time.monotonic()-start,3),"python_version":platform.python_version(),
             "evaluation_code":{path.relative_to(ROOT).as_posix():sha256(path) for path in code_files},
             "observations":observations(project,root),
-            "repair_suggestions":[{"category":name,"recommendation":golden["dimensions"][name]["repair"]} for name in sorted({item["category"] for item in checks if item["status"] in {"fail","review_needed"}})],
             "boundaries":["Automatic checks do not prove artistic merit or full temporal consistency", "ASR can misrecognize; phonetic match is not textual identity", "VBench imported scores are raw optional metrics, never a producer approval", "Old missing identities and costs remain unknown", "This evaluation never enqueues or repeats a generation POST"]}
 
 
+def conclusion(checks, human_passed, dimensions):
+    """One shared outcome calculation for evaluations and production acceptance."""
+    measured = [check for check in checks if check["source"] == "deterministic"]
+    technical = bool(measured) and all(check["status"] == "pass" for check in measured)
+    failures = any(check["status"] == "fail" for check in checks)
+    verdict = "needs_repair" if failures else "human_approved" if technical and human_passed else "human_review_required"
+    return {"technical_passed": technical, "verdict": verdict,
+            "repair_suggestions": [{"category": name, "recommendation": dimensions[name]["repair"]}
+                                   for name in sorted({v["category"] for v in checks if v["status"] in {"fail", "review_needed"}})]}
+
+
 def compare_reports(current, baseline):
-    compatible = all(current.get(key) == baseline.get(key) for key in ("golden_signature","profile_signature"))
-    if not compatible:
-        return {"comparable":False,"reason":"Golden protocol or production profile differs"}
+    keys = ("schema", "project_id", "protocol_version", "golden_signature", "profile_signature", "evaluation_code")
+    if any(not current.get(key) or current.get(key) != baseline.get(key) for key in keys):
+        return {"comparable": False, "reason": "Project, protocol, profile or evaluator source differs or is unknown"}
+    for key in ("schema", "protocol_version", "source_signature", "resolved_profile_signature"):
+        if current.get("acceptance", {}).get(key) != baseline.get("acceptance", {}).get(key):
+            return {"comparable": False, "reason": "Acceptance protocol or resolved profile differs"}
     def index(report):
-        return {(row["category"],row["check"],row.get("shot_id"),row["source"]):row for row in report.get("checks",[])}
-    previous = index(baseline)
+        result = {}
+        for value in report.get("checks", []):
+            paths = tuple(sorted({str(e["path"]) for e in value.get("evidence", []) if isinstance(e, dict) and e.get("path")}))
+            identity = value.get("metrics", {}).get("line_id")
+            key = (value["category"], value["check"], value.get("shot_id"), value["source"], paths, identity)
+            if key in result:
+                raise ValueError("Ambiguous duplicate check identities")
+            result[key] = value
+        return result
+    try:
+        previous, latest = index(baseline), index(current)
+    except (ValueError, KeyError, TypeError):
+        return {"comparable": False, "reason": "Report checks lack unambiguous identities"}
     changes = []
-    for key, value in index(current).items():
-        old = previous.get(key)
-        if old and old["status"] != value["status"]:
-            changes.append({"category":key[0],"check":key[1],"shot_id":key[2],"source":key[3],"before":old["status"],"after":value["status"]})
-    return {"comparable":True,"baseline_run_id":baseline.get("run_id"),"changes":changes,
-            "note":"Protocol-aligned status comparison, not a causal attribution of artistic improvement"}
+    for key in sorted(previous.keys() | latest.keys(), key=repr):
+        old, value = previous.get(key, {}), latest.get(key, {})
+        before, after = old.get("status", "not_present"), value.get("status", "not_present")
+        if before != after:
+            changes.append({"category": key[0], "check": key[1], "shot_id": key[2], "source": key[3],
+                            "paths": list(key[4]), "line_id": key[5], "before": before, "after": after})
+    return {"comparable": True, "baseline_run_id": baseline.get("run_id"), "changes": changes,
+            "baseline_production_revision": baseline.get("production_revision"),
+            "current_production_revision": current.get("production_revision"),
+            "baseline_media_signature": baseline.get("media_signature"), "current_media_signature": current.get("media_signature"),
+            "note": "Protocol-aligned status comparison, not a causal attribution of artistic improvement"}
 
 
 def main():
