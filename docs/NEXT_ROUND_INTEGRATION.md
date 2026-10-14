@@ -2,6 +2,8 @@
 
 ## 当前验证范围
 
+已核查 [Draft PR #8](https://github.com/Xiiiing/ai-studio/pull/8) 的 base=main、head=feat/http-security-hardening，未合并。本轮实现提交 `bd6da8ab9c2be2b115bf95ecdf03b1c2cfef7542` 的 tree 与本地通过回归的版本完全一致；GitHub CI 记录时 pending，不能替代以下本地证据。
+
 工作包 7 基于 `main@4aaece74ab54f38c125c564accc20f4134fb5bab`，没有合并其他工作包的实现。运行完整 Factory Python 回归和 Node 单元测试，新增真实 loopback HTTP/临时 SQLite 契约测试。它们验证离线控制逻辑，不构成全流程真实制作验收。
 
 | 不变量 | 当前证据 / 状态 |

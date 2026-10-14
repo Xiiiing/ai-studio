@@ -1,10 +1,16 @@
 # 下一轮 PR 交付报告
 
-基线：`4aaece74ab54f38c125c564accc20f4134fb5bab`。本文件在取得真实远端结果后更新，不预填 PR 编号或 URL。
+基线：`4aaece74ab54f38c125c564accc20f4134fb5bab`。以下远端结果已通过 GitHub 连接器及 git fetch 核查。
 
 ## 工作包 7
 
-分支：`feat/http-security-hardening`；base：`main`。状态：implemented、tested（Python、Node、真实浏览器）；pushed、draft_pr_open、ci_passed 暂为 not_run。Shell Git 推送预检因缺少凭据 blocked；GitHub 连接器已确认 push 权限，远端提交与 PR 尚待实际完成。
+分支：`feat/http-security-hardening`；base：`main`。实际 PR：[Draft #8](https://github.com/Xiiiing/ai-studio/pull/8)。状态：implemented、tested（Python、Node、真实浏览器）、pushed、draft_pr_open。发布时发现同工作包的原 Draft PR 已存在，复核后以快进提交补强，未创建重复 PR，未 force push，未合并。
+
+原远端提交 `52d1952b558f5ad4eadad7e0a27bc243abff3958` → 本轮实现提交 `bd6da8ab9c2be2b115bf95ecdf03b1c2cfef7542`。实现 tree `fe6abd7f1356d04e0f088a3ef54c935948041549` 与本地已测试并保留 bundle 的 `8013275d9bcce5b90a88062d65533df2c86f3b60` 完全一致；git fetch 后逐树比对通过。相对 main 为 16 个优化 7 文件、1302 insertions / 83 deletions；本次状态记录只增加文档差异。原恢复环境与早期失败记录保留在父提交和本地 evidence 中。
+
+Shell Git 推送预检因缺少凭据 blocked；已使用用户授权的 GitHub 连接器完成远端写入，原 SHA 围栏匹配且 force=false。PR 已核查 head/base、Draft=true、merged=false、16 文件范围，无其他工作包提交。
+
+CI：[Workflow contracts run 38496697778](https://github.com/Xiiiing/ai-studio/actions/runs/38496697778)，对应实现提交 `bd6da8ab9c2be2b115bf95ecdf03b1c2cfef7542`，记录时 in_progress / pending，ci_passed 尚未确认。后续文档提交触发的新运行须单独按实际 head 核查，不能沿用旧 SHA 的通过状态。
 
 主要文件：`studio/http_routes.py`、`studio/http_security.py`、`studio/http_media.py`、`studio/web.py`、`factory/web.py`、`factory/job_api.py`、`factory/store.py`；对应 Python/浏览器测试与安全审查文档。未修改云提交、账本、GPU Lease 或配置 Schema。
 

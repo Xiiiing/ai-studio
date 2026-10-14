@@ -10,7 +10,7 @@
 
 | 优化 | 独立分支 | 当前审查 / 实现状态 | 依赖 |
 | --- | --- | --- | --- |
-| 7 HTTP 安全 | feat/http-security-hardening | implemented；Python/Node/真实浏览器 tested；远端交付待核查 | main |
+| 7 HTTP 安全 | feat/http-security-hardening | implemented、tested、pushed、draft_pr_open：[PR #8](https://github.com/Xiiiing/ai-studio/pull/8)；CI pending | main |
 | 8 通用验收 | test/production-acceptance-v2 | not_run；用户列举的问题仍需逐项以源码确认 | main |
 | 9 一致备份 | feat/consistent-project-backup | not_run | main |
 | 10 创作 Prompt | feat/versioned-creative-prompts | not_run | main |
