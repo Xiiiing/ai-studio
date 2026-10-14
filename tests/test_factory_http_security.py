@@ -235,6 +235,24 @@ def test_nonloopback_startup_fails_before_database_or_bind(monkeypatch, host):
         web.main()
 
 
+@pytest.mark.parametrize("bound", ["0.0.0.0", "::", "192.168.1.2"])
+def test_embedded_handler_rejects_nonloopback_listener(bound):
+    """Embedding the handler must not bypass the CLI startup bind gate."""
+    from email.message import Message
+    from types import SimpleNamespace
+    from studio.http_security import HTTPError, check_origin
+
+    headers = Message()
+    headers["Host"] = "127.0.0.1:8787"
+    handler = SimpleNamespace(
+        headers=headers, client_address=("127.0.0.1", 12345),
+        server=SimpleNamespace(server_port=8787, server_address=(bound, 8787)),
+    )
+    with pytest.raises(HTTPError) as caught:
+        check_origin(handler)
+    assert caught.value.status == 403 and caught.value.code == "bind_rejected"
+
+
 def test_loopback_bind_and_port_validation():
     from studio.http_security import validate_bind
     assert validate_bind("localhost", "8787") == ("127.0.0.1", 8787)

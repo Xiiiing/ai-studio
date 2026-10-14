@@ -67,10 +67,13 @@ def check_origin(handler):
     bound = handler.server.server_address[0]
     try:
         address = ipaddress.ip_address(bound)
-        if address.is_loopback:
-            names.add("[" + str(address) + "]" if address.version == 6 else str(address))
+        if not address.is_loopback:
+            raise HTTPError(403, "bind_rejected", "Only loopback listeners are admitted")
+        names.add("[" + str(address) + "]" if address.version == 6 else str(address))
         if not ipaddress.ip_address(handler.client_address[0]).is_loopback:
             raise HTTPError(403, "peer_rejected", "Only loopback clients are admitted")
+    except HTTPError:
+        raise
     except ValueError:
         raise HTTPError(403, "peer_rejected", "Only loopback clients are admitted") from None
     allowed = {f"{name}:{port}" for name in names}

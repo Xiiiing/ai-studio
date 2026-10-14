@@ -10,6 +10,7 @@ import shutil
 import signal
 import socket
 import sys
+import threading
 from tempfile import TemporaryDirectory
 
 SOURCE = Path(__file__).resolve().parents[1]
@@ -37,7 +38,10 @@ def main():
         legacy.episode_state = lambda slug: {"slug": slug, "fixture": True}
         legacy.jobs_state = lambda: []
 
+        effects = {"launch_attempts": 0}
+
         def forbid_launch(_payload):
+            effects["launch_attempts"] += 1
             raise RuntimeError("Browser fixture cannot start production")
 
         legacy.launch = forbid_launch
@@ -49,7 +53,19 @@ def main():
         store.initialize()
         project = store.create({"title": "HTTP 边界隔离测试", "brief": "Synthetic HTTP browser fixture; no generation is permitted."})
         store.action(project["id"], {"action": "pause"})
-        server = ThreadingHTTPServer(("127.0.0.1", 0), web.Handler)
+        audit_lock = threading.Lock()
+
+        class AuditedHandler(web.Handler):
+            def log_request(self, code="-", size="-"):
+                # Test-only stdout evidence: CORP deliberately hides rejected
+                # cross-origin responses from the browser's response events.
+                with audit_lock:
+                    print("HTTP_BROWSER_RESPONSE " + json.dumps({
+                        "method": self.command, "path": self.path,
+                        "status": code, "launch_attempts": effects["launch_attempts"],
+                    }), flush=True)
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), AuditedHandler)
         server.daemon_threads = True
         signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
         signal.signal(signal.SIGINT, lambda *_: sys.exit(0))

@@ -1,31 +1,31 @@
 # 下一轮 PR 交付报告
 
-基线 `4aaece74ab54f38c125c564accc20f4134fb5bab`。取得真实远端结果后才记录 URL，不预填 PR 编号。
+基线：`4aaece74ab54f38c125c564accc20f4134fb5bab`。本文件在取得真实远端结果后更新，不预填 PR 编号或 URL。
 
 ## 工作包 7
 
-分支 `feat/http-security-hardening`，base `main`。状态 implemented，Python/Node tested；pushed、draft_pr_open、ci_passed 当前 not_run。本地 browser 为 blocked。
+分支：`feat/http-security-hardening`；base：`main`。状态：implemented、tested（Python、Node、真实浏览器）；pushed、draft_pr_open、ci_passed 暂为 not_run。Shell Git 推送预检因缺少凭据 blocked；GitHub 连接器已确认 push 权限，远端提交与 PR 尚待实际完成。
 
-文件范围：studio/http_routes.py、http_security.py、http_media.py、web.py；factory/web.py、job_api.py、store.py；对应 Python/浏览器测试、临时浏览器 fixture、部署说明和本轮审查文档。未改云提交/账本/GPU Lease/Schema。
+主要文件：`studio/http_routes.py`、`studio/http_security.py`、`studio/http_media.py`、`studio/web.py`、`factory/web.py`、`factory/job_api.py`、`factory/store.py`；对应 Python/浏览器测试与安全审查文档。未修改云提交、账本、GPU Lease 或配置 Schema。
 
-| 实际验证 | 结果 |
+### 实际验证
+
+| 命令 / 环境 | 结果 |
 | --- | --- |
-| 原隔离环境 Python 3.12.13，HTTP/job/models 专项 | 185 passed，2.83 秒 |
-| 原隔离环境 `python -m pytest -q tests/test_factory_*.py` | 660 passed，1 条未屏蔽 fork 警告，84.68 秒 |
-| Node 22.16.0 `node --test tests/test_factory*.mjs` | 54 passed，0 skipped |
-| `python scripts/browser_fixtures.py` | CPU 合成媒体成功，无模型调用 |
-| `npm ci --ignore-scripts` | 原机器安装成功但 Node 16 engine 警告；测试改在 Node 22 执行 |
-| Chromium 144 本地 `npm run test:browser -- --config=playwright.audit.config.mjs` | 8 项被 ERR_BLOCKED_BY_ADMINISTRATOR 阻断，blocked；未绕过策略 |
-| 恢复工作区 Python 3.12.3 专项 / 全量 | 185 passed / 660 passed（74.96 秒） |
-| 恢复工作区 Node 22.23.2，npm 12.0.2 | npm ci 成功；54 passed，0 skipped；CPU 媒体 SHA 与原运行一致 |
-| `git diff --check` | 已执行，提交前再核验 |
+| Python 3.12.13：`python -m pytest -q tests/test_factory_http_security.py tests/test_factory_job_api.py tests/test_factory_web_models.py` | 188 passed，2.89 s |
+| Python 3.12.13：`python -m pytest -q tests/test_factory_*.py` | 663 passed，80.39 s；1 条多线程 fork 警告，未忽略 |
+| Node 24.21.0 / npm 11.19.0：`npm ci --ignore-scripts --offline` | 成功；固定锁文件，从隔离工作树缓存安装，无外网 |
+| 同一隔离容器：`node --test tests/test_factory*.mjs` | 54 passed，0 skipped |
+| `python scripts/browser_fixtures.py` | CPU 合成测试媒体成功；未运行 GPU/云模型 |
+| Playwright 1.64.0 固定镜像：`npm run test:browser` | 8 passed，18.4 s，0 skipped；原配置、原超时、无重试 |
+| `git diff --check`、源码差异检查 | 已执行；最终提交前再核验 |
 
-原容器 npm 下载遇到 EAI_AGAIN；锁定依赖在隔离工作树安装后转入 Node 22 容器。浏览器临时配置仅指定已有 Chromium，没有改断言、重试、超时或管理策略。原环境缺少的评测依赖仅装进忽略的 runtime 目录；恢复工作区使用独立 venv，不改生产 Python。
+最终镜像：`mcr.microsoft.com/playwright@sha256:06a9939e57531807f8d5fd76ce44b53165ffb7d7501d87ab10e285c20b1e971f`。容器设置 `--network=none --cpus=2 --memory=4g --pids-limit=384 --shm-size=1g`，无端口发布、无 GPU、无 Docker socket、无生产数据库挂载。只读挂载现有 Python 解释器与控制依赖，工作树内 CPU 测试夹具可写。未修改生产 Python 环境；缺少的 opencc/pypinyin 位于忽略的 `runtime/audit-tools/python`，通过 PYTHONPATH 使用。
 
-恢复时依赖工具首次选择了 Python 3.10.20，专项通过但全量因原代码使用 Python 3.12 f-string 语法出现 9 项收集错误。未修改原业务代码或测试绕过错误；另建明确 Python 3.12 的 venv 后按原命令全量通过。
+保留的失败证据：早期环境 DNS/管理策略阻断；新增嵌入式监听测试修复前 3 failed；首次真实浏览器因 CORP 隐藏 response 事件而 1 failed；新增服务端证据输出的并发问题导致 2 failed。后两项修复的是测试观察与输出同步，最终同时验证 browser blocked、实际 HTTP 403、launch_attempts=0，没有跳过失败用例。完整说明见 HTTP 安全审查表。
 
-CPU 视频 SHA-256 `c45a53d8566af65486a063366fdb0a98316ef99465a65614572b074fe2da4dc8`；帧图 `93585e916ad2fb5f50d875ddb44f8b1b4fa55bf3693c049d336a1594a765d9c9`。
+可复核日志：`runtime/audit-evidence/http-revalidated.log`、`python-revalidated.log`、`browser-container-final.log`；浏览器 JSON：`runtime/browser-report/results.json`。这些本地日志与合成媒体被 Git 忽略，不作为生产数据提交。
 
-恢复导出 SHA-256：源码 a1230a7609a2b762701971036089c0c0cf1857d8dbfb391ef60ff1458eefb556；浏览器增量 9c2ce92a49b7cc0c8e260597d61bb7899dcb46397aba23381218c12348e780ca。按精确文件清单恢复，再补回最终已测试的 Legacy 500 回归，不覆盖原工作树。
+CPU 视频 SHA-256：`c45a53d8566af65486a063366fdb0a98316ef99465a65614572b074fe2da4dc8`；帧图 SHA-256：`93585e916ad2fb5f50d875ddb44f8b1b4fa55bf3693c049d336a1594a765d9c9`。
 
-GPU、真实云/模型、艺术质量、外部认证代理、现场部署均 not_run。其他工作包尚无提交或 PR，见 [审查矩阵](NEXT_ROUND_AUDIT.md)。
+真实模型、GPU/云端生产、外部认证代理和现场部署均 not_run。浏览器通过只证明真实浏览器与本地 Python/Mock 后端交互，不证明生成画面达到生产质量。其他工作包尚无提交或 PR 交付记录；见 [审查矩阵](NEXT_ROUND_AUDIT.md)。

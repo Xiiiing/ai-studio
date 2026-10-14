@@ -4,6 +4,7 @@ import { createInterface } from 'node:readline';
 import { once } from 'node:events';
 
 let child, endpoint, projectId;
+const serverResponses = [];
 test.beforeAll(async () => {
   child = spawn(process.env.FACTORY_TEST_PYTHON || 'python', ['scripts/browser_http_fixture.py'], {
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -18,6 +19,11 @@ test.beforeAll(async () => {
     child.once('exit', failed);
     child.once('error', error => { clearTimeout(timer); reject(error); });
     lines.on('line', line => {
+      if (line.startsWith('HTTP_BROWSER_RESPONSE ')) {
+        serverResponses.push(JSON.parse(line.slice('HTTP_BROWSER_RESPONSE '.length)));
+        if (serverResponses.length > 100) serverResponses.shift();
+        return;
+      }
       if (!line.startsWith('HTTP_BROWSER_FIXTURE_READY ')) return;
       clearTimeout(timer); child.off('exit', failed);
       resolve(JSON.parse(line.slice('HTTP_BROWSER_FIXTURE_READY '.length)));
@@ -64,7 +70,13 @@ test('real Python media response supports browser decoding and range playback', 
 test('cross-origin browser POST cannot reach the legacy production launcher', async ({ page }) => {
   await page.goto('/'); // Different loopback port: deliberately a different origin.
   const url = endpoint + '/api/start';
-  const rejected = page.waitForResponse(response => response.url() === url);
-  await page.evaluate(url => fetch(url, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain' }, body: '{}' }).catch(() => null), url);
-  expect((await rejected).status()).toBe(403);
+  const outcome = await page.evaluate(url => fetch(url, {
+    method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain' }, body: '{}'
+  }).then(response => response.type, () => 'blocked'), url);
+  // Require both browser isolation and actual server rejection. A mere network
+  // failure, browser-only block, 409 from the launcher, or opaque 2xx cannot pass.
+  expect(outcome).toBe('blocked');
+  await expect.poll(() => serverResponses.findLast(response =>
+    response.method === 'POST' && response.path === '/api/start'
+  )).toEqual({ method: 'POST', path: '/api/start', status: 403, launch_attempts: 0 });
 });
