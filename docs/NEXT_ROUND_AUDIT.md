@@ -15,7 +15,7 @@
 | 优化 | 独立分支 | 状态 | base / 依赖 |
 | --- | --- | --- | --- |
 | 7 HTTP 安全 | feat/http-security-hardening | implemented、tested、pushed、draft_pr_open、ci_passed；[PR #8](https://github.com/Xiiiing/ai-studio/pull/8) | main |
-| 8 通用验收 | test/production-acceptance-v2 | implemented；本地最终复测与远端交付状态见 PR 报告 | main，不依赖 7 |
+| 8 通用验收 | test/production-acceptance-v2 | implemented、tested、pushed、draft_pr_open、ci_passed；[PR #9](https://github.com/Xiiiing/ai-studio/pull/9)，CI按报告内SHA核查 | main，不依赖 7 |
 | 9 一致备份 | feat/consistent-project-backup | not_run | main |
 | 10 创作 Prompt | feat/versioned-creative-prompts | not_run | main |
 | 11 生产追踪 | feat/production-tracing | not_run | main |

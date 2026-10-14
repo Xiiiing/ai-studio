@@ -21,6 +21,14 @@
 
 具体命令、通过数量、失败前证据和 CI 状态记录于 [NEXT_ROUND_PR_REPORT.md](NEXT_ROUND_PR_REPORT.md)。
 
+## 本轮已执行的优化7+8局部组合
+
+另建 detached worktree，将 PR #8 的 `41bdb8ce4f37a92936a6b971d3d454f89dcf3806` 与 PR #9 实现提交 `c35254f998c499458af9938aa8e9e49778021c12` 做真实本地 Git merge。仅三份同名 NEXT_ROUND 文档 add/add 冲突；保留双方审计原文后解决，业务代码没有冲突。没有合并远端PR、修改main或把两个优化混入同一开发PR。
+
+固定本地 merge SHA `a21e5b115d86cf44094dda1445f0278298b7eb0b`，tree `0fbc059600aa0f71661d52bd8a4dc53fdacd8b65`。完整 Factory Python 719 passed、126.93 s、5条原fork警告；Node 54 passed；CPU浏览器夹具成功；真实浏览器8 passed、28.0 s、0 skipped。使用原测试命令/断言，不是把两个分支的通过数量相加；日志 `runtime/audit-evidence/integration-python.log`、`integration-browser.log` 位于该集成工作树。
+
+PR #9 实现SHA对应 GitHub run `38506321414` completed/success。实际CLI三种profile输出技术通过但需人工审片，错误SHA输出失败。以上均为CPU和Mock/模拟审片契约，真实模型/GPU/云画质不因这些结果改为通过。
+
 ## 未完成的组合验证
 
 整个“创建 → 创作 → 分镜 → 资产 → 审批 → GPU/云生成 → 恢复 → 选片 → 返修 → 多轨剪辑 → 验收 → 备份恢复”尚未在组合分支运行。优化 9–15 未实施，真实模型、备份恢复和全流程艺术审片均为 not_run；不能把本地 7 或 8 单分支测试相加当作这一门禁通过。后续应固定各 PR head SHA，在新的隔离组合 worktree 处理文档冲突并重跑，不直接合并或操作生产服务。

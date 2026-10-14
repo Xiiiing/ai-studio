@@ -8,7 +8,9 @@
 
 ## 优化 8：通用只读验收
 
-独立分支 `test/production-acceptance-v2`，base=`main`，不依赖 PR #8。状态：implemented、tested（Python、Node、真实浏览器）；远端交付核验尚待更新。远端 PR URL 不预填，pushed、draft_pr_open、ci_passed 在实际完成前为 not_run。
+独立 [Draft PR #9](https://github.com/Xiiiing/ai-studio/pull/9)，head=`test/production-acceptance-v2`，base=`main`，不依赖 PR #8。实现提交 `c35254f998c499458af9938aa8e9e49778021c12` 已核查为 Draft/open、未合并、17 个相关文件、无其他优化提交。[CI run 38506321414](https://github.com/Xiiiing/ai-studio/actions/runs/38506321414) 对应这一实现 SHA，已 completed/success。状态 implemented、tested、pushed、draft_pr_open、ci_passed；本次后续文档提交的新 head 必须另查 CI，不能借用旧 SHA 的成功。
+
+远端 tree `97cba6d505bb9d9dbd4e3ec8e5d3ebd673f2dd4f` 与已测试本地提交 `734e477cc68daf5cbbbf36328428b7e47e724a54` 完全相同，git fetch 后逐树比较通过。本地提交另存 `runtime/audit-evidence/acceptance-v2-final.bundle`；使用授权 GitHub 连接器写入 feature 分支，没有 force push、main 写入、PR 合并或 auto-merge。
 
 ### 实现与源码依据
 
@@ -31,6 +33,14 @@
 测试后核对所有 factory/ 与 tests/ 改动仍与已导出的恢复包逐字节一致：恢复包 SHA-256 `4432b6c6d6bb1439f2e6f6e28365589d2e04bc56ba817f6910e7835cc6d630c8`。该包仅用于保留当前改动，不是工作包 9 的生产一致性备份。
 
 测试包括三种现有规格真实 CPU FFmpeg/PyAV 解码、原混音器输出、分段字幕、人工旧证据拒绝、两个项目独立目录、WAL 并发读取、缺成片/媒体/字幕、SHA/版本不匹配、导出中断、错误基线、生产文件校验不变。CPU 测试图样/正弦音频及模拟人工记录均不是模型生成或实际艺术审片。
+
+### 本轮局部集成与 CLI 输出
+
+在第三个全新 detached worktree 中实际合并 PR #8 head `41bdb8ce4f37a92936a6b971d3d454f89dcf3806` 与 PR #9 实现 head `c35254f998c499458af9938aa8e9e49778021c12`，仅本地，不更新任一远端分支。业务代码无冲突；三份 NEXT_ROUND 文档 add/add 冲突保留两份原文后解决。冻结本地 merge commit `a21e5b115d86cf44094dda1445f0278298b7eb0b`，tree `0fbc059600aa0f71661d52bd8a4dc53fdacd8b65`。
+
+组合执行 `python -m pytest -q tests/test_factory_*.py`：719 passed，126.93 s，5 条原警告保留；`npm ci --ignore-scripts --offline` 成功；Node 54 passed；CPU浏览器夹具成功；原 `npm run test:browser` 8 passed、28.0 s、0 skipped。日志在集成工作树 `runtime/audit-evidence/integration-python.log` 和 `integration-browser.log`。这是优化7+8离线组合回归，不是优化9–15或真实云生成全链路通过。
+
+在 PR #9 实现提交上实际运行四次 CLI：legacy15、compact6、ensemble10 的 CPU 合成工程返回 exit=3、technical_passed=true、human_approved=false；compact6 的错误请求SHA返回 exit=2、needs_repair。JSON报告、摘要和失败证据保存在忽略的 `runtime/audit-evidence/cli-examples/`，没有写生产工程。全部模型执行保持 not_run。
 
 ### 安全与兼容性
 
