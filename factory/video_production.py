@@ -25,7 +25,7 @@ class VideoProductionMixin:
             if attempt.exists() and read_json(attempt).get("source_signature") != target["signature"] and not (path.parent/"result.json").exists():
                 state=read_json(path)
                 history=read_json(path.parent/"history.json") if (path.parent/"history.json").exists() else {}
-                if state.get("state") != "failed" and history.get("status",{}).get("status_str") != "error" and not (path.parent/"submission_error.json").exists():
+                if state.get("state") not in {"failed", "completed"} and history.get("status",{}).get("status_str") != "error" and not (path.parent/"submission_error.json").exists():
                     raise ProductionNeedsDecision("旧 ComfyUI 请求尚未确认完成，不能用新配置绕过恢复", "unresolved_submission")
         if self.config.get("gpu_service"):
             from .gpu_client import guard_remote_submissions

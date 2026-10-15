@@ -106,6 +106,9 @@ class ExternalComfy:
                 if history.get('status', {}).get('completed') or history.get('status', {}).get('status_str') == 'success': break
             time.sleep(.25)
         else: raise ProductionNeedsDecision('ComfyUI 任务仍在执行，可恢复查询', 'comfy_task_pending')
+        write_json(dest / "history.json", history)
+        state["state"] = "completed"
+        write_json(journal, state)
         outputs = history.get('outputs', {})
         if output:
             files = outputs.get(output['node'], {}).get(output['field'], [])
