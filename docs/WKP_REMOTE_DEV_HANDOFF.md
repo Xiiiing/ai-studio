@@ -224,12 +224,12 @@ ssh wkp 'cd /root/jialin/drama_studio && envs/factory/bin/python -m factory.cli 
 | --- | --- | --- |
 | **Wkp 当前正式运行版本** | Wkp 本地 `main@3ab3b16e7dc55ad1388ad4e946106699cd117b38` | 正式服务及项目数据；已包含安全的 systemd 模型凭据能力 |
 | **远端 GitHub `main`** | 核实为 `0fc46b7b29e333921870eb3c91d0830138605009` | 较旧，**不要直接用它覆盖 Wkp 的新模型路由** |
-| **可移交的未完成大重构** | GitHub `wip/console-refactor-handoff-20261015@8c7d2f75f6ee4b33de5d4dc745d1481944830b2a` | **迁移到新服务器后继续开发的推荐入口；未部署，不能直接作为发布版** |
+| **可移交的未完成大重构** | GitHub 分支 `wip/console-refactor-handoff-20261015`（纯代码快照提交 `8c7d2f75f6ee4b33de5d4dc745d1481944830b2a`，此后另加本交接文档） | **迁移到新服务器后继续开发的推荐入口；未部署，不能直接作为发布版** |
 
 两个在 GitHub 发布的分支：
 
 - [`feat/systemd-model-credentials`](https://github.com/Xiiiing/ai-studio/tree/feat/systemd-model-credentials)：模型鉴权适配；远端提交 `7a059ab1b5cc567a9b05d443ffd00bbd85ed791b`。它与 Wkp 正式 `3ab3b16` **文件树相同，但因发布方式不同，提交 SHA 不同**。
-- [**`wip/console-refactor-handoff-20261015`**](https://github.com/Xiiiing/ai-studio/tree/wip/console-refactor-handoff-20261015)：34 个文件改动，包含新版 Dashboard、工作流画布、决策中心、Agent 组织、旧版 UI 移除及回归测试。GitHub 提交与 Wkp 隔离工作树 `2370a0d9d5300887eb782d480f8246a3c488c241` **文件树完全一致**，树 SHA：`be8c8f93339bd547109749c3d5a05768ab2e3ef4`。**此次未创建 PR，也未更新 GitHub 的 `main`。**
+- [**`wip/console-refactor-handoff-20261015`**](https://github.com/Xiiiing/ai-studio/tree/wip/console-refactor-handoff-20261015)：34 个源码改动，包含新版 Dashboard、工作流画布、决策中心、Agent 组织、旧版 UI 移除及回归测试。固定的**纯代码快照**是 GitHub `8c7d2f75f6ee4b33de5d4dc745d1481944830b2a`，与 Wkp 最初隔离工作树提交 `2370a0d9d5300887eb782d480f8246a3c488c241` 的 Git tree **完全一致**，树 SHA：`be8c8f93339bd547109749c3d5a05768ab2e3ef4`。**分支最新提交还包含本交接文档，因此分支 HEAD 的整树哈希不等于上述纯代码快照树哈希；此次没有为该重构创建 PR，也没有更新 GitHub 的 `main`。**
 
 在新服务器：
 
@@ -240,8 +240,9 @@ git fetch origin
 git switch -c feature/continue-console --track origin/wip/console-refactor-handoff-20261015
 
 git status --short --branch
-git rev-parse 'HEAD^{tree}'
-# 预期文件树：be8c8f93339bd547109749c3d5a05768ab2e3ef4
+git rev-parse '8c7d2f75f6ee4b33de5d4dc745d1481944830b2a^{tree}'
+# 固定的纯代码快照树应为：be8c8f93339bd547109749c3d5a05768ab2e3ef4
+# 当前 WIP 分支 HEAD 另含交接文档，HEAD^{tree} 与纯代码快照哈希不同是正常的。
 ```
 
 如果仓库是私有的，需由你在新开发服务器配置**自己的** GitHub 授权；不要复制 Wkp 上的 CLI 登录 Token。
@@ -349,7 +350,7 @@ ssh wkp 'cd /root/jialin/drama_studio && git status --short --branch'
 
 - [ ] 新服务器可以通过局域网或同一 Tailscale 网络连上 Wkp 的 TCP 22/8787；已与管理员核对 SSH 主机指纹和 HTTPS 证书指纹。
 - [ ] 已取得自己获批的 SSH 用户和 GitHub 凭据；没有复制 Wkp 的模型密钥、Web 密码或服务器私钥。
-- [ ] 已检出 GitHub `wip/console-refactor-handoff-20261015`，确认 Git tree `be8c8f93339bd547109749c3d5a05768ab2e3ef4`。
+- [ ] 已检出 GitHub `wip/console-refactor-handoff-20261015`，确认其**固定的纯代码快照提交 `8c7d2f75...`**的 Git tree 为 `be8c8f93339bd547109749c3d5a05768ab2e3ef4`；当前分支 HEAD 额外包含交接文档。
 - [ ] 新服务器的测试运行在隔离的数据库和 fixtures 中，不连接 Wkp 的真实生产路径进行写入。
 - [ ] 已修复至少 1 项现存浏览器测试失败，验证待办可点击并确认审核意见/版本控制有实际效果。
 - [ ] 明确区分“重构 WIP”与“Wkp 当前正式服务”；生产部署前重新检查工单、备份与模型拥有权。
