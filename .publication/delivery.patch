@@ -1,0 +1,404 @@
+diff --git a/docs/DELIVERY_READINESS.md b/docs/DELIVERY_READINESS.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..f000b7dc876824ec59576688add9be6495585420
+--- /dev/null
++++ b/docs/DELIVERY_READINESS.md
+@@ -0,0 +1,40 @@
++# 可核验交付与平台提交边界
++
++本功能复用已有 `factory.acceptance` 技术/媒体/人工证据验收，不重写视频导出器，也不会生成、重编码或上传视频。现有交付物包括带字幕 MP4、无字幕 MP4、SRT、封面、剪辑时间线、声音编辑和技术检查记录。
++
++## 在线只读检查
++
++`GET /api/factory/projects/{id}/delivery-readiness` 返回当前项目版本的材料清单；原 `/flow` 也附带 `delivery_readiness`，避免团队页额外轮询。
++
++该在线视图只读取项目快照，不读取媒体文件，不扫描验收历史、不运行 FFmpeg 或模型。每次检查材料路径、项目/制作代次、同一 release 目录、唯一文件名、有效 SHA/字节回执及当前已应用的人工终审。旧版本、验证代理批准、总制片代理批准或单独修改 accepted_by 均不能冒充出品人终审。
++
++状态 `ready_for_fresh_acceptance` 只意味着已有记录齐全，`engineering_ready` 仍为 false。历史质检通过和材料回执不代表文件当前仍完整。尺寸、时长等以项目生产规格及验收结果为准，不声称某一画幅就是红果统一官方规格。
++
++## 独立提交材料清单
++
++```bash
++python -m factory.submission \
++  --project-id 012345abcdef \
++  --project-json project-snapshot.json \
++  --root . \
++  --output runtime/submissions \
++  --production-revision 2
++```
++
++也可以用 `--database` 指向实际现有 SQLite 文件，二者必须且只能提供一个。数据库按现有验收路径只读打开；不会初始化、迁移、修改批准状态或调用 worker。
++
++命令先重新执行当前验收协议，检查真实媒体和哈希，再将报告绑定到观察到的项目快照及制作版本；结束时再次核对输入快照。验收结果输出原有不可覆盖报告目录；提交清单输出**另一个**全新目录，引用报告路径和 SHA，不往原 export-manifest 已封存的报告里添加文件。
++
++只有当前材料记录、真实验收及人工终审都满足条件，才返回 `engineering_ready_platform_pending`。退出 0 只表示工程交付就绪，不表示平台已审核。缺片、过期证据或质量问题返回 2 并保留问题清单。所有状态的 `platform_ready` 都为 false，`platform_approval` 都为 not_verified。
++
++## 出品方待核验
++
++红果官方后台的账号权限和当前提交规格、内容及备案/许可要求、剧本/音乐/字体/声音/人物授权、AI 显式/隐式标识和上传声明。在线检查不能替用户核验账号、签署授权、提供法律判断或保证审核通过。本轮没有平台连接、自动提交和真实生成请求。
++
++官方 AI 标识说明：https://www.cac.gov.cn/2025-03/14/c_1743654685896173.htm 。该链接是用户核对要求的参考，不是系统已满足全部要求的证明。
++
++## 验证与回滚
++
++`python -m pytest -q tests/test_factory_delivery_readiness.py tests/test_factory_acceptance.py tests/test_factory_evaluation.py`。覆盖旧批准、非人工批准、跨项目/跨版本材料、重复材料、路径穿越、伪造回执、报告绑定和真实空片验收。成功绑定的单元测试使用模拟报告，仅证明控制逻辑；空片用例执行真实验收，不能被描述为真实 AI 样片通过。
++
++源码回退不会修改现有媒体、项目或人工批准记录；新增清单是独立普通文件，后续可按项目留存策略处理，无数据库反向迁移。本轮仅发布 Draft PR，不部署到生产。
+diff --git a/factory/delivery_readiness.py b/factory/delivery_readiness.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..f5e313e2561756fda77df2071a644eb7d4df3af2
+--- /dev/null
++++ b/factory/delivery_readiness.py
+@@ -0,0 +1,123 @@
++"""Cheap recorded-state handoff checks; no filesystem reads or approval writes."""
++from __future__ import annotations
++
++import copy
++import re
++from urllib.parse import quote
++
++REQUIRED = {
++    "episode.mp4": "带字幕成片", "episode_clean.mp4": "无字幕成片",
++    "subtitles.zh.srt": "中文字幕", "cover.jpg": "封面",
++    "timeline.json": "剪辑时间线", "audio_edit.json": "声音制作记录",
++    "technical_qa.json": "技术质检记录",
++}
++PLATFORM_CHECKS = (
++    ("account", "核对红果官方后台的账号与发布权限"),
++    ("platform_specs", "按当前官方后台核对时长、画幅、编码及提交材料"),
++    ("content_review", "确认内容审核、备案或许可等适用要求"),
++    ("rights", "核验剧本、音乐、字体、人物与声音等素材授权"),
++    ("ai_disclosure", "核验视频及文件中的 AI 标识和上传时的声明"),
++)
++
++
++def _object(value):
++    return value if isinstance(value, dict) else {}
++
++
++def _positive(value):
++    return type(value) is int and 1 <= value <= 2147483647
++
++
++def _artifacts(project, delivery):
++    raw = delivery.get("artifacts", [])
++    if not isinstance(raw, list) or len(raw) > 32:
++        return [], ["invalid_artifact_collection"]
++    rows, errors, names, parents = [], [], set(), set()
++    pid, revision = project.get("id"), project.get("production_revision")
++    owned = (isinstance(pid, str) and re.fullmatch(r"[a-f0-9]{12}", pid)
++             and project.get("slug") == "factory-" + pid and _positive(revision))
++    for receipt in raw:
++        receipt = _object(receipt)
++        path, sha, size = receipt.get("path"), receipt.get("sha256"), receipt.get("bytes")
++        if not isinstance(path, str) or len(path) > 512 or "\\" in path:
++            errors.append("invalid_artifact_receipt")
++            continue
++        parts = path.split("/")
++        valid = (owned and len(parts) == 5 and parts[:3] == ["production", "factory-" + pid, "release"]
++                 and re.fullmatch(r"v" + str(revision) + r"-[a-f0-9]{12}(?:-retry-[0-9]+)?", parts[3])
++                 and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,100}", parts[4])
++                 and isinstance(sha, str) and re.fullmatch(r"[a-f0-9]{64}", sha)
++                 and type(size) is int and size > 0)
++        if not valid:
++            errors.append("invalid_artifact_receipt")
++            continue
++        if parts[4] in names:
++            errors.append("duplicate_artifact_name")
++            continue
++        names.add(parts[4])
++        parents.add("/".join(parts[:4]))
++        rows.append({"name": parts[4], "label": REQUIRED.get(parts[4], parts[4]), "path": path,
++                     "sha256": sha, "bytes": size, "status": "recorded_not_verified",
++                     "url": "/media/" + quote(path, safe="/")})
++    if len(parents) > 1:
++        errors.append("mixed_release_directories")
++    return rows, sorted(set(errors))
++
++
++def snapshot(project):
++    """Record presence is not file integrity, current decoding or platform approval."""
++    delivery = _object(project.get("delivery"))
++    version = project.get("production_revision")
++    current = (_positive(version) and type(delivery.get("revision")) is int and delivery["revision"] == version
++               and type(project.get("delivery_complete_revision")) is int and project["delivery_complete_revision"] == version
++               and delivery.get("project_id") == project.get("id") and delivery.get("slug") == project.get("slug"))
++    artifacts, problems = _artifacts(project, delivery)
++    missing = sorted(set(REQUIRED) - {row["name"] for row in artifacts})
++    final_id = f"{project.get('id')}:final:{version}"
++    answer = _object(_object(project.get("answers")).get(final_id))
++    effect = _object(_object(project.get("decision_effects")).get(final_id))
++    human = bool(current and project.get("status") == "approved" and project.get("accepted_by") == "producer"
++                 and answer.get("gate_id") == final_id and answer.get("type") == "final"
++                 and answer.get("choice") == "approve" and answer.get("actor") == "producer"
++                 and effect.get("route") == "done")
++    qa = _object(delivery.get("technical_qa"))
++    recorded_qa = all(_object(qa.get(key)).get("status") == "pass" for key in ("clean", "subtitled"))
++    metadata_ready = bool(current and not missing and not problems and recorded_qa and human)
++    checks = [
++        {"id": "current_release", "label": "交付物属于当前制作版本", "status": "recorded" if current else "blocked"},
++        {"id": "required_materials", "label": "提交材料记录齐全", "status": "recorded" if not missing and not problems else "blocked",
++         "missing": missing, "problems": problems},
++        {"id": "recorded_technical_qa", "label": "已记录的导出技术检查", "status": "recorded" if recorded_qa else "blocked"},
++        {"id": "producer_final", "label": "当前版本已由出品人人工终审", "status": "recorded" if human else "human_required"},
++        {"id": "fresh_acceptance", "label": "重新验收文件、音画及版本证据", "status": "not_run"},
++    ]
++    return {"schema": "ai-studio.delivery-readiness.v1", "project_id": project.get("id"),
++            "project_revision": project.get("revision"), "production_revision": version,
++            "status": "ready_for_fresh_acceptance" if metadata_ready else "blocked",
++            "evidence_basis": "recorded_snapshot_only", "files_read": False,
++            "engineering_ready": False, "platform_ready": False, "platform_approval": "not_verified",
++            "checks": checks, "artifacts": artifacts,
++            "platform_checklist": [{"id": ident, "label": label, "status": "human_required"} for ident, label in PLATFORM_CHECKS],
++            "limitations": ["材料回执和历史质检不等于当前文件仍完好。", "该清单不是红果官方上传规范或审核通过证明。"]}
++
++
++def bind_acceptance(project, report):
++    """Used only with a newly executed local acceptance report by submission.main."""
++    from studio.core import fingerprint
++    result = snapshot(project)
++    provenance = _object(report.get("acceptance"))
++    bound = (report.get("schema") == "ai-studio.film-evaluation.v1"
++             and provenance.get("schema") == "ai-studio.production-acceptance.v2"
++             and report.get("project_id") == project.get("id")
++             and report.get("production_revision") == project.get("production_revision")
++             and provenance.get("input_snapshot_sha256") == fingerprint(project))
++    ready = bool(bound and result["status"] == "ready_for_fresh_acceptance"
++                 and report.get("technical_passed") is True and report.get("human_approved") is True
++                 and report.get("verdict") == "human_approved")
++    result.update(evidence_basis="new_local_acceptance" if bound else "acceptance_binding_failed",
++                  engineering_ready=ready, status="engineering_ready_platform_pending" if ready else "blocked")
++    result["checks"][-1]["status"] = "passed" if ready else "blocked"
++    result["acceptance"] = {"bound": bound, "run_id": report.get("run_id"),
++        "media_signature": report.get("media_signature"), "verdict": report.get("verdict"),
++        "input_snapshot_sha256": provenance.get("input_snapshot_sha256")}
++    return copy.deepcopy(result)
+diff --git a/factory/submission.py b/factory/submission.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..11d5c6d5ddcf2cd7de8360459ea3b17e389f4015
+--- /dev/null
++++ b/factory/submission.py
+@@ -0,0 +1,64 @@
++"""Build a handoff manifest from fresh local acceptance, without generating or uploading."""
++from __future__ import annotations
++
++import argparse
++import json
++from pathlib import Path
++import uuid
++
++from studio.core import ROOT, fingerprint, sha256
++from . import acceptance
++from .acceptance_inputs import output_parent, project_id
++from .creative_evidence_io import new_directory, write_new
++from .delivery_readiness import bind_acceptance
++from .evaluation_io import database_project, read_json
++
++
++def prepare(pid, *, database=None, project_json=None, root=ROOT, output=None, production_revision=None):
++    project_id(pid)
++    if (database is None) == (project_json is None):
++        raise ValueError("Choose exactly one existing read-only database or snapshot JSON")
++    root = Path(root).resolve(strict=True)
++    parent = output_parent(root, output if output is not None else root / "runtime/factory/submissions")
++    load = (lambda: database_project(database, pid)) if database is not None else (lambda: read_json(project_json))
++    observed = load()
++    if not isinstance(observed, dict) or observed.get("id") != pid:
++        raise ValueError("Project ID does not match the selected source")
++    version = observed.get("production_revision") if production_revision is None else production_revision
++    report = acceptance.validate(pid, database=database, project_json=project_json, root=root,
++                                 output=parent, production_revision=version)
++    manifest = bind_acceptance(observed, report)
++    if fingerprint(load()) != fingerprint(observed):
++        manifest.update(status="blocked", engineering_ready=False, evidence_basis="source_changed_during_handoff")
++        manifest["checks"].append({"id": "handoff_snapshot_unchanged", "label": "交付期间项目版本保持不变", "status": "blocked"})
++    report_file = Path(report["report_dir"]) / "report.json"
++    manifest["acceptance_report"] = {"path": str(report_file), "sha256": sha256(report_file)}
++    manifest["operations"] = {"model_requests": 0, "generation_submissions": 0, "platform_uploads": 0, "database_writes": False}
++    directory = new_directory(parent / (pid + "-submission-" + uuid.uuid4().hex))
++    write_new(directory / "submission-manifest.json", manifest)
++    return {**manifest, "manifest_path": str(directory / "submission-manifest.json")}
++
++
++def main():
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument("--project-id", required=True)
++    source = parser.add_mutually_exclusive_group(required=True)
++    source.add_argument("--database", type=Path)
++    source.add_argument("--project-json", type=Path)
++    parser.add_argument("--root", type=Path, default=ROOT)
++    parser.add_argument("--output", type=Path)
++    parser.add_argument("--production-revision", type=int)
++    args = parser.parse_args()
++    try:
++        result = prepare(args.project_id, database=args.database, project_json=args.project_json,
++                         root=args.root, output=args.output, production_revision=args.production_revision)
++    except (ValueError, KeyError, OSError) as exc:
++        print(json.dumps({"status": "blocked", "error": str(exc)}, ensure_ascii=False))
++        return 2
++    print(json.dumps({key: result[key] for key in ("project_id", "status", "engineering_ready", "platform_ready", "manifest_path")}, ensure_ascii=False))
++    # Exit zero certifies only engineering handoff. Platform review is always separate.
++    return 0 if result["engineering_ready"] else 2
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/factory/team_flow.py b/factory/team_flow.py
+index 5da80df0f20c7c2c4603561dba9168af95bc2792..60ad9b327d46076b98ab3ae406cdba7db9b97868 100644
+--- a/factory/team_flow.py
++++ b/factory/team_flow.py
+@@ -562,6 +562,8 @@ def build_flow(project, config=None):
+         nodes["executive_producer"].update(
+             status="succeeded" if last["status"] in {"selected", "advisory"} else "waiting",
+             status_source="supervision_receipt_not_live_heartbeat")
++    from .delivery_readiness import snapshot as delivery_snapshot
++    delivery_readiness = delivery_snapshot(project)
+     teams = [{**row, "status": nodes[row["role"]]["status"]} for row in specification["teams"]]
+     edges = [{**edge, "status": nodes[edge["source"]]["status"]}
+              for edge in specification["handoffs"]]
+@@ -571,4 +573,5 @@ def build_flow(project, config=None):
+             "assignment_mode": "orchestrator", "orchestrator": "LangGraph",
+             "assignment_semantics": specification["assignment_semantics"],
+             "teams": teams, "nodes": list(nodes.values()), "edges": edges,
++            "delivery_readiness": delivery_readiness,
+             "evidence": evidence, "supervision": supervision}
+diff --git a/factory/web.py b/factory/web.py
+index ba7220994e63f2c23ca5c1626358e9a34d9effa3..aef598e3d7211cd4592067a8c0e75ede8fd078ec 100644
+--- a/factory/web.py
++++ b/factory/web.py
+@@ -55,6 +55,10 @@ class Handler(LegacyHandler):
+             if match:
+                 from .cloud_budget import summary
+                 return self.json(summary(match.group(1)))
++            match=re.fullmatch(r"/api/factory/projects/([a-f0-9]{12})/delivery-readiness",path)
++            if match:
++                from .delivery_readiness import snapshot as delivery_snapshot
++                return self.json(delivery_snapshot(store.get(match.group(1),False)))
+             match=re.fullmatch(r"/api/factory/projects/([a-f0-9]{12})/flow",path)
+             if match:
+                 from .team_flow import build_flow
+diff --git a/tests/test_factory_delivery_readiness.py b/tests/test_factory_delivery_readiness.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..6834726d021f87934d2328bd119e24dd91571767
+--- /dev/null
++++ b/tests/test_factory_delivery_readiness.py
+@@ -0,0 +1,119 @@
++"""Recorded readiness is never a platform approval; no model/service requests."""
++import copy
++import json
++from pathlib import Path
++
++import pytest
++
++from studio.core import fingerprint
++from factory import delivery_readiness as dr, submission
++
++PID = "012345abcdef"
++
++
++def ready_project():
++    gid = PID + ":final:2"
++    parent = "production/factory-" + PID + "/release/v2-" + "a" * 12
++    return {"id": PID, "slug": "factory-" + PID, "revision": 10, "production_revision": 2,
++        "delivery_complete_revision": 2, "status": "approved", "accepted_by": "producer",
++        "answers": {gid: {"gate_id": gid, "type": "final", "choice": "approve", "actor": "producer"}},
++        "decision_effects": {gid: {"route": "done"}},
++        "delivery": {"project_id": PID, "slug": "factory-" + PID, "revision": 2,
++            "technical_qa": {"clean": {"status": "pass"}, "subtitled": {"status": "pass"}},
++            "artifacts": [{"path": parent + "/" + name, "sha256": "b" * 64, "bytes": 123} for name in dr.REQUIRED]}}
++
++
++def acceptance_report(project):
++    return {"schema": "ai-studio.film-evaluation.v1", "project_id": PID, "production_revision": 2,
++            "verdict": "human_approved", "technical_passed": True, "human_approved": True,
++            "acceptance": {"schema": "ai-studio.production-acceptance.v2", "input_snapshot_sha256": fingerprint(project)}}
++
++
++def test_metadata_is_pure_and_never_certifies_files_or_platform():
++    p = ready_project()
++    before = copy.deepcopy(p)
++    result = dr.snapshot(p)
++    assert p == before
++    assert result["status"] == "ready_for_fresh_acceptance"
++    assert not result["engineering_ready"] and not result["platform_ready"] and not result["files_read"]
++    assert result["checks"][-1]["status"] == "not_run"
++    assert all(v["status"] == "human_required" for v in result["platform_checklist"])
++
++
++@pytest.mark.parametrize("patch", [{"production_revision": 3}, {"delivery_complete_revision": 1},
++    {"accepted_by": "validation_agent"}, {"accepted_by": "executive_producer"}, {"decision_effects": {}},
++    {"answers": {}}, {"status": "awaiting_final"}, {"delivery_complete_revision": True}])
++def test_old_or_nonhuman_approvals_are_not_ready(patch):
++    p = ready_project()
++    p.update(patch)
++    assert dr.snapshot(p)["status"] == "blocked"
++
++
++@pytest.mark.parametrize("alter", ["traversal", "foreign", "duplicate", "mixed", "hash", "bytes", "url"])
++def test_invalid_artifact_receipts_block_handoff(alter):
++    p = ready_project()
++    rows = p["delivery"]["artifacts"]
++    if alter == "traversal": rows[0]["path"] = "production/../private/key"
++    if alter == "foreign": rows[0]["path"] = rows[0]["path"].replace(PID, "abcdef012345")
++    if alter == "duplicate": rows.append(copy.deepcopy(rows[0]))
++    if alter == "mixed": rows[0]["path"] = rows[0]["path"].replace("a" * 12, "c" * 12)
++    if alter == "hash": rows[0]["sha256"] = "not-a-digest"
++    if alter == "bytes": rows[0]["bytes"] = True
++    if alter == "url": rows[0]["path"] = "https://external.invalid/file.mp4"
++    result = dr.snapshot(p)
++    assert result["status"] == "blocked"
++    assert all(row["url"].startswith("/media/production/factory-" + PID + "/") for row in result["artifacts"])
++
++
++def test_receipts_have_bounded_size_and_no_raw_extra_fields():
++    p = ready_project()
++    p["delivery"]["artifacts"][0]["secret"] = "DO_NOT_RETURN"
++    assert "DO_NOT_RETURN" not in str(dr.snapshot(p))
++    p["delivery"]["artifacts"] *= 100
++    assert dr.snapshot(p)["artifacts"] == []
++
++
++def test_fresh_acceptance_can_only_establish_engineering_readiness():
++    p = ready_project()
++    result = dr.bind_acceptance(p, acceptance_report(p))
++    assert result["engineering_ready"]
++    assert result["status"] == "engineering_ready_platform_pending"
++    assert result["platform_ready"] is False and result["platform_approval"] == "not_verified"
++
++
++@pytest.mark.parametrize("patch", [{"project_id": "abcdef012345"}, {"production_revision": 1},
++    {"technical_passed": False}, {"human_approved": False}, {"verdict": "needs_repair"}, {"acceptance": {}}])
++def test_report_rebinding_or_failure_cannot_pass(patch):
++    p = ready_project()
++    report = {**acceptance_report(p), **patch}
++    assert not dr.bind_acceptance(p, report)["engineering_ready"]
++
++
++def test_project_mutation_invalidates_even_a_successful_report():
++    p = ready_project()
++    report = acceptance_report(p)
++    p["revision"] += 1
++    assert not dr.bind_acceptance(p, report)["engineering_ready"]
++
++
++def test_real_acceptance_with_missing_film_creates_separate_blocked_manifest(tmp_path):
++    p = {"id": PID, "slug": "factory-" + PID, "revision": 4, "production_revision": 2,
++         "duration_seconds": 60, "shots": [], "episode": {"shots": [], "cast": {}}, "delivery": None}
++    source = tmp_path / "source.json"
++    source.write_text(json.dumps(p), encoding="utf-8")
++    before = source.read_bytes()
++    result = submission.prepare(PID, project_json=source, root=tmp_path, output=tmp_path / "reports")
++    assert source.read_bytes() == before and not (tmp_path / "production").exists()
++    assert not result["engineering_ready"] and not result["platform_ready"]
++    assert Path(result["manifest_path"]).is_file()
++    assert Path(result["manifest_path"]).parent != Path(result["acceptance_report"]["path"]).parent
++    assert result["operations"] == {"model_requests": 0, "generation_submissions": 0, "platform_uploads": 0, "database_writes": False}
++
++
++def test_submission_rejects_ambiguous_source_and_production_output(tmp_path):
++    with pytest.raises(ValueError):
++        submission.prepare(PID, root=tmp_path)
++    with pytest.raises(ValueError):
++        submission.prepare(PID, database=tmp_path / "db", project_json=tmp_path / "p", root=tmp_path)
++    with pytest.raises(ValueError, match="production"):
++        submission.prepare(PID, project_json=tmp_path / "p", root=tmp_path, output=tmp_path / "production/reports")
