@@ -20,9 +20,8 @@ def http_endpoint(request, tmp_path, monkeypatch):
     monkeypatch.setattr(web, "ROOT", tmp_path)
     # The shared HTTP transport no longer contains a legacy process launcher.
     assert not hasattr(legacy, "launch")
-    (tmp_path / "ui/factory").mkdir(parents=True)
-    (tmp_path / "ui/index.html").write_text("<html><script></script></html>")
-    (tmp_path / "ui/factory/index.html").write_text("<html>workbench</html>")
+    (tmp_path / "ui/factory/dist/assets").mkdir(parents=True)
+    (tmp_path / "ui/factory/dist/index.html").write_text("<html>workbench</html>")
     media = tmp_path / "production/example/clip.mp4"
     media.parent.mkdir(parents=True)
     media.write_bytes(b"synthetic-media-for-http-ranges")
@@ -142,6 +141,22 @@ def test_media_symlinks_rejected_and_ranges_preserved(http_endpoint):
     code, headers, body = client.request("GET", "/media/production/example/clip.mp4", headers={"Range": "bytes=0-8"})
     assert code == 206 and body == b"synthetic"
     assert headers["Content-Length"] == "9" and headers["X-Content-Type-Options"] == "nosniff"
+
+
+def test_built_ui_assets_cannot_escape_bundle_root(http_endpoint):
+    client, _, root = http_endpoint
+    if not client.factory:
+        return
+    assets = root / "ui/factory/dist/assets"
+    secret = root / "private.js"
+    secret.write_text("PRIVATE_DO_NOT_SERVE")
+    (assets / "linked.js").symlink_to(secret)
+    assert client.request("GET", "/factory/static/assets/linked.js")[0] == 403
+    assert client.request("GET", "/factory/static/assets/../index.html")[0] == 400
+    index = root / "ui/factory/dist/index.html"
+    index.unlink()
+    index.symlink_to(secret)
+    assert client.request("GET", "/")[0] == 403
 
 
 @pytest.mark.parametrize("path", ["/api/episode/a/extra", "/api/factory/projects/not-a-project", "/api/factory/jobs/not-a-job"])

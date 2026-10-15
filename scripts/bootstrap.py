@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--skip-install", action="store_true", help="Only initialize missing example configuration")
+    parser.add_argument("--skip-ui-build", action="store_true", help="Use an already built UI release; do not invoke Node")
     args = parser.parse_args()
     if sys.version_info < (3, 11):
         raise SystemExit("Python 3.11+ required; Python 3.12 is recommended.")
@@ -28,6 +29,11 @@ def main():
     if not python.exists():
         subprocess.run([sys.executable, "-m", "venv", str(ROOT / "envs/factory")], check=True)
     subprocess.run([str(python), "-m", "pip", "install", "-r", str(ROOT / "requirements-factory.txt")], check=True)
+    if not args.skip_ui_build:
+        if not shutil.which("npm"):
+            raise SystemExit("UI build requires Node.js 24 and npm on the build machine. Install a prebuilt ui/factory/dist release and use --skip-ui-build on the runtime server.")
+        subprocess.run(["npm", "ci", "--ignore-scripts"], cwd=ROOT, check=True)
+        subprocess.run(["npm", "run", "build"], cwd=ROOT, check=True)
     # Media helpers use the same CPU dependencies unless an existing media env is present.
     media = ROOT / ".venv"
     if not media.exists() and not media.is_symlink():

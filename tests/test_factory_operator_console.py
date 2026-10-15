@@ -18,7 +18,7 @@ def project(tmp_path, monkeypatch):
 
 def gate(project, kind="story"):
     options = [{"id": "A", "label": "候选 A"}, {"id": "B", "label": "候选 B"}]
-    store.update(project["id"], {"proposals": [{"id": "A", "title": "合格方向", "eligible": True}, {"id": "B", "title": "未合格", "eligible": False}, {"id": "C", "title": "不在关卡中", "eligible": True}]})
+    store.update(project["id"], {"proposals": [{"id": "A", "title": "合格方向", "eligible": True}, {"id": "B", "title": "未合格", "eligible": False}, {"id": "C", "title": "不在关卡中", "eligible": True}], "proposals_complete_generation": 1, "creation_review": {"passed": True}})
     return store.gate(project["id"], kind, options, "请确认创作方向", 1)
 
 
@@ -66,7 +66,7 @@ def test_blocked_project_uses_review_actions_even_with_dangling_gate(project):
 
 
 def test_preview_object_becomes_owned_media_url(project):
-    store.update(project["id"], {"styles": [{"id": "A", "name": "素描", "preview": {"path": "production/" + project["slug"] + "/style_previews/A/preview.png"}}]})
+    store.update(project["id"], {"styles": [{"id": "A", "name": "素描", "preview": {"path": "production/" + project["slug"] + "/style_previews/A/preview.png"}}], "script_complete_generation": 1, "style_previews_generation": 1, "script_review": {"passed": True}})
     store.gate(project["id"], "style", [{"id": "A"}], "选视觉", 1)
     a = console.attention(store.get(project["id"], False))
     assert a["options"][0]["preview_url"].startswith("/media/production/" + project["slug"] + "/")
@@ -96,7 +96,7 @@ def test_current_snapshot_reads_job_claim_and_decision_together(project):
 def test_graph_covers_real_executable_nodes_without_fabricated_success(project):
     from factory.workflows import build_graph
     graph = project_graph(project)
-    actual = {node["id"] for node in build_graph(None).get_graph().to_json()["nodes"] if node["id"] not in ("__start__", "__end__")}
+    actual = {node["id"] for node in build_graph(None, workflow_version=project["workflow_version"]).get_graph().to_json()["nodes"] if node["id"] not in ("__start__", "__end__")}
     assert {x for node in graph["nodes"] for x in node["execution_nodes"]} == actual
     assert all(node["status"] != "succeeded" for node in graph["nodes"])
     assert any(edge["loop"] for edge in graph["edges"])

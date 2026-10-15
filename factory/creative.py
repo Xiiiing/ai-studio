@@ -339,9 +339,19 @@ def _revision_visual_style(project, config, checkpoint):
 
 
 def _styles(project, config, episode, checkpoint):
-    report(checkpoint, stage="visual_development", progress=42, message="美术指导正在形成三套画风方向")
+    report(checkpoint, stage="visual_design" if project.get("workflow_version",1)==2 else "visual_development", progress=42, message="美术指导正在形成三套画风方向")
+    context=_safe_context(project)
+    # Keep the registered top-level contract and byte-identical old cache input
+    # for first-generation projects without visual feedback.
+    if project.get("style_feedback"):
+        context["visual_direction_revision"]={
+            "generation":project.get("style_generation",project.get("script_generation",1)),
+            "producer_visual_feedback":project["style_feedback"],
+            "previous_directions":[{k:v.get(k) for k in ("name","description","prompt","palette")}
+                                   for v in project.get("styles",[])],
+            "instruction":"落实producer_visual_feedback；被否决方向只用于理解原因，不重复生成。"}
     value = cached_json_call(project, config, "visual_designer", "visual-styles", STYLE_SYSTEM,
-        {"project": _safe_context(project), "title": episode["title"],
+        {"project": context, "title": episode["title"],
          "synopsis": episode["synopsis"], "cast": episode["cast"],
          "locations": list(dict.fromkeys(s.get("location", "") for s in episode["shots"]))},
         STYLES_SCHEMA, checkpoint, max_tokens=3600, temperature=0.7)

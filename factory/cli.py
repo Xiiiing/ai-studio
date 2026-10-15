@@ -47,6 +47,8 @@ def parser():
     create.add_argument("--wall-minutes", type=float, default=180)
     create.add_argument("--max-attempts", type=int, default=3)
     create.add_argument("--request-id", help="同一创建请求重试时沿用；同编号不能改变参数")
+    create.add_argument("--team-mode", choices=["delegated", "guided"], default="delegated",
+                        help="默认 AI 代管故事与视觉；guided 由出品人选择，终片始终人工确认")
     create.add_argument("--validation", action="store_true")
     create.add_argument("--json", action="store_true")
     for command in ["status", "pause", "resume", "revise", "advance"]:
@@ -74,9 +76,11 @@ def parser():
     choose.add_argument("--choice", required=True)
     choose.add_argument("--decision-id", help="使用 status 中的编号，防止选中更新后的待办；也支持幂等重试")
     _text_options(choose, "feedback")
-    act = sub.add_parser("action", help="兼容入口：暂停、继续、重试评审或重新提案")
+    act = sub.add_parser("action", help="执行 status 所列的受控操作")
     act.add_argument("project")
-    act.add_argument("action", choices=["pause", "resume", "retry", "repropose"])
+    act.add_argument("action", help="status 中的操作 ID，例如 provide_authorized_source")
+    act.add_argument("--expected-revision", type=int)
+    act.add_argument("--inputs-file", help="操作输入的 UTF-8 JSON 对象文件；最多 64 KiB")
     act.add_argument("--gpu-minutes", type=float)
     act.add_argument("--wall-minutes", type=float)
     act.add_argument("--shots", "--shot-ids", dest="shot_ids", type=_shots)
@@ -93,6 +97,8 @@ def parser():
     models.add_argument("--kind", choices=["text", "video"], default="text", help="probe 的连接类型")
     workflow = sub.add_parser("workflow", help="导出实际执行图、角色与制作接口说明")
     workflow.add_argument("--json", action="store_true")
+    workflow.add_argument("--workflow-version", type=int, choices=[1, 2], default=2,
+                          help="默认新版；1 用于核对已有项目检查点")
     outputs = sub.add_parser("outputs", aliases=["export"], help="列出当前交付版本已存在的本地文件")
     outputs.add_argument("project")
     outputs.add_argument("--json", action="store_true")
@@ -195,6 +201,11 @@ def print_status(project):
             print("需要改分镜时：revise + --shots + --expected-revision + --feedback；普通 resume 不改变分镜。")
     elif project.get("error"):
         print("错误：" + str(project["error"]))
+    from .attention_actions import descriptors
+    for action in descriptors(project):
+        if action.get("enabled"):
+            fields = ", ".join(field["name"] for field in action.get("inputs", []) if field.get("required"))
+            print(f"可用操作：{action['id']} · {action['label']}" + (f"；必填：{fields}" if fields else ""))
     for gate in (d for d in project.get("decisions", []) if d.get("status") == "pending"):
         print(f"待办 {gate['type']}：{gate['id']}  {gate.get('title', '')}")
         collection = project.get("proposals" if gate["type"] == "story" else "styles", [])
@@ -290,11 +301,11 @@ def execute(args):
         return save_registry(value.get("llm_profiles"), value.get("llm_roles"), revision, **video)
     if command == "workflow":
         from .workflow_spec import export_spec
-        return export_spec()
+        return export_spec(workflow_version=args.workflow_version)
     store.initialize()
     if command in {"create", "run"}:
         values = {"brief": _text(args, "brief"), "title": args.title, "format": args.format,
-                  "duration_seconds": args.seconds, "is_validation": args.validation,
+                  "duration_seconds": args.seconds, "is_validation": args.validation, "team_mode": args.team_mode,
                   "budget": {"gpu_minutes": args.gpu_minutes, "wall_minutes": args.wall_minutes,
                              "max_attempts": args.max_attempts}}
         if args.request_id:
@@ -320,6 +331,15 @@ def execute(args):
     if command == "advance":
         return _advance(args.project)
     values = {"action": args.action if command == "action" else command, "feedback": _text(args, "feedback")}
+    if command == "action" and args.inputs_file:
+        path = Path(args.inputs_file)
+        if path.stat().st_size > 65536:
+            raise ValueError("操作输入文件不能超过 64 KiB")
+        inputs = json.loads(path.read_text(encoding="utf-8"),
+                            parse_constant=lambda _: (_ for _ in ()).throw(ValueError("非有限数值")))
+        if not isinstance(inputs, dict) or set(inputs) & {"action", "expected_revision"}:
+            raise ValueError("输入必须为 JSON 对象，且不能覆盖 action 或 expected_revision")
+        values.update(inputs)
     for key in ("gpu_minutes", "wall_minutes", "shot_ids", "expected_revision"):
         value = getattr(args, key, None)
         if value is not None:

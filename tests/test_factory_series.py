@@ -288,7 +288,8 @@ def test_local_edit_reroutes_saved_final_gate_without_repeating_creative_gates(s
         graph.add_edge("final_decision", END)
         return graph.compile(checkpointer=checkpointer)
     monkeypatch.setattr(wf, "build_graph", build)
-    p = store.update(series["id"], {"status": "queued", "pause_requested": False, "selected_style": "style-A"})
+    p = store.update(series["id"], {"status": "queued", "pause_requested": False, "selected_style": "style-A",
+                                          "workflow_version":1,"team_mode":"guided"})
     wf.advance(p["id"])
     old_gate = store.get(p["id"])["decisions"][-1]["id"]
     reference = create_asset(p["id"])

@@ -10,28 +10,57 @@ GROUPS = (
     {"id": "media", "label": "视觉与声音", "lead": "visual_designer", "roles": ["visual_designer", "prompt_style_compiler", "image_generator", "video_generator", "speech", "dialogue_editor", "editor"], "responsibility": "制作人物、镜头与对白，并完成剪辑、字幕和混音。"},
     {"id": "review", "label": "独立质量审核", "lead": "independent_critic", "roles": ["story_critic", "independent_critic", "visual_critic"], "responsibility": "独立检查叙事、画面与连续性；未通过则返回指定阶段修复。"},
 )
-NODES = (
-    ("research", "选题研究", "researcher", ["researcher"], ["research"], "创作需求与来源", "研究结论与材料"),
-    ("proposals", "故事提案", "creator", ["creator", "independent_critic"], ["proposals"], "研究结论", "合格故事候选"),
-    ("story_decision", "故事决策", "producer", ["executive_producer", "producer"], ["story_decision", "apply_story"], "通过审核的候选", "选定故事与意见"),
-    ("screenplay", "剧本与分镜", "screenwriter", ["story_editor", "screenwriter", "storyboard_director", "independent_critic"], ["screenplay"], "故事与出品人意见", "剧本、分镜与审核"),
-    ("visual_development", "视觉预览", "visual_designer", ["visual_designer", "image_generator"], ["visual_development"], "剧本、人物与画风", "人物与画风预览"),
-    ("style_decision", "视觉决策", "producer", ["executive_producer", "producer"], ["style_decision", "apply_style"], "已生成的视觉预览", "确认的视觉方向"),
-    ("production", "镜头与后期", "editor", ["image_generator", "video_generator", "speech", "dialogue_editor", "visual_critic", "editor"], ["production"], "已确认分镜与视觉", "镜头、声音和初版"),
-    ("final_decision", "终片审阅", "producer", ["executive_producer", "producer"], ["final_decision"], "成片与质检证据", "通过或定向返修"),
-    ("delivery", "正式交付", "producer", ["editor", "producer"], ["apply_final"], "出品人终审决定", "版本绑定的交付包"),
-    ("revision", "定向返修", "story_editor", ["story_editor", "screenwriter", "storyboard_director", "independent_critic", "edit_director"], ["revision"], "指定修改意见", "修订剧本或剪辑单"),
-)
-EDGES = [(NODES[i][0], NODES[i+1][0], "continue") for i in range(8)] + [
-    ("story_decision", "proposals", "重新提案"), ("final_decision", "revision", "修改 / 重剪"),
-    ("revision", "production", "重新审核与制作"), ("production", "revision", "待处理返修")]
+def topology(workflow_version=1):
+    from .workflows import build_graph
+    from .team_tasks import contracts
+    graph=(build_graph(None) if workflow_version==1 else build_graph(None,workflow_version)).get_graph().to_json()
+    tasks={row['id']:row for row in contracts(workflow_version)}
+    decisions={
+        'story_decision': ('故事决策', ['proposals'], ['selected_story']),
+        'style_decision': ('视觉决策', ['styles', 'style_previews'], ['selected_style']),
+        'final_decision': ('终片审阅', ['delivery', 'technical_checks'], ['final_answer']),
+        'delivery': ('正式交付', ['final_answer'], ['accepted_delivery']),
+    }
+    mapped={'apply_story':'story_decision','apply_style':'style_decision','apply_final':'delivery'}
+    nodes={}
+    for actual in graph['nodes']:
+        executable=actual['id']
+        if executable in ('__start__','__end__'):
+            continue
+        ident=mapped.get(executable,executable)
+        if ident in nodes:
+            nodes[ident]['execution_nodes'].append(executable)
+            continue
+        if ident in decisions:
+            label,inputs,outputs=decisions[ident]
+            spec={'label':label,'owner':'producer','reviewer':None,
+                  'members':['executive_producer','producer'],'inputs':inputs,'outputs':outputs}
+        else:
+            spec=tasks[ident]
+        members=list(dict.fromkeys(spec['members']+([spec['reviewer']] if spec.get('reviewer') else [])))
+        nodes[ident]={'id':ident,'label':spec['label'],'owner':spec['owner'],'reviewer':spec.get('reviewer'),
+                      'members':members,'execution_nodes':[executable],
+                      'input':' / '.join(spec['inputs']),'output':' / '.join(spec['outputs'])}
+    edges=[]
+    for edge in graph['edges']:
+        a=mapped.get(edge['source'],edge['source']); b=mapped.get(edge['target'],edge['target'])
+        if a in ('__start__','__end__') or b in ('__start__','__end__') or a==b:
+            continue
+        label=str(edge.get('data') or 'continue')
+        edges.append({'source':a,'target':b,'label':label,'loop':bool(edge.get('conditional')) and label!='continue'})
+    return list(nodes.values()),edges
 
 
 def project_graph(project, attention=None, running=False):
     records = {row["id"]: row for row in tasks_snapshot(project)["tasks"]}
     gate = current_gate(project)
     stage = project.get("stage")
-    aliases = {"story_creation": "proposals", "story_review": "proposals", "script_creation": "screenplay", "script_review": "screenplay", "storyboard_direction": "screenplay", "story_resolution": "screenplay", "style_previews": "visual_development", "delivered": "delivery"}
+    version=project.get("workflow_version",1)
+    aliases = {"story_creation":"proposals","story_review":"proposals","script_creation":"screenplay",
+               "storyboard_direction":"storyboard" if version==2 else "screenplay",
+               "style_previews":"visual_development","story_resolution_review":"story_resolution" if version==2 else "screenplay","delivered":"delivery"}
+    if version==1:
+        aliases.update(script_review="screenplay",story_resolution="screenplay")
     active = aliases.get(stage, stage)
     if gate and project.get("status") not in {"blocked", "failed"} and not project.get("pause_requested"):
         active = gate["type"] + "_decision"
@@ -41,14 +70,16 @@ def project_graph(project, attention=None, running=False):
     history = rows(decisions[-200:] if isinstance(decisions, list) else [], 200)
     gates = {kind: next((d for d in reversed(history) if d.get("type") == kind), {}) for kind in ("story", "style", "final")}
     nodes = []
-    for ident, label, owner, members, executable, inputs, outputs in NODES:
+    specification,edges=topology(version)
+    for spec in specification:
+        ident,label,owner,members,executable,inputs,outputs=(spec[k] for k in ("id","label","owner","members","execution_nodes","input","output"))
         status, evidence = "pending", "not_recorded"
         row = records.get(ident)
         if row and row["current"]:
             status, evidence = row["status"], "task_receipt"
         if ident.endswith("_decision"):
             kind = ident.split("_", 1)[0]; d = gates.get(kind, {})
-            version = project.get({"story": "proposal_generation", "style": "script_generation", "final": "production_revision"}[kind])
+            version = project.get({"story": "proposal_generation", "style": "style_generation", "final": "production_revision"}[kind],project.get("script_generation") if kind=="style" else None)
             if d.get("status") == "answered" and (version is None or d.get("id") == f"{project.get('id')}:{kind}:{version}"):
                 status, evidence = "succeeded", "decision_receipt"
         if ident == "delivery" and project.get("status") == "approved":
@@ -65,12 +96,12 @@ def project_graph(project, attention=None, running=False):
         delegated = ident in {"story_decision", "style_decision"} and project.get("team_mode") == "delegated"
         if delegated: owner = "executive_producer"
         record = obj(obj(row).get("record"))
-        nodes.append({"id": ident, "label": label, "owner": owner, "members": members, "execution_nodes": executable,
+        nodes.append({"id": ident, "label": label, "owner": owner, "reviewer": spec.get("reviewer"), "members": members, "execution_nodes": executable,
                       "input": inputs, "output": outputs, "status": status, "evidence": evidence,
                       "attempt": record.get("attempt"), "started_at": record.get("started_at"), "finished_at": record.get("finished_at"),
                       "decision_mode": "delegated" if delegated else "human" if ident.endswith("decision") else None})
     phase = obj(project.get("production")).get("phase") if stage == "production" else stage
-    return {"schema": "ai-studio.production-graph.v1", "project_id": project.get("id"), "revision": project.get("revision"),
+    return {"schema": "ai-studio.production-graph.v2", "workflow_version":project.get("workflow_version",1), "project_id": project.get("id"), "revision": project.get("revision"),
             "active_node": active, "current_activity": PHASES.get(phase, phase), "nodes": nodes,
-            "edges": [{"source": a, "target": b, "label": label, "loop": label != "continue"} for a, b, label in EDGES],
+            "edges": edges, "production_tasks":list(obj(project.get("production_tasks")).values()),
             "groups": list(GROUPS), "semantics": "execution_nodes map to the existing LangGraph; no editable runtime wiring or inferred approvals"}

@@ -5,13 +5,15 @@ import copy
 import json
 import math
 import re
+import time
 from collections import Counter
 from urllib.parse import quote
 
 from . import store
+from .attention_actions import descriptors, generation, validate_gate, delegation_status
 
 TERMINAL = {"approved", "cancelled"}
-GENERATIONS = {"story": "proposal_generation", "style": "script_generation", "final": "production_revision"}
+GENERATIONS = {"story": "proposal_generation", "style": "style_generation", "final": "production_revision"}
 PHASES = {
     "queued": "等待执行器领取", "research": "检索题材与来源", "proposals": "创作并评审故事提案",
     "story_creation": "生成故事方案", "story_review": "独立审查故事", "story_decision": "确定故事方向",
@@ -24,6 +26,9 @@ PHASES = {
     "quality_review": "检查画面与连续性", "semantic_review_pending": "等待视觉审核", "waiting_resources": "等待可用 GPU",
     "final_technical_review": "检查最终音画文件", "delivery_ready": "等待出品人审片", "final_decision": "等待出品人审片",
     "production": "制作镜头与声音", "revision": "处理指定返修", "delivered": "终版已交付",
+    "story_resolution_review": "独立审查故事目标", "storyboard": "编排分镜与运镜",
+    "visual_design": "设计画风方案", "remote_submit": "提交云任务", "remote_poll": "等待云端生成",
+    "remote_download": "下载云素材",
 }
 
 
@@ -104,8 +109,9 @@ def current_gate(project):
         kind = gate.get("type")
         if gate.get("status") != "pending" or kind not in GENERATIONS:
             continue
-        version = project.get(GENERATIONS[kind])
-        if version is not None and gate.get("id") != f"{project.get('id')}:{kind}:{version}":
+        try:
+            validate_gate(project, gate)
+        except ValueError:
             continue
         return copy.deepcopy(gate)
     return None
@@ -128,6 +134,10 @@ def attention(project, *, job_running=False):
         for item in rows(source, 20):
             if item.get("id") not in allowed or (kind == "story" and item.get("eligible") is False):
                 continue
+            try:
+                validate_gate(project, gate, item.get("id"))
+            except ValueError:
+                continue
             candidate = {k: text(item.get(k), 2400) for k in ("id", "title", "name", "logline", "synopsis", "description", "hook", "ending")}
             candidate["preview_url"] = media_url(project, item.get("preview_url") or obj(item.get("preview")).get("path"))
             candidate["review_summary"] = text(obj(item.get("review")).get("summary"))
@@ -137,12 +147,14 @@ def attention(project, *, job_running=False):
                 "owner": "producer", "blocking": True, "gate": gate, "options": candidates, "issues": [],
                 "action_label": names[kind], "target_tab": "decisions", "revision": project.get("revision"),
                 "can_choose": bool(candidates) if kind != "final" else bool(media_url(project, obj(project.get("delivery")).get("video_url"))),
-                "suggested_feedback": ""}
+                "suggested_feedback": "", "actions": descriptors(project, job_running=job_running),
+                "delegation": delegation_status(project)}
     if status == "paused" or project.get("pause_requested"):
         return {"kind": "paused", "title": "制作已暂停" if not job_running else "正在安全暂停",
                 "summary": "已有素材与进度保留。" if not job_running else "当前执行单元结束后暂停，不强制中断生成。",
                 "action_label": "恢复制作" if not job_running else "查看执行进度", "target_tab": "overview", "blocking": False,
-                "can_resume": not job_running, "issues": [], "revision": project.get("revision")}
+                "can_resume": not job_running, "issues": [], "revision": project.get("revision"),
+                "actions": descriptors(project, job_running=job_running)}
     if status not in {"blocked", "failed"}:
         return None
     need = obj(project.get("needs_decision"))
@@ -158,13 +170,15 @@ def attention(project, *, job_running=False):
     return {"kind": kind, "title": titles[kind], "summary": text(need.get("message") or project.get("error")),
             "code": text(need.get("code"), 120), "blocking": True, "owner": "producer", "revision": project.get("revision"),
             "action_label": labels[kind], "target_tab": "costs" if kind == "cloud" else "decisions", "issues": issues,
-            "suggested_feedback": feedback, "can_retry": kind in {"creative", "production", "runtime"}}
+            "suggested_feedback": feedback, "can_retry": kind in {"creative", "production", "runtime"},
+            "actions": descriptors(project, job_running=job_running)}
 
 
 def project_summary(project, *, job_running=False):
     issue = attention(project, job_running=job_running)
     phase = obj(project.get("production")).get("phase") if project.get("stage") == "production" else project.get("stage")
     result = {k: copy.deepcopy(project.get(k)) for k in ("id", "title", "brief", "format", "status", "stage", "progress", "revision", "created_at", "updated_at", "duration_seconds", "team_mode", "is_validation", "budget")}
+    result["workflow_version"] = project.get("workflow_version", 1)
     shots = rows(project.get("shots"))
     result.update(current_activity=PHASES.get(phase, text(phase, 80) or "项目已建立"), job_running=job_running,
                   attention=issue, pending_decisions=int(bool(issue and issue.get("blocking"))),
@@ -175,31 +189,74 @@ def project_summary(project, *, job_running=False):
     return result
 
 
-def dashboard():
+def dashboard(*, offset=0, limit=100, attention_offset=0, attention_limit=100):
+    if (any(type(v) is not int or v < 0 for v in (offset, attention_offset))
+            or any(type(v) is not int or not 1 <= v <= 100 for v in (limit, attention_limit))):
+        raise ValueError("分页 offset 应为非负整数，limit 应为 1 至 100")
+    timestamp = time.time()
     with store.connection() as db:
         db.execute("BEGIN")
-        live = {r[0] for r in db.execute("SELECT project_id FROM jobs WHERE status='running'")}
-        projects = []
-        for row in db.execute("SELECT snapshot,revision FROM projects ORDER BY updated DESC LIMIT 100"):
+        live_jobs = {r["project_id"]: dict(r) for r in db.execute("SELECT project_id,started,phase FROM jobs WHERE status='running'")}
+        live = set(live_jobs)
+        projects, attention_projects, running_tasks, completed = [], [], [], []
+        metrics = Counter()
+        reasons = Counter()
+        gpu_minutes = 0
+        titles = {}
+        # Aggregate all projects. Only the returned recent-project list is bounded.
+        for row in db.execute("SELECT snapshot,revision FROM projects ORDER BY updated DESC"):
             project = json.loads(row[0]); project["revision"] = row[1]
-            projects.append(project_summary(project, job_running=project["id"] in live))
+            summary = project_summary(project, job_running=project["id"] in live)
+            titles[project["id"]] = project["title"]
+            metrics["projects"] += 1
+            if summary["pending_decisions"]:
+                if attention_offset <= metrics["attention"] < attention_offset + attention_limit:
+                    attention_projects.append(summary)
+                metrics["attention"] += 1
+            metrics["blocked"] += int(project["status"] in {"blocked", "failed"})
+            metrics["delivered"] += int(project["status"] == "approved" and not project.get("is_validation"))
+            phase = obj(project.get("production")).get("phase")
+            metrics["waiting_resources"] += int(phase == "waiting_resources")
+            metrics["waiting_remote"] += int(project["status"] == "waiting_remote")
+            metrics["queued"] += int(project["status"] == "queued" and project["id"] not in live)
+            gpu_minutes += number(obj(project.get("budget")).get("spent_gpu_minutes"))
+            if summary["attention"] and summary["attention"].get("blocking"):
+                reasons[summary["attention"]["kind"]] += 1
+            if offset < metrics["projects"] <= offset + limit:
+                projects.append(summary)
+            if project["id"] in live and len(running_tasks) < 20:
+                job = live_jobs[project["id"]]
+                running_tasks.append({"project_id": project["id"], "title": project["title"], "stage": project.get("stage"),
+                                      "activity": summary["current_activity"], "started_at": job["started"],
+                                      "elapsed_seconds": max(0, timestamp - job["started"]) if job["started"] else None})
+            if project["status"] == "approved" and not project.get("is_validation") and len(completed) < 8:
+                completed.append({"project_id": project["id"], "title": project["title"], "accepted_at": project.get("accepted_at"),
+                                  "video_url": media_url(project, obj(project.get("delivery")).get("video_url"))})
         activity = [{"project_id": r[0], "at": r[1], "kind": r[2], "message": r[3][:1200]}
                     for r in db.execute("SELECT project_id,at,kind,message FROM events ORDER BY id DESC LIMIT 36")]
         queue = {r[0]: r[1] for r in db.execute("SELECT status,count(*) FROM jobs GROUP BY status")}
-    titles = {p["id"]: p["title"] for p in projects}
+        ready = db.execute("SELECT count(*) FROM jobs WHERE status='queued' AND next_poll_at<=?", (timestamp,)).fetchone()[0]
     for item in activity:
         item["title"] = titles.get(item["project_id"], item["project_id"])
-    counts = Counter(p["status"] for p in projects)
-    return {"schema": "ai-studio.console.v1", "projects": projects, "activity": activity,
-            "metrics": {"projects": len(projects), "running": len(live), "attention": sum(p["pending_decisions"] for p in projects),
-                        "blocked": counts["blocked"] + counts["failed"], "delivered": sum(p["status"] == "approved" and not p.get("is_validation") for p in projects),
-                        "gpu_minutes": round(sum(number(obj(p.get("budget")).get("spent_gpu_minutes")) for p in projects), 1)},
-            "queue": {"running": queue.get("running", 0), "queued": queue.get("queued", 0), "completed": queue.get("completed", 0), "failed": queue.get("failed", 0), "worker_concurrency": 1, "durable": True},
-            "project_limit": 100, "bounded": len(projects) == 100}
+    def pagination(start, size, total):
+        more = start + size < total
+        return {"offset": start, "limit": size, "total": total, "has_more": more, "next_offset": start + size if more else None}
+    return {"schema": "ai-studio.console.v1", "projects": projects, "attention_projects": attention_projects, "activity": activity,
+            "metrics": {**{key: metrics[key] for key in ("projects", "attention", "blocked", "delivered", "waiting_resources", "waiting_remote", "queued")},
+                        "running": len(live), "gpu_minutes": round(gpu_minutes, 1)},
+            "attention_breakdown": dict(reasons), "running_tasks": running_tasks, "recent_deliveries": completed,
+            "queue": {"running": queue.get("running", 0), "queued": queue.get("queued", 0), "ready": ready,
+                      "waiting_remote": metrics["waiting_remote"], "waiting_resources": metrics["waiting_resources"],
+                      "completed": queue.get("completed", 0), "failed": queue.get("failed", 0), "worker_concurrency": 1, "durable": True},
+            "pagination": pagination(offset, limit, metrics["projects"]),
+            "attention_pagination": pagination(attention_offset, attention_limit, metrics["attention"]),
+            "project_limit": limit, "bounded": metrics["projects"] > limit,
+            "attention_project_limit": attention_limit, "attention_bounded": metrics["attention"] > attention_limit}
 
 
 def workspace(pid):
     from .team_blueprint import project_graph
+    from .team_flow import build_flow
     with store.connection() as db:
         db.execute("BEGIN")
         project = store._read(db, pid)
@@ -207,6 +264,11 @@ def workspace(pid):
         project["events"] = [{"id": r[0], "at": r[1], "kind": r[2], "message": r[3], "data": json.loads(r[4])}
                              for r in reversed(db.execute("SELECT id,at,kind,message,data FROM events WHERE project_id=? ORDER BY id DESC LIMIT 120", (pid,)).fetchall())]
     issue = attention(project, job_running=running)
+    flow = build_flow(project)
+    policy = delegation_status(project)
     return {"schema": "ai-studio.workspace.v1", "project": project,
-            "operator": {"attention": issue, "job_running": running, "current_activity": project_summary(project, job_running=running)["current_activity"]},
-            "workflow": project_graph(project, issue, running), "revision": project["revision"]}
+            "operator": {"attention": issue, "job_running": running, "current_activity": project_summary(project, job_running=running)["current_activity"],
+                         "actions": descriptors(project, job_running=running), "delegation": policy},
+            "workflow": project_graph(project, issue, running), "flow": flow, "task_board": flow.get("task_board"),
+            "reviews": {key: copy.deepcopy(project.get(key)) for key in ("creation_review", "script_review", "resolved_story_brief")},
+            "revision": project["revision"]}

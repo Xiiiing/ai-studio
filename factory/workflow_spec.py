@@ -5,30 +5,35 @@ from . import __version__
 from .config import list_roles, load_config
 
 
-def export_spec(config=None):
+def export_spec(config=None, workflow_version=2):
     from .workflows import build_graph
     config = load_config() if config is None else config
-    topology = build_graph(None).get_graph().to_json()
+    topology = (build_graph(None) if workflow_version == 1 else build_graph(None,workflow_version)).get_graph().to_json()
     from .team_flow import team_spec
     assignment = team_spec(config)
     from .team_tasks import contracts as task_contracts
     from .video_providers import resolve_video
     video = resolve_video(config)
     remote_video = video["provider"] == "minimax"
+    from .team_blueprint import topology as display_topology, GROUPS
+    display_nodes,display_edges=display_topology(workflow_version)
     return {
-        "schema_version": 1, "name": "ai-studio.short-drama", "version": __version__,
+        "schema_version": 2, "workflow_version":workflow_version, "supported_workflow_versions":[1,2], "name": "ai-studio.short-drama", "version": __version__,
         "orchestrator": "LangGraph", "persistence": "SQLite WAL + LangGraph checkpoints",
         "configuration_scope": "One worker advance, until the next decision or pause",
         "nodes": topology["nodes"], "edges": topology["edges"],
+        "production_graph":{"nodes":[{**node,"status":"pending"} for node in display_nodes],
+                            "edges":display_edges,"groups":list(GROUPS),"workflow_version":workflow_version,
+                            "semantics":"executable topology with task ownership; no execution inferred"},
         "roles": list_roles(config),
         "assignment_mode": assignment["assignment_mode"],
         "assignment_semantics": assignment["assignment_semantics"],
         "teams": assignment["teams"], "handoffs": assignment["handoffs"],
-        "task_contracts": task_contracts(),
+        "task_contracts": task_contracts(workflow_version),
         "human_gates": [
             {"id": "story_decision", "label": "选择故事", "choices": "eligible proposals"},
-            {"id": "style_decision", "label": "选择视觉方案", "choices": "generated previews"},
-            {"id": "final_decision", "label": "审阅初版成片", "choices": ["approve", "revise"]},
+            {"id": "style_decision", "label": "选择视觉方案", "choices": "generated previews or __restyle__ with required feedback"},
+            {"id": "final_decision", "label": "审阅初版成片", "choices": ["approve", "revise", "reedit"]},
         ],
         "engines": [
             {"id": "llm", "label": "编剧 / 导演 / 审稿 / 视觉理解",

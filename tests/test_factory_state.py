@@ -19,6 +19,7 @@ def isolated(tmp_path,monkeypatch):
 
 def payload(**extra):
     return {"brief":"原创成年角色的温暖悬疑小故事，保留明确结局。",
+            "workflow_version":1,"team_mode":"guided",
             "duration_seconds":60,"budget":{"gpu_minutes":30,"max_attempts":2},**extra}
 
 

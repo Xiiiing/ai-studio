@@ -13,6 +13,7 @@ from studio.core import write_json
 from . import store
 from .config import DATA
 from .workflows import ProjectPaused, ReviewBlocked, advance
+from .schemas import CreativeReviewError
 from .remote_tasks import ProductionDeferred, defer_job, owns_job
 
 _stop=threading.Event()
@@ -41,6 +42,8 @@ def handle(job):
     except Exception as exc:
         name=type(exc).__name__
         details=getattr(exc,"details",None) or getattr(exc,"reason",None)
+        if isinstance(exc, CreativeReviewError):
+            details={"issues":exc.issues}
         if name=="ProductionPaused":
             store.update(pid,{"status":"paused","error":None,"message":str(exc)})
             store.finish_job(job["id"], lease=job["lease"])
@@ -53,11 +56,16 @@ def handle(job):
             needs["exhausted_limits"]=[label for label,used,cap in [("wall","elapsed_seconds","max_wall_seconds"),("gpu","gpu_seconds","max_gpu_seconds")] if state.get(used,0)>=state.get(cap,float("inf"))] or ["gpu"]
         if isinstance(exc,ReviewBlocked):
             needs={**needs,**exc.details}
-        if not isinstance(exc,ReviewBlocked) and name not in {"ProductionNeedsDecision","ProductionBudgetExceeded"}:
+        if isinstance(exc, CreativeReviewError):
+            project=store.get(pid,False)
+            needs.update(kind="script_review" if project.get("selected_story") else "creative_review",
+                         issues=exc.issues,
+                         type="edit_feedback" if project.get("revision_request") else "review")
+        if not isinstance(exc,(ReviewBlocked,CreativeReviewError)) and name not in {"ProductionNeedsDecision","ProductionBudgetExceeded"}:
             needs["type"]="runtime"
         store.update(pid,{"status":"blocked","error":str(exc)[:2500],"needs_decision":needs,
                           "message":"制片已保留进度并暂停："+str(exc)[:1500]})
-        expected = isinstance(exc, ReviewBlocked) or name in {"ProductionNeedsDecision", "ProductionBudgetExceeded"}
+        expected = isinstance(exc, (ReviewBlocked, CreativeReviewError)) or name in {"ProductionNeedsDecision", "ProductionBudgetExceeded"}
         store.event(pid,"请在待办决策中查看问题并选择处理方式。" if expected else "异常详情已写入本地运行日志。",
                     "review_blocked" if expected else "error",{"exception_type":name,"stage":store.get(pid,False).get("stage")})
         store.finish_job(job["id"],str(exc)[:2500],lease=job["lease"])
