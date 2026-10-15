@@ -426,6 +426,7 @@ export function Models({ notify }: { notify: (v: string) => void }) {
         </select></Field>
         <p>先添加连接，再分配下方角色并保存。{setupMode !== "api" && "localhost 指运行 AI Studio 后端的机器。"}</p>
         <p role="status">尚未分配：{rows(inventory.roles).filter((r) => !r.optional && !draft.roles[r.role]).map((r) => r.label || roleName(r.role)).join("、") || "文本角色已分配；请测试连接并检查制作能力"}</p>
+        {(inventory.readiness?.missing || []).length > 0 && <p role="status">{inventory.readiness.missing.join("；")}</p>}
         <div className="button-row"><button className="button" onClick={() => {
           const entries = Object.entries(draft.profiles) as [string, any][];
           const text = entries.find(([, p]) => p.enabled !== false);

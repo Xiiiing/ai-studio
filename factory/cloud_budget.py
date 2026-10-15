@@ -45,6 +45,7 @@ CREATE TABLE IF NOT EXISTS cloud_cost_events(
 
 def initialize(db):
     db.executescript(SCHEMA)
+    db.execute("CREATE TABLE IF NOT EXISTS cloud_media_receipts(intent_id TEXT PRIMARY KEY REFERENCES cloud_tasks(intent_id), media_kind TEXT NOT NULL, request_id TEXT, usage_json TEXT NOT NULL)")
 
 
 def _integer(value, label, low=0, high=10**15):
@@ -70,6 +71,13 @@ def pricing(value=None):
             "status": "unconfirmed" if amount is None else "estimate", "billing_hard_limit": False}
 
 
+def connection_identity(profile):
+    if profile.get("_media_kind"):
+        from .media_profiles import identity
+        return {**identity(profile), "api_key_env": profile.get("api_key_env")}
+    return video_identity(profile)
+
+
 def source_signature(project, profile):
     return fingerprint({"production_revision": project.get("production_revision", 1),
                         "episode": project.get("episode") or project.get("script") or {},
@@ -78,7 +86,7 @@ def source_signature(project, profile):
                             {k: v for k, v in style.items() if not k.startswith("preview")}
                             for style in project.get("styles", [])
                             if style.get("id") == project.get("selected_style")],
-                        "video": video_identity(profile), "pricing": pricing(profile.get("pricing"))})
+                        "video": connection_identity(profile), "pricing": pricing(profile.get("pricing"))})
 
 
 def request_line(pid, shot_id, record, frame_sha256, profile, timeline_seconds):
@@ -89,7 +97,8 @@ def request_line(pid, shot_id, record, frame_sha256, profile, timeline_seconds):
             "provider": profile["provider"], "model": profile["model"],
             "request_signature": signature, "source_signature": record["source_signature"],
             "prompt": record["prompt"], "first_frame_sha256": frame_sha256,
-            "duration": profile["duration"], "resolution": profile["resolution"],
+            "duration": profile.get("duration"), "resolution": profile.get("resolution"),
+             **({"media_kind":profile["_media_kind"]} if profile.get("_media_kind") else {}),
             "timeline_seconds": timeline_seconds}
 
 
@@ -123,9 +132,10 @@ def prepare_batch(project, profile, lines):
     tariff = pricing(profile.get("pricing"))
     context = source_signature(project, profile)
     scope = {"project_id": project["id"], "production_revision": project.get("production_revision", 1),
-             "source_signature": context, "connection": video_identity(profile),
+             "source_signature": context, "connection": connection_identity(profile),
              "shot_count": len({v["shot_id"] for v in lines}), "estimated_submissions": len(lines),
-             "duration": profile["duration"], "resolution": profile["resolution"], "pricing": tariff,
+             "duration": profile.get("duration"), "resolution": profile.get("resolution"),
+             **({"media_kind":profile["_media_kind"]} if profile.get("_media_kind") else {}), "pricing": tariff,
              "estimated_total_micros": None if tariff["unit_cost_micros"] is None else tariff["unit_cost_micros"] * len(lines),
              "lines": sorted(copy.deepcopy(lines), key=lambda v: v["intent_id"])}
     ident = fingerprint(scope)
@@ -146,7 +156,7 @@ def prepare_batch(project, profile, lines):
         if (current.get("cloud_quote") or {}).get("id") != ident:
             current["cloud_quote"] = {"id": ident, **scope}
             store._write(db, current)
-            store._event(db, project["id"], "云视频批次估价已保存，新的付费提交等待出品人授权。", "cloud_quote",
+            store._event(db, project["id"], "云媒体批次估价已保存，新的付费提交等待出品人授权。", "cloud_quote",
                          {"batch_id": ident, "estimated_submissions": len(lines)})
         return _batch(db, ident)
 
@@ -160,7 +170,7 @@ def ensure_batch(project, profile, lines):
         fresh = [line for line in lines if line["intent_id"] not in reserved]
         unit = batch["scope"]["pricing"]["unit_cost_micros"]
         if not auth:
-            raise ProductionNeedsDecision("付费云视频尚未授权；请核对模型、镜头参数与费用预估", "cloud_authorization_required",
+            raise ProductionNeedsDecision("付费云媒体尚未授权；请核对模型、镜头参数与费用预估", "cloud_authorization_required",
                                           {"batch_id": batch["id"], "quote": batch["scope"]})
         limits = auth["limits"]
         if (used + len(fresh) > limits["max_submissions"] or (unit is None and not limits["confirm_unknown_cost"]) or
@@ -208,7 +218,7 @@ def authorize(pid, payload, profile):
             project.update(status="queued", pause_requested=False, error=None, needs_decision=None)
             store._enqueue(db, pid)
         store._write(db, project)
-        store._event(db, pid, "已授权指定云视频批次；费用仅为估算，不代表供应商账单硬限额。",
+        store._event(db, pid, "已授权指定云媒体批次；费用仅为估算，不代表供应商账单硬限额。",
                      "cloud_authorized", {"batch_id": batch["id"], **limits})
         return project
 
@@ -219,8 +229,13 @@ def validate_live_profile(profile):
     from .config import config_read_path
     from .video_providers import resolve_video
     from studio.core import read_json
-    current = resolve_video(read_json(config_read_path()))
-    if video_identity(current) != video_identity(profile) or pricing(current.get("pricing")) != pricing(profile.get("pricing")):
+    live=read_json(config_read_path())
+    if profile.get("_media_kind"):
+        from .media_profiles import resolve
+        current={**resolve(live,profile["_media_kind"]),"_media_kind":profile["_media_kind"]}
+    else:
+        current = resolve_video(live)
+    if connection_identity(current) != connection_identity(profile) or pricing(current.get("pricing")) != pricing(profile.get("pricing")):
         raise ProductionNeedsDecision("已保存的视频连接发生变化，请重新核对并授权", "cloud_parameters_changed")
 
 
@@ -250,13 +265,13 @@ def reserve(pid, batch_id, line, profile, request):
                                           dict(unresolved))
         auth = _authorization(db, batch_id)
         if not auth:
-            raise ProductionNeedsDecision("云视频批次未获授权", "cloud_authorization_required")
+            raise ProductionNeedsDecision("云媒体批次未获授权", "cloud_authorization_required")
         limits = auth["limits"]
         count, cost = _consumed(db, batch_id)
         unit = batch["scope"]["pricing"]["unit_cost_micros"]
         if count >= limits["max_submissions"] or (unit is None and not limits["confirm_unknown_cost"]) or (
                 unit is not None and limits["max_estimated_cost_micros"] is not None and cost + unit > limits["max_estimated_cost_micros"]):
-            raise ProductionNeedsDecision("云视频提交超出授权范围", "cloud_budget_exceeded")
+            raise ProductionNeedsDecision("云媒体提交超出授权范围", "cloud_budget_exceeded")
         from .remote_tasks import MAX_REMOTE_INFLIGHT, ProductionDeferred
         active = db.execute("SELECT count(*) FROM cloud_tasks WHERE status NOT IN ('downloaded','failed','rejected')").fetchone()[0]
         if active >= MAX_REMOTE_INFLIGHT:
@@ -330,5 +345,9 @@ def summary(pid):
                             "confirmed_cost_micros": sum(r["confirmed_cost_micros"] or 0 for r in rows if r["currency"] == currency),
                             "unconfirmed_tasks": sum(r["confirmed_cost_micros"] is None for r in rows if r["currency"] == currency)}
                   for currency in sorted({r["currency"] for r in rows})}
+        for row in rows:
+            media = db.execute("SELECT media_kind,request_id,usage_json FROM cloud_media_receipts WHERE intent_id=?",(row["intent_id"],)).fetchone()
+            row["media_kind"] = media["media_kind"] if media else row["shot_id"].split(":",1)[0] if row["shot_id"].startswith(("image:","audio:")) else "video"
+            if media: row["usage"] = json.loads(media["usage_json"])
         return {"project_id": pid, "quote": project.get("cloud_quote"), "tasks": rows,
                 "authorizations": authorizations, "totals": totals, "billing_hard_limit": False}

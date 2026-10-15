@@ -1,0 +1,102 @@
+{
+  "schema_version": 1,
+  "llm_profiles": {
+    "cloud_qwen": {
+      "provider": "dashscope",
+      "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      "enabled": true,
+      "network_mode": "remote",
+      "allowed_hosts": [
+        "dashscope.aliyuncs.com"
+      ],
+      "model": "qwen3-vl-plus",
+      "context_tokens": 65536,
+      "vision": true,
+      "response_format": "json_object",
+      "context_validation": "conservative_estimate",
+      "model_discovery": "skip",
+      "api_key_env": "DASHSCOPE_API_KEY",
+      "thinking": false
+    }
+  },
+  "llm_roles": {
+    "researcher": "cloud_qwen",
+    "creator": "cloud_qwen",
+    "story_editor": "cloud_qwen",
+    "story_critic": "cloud_qwen",
+    "screenwriter": "cloud_qwen",
+    "storyboard_director": "cloud_qwen",
+    "independent_critic": "cloud_qwen",
+    "visual_designer": "cloud_qwen",
+    "prompt_style_compiler": "cloud_qwen",
+    "visual_critic": "cloud_qwen",
+    "dialogue_editor": "cloud_qwen",
+    "edit_director": "cloud_qwen"
+  },
+  "image_profiles": {
+    "cloud_image": {
+      "provider": "dashscope_image",
+      "model": "qwen-image-2.1-pro",
+      "enabled": true,
+      "network_mode": "remote",
+      "allowed_hosts": [
+        "dashscope.aliyuncs.com"
+      ],
+      "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      "api_key_env": "DASHSCOPE_API_KEY"
+    }
+  },
+  "image_roles": {
+    "image_generator": "cloud_image"
+  },
+  "audio_profiles": {
+    "cloud_tts": {
+      "provider": "dashscope_tts",
+      "model": "qwen3-tts-flash",
+      "enabled": true,
+      "network_mode": "remote",
+      "allowed_hosts": [
+        "dashscope.aliyuncs.com"
+      ],
+      "base_url": "https://dashscope.aliyuncs.com/api/v1",
+      "api_key_env": "DASHSCOPE_API_KEY",
+      "default_voice": "Cherry",
+      "language": "Chinese",
+      "voices": {
+        "female": "Cherry",
+        "male": "Ethan",
+        "narrator": "Cherry"
+      }
+    }
+  },
+  "audio_roles": {
+    "speech_generator": "cloud_tts"
+  },
+  "video_profiles": {
+    "cloud_video": {
+      "provider": "minimax",
+      "enabled": true,
+      "model": "MiniMax-Hailuo-2.3",
+      "base_url": "https://api.minimax.io/v1",
+      "network_mode": "remote",
+      "allowed_hosts": [
+        "api.minimax.io"
+      ],
+      "api_key_env": "MINIMAX_API_KEY",
+      "duration": 6,
+      "resolution": "768P",
+      "download_hosts": []
+    }
+  },
+  "video_roles": {
+    "video_generator": "cloud_video"
+  },
+  "production": {
+    "max_parallel": 1,
+    "max_gpu_workers": 1
+  },
+  "web": {
+    "host": "127.0.0.1",
+    "port": 8787
+  }
+}

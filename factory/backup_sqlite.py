@@ -22,6 +22,7 @@ STUDIO = {
     "cloud_batches": {"id", "project_id", "production_revision", "source_signature", "scope", "created"},
     "cloud_authorizations": {"id", "batch_id", "project_id", "source_revision", "limits_json", "actor", "created"},
     "cloud_tasks": {"intent_id", "project_id", "batch_id", "authorization_id", "shot_id", "attempt", "take", "provider", "model", "request_signature", "task_id", "file_id", "status", "estimated_cost_micros", "confirmed_cost_micros", "currency", "created", "updated", "next_poll_at", "phase", "poll_failures"},
+    "cloud_media_receipts": {"intent_id", "media_kind", "request_id", "usage_json"},
     "cloud_cost_events": {"id", "intent_id", "amount_micros", "currency", "evidence", "actor", "created"},
     "series_bibles": {"series_key", "version", "document", "sha256", "created"},
     "series_assets": {"asset_id", "version", "series_key", "kind", "entity_id", "status", "revision", "data", "created"},
@@ -61,8 +62,10 @@ def content_signature(db):
 def schema(db, name):
     if db.execute("PRAGMA user_version").fetchone()[0] != 0:
         raise BackupError("Unsupported SQLite user schema version: " + name)
-    expected = STUDIO if name == "studio.sqlite3" else CHECKPOINTS
+    expected = dict(STUDIO if name == "studio.sqlite3" else CHECKPOINTS)
     entries = list(db.execute("SELECT type,name,sql FROM sqlite_master WHERE type IN ('table','view','trigger') ORDER BY name"))
+    if name == "studio.sqlite3" and "cloud_media_receipts" not in {r["name"] for r in entries}:
+        expected.pop("cloud_media_receipts", None)  # Backups predating the additive media table.
     if any(r["type"] != "table" for r in entries) or {r["name"] for r in entries} != set(expected):
         raise BackupError("Unsupported database schema/table set: " + name)
     for table, columns in expected.items():

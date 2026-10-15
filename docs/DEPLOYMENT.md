@@ -174,3 +174,7 @@ Node 用于 UI 构建和开发测试，运行已构建工作台不需要它。CP
 ### 首次配置与 API 用户
 
 初始化使用 `config/factory.empty.example.json`，保留旧安装的配置。普通 API 用户不需要安装文本模型；在工作台添加平台预设并配置私有密钥环境变量。`localhost` 始终指运行后端的机器。前台 Web、worker 和 CLI 也会读取权限为 600 的 `config/runtime.env`；已有进程环境优先，修改后重启。示例 `config/factory.example.json` 保留作为完整本地配置参考，不会自动作为新安装的已就绪连接。
+
+### 无 GPU 与混合制作
+
+普通 API 用户按[用户模型接入指南](USER_MODELS.md)配置图像、配音和视频能力，控制服务器无需安装模型或 CUDA。只有选择本机管理的制作后端才初始化 GPU 调度和检查相应本地依赖。外部 ComfyUI 使用 HTTP 上传／下载；TTS 既可使用自己的本地环境，也可选择已适配的云端语音 API。

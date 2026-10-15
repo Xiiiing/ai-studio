@@ -170,8 +170,17 @@ class Handler(LocalMediaHandler):
                 from .cloud_budget import authorize, confirm_cost
                 from .video_providers import resolve_video
                 pid, operation = match.groups()
-                result = (authorize(pid,payload,resolve_video(load_config())) if operation == "cloud-authorize"
-                          else confirm_cost(pid,payload))
+                if operation == "cloud-authorize":
+                    from . import cloud_budget
+                    with store.connection() as db:
+                        batch=cloud_budget._batch(db,payload.get("batch_id"))
+                    kind=batch["scope"].get("media_kind")
+                    if kind:
+                        from .media_profiles import resolve
+                        profile={**resolve(load_config(),kind),"_media_kind":kind}
+                    else: profile=resolve_video(load_config())
+                    result=authorize(pid,payload,profile)
+                else: result=confirm_cost(pid,payload)
                 return self.json({"project":result} if operation == "cloud-authorize" else result,202)
             match=re.fullmatch(r"/api/factory/projects/([a-f0-9]{12})/(decision|action)",route)
             if match:

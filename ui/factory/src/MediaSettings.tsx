@@ -41,14 +41,16 @@ export function MediaSettings({draft, inventory, onChange, notify}: {
   </>;
 }
 function MediaEditor({kind,id,current,presets,labels: providerLabels,onClose,onSave}: {kind:Kind;id:string;current:RecordData;presets:RecordData;labels:RecordData;onClose:()=>void;onSave:(id:string,p:RecordData)=>void}) {
-  const [provider,setProvider]=useState(current.provider || Object.keys(presets)[0]);
+  const [provider,setProvider]=useState(current.provider || (kind === "image" && presets.dashscope_image ? "dashscope_image" : kind === "audio" && presets.dashscope_tts ? "dashscope_tts" : Object.keys(presets)[0]));
   const [values,setValues]=useState<RecordData>({...presets[provider],...current});
   const [error,setError]=useState("");
   const field=(name:string,label:string,required=false)=><Field label={label}><input name={name} defaultValue={values[name] || ""} required={required}/></Field>;
-  const advanced=Object.fromEntries(Object.entries(values).filter(([k])=>!["profile","provider","model","base_url","api_key_env","workflow_template","python_path","model_dir","enabled"].includes(k)));
+  const advanced=Object.fromEntries(Object.entries(values).filter(([k])=>!["profile","provider","model","base_url","api_key_env","workflow_template","python_path","model_dir","default_voice","language","enabled"].includes(k)));
   return <Modal id="media-dialog" title={labels[kind]+"连接设置"} onClose={onClose}><form key={provider} onSubmit={e=>{e.preventDefault();try{
     const f=Object.fromEntries(new FormData(e.currentTarget));const p={...JSON.parse(String(f.advanced)),provider,model:String(f.model).trim(),enabled:f.enabled==="on"};
-    for(const key of ["base_url","api_key_env","workflow_template","python_path","model_dir"]) if(f[key]) p[key]=String(f[key]).trim();
+    for(const key of ["base_url","api_key_env","workflow_template","python_path","model_dir","default_voice","language"]) if(f[key]) p[key]=String(f[key]).trim();
+    if (f.workspace_id) {p.base_url=`https://${f.workspace_id}.cn-beijing.maas.aliyuncs.com/`+(provider === "dashscope_image" ? "compatible-mode/v1" : "api/v1");}
+    if (p.base_url && p.network_mode !== "loopback") {const host=new URL(p.base_url).hostname;if(!(p.allowed_hosts || []).includes(host)) p.allowed_hosts=[...(p.allowed_hosts || []),host];}
     onSave(String(f.id),p);
   }catch(e){setError((e as Error).message);}}}>
     <Field label="制作连接编号"><input name="id" defaultValue={id} readOnly={!!id} required pattern="[A-Za-z0-9][A-Za-z0-9_.-]{0,63}"/></Field>
@@ -60,6 +62,8 @@ function MediaEditor({kind,id,current,presets,labels: providerLabels,onClose,onS
     {provider === "comfyui_external" && field("base_url","ComfyUI 服务地址",true)}
     {values.base_url && provider !== "comfyui_external" && field("base_url","API 地址",true)}
     {field("api_key_env","制作密钥环境变量")}
+    {provider.startsWith("dashscope_") && <Field label="百炼工作空间 ID（专属入口需要时填写）"><input name="workspace_id" pattern="[A-Za-z0-9-]+" /></Field>}
+    {provider === "dashscope_tts" && <>{field("default_voice","默认云端声线",true)}{field("language","配音语言",true)}</>}
     {kind !== "audio" && field("workflow_template","默认工作流模板编号")}
     {provider === "qwen_tts_local" && <>{field("python_path","TTS Python 绝对路径")}{field("model_dir","TTS 模型绝对目录")}</>}
     <details><summary>高级设置：网络、模型文件、声线和参考图模板</summary><Field label="制作高级设置 JSON"><textarea name="advanced" rows={6} defaultValue={JSON.stringify(advanced,null,2)}/></Field></details>

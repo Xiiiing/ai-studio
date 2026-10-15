@@ -834,7 +834,7 @@ export function Costs({
     <div className="stack">
       <ErrorNotice error={error || query.error} />
       <Panel
-        title="云视频费用与授权"
+        title="云媒体费用与授权"
         description="每批请求按模型、参数和生产版本绑定授权，累计用量不会因返修清零。"
       >
         {quote ? (

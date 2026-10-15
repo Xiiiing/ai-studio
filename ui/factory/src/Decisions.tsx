@@ -1,3 +1,4 @@
+import { CloudAuthorization } from "./Assets";
 import { useRef, useState } from "react";
 import { ArrowRight, Check, AlertTriangle, Inbox } from "lucide-react";
 import {
@@ -163,6 +164,9 @@ export function DecisionCenter({
           <span>当前版本 {project.revision} · 所有决定都会留下记录</span>
         </div>
         <ErrorNotice error={error} />
+      {String(project.needs_decision?.code || "").startsWith("cloud_") && project.cloud_quote && <CloudAuthorization quote={project.cloud_quote} projectRevision={revision} busy={busy} onSubmit={async (payload)=>{
+        setBusy(true);setError("");try {await request("/projects/"+project.id+"/cloud-authorize",payload);onNotify("云媒体批次已授权。");await client.invalidateQueries();}catch(e){setError((e as Error).message);}finally{setBusy(false);}
+      }} /> }
         {issues.length > 0 && (
           <div className="decision-issues">
             {issues.map((i, index) => (
