@@ -4,9 +4,9 @@
 
 ## 信任模型与范围
 
-本服务是**单用户、loopback 信任域内的制作管理接口，不是公网认证系统**。本机进程仍属于信任域；Host/Origin 校验不能防止具有本机执行权限的攻击者。Factory 和 Legacy 共用 `studio.http_security.LocalHTTPBoundary`，在方法分派之前进行准入，子类转交父类处理不会绕过它。
+本服务是**单用户、loopback 信任域内的制作管理接口，不是公网认证系统**。本机进程仍属于信任域；Host/Origin 校验不能防止具有本机执行权限的攻击者。Factory 和共享媒体 transport 共用 `studio.http_security.LocalHTTPBoundary`，在方法分派之前进行准入，子类转交父类处理不会绕过它。
 
-默认绑定不变。`factory.web.main()` 在初始化数据库和打开监听端口之前拒绝非 loopback 地址，没有 `allow_unsafe` 开关。共同请求入口还验证实际监听地址，防止嵌入式使用 Handler 时绕过启动门禁。`localhost` 被直接归一为 `127.0.0.1`，不进行 DNS 解析。IPv6 `::1` 可以显式配置。Legacy 独立入口仍绑定 `127.0.0.1:8787`。
+默认绑定不变。`factory.web.main()` 在初始化数据库和打开监听端口之前拒绝非 loopback 地址，没有 `allow_unsafe` 开关。共同请求入口还验证实际监听地址，防止嵌入式使用 Handler 时绕过启动门禁。`localhost` 被直接归一为 `127.0.0.1`，不进行 DNS 解析。IPv6 `::1` 可以显式配置。旧版独立启动入口已删除。
 
 服务只接受 loopback peer、与实际监听端口匹配的一个 Host，以及缺省或与该 Host 精确同源的一个 HTTP Origin。允许的主机名为 `localhost`、`127.0.0.1`、`[::1]` 和实际绑定的 loopback 字面地址。不接受任意解析到本机的域名、尾点域名、用户信息或代理头代替 Host。`Sec-Fetch-Site: cross-site` / `same-site` 被拒绝；无 Origin 的本地 CLI 请求继续可用。不会信任 `X-Forwarded-*`。
 
@@ -18,15 +18,15 @@
 
 | 方法 | 路径 | 分级 | 请求体上限 / 业务边界 |
 | --- | --- | --- | --- |
-| GET | `/` | UI | Factory 工作台或独立 Legacy 主页 |
-| GET | `/legacy` | UI | Factory 内的原 Legacy 主页 |
+| GET | `/` | UI | 已构建的 React 工作台 |
+| GET | `/legacy` | UI | 退休接口，返回 410 |
 | GET | `/factory/static/*` | UI | 受限静态扩展名、禁止符号链接 |
-| GET | `/api/health` | 读取 | Legacy 状态，不再绕过共同准入 |
-| GET | `/api/episodes` | 读取 | Legacy 项目清单 |
-| GET | `/api/episode/{slug}` | 读取 | Legacy 项目状态 |
-| GET | `/api/jobs` | 读取 | 原 Legacy 作业清单，保持语义 |
+| GET | `/api/health` | 读取 | 服务状态，经过共同准入 |
+| GET | `/api/episodes` | 读取 | 退休接口，返回 410 |
+| GET | `/api/episode/{slug}` | 读取 | 退休接口，返回 410 |
+| GET | `/api/jobs` | 读取 | 退休接口，返回 410 |
 | GET | `/media/production/*` | 媒体 | 白名单扩展名、描述符级路径检查、单 Range |
-| POST | `/api/start` | 任务控制 | 8 KiB；原 Legacy 启动作业语义 |
+| POST | `/api/start` | 任务控制 | 8 KiB；退休接口，返回 410，不启动作业 |
 | GET | `/api/factory/production-profiles` | 读取 | 现有规格 |
 | GET | `/api/factory/workflow` | 读取 | 现有工作流定义 |
 | GET | `/api/factory/models` | 读取 | 脱敏模型配置 |
@@ -59,7 +59,7 @@
 JSON 必须是有限数值、唯一成员、可编码为 UTF-8 的对象；拒绝 NaN、Infinity、溢出的浮点数、孤立代理字符和超过 64 层的结构。大小先于读取正文检查，不依赖 LangGraph 可能调整过的 Python 递归上限。旧业务的 409/404 处理保留；协议错误返回适当的 400/403/405/408/413/415 等状态。错误统一为：
 
 ```json
-{"error":"供旧 UI 显示的字符串","code":"稳定的机器可读代码","status":400}
+{"error":"面向用户的错误说明","code":"稳定的机器可读代码","status":400}
 ```
 
 媒体路径采用 `dir_fd` + `O_NOFOLLOW` 逐组件打开，再通过 `fstat` 确认为普通文件；不会先 resolve 后重新按不可信路径打开。包括指向同一项目内文件的符号链接也拒绝。保留单区间、后缀区间、206 和 Content-Range。空文件的 Content-Length 为 0。缺少 POSIX 描述符能力时返回 503，不静默降级为可跟随符号链接的读取。受信任的代码根目录由部署管理员控制，不将此机制描述为对恶意本机管理员的隔离。

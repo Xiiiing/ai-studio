@@ -26,13 +26,15 @@
 
 ## 前端刷新与验证
 
-`dom-patch.js` 原位更新节点：相同视频 source 保持原 video 对象，不调用 load、不整体替换正在播放的区域；其他状态与错误继续更新。编辑草稿固定最初的 CAS 版本，不会自动变成最新 revision。`/legacy` 和现有模块架构保留。
+React 按项目和镜号保持组件身份，刷新状态时不替换相同 source 的视频。编辑草稿固定最初的 CAS 版本，版本冲突时保留输入并要求刷新核对。旧 UI 已移除，`/legacy` 返回 410。
 
 ```bash
 python -m pytest -q tests/test_factory_shot_workbench.py
 python -m pytest -q tests/test_factory_*.py
 npm ci --ignore-scripts
-node --test tests/test_factory*.mjs
+npm test
+npm run build
+FACTORY_TEST_PYTHON=.venv/bin/python npm run test:browser
 ```
 
-LinkeDOM 仅是开发测试依赖，用于 DOM 结构及节点身份断言，不是生产框架，也不等同于真实浏览器视频播放验收。真实浏览器验收由独立 browser smoke 命令覆盖。CPU 测试不下载模型，不调用收费服务。
+UI 单元测试用于组件行为验证，不等同于真实浏览器视频播放验收。真实浏览器验收由独立 browser smoke 命令覆盖。CPU 测试不下载模型，不调用收费服务。
