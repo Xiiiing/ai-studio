@@ -78,3 +78,31 @@ def test_cami_gateway_refuses_private_key_input_before_writing(tmp_path, monkeyp
     with pytest.raises(ValueError, match="public certificate"):
         gateway.install(private_key, hashlib.sha256(private_key.encode()).hexdigest())
     assert not (tmp_path / "gateway").exists()
+
+
+@pytest.mark.parametrize("failure", ["queue_read", "worker_stop"])
+def test_shutdown_failure_restores_web_before_leaving_preflight(tmp_path, monkeypatch, failure):
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config/factory.json").write_text("private configuration")
+    artifact = bundle(tmp_path / "ui.tar.gz")
+    calls, reads = [], []
+    def jobs(_):
+        reads.append(True)
+        if len(reads) > 1 and failure == "queue_read":
+            raise OSError("temporary database failure")
+        return []
+    monkeypatch.setattr(release, "active_jobs", jobs)
+    def run(*args, **kwargs):
+        calls.append(args)
+        if failure == "worker_stop" and args == ("systemctl", "stop", release.UNITS[1]):
+            raise OSError("stop timed out")
+        return SimpleNamespace(stdout="b" * 40 if args[:2] == ("git", "rev-parse") else "")
+    monkeypatch.setattr(release, "run", run)
+    with pytest.raises(OSError):
+        release.deploy(tmp_path, "a" * 40, artifact, release.digest(artifact))
+    assert calls[-1] == ("systemctl", "start", release.UNITS[0])
+    if failure == "queue_read":
+        assert ("systemctl", "stop", release.UNITS[1]) not in calls
+    else:
+        assert ("systemctl", "start", release.UNITS[1]) in calls
+    assert (tmp_path / "config/factory.json").read_text() == "private configuration"

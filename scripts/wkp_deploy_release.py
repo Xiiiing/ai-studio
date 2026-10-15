@@ -80,11 +80,24 @@ def deploy(root, commit, bundle, checksum):
     run("git", "tag", tag, previous, cwd=root)
     # Freeze HTTP submissions before stopping the idle worker. A project that
     # arrived during preflight must not be killed by an upgrade shutdown.
-    run("systemctl", "stop", UNITS[0])
-    if active_jobs(root):
-        run("systemctl", "start", UNITS[0])
-        raise RuntimeError("A task arrived during preflight; Web restored, worker left running")
-    run("systemctl", "stop", UNITS[1])
+    worker_stop_attempted = False
+    try:
+        run("systemctl", "stop", UNITS[0])
+        if active_jobs(root):
+            raise RuntimeError("A task arrived during preflight; Web restored, worker left running")
+        worker_stop_attempted = True
+        run("systemctl", "stop", UNITS[1])
+    except BaseException:
+        # Failed reads and stop timeouts must not strand the operator's Web.
+        # A busy queue is observed before attempting to stop the worker.
+        if worker_stop_attempted:
+            try:
+                run("systemctl", "start", UNITS[1])
+            finally:
+                run("systemctl", "start", UNITS[0])
+        else:
+            run("systemctl", "start", UNITS[0])
+        raise
     dist = root / "ui/factory/dist"
     try:
         if active_jobs(root):
