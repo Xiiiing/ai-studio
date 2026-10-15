@@ -177,7 +177,10 @@ def test_role_inventory_and_unconfigured_legacy_request_are_compatible(tmp_path,
     assert len(rows) == len(factory_config.ROLE_LABELS)
     assert {row["role"] for row in rows} == set(factory_config.ROLE_LABELS)
     assert "storyboard_director" in {row["role"] for row in rows}
-    assert all(row["profile"] == "default" and row["configured"] is False for row in rows)
+    required = [row for row in rows if row["role"] not in factory_config.OPTIONAL_ROLES]
+    assert all(row["profile"] == "default" and row["configured"] is False for row in required)
+    optional = [row for row in rows if row["role"] in factory_config.OPTIONAL_ROLES]
+    assert all(row["profile"] is None and row["enabled"] is False for row in optional)
     assert [row["role"] for row in rows if row["requires_vision"]] == ["visual_critic"]
     assert calls == checks == []
     assert llm.json_call(cfg, "creator", "Create", {}, SCHEMA, tmp_path) == {"ok": True}

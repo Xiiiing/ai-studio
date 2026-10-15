@@ -21,7 +21,9 @@ ROLE_LABELS = {
     "independent_critic": "独立审稿", "visual_designer": "美术方案",
     "prompt_style_compiler": "画风提示词", "visual_critic": "画面质检",
     "dialogue_editor": "对白编辑", "edit_director": "剪辑建议",
+    "executive_producer": "总制片代理",
 }
+OPTIONAL_ROLES = frozenset({"executive_producer"})
 TEXT_CRITIC_ROLES = frozenset({"independent_critic", "story_critic"})
 
 
@@ -102,6 +104,11 @@ def list_roles(config=None):
     config = load_config() if config is None else config
     rows = []
     for role, label in ROLE_LABELS.items():
+        if role in OPTIONAL_ROLES and role not in config.get("llm_roles", {}):
+            rows.append({"role": role, "label": label, "profile": None, "endpoint": None, "model": None,
+                         "provider": None, "network_mode": None, "enabled": False, "vision": False,
+                         "configured": False, "requires_vision": False, "optional": True})
+            continue
         lm = resolve_llm(config, role)
         rows.append({"role": role, "label": label, "profile": lm["profile"],
                      "endpoint": lm.get("base_url"), "model": lm.get("model"),

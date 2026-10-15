@@ -116,6 +116,9 @@ def _enqueue(db, pid):
 
 
 def create(payload):
+    team_mode = payload.get("team_mode", "guided")
+    if not isinstance(team_mode, str) or team_mode not in {"guided", "delegated"}:
+        raise ValueError("团队模式应为 guided 或 delegated")
     brief = str(payload.get("brief", "")).strip()
     if not 5 <= len(brief) <= 6000:
         raise ValueError("请填写 5–6000 字的创作方向")
@@ -168,6 +171,7 @@ def create(payload):
                    "max_attempts": attempts, "wall_minutes": float(wall)},
         "production": {}, "delivery": None, "error": None, "pause_requested": False,
         "proposal_generation": 1, "script_generation": 1, "production_revision": 1,
+        "team_mode": team_mode,
         "is_validation": bool(payload.get("is_validation", False)),
         "series_key": str(payload.get("series_key", "")).strip()[:100],
     }

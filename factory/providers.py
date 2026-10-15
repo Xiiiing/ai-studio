@@ -744,7 +744,7 @@ def chat_response(profile, result):
 
 def validate_registry(profiles, roles, base_config=None):
     """Validate a complete registry without connecting to providers or changing files."""
-    from .config import ROLE_LABELS, resolve_llm
+    from .config import ROLE_LABELS, OPTIONAL_ROLES, resolve_llm
     if not isinstance(profiles, dict) or not 1 <= len(profiles) <= 32:
         raise ValueError("profiles must contain between 1 and 32 named connections")
     if not isinstance(roles, dict) or any(role not in ROLE_LABELS for role in roles):
@@ -766,7 +766,7 @@ def validate_registry(profiles, roles, base_config=None):
     for role in roles:
         resolve_llm(result, role)
     # Unassigned roles retain the legacy default only when one is present and valid.
-    if set(roles) != set(ROLE_LABELS):
+    if not (set(ROLE_LABELS) - OPTIONAL_ROLES).issubset(roles):
         if not isinstance(result.get("llm"), dict):
             raise ValueError("Assign every role or provide a valid legacy default LLM")
         legacy = normalize_profile(result["llm"], legacy=True)

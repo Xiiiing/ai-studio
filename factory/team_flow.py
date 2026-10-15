@@ -276,6 +276,11 @@ def _call_executions(root, evidence):
 def _bindings(config):
     result = []
     for role, label in ROLE_LABELS.items():
+        if role == "executive_producer" and role not in config.get("llm_roles", {}):
+            result.append({"id": role, "role": role, "label": label, "profile_id": None,
+                           "model": None, "provider": None, "enabled": False,
+                           "assignment_source": "optional_unbound"})
+            continue
         try:
             model = resolve_llm(config, role)
             result.append({"id": role, "role": role, "label": label,
@@ -312,7 +317,11 @@ def team_spec(config=None):
     config = load_config() if config is None else config
     return {
         "assignment_mode": "orchestrator",
-        "assignment_semantics": "LangGraph 编排器按任务调用已绑定的角色；未配置额外的 LLM 领导。",
+        "assignment_semantics": ("LangGraph 执行既有任务图；delegated 项目可委托总制片选择故事和视觉，预算与终片仍须人工确认。"
+                                 if "executive_producer" in config.get("llm_roles", {}) else
+                                 "LangGraph 编排器按任务调用已绑定的角色；未配置额外的 LLM 领导。"),
+        "supervisor_policy": {"role": "executive_producer", "opt_in": True,
+                              "automatic_choices": ["story", "style"], "final_advisory_only": True},
         "teams": _bindings(config),
         "handoffs": [{"source": source, "target": target, "label": label}
                      for source, target, label in HANDOFFS],
@@ -545,6 +554,14 @@ def build_flow(project, config=None):
         if len(records) > MAX_EXECUTIONS_PER_ROLE:
             evidence["truncated"] = True
         node["executions"] = records[:MAX_EXECUTIONS_PER_ROLE]
+    from .supervision import snapshot as supervision_snapshot
+    supervision = supervision_snapshot(project)
+    current = [row for row in supervision["records"] if row["current_gate_version"]]
+    if current and project.get("status") != "cancelled":
+        last = current[-1]
+        nodes["executive_producer"].update(
+            status="succeeded" if last["status"] in {"selected", "advisory"} else "waiting",
+            status_source="supervision_receipt_not_live_heartbeat")
     teams = [{**row, "status": nodes[row["role"]]["status"]} for row in specification["teams"]]
     edges = [{**edge, "status": nodes[edge["source"]]["status"]}
              for edge in specification["handoffs"]]
@@ -554,4 +571,4 @@ def build_flow(project, config=None):
             "assignment_mode": "orchestrator", "orchestrator": "LangGraph",
             "assignment_semantics": specification["assignment_semantics"],
             "teams": teams, "nodes": list(nodes.values()), "edges": edges,
-            "evidence": evidence}
+            "evidence": evidence, "supervision": supervision}
