@@ -62,11 +62,13 @@ def test_task_arriving_during_preflight_restores_web_without_stopping_worker(tmp
     monkeypatch.setattr(release, "active_jobs", lambda _: next(counts))
     def run(*args, **kwargs):
         calls.append(args)
+        if args[:2] == ("systemctl", "show"):
+            return SimpleNamespace(stdout=(str(tmp_path) + "\n") * 2)
         return SimpleNamespace(stdout="b" * 40 if args[:2] == ("git", "rev-parse") else "")
     monkeypatch.setattr(release, "run", run)
     with pytest.raises(RuntimeError, match="worker left running"):
         release.deploy(tmp_path, "a" * 40, artifact, release.digest(artifact))
-    service_calls = [args for args in calls if args[0] == "systemctl"]
+    service_calls = [args for args in calls if args[0] == "systemctl" and args[1] != "show"]
     assert service_calls == [("systemctl", "stop", release.UNITS[0]), ("systemctl", "start", release.UNITS[0])]
     assert (tmp_path / "config/factory.json").read_text() == "private configuration"
 
@@ -94,6 +96,8 @@ def test_shutdown_failure_restores_web_before_leaving_preflight(tmp_path, monkey
     monkeypatch.setattr(release, "active_jobs", jobs)
     def run(*args, **kwargs):
         calls.append(args)
+        if args[:2] == ("systemctl", "show"):
+            return SimpleNamespace(stdout=(str(tmp_path) + "\n") * 2)
         if failure == "worker_stop" and args == ("systemctl", "stop", release.UNITS[1]):
             raise OSError("stop timed out")
         return SimpleNamespace(stdout="b" * 40 if args[:2] == ("git", "rev-parse") else "")
@@ -106,3 +110,19 @@ def test_shutdown_failure_restores_web_before_leaving_preflight(tmp_path, monkey
     else:
         assert ("systemctl", "start", release.UNITS[1]) in calls
     assert (tmp_path / "config/factory.json").read_text() == "private configuration"
+
+
+def test_release_cannot_stop_services_owned_by_another_checkout(tmp_path, monkeypatch):
+    artifact = bundle(tmp_path / "ui.tar.gz")
+    calls = []
+    monkeypatch.setattr(release, "active_jobs", lambda _: [])
+    def run(*args, **kwargs):
+        calls.append(args)
+        if args[:2] == ("systemctl", "show"):
+            return SimpleNamespace(stdout="/srv/the-real-production\n/srv/the-real-production\n")
+        return SimpleNamespace(stdout="b" * 40 if args[:2] == ("git", "rev-parse") else "")
+    monkeypatch.setattr(release, "run", run)
+    with pytest.raises(RuntimeError, match="another checkout"):
+        release.deploy(tmp_path, "a" * 40, artifact, release.digest(artifact))
+    assert not any(args[:2] in [("systemctl", "stop"), ("systemctl", "start")] for args in calls)
+    assert not (tmp_path / "runtime").exists()

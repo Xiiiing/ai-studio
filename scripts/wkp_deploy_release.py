@@ -61,6 +61,10 @@ def deploy(root, commit, bundle, checksum):
     if active_jobs(root):
         raise RuntimeError("Queued, running or deferred jobs exist; wait for a safe boundary")
     previous = run("git", "rev-parse", "HEAD", cwd=root).stdout.strip()
+    directories = run("systemctl", "show", "--property=WorkingDirectory", "--value", *UNITS).stdout.splitlines()
+    directories = [value.strip() for value in directories if value.strip()]
+    if directories != [str(root)] * len(UNITS):
+        raise RuntimeError("Factory services belong to another checkout; no services changed")
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     backup = root / "runtime/deployments" / (stamp + "-" + commit[:8])
     backup.mkdir(parents=True, mode=0o700)
@@ -126,6 +130,8 @@ def deploy(root, commit, bundle, checksum):
             try:
                 with opener.open(f"http://127.0.0.1:{port}/api/health", timeout=2) as response:
                     observed = json.load(response)
+                if observed.get("root") != str(root):
+                    raise RuntimeError("Health response belongs to another checkout")
                 with opener.open(f"http://127.0.0.1:{port}/", timeout=2) as response:
                     if response.status == 200 and b"/factory/static/" in response.read():
                         break
