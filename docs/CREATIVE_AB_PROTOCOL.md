@@ -161,13 +161,18 @@ holdout material and their tests establish no artistic improvement.
 
 Real release evaluation needs freshly selected, independently held cases. Freeze
 variants/config/rules before revealing outcomes. `--split holdout --allow-holdout`
-is an explicit release step, not ordinary tuning. A completed holdout comparison
-writes per-stable-case consumption records beside the external seal. Keep this
-same operator-controlled ledger across runs: changing development cases, corpus
-version labels, seeds, variants or a subset must not silently renew consumed case
-IDs. Re-reading the identical comparison is allowed; a different plan/result is
-blocked. Renaming IDs or discarding the trusted ledger cannot make seen material
-unseen; managing actual exposure remains an operator responsibility.
+is an explicit release step, not ordinary tuning. Before any frozen inputs are
+exported, the tool reserves each stable case ID for that exact plan and seal name
+in the operator-controlled seal directory. A second plan or a renamed seal is
+rejected even if no model ran and no final scores were computed. Interrupted
+reservations remain in place; only the identical plan/seal may reconcile them.
+A completed comparison additionally seals the observed results. Keep this same
+trusted directory across runs: editing development cases, changing corpus labels,
+seeds, variants or subsets cannot renew a case. Verification is read-only and
+requires the original release reservations. Moving an experiment also requires
+its operator-controlled seal/ledger. Renaming case IDs or discarding the ledger
+cannot make seen material unseen; managing actual exposure remains an operator
+responsibility.
 
 Once holdout outcomes inform a revision, retire those cases to development and
 use genuinely new held-out inputs. Small synthetic tests do not establish adequate

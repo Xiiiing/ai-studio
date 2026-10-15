@@ -3,11 +3,11 @@
 Branch: `feat/versioned-creative-prompts`. Fetched main baseline:
 `4aaece74ab54f38c125c564accc20f4134fb5bab`.
 
-## Actual local results
+## Original implementation validation (retained historical evidence)
 
 | Validation | Actual result |
 | --- | --- |
-| `python -m pytest -q tests/test_factory_*.py` | **548 passed**, 94.83 seconds, final implementation. No skipped/deleted/weakened tests. |
+| `python -m pytest -q tests/test_factory_*.py` | **548 passed**, 94.83 seconds, original implementation. No skipped/deleted/weakened tests. |
 | `npm ci --ignore-scripts` | Successful, 18 packages installed from the unchanged lockfile. |
 | `node --test tests/test_factory*.mjs` | **54 passed**, 0 failed, 0 skipped; Node 22.16.0. |
 | `python scripts/browser_fixtures.py` | CPU FFmpeg test-pattern MP4 and PNG generated inside the isolated worktree. |
@@ -44,7 +44,7 @@ missing director editable-field enforcement and absent per-dimension regression
 statistics. These were fixed and the same tests passed; these are not claims of
 exploits reproduced against the production service. Two additional malformed
 catalog cases initially raised uncontrolled exceptions and now fail as explicit
-validation errors. The final suite includes 54 new test cases in five files.
+validation errors. The original suite included 54 new test cases in five files.
 
 Verified boundaries include exact v1 text and legacy cache bytes, role/context
 isolation, derived profile signatures, succeeded/failed prompt receipts, unknown
@@ -53,6 +53,36 @@ quote/checksum verification, complete-repeat aggregation, negative outcomes,
 explicit holdout consumption and independent non-overwriting CLI reports.
 Synthetic external receipts test consistency checks only; they do not prove a
 provider actually generated any content.
+
+## Publication repair validation, 2026-10-15
+
+Seven new regression cases initially failed (0 passed), demonstrating four
+bounded issues in the unpublished implementation: catalog schema references,
+contradictory failed receipts for recorded results, write/read size mismatch,
+and holdout exposure before the old compare-time consumption gate. Their trigger
+conditions are controlled catalogs/evidence and local experiment operations, not
+confirmed exploitation of a production HTTP service.
+
+After fixes: **61 focused tests passed in 9.54s**; the full original command
+`python -m pytest -q tests/test_factory_*.py` completed with **555 passed in
+84.38s**, retaining one existing multiprocessing/fork deprecation warning.
+`npm ci --ignore-scripts` succeeded; Node contracts: **54 passed**, no skips;
+CPU fixture creation succeeded; Chromium browser regression: **5 passed in
+13.9s** using the same isolated, network-disabled image and mocked APIs.
+
+Fresh logs are in `runtime/release-evidence/`: `regressions-before.log`,
+`focused.log`, `python-full.log`, `npm-ci.log`, `node.log`, `browser.log`.
+All five original v1 prompt texts and the entire six-case corpus remain byte-equal
+to the original local implementation. The existing holdout regression was
+strengthened to require rejection before a second release, not merely when
+computing its final score. No test was skipped, deleted or given a looser threshold.
+
+The Runner disconnected after these completed tests, before documentation edits
+were dispatched. The original worktree was preserved. Publication used the
+existing authorized GitHub connection, and the repair commit was read back to
+verify that its diff matched the tested edits. Repository publication/CI evidence
+is in `NEXT_ROUND_PR_REPORT.md` and the actual formal PR, not inferred from local
+files. New documentation does not change the tested code.
 
 ## Not run / no unsupported conclusions
 
@@ -63,6 +93,5 @@ the previous implementation, and no improvement percentage is reported.
 Production deployment, database migration, live restore, service restart and
 approved-media changes: **not performed**.
 
-GitHub PR identity and head/base/CI state are recorded in the real PR and round
-reports after publication. A local commit or passing mock suite alone is not
-reported as a published PR or a successful remote CI run.
+A local commit or passing mock suite alone is not reported as a published PR or
+a successful remote CI run. Cross-PR 7–10 integration was not rerun in this task.
