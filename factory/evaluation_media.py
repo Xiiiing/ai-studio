@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 import unicodedata
 
-from .evaluation_io import check_receipt, read_json, row
+from .evaluation_io import check_receipt, finite, read_json, row
 from .quality import inspect_video
 
 
@@ -38,6 +38,38 @@ def parse_srt(text, duration):
     return entries
 
 
+def subtitle_contract(entries, shots, cues=None):
+    """Bind emitted cue splits to ordered dialogue; never infer missing text."""
+    expected, clock = [], 0.0
+    for shot in shots:
+        expected.extend((line, shot["id"], clock, clock + shot["seconds"]) for line in shot.get("dialogue", []))
+        clock += shot["seconds"]
+    if cues is None:  # Historical evaluation files without emitted cue metadata.
+        return len(entries) == len(expected) and all(
+            subtitle_text(item["text"]) == subtitle_text(str(line.get("text", ""))) and left - .05 <= item["start"] < item["end"] <= right + .05
+            for item, (line, _, left, right) in zip(entries, expected))
+    if not isinstance(cues, list) or len(cues) > 10000 or len(cues) != len(entries):
+        return False
+    lookup = {line.get("id"): (line, sid, left, right) for line, sid, left, right in expected}
+    if len(lookup) != len(expected):
+        return False
+    seen, text = [], {key: "" for key in lookup}
+    for entry, cue in zip(entries, cues):
+        if not isinstance(cue, dict) or not isinstance(cue.get("line"), str) or cue["line"] not in lookup or not isinstance(cue.get("text"), str):
+            return False
+        line, sid, left, right = lookup[cue["line"]]
+        start, end = finite(cue.get("start")), finite(cue.get("end"))
+        if (start is None or end is None or cue.get("shot") != sid or not left - .002 <= start < end <= right + .002 or
+            abs(entry["start"] - start) > .002 or abs(entry["end"] - end) > .002 or
+            subtitle_text(entry["text"]) != subtitle_text(cue["text"])):
+            return False
+        if not seen or seen[-1] != cue["line"]:
+            seen.append(cue["line"])
+        text[cue["line"]] += cue["text"]
+    return seen == [line.get("id") for line, *_ in expected] and all(
+        subtitle_text(text[key]) == subtitle_text(str(value[0].get("text", ""))) for key, value in lookup.items())
+
+
 def deterministic(project, root):
     shots = project.get("shots", [])
     script = (project.get("episode") or project.get("script") or {}).get("shots", [])
@@ -61,7 +93,8 @@ def deterministic(project, root):
             checks.append(row("delivery", "shot_media", quality["status"], shot_id=sid,
                               evidence=[{"path": receipt["path"], "sha256": digest}], metrics=quality))
         except (ValueError, OSError, KeyError) as exc:
-            checks.append(row("delivery", "shot_media", "fail", shot_id=sid, evidence=[str(exc)]))
+            checks.append(row("delivery", "shot_media", "fail", shot_id=sid,
+                              evidence=[{"path": receipt.get("path"), "sha256": receipt.get("sha256"), "error": str(exc)}]))
         measurement = shot.get("audio_timing") or shot.get("dialogue_measurement")
         if shot.get("dialogue"):
             checks.append(row("dialogue", "measured_voice_fit", "pass" if isinstance(measurement, dict) and measurement.get("fits") is True else "not_run" if measurement is None else "fail",
@@ -78,7 +111,7 @@ def deterministic(project, root):
                 dimensions = dimensions if all(isinstance(v, int) and v > 0 for v in dimensions) else None
                 quality = inspect_video(path, total, dimensions, require_audio=True)
                 media[name] = {"path": receipt["path"], "sha256": digest, "seconds": total}
-                checks.append(row("delivery", name, quality["status"], evidence=[{"sha256": digest}], metrics=quality))
+                checks.append(row("delivery", name, quality["status"], evidence=[{"path": receipt["path"], "sha256": digest}], metrics=quality))
             else:
                 checks.append(row("delivery", "artifact_checksum", "pass", evidence=[{"path": receipt["path"], "sha256": digest}]))
             if name == "timeline.json":
@@ -93,16 +126,16 @@ def deterministic(project, root):
             if name == "subtitles.zh.srt":
                 entries = parse_srt(path.read_text(encoding="utf-8-sig"), total)
                 expected = [str(line.get("text", "")) for shot in shots for line in shot.get("dialogue", [])]
-                matches = [subtitle_text(item["text"]) for item in entries] == [subtitle_text(text) for text in expected]
-                slots, clock = [], 0.0
-                for shot in shots:
-                    slots.extend((clock, clock + shot["seconds"]) for _ in shot.get("dialogue", []))
-                    clock += shot["seconds"]
-                matches = matches and all(slot[0] - .05 <= entry["start"] < entry["end"] <= slot[1] + .05 for entry,slot in zip(entries,slots))
+                cues = None
+                if "timeline.json" in artifacts:
+                    timeline_path, _ = check_receipt(root, artifacts["timeline.json"])
+                    cues = read_json(timeline_path).get("subtitles")
+                matches = subtitle_contract(entries, shots, cues)
                 checks.append(row("subtitles", "srt_content_and_bounds", "pass" if matches else "fail",
                                   metrics={"entries": len(entries), "expected": len(expected)}, evidence=entries))
-        except (ValueError, OSError, KeyError) as exc:
-            checks.append(row("subtitles" if name == "subtitles.zh.srt" else "delivery", "artifact_integrity", "fail", evidence=[name, str(exc)]))
+        except (ValueError, OSError, KeyError, TypeError, AttributeError) as exc:
+            checks.append(row("subtitles" if name == "subtitles.zh.srt" else "delivery", "artifact_integrity", "fail",
+                              evidence=[{"artifact": name, "path": receipt.get("path"), "sha256": receipt.get("sha256"), "error": str(exc)}]))
     if "subtitles.zh.srt" not in artifacts:
         checks.append(row("subtitles", "srt_content_and_bounds", "fail", evidence=["Subtitle export missing"]))
     checks.append(row("subtitles", "readability_and_occlusion", "not_run", source="human"))
