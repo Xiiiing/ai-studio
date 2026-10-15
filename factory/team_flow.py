@@ -562,6 +562,8 @@ def build_flow(project, config=None):
         nodes["executive_producer"].update(
             status="succeeded" if last["status"] in {"selected", "advisory"} else "waiting",
             status_source="supervision_receipt_not_live_heartbeat")
+    from .delivery_readiness import snapshot as delivery_snapshot
+    delivery_readiness = delivery_snapshot(project)
     teams = [{**row, "status": nodes[row["role"]]["status"]} for row in specification["teams"]]
     edges = [{**edge, "status": nodes[edge["source"]]["status"]}
              for edge in specification["handoffs"]]
@@ -571,4 +573,5 @@ def build_flow(project, config=None):
             "assignment_mode": "orchestrator", "orchestrator": "LangGraph",
             "assignment_semantics": specification["assignment_semantics"],
             "teams": teams, "nodes": list(nodes.values()), "edges": edges,
+            "delivery_readiness": delivery_readiness,
             "evidence": evidence, "supervision": supervision}
