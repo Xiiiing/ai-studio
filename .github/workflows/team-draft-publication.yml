@@ -1,0 +1,68 @@
+name: Publish verified team draft branches
+
+on:
+  push:
+    branches: [chore/team-draft-publication-20261015]
+    paths: [.publication/READY]
+
+permissions:
+  contents: write
+
+jobs:
+  publish-exact-trees:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify patches and publish only the three new feature branches
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json, pathlib, re, subprocess, tempfile
+          root = pathlib.Path.cwd()
+          base = '6ba36606da2a54dc07311691ded8bdda949c7ace'
+          allowed = {'feat/team-executive-producer', 'feat/delivery-readiness', 'feat/team-command-center'}
+          def git(*args, cwd=root):
+              return subprocess.check_output(['git', *args], cwd=cwd, text=True).strip()
+          manifest = json.loads((root / '.publication/manifest.json').read_text())
+          assert manifest['base'] == base
+          entries = manifest['branches']
+          assert len(entries) == 3 and {e['branch'] for e in entries} == allowed
+          planned = []
+          for i, entry in enumerate(entries):
+              assert re.fullmatch(r'[0-9a-f]{40}', entry['tree'])
+              assert entry['patch'] in {'producer.patch', 'delivery.patch', 'cockpit.patch'}
+              target = pathlib.Path(tempfile.mkdtemp(prefix='team-draft-')) / 'checkout'
+              git('worktree', 'add', '--detach', str(target), base)
+              git('apply', '--index', str(root / '.publication' / entry['patch']), cwd=target)
+              paths = git('diff', '--cached', '--name-only', cwd=target).splitlines()
+              assert sorted(paths) == sorted(entry['paths'])
+              assert all(p.startswith(('factory/', 'ui/', 'tests/', 'docs/')) for p in paths)
+              actual = git('write-tree', cwd=target)
+              assert actual == entry['tree'], (entry['branch'], actual, entry['tree'])
+              git('-c', 'user.name=github-actions[bot]', '-c', 'user.email=41898282+github-actions[bot]@users.noreply.github.com',
+                  '-c', 'core.hooksPath=/dev/null', 'commit', '-m', entry['message'], cwd=target)
+              sha = git('rev-parse', 'HEAD', cwd=target)
+              remote = git('ls-remote', '--heads', 'origin', 'refs/heads/' + entry['branch'])
+              if remote:
+                  existing = remote.split()[0]
+                  git('fetch', 'origin', existing)
+                  assert git('rev-parse', existing + '^{tree}') == actual, 'Existing branch differs; refusing overwrite'
+                  planned.append({**entry, 'head': existing, 'push': False})
+              else:
+                  planned.append({**entry, 'head': sha, 'push': True})
+          refspecs = [e['head'] + ':refs/heads/' + e['branch'] for e in planned if e['push']]
+          if refspecs:
+              git('push', '--atomic', 'origin', *refspecs)
+          receipt = {'base': base, 'branches': [{k:e[k] for k in ('branch','tree','head')} for e in planned],
+                     'deployment': False, 'main_modified': False, 'model_requests': 0}
+          (root / '.publication/receipt.json').write_text(json.dumps(receipt, indent=2) + '\n')
+          print(json.dumps(receipt, indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: team-draft-publication-receipt
+          path: .publication/receipt.json
+          if-no-files-found: error
