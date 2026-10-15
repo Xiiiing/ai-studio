@@ -1,0 +1,26 @@
+{
+  "base": "81193b04993c775ae9cc7ab23f4bd2cce30a4895",
+  "branches": [
+    {
+      "branch": "feat/team-executive-producer",
+      "tree": "205ff99f63f1f96b70a7a139fccc0b668bf0a587",
+      "patch": "producer.patch",
+      "message": "feat: add governed executive producer with crash-safe creative delegation",
+      "paths": ["docs/TEAM_SUPERVISOR.md", "factory/config.py", "factory/prompts/catalog.json", "factory/prompts/executive_producer/1.0.0.txt", "factory/providers.py", "factory/store.py", "factory/supervision.py", "factory/team_flow.py", "factory/workflows.py", "tests/test_factory_role_routing.py", "tests/test_factory_supervision.py"]
+    },
+    {
+      "branch": "feat/delivery-readiness",
+      "tree": "00199340a633529a4ca98f8bac0e98bfbe5fd463",
+      "patch": "delivery.patch",
+      "message": "feat: add recorded delivery readiness and fresh acceptance handoff",
+      "paths": ["docs/DELIVERY_READINESS.md", "factory/delivery_readiness.py", "factory/submission.py", "factory/team_flow.py", "factory/web.py", "tests/test_factory_delivery_readiness.py"]
+    },
+    {
+      "branch": "feat/team-command-center",
+      "tree": "43f071d8fc90c78414fbafa9e3c5462aa57b4163",
+      "patch": "cockpit.patch",
+      "message": "feat: add Chinese team command center and opt-in delegation UI",
+      "paths": ["docs/TEAM_COCKPIT.md", "tests/browser/server.mjs", "tests/browser/team-fixture.mjs", "tests/browser/team.spec.mjs", "tests/test_factory_team_cockpit.mjs", "tests/test_factory_ui.mjs", "ui/factory/actions.js", "ui/factory/index.html", "ui/factory/models.js", "ui/factory/team-cockpit.css", "ui/factory/team-cockpit.js", "ui/factory/team.js", "ui/factory/views.js"]
+    }
+  ]
+}
