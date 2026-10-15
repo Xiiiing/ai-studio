@@ -200,4 +200,43 @@ describe("实际模型设置页面", () => {
     await screen.findByText("目录跳过，连接尚未验证");
     expect(within(card).getByText("尚未验证连接")).toBeVisible();
   });
+
+  it("preserves systemd credential authentication and shows mounted state", async () => {
+    const { update, calls } = setup();
+    await screen.findByText("writer-a");
+    const original = inventory();
+    const configured = {
+      editable_profiles: {
+        ...original.editable_profiles,
+        writer: {
+          ...original.editable_profiles.writer,
+          api_key_credential: "qwen38_primary",
+        },
+      },
+      profiles: [
+        { id: "writer", api_key_credential: "qwen38_primary", auth_configured: false },
+      ],
+    };
+    update(configured);
+    await screen.findByText(/系统凭据：qwen38_primary.*尚未挂载/);
+    update({
+      profiles: [
+        { id: "writer", api_key_credential: "qwen38_primary", auth_configured: true },
+      ],
+    });
+    const card = screen.getByText("writer-a").closest("article")!;
+    await waitFor(() =>
+      expect(within(card).getByText(/系统凭据：qwen38_primary.*已挂载/)).toBeVisible(),
+    );
+    await userEvent.click(within(card).getByRole("button", { name: "编辑连接" }));
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByText("保留系统凭据关联：qwen38_primary")).toBeVisible();
+    await userEvent.click(within(dialog).getByRole("button", { name: "加入待保存修改" }));
+    await userEvent.click(screen.getByRole("button", { name: "保存配置" }));
+    await waitFor(() => expect(calls.some((call) => call.body?.profiles)).toBe(true));
+    const saved = calls.find((call) => call.body?.profiles)!.body.profiles.writer;
+    expect(saved.api_key_credential).toBe("qwen38_primary");
+    expect(saved.api_key_env).toBe("");
+  });
+
 });
