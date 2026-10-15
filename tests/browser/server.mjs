@@ -3,6 +3,7 @@ import http from 'node:http';
 import { readFile, realpath, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { teamFlowFixture } from './team-fixture.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const port = Number(process.env.TEST_PORT || 18787);
@@ -23,7 +24,7 @@ let project, board, inventory, fail, calls;
 function reset() {
   project = structuredClone(initial); board = { project_id: id, revision: 7, production_revision: 1, editable: true, shots: [structuredClone(shot)], errors: [] };
   inventory = { revision: 'config-1', editable_profiles: structuredClone(profiles), profiles: Object.entries(profiles).map(([id, value]) => ({ id, ...value })),
-    role_assignments: { screenwriter: 'writer', visual_critic: 'writer' }, roles: [{ role: 'screenwriter', label: '编剧', profile: 'writer' }, { role: 'visual_critic', label: '画面质检', profile: 'writer' }],
+    role_assignments: { screenwriter: 'writer', visual_critic: 'writer' }, roles: [{ role: 'screenwriter', label: '编剧', profile: 'writer' }, { role: 'visual_critic', label: '画面质检', profile: 'writer' }, { role: 'executive_producer', label: '总制片代理', profile: null, optional: true, configured: false, enabled: false }],
     video_profiles: { local_wan: { provider: 'comfyui_wan', enabled: true, model: 'Wan2.2-TI2V-5B' } }, video_roles: { video_generator: 'local_wan' } };
   fail = ''; calls = [];
 }
@@ -55,12 +56,19 @@ const server = http.createServer(async (request, response) => {
         if (request.method === 'POST') {
           if (value.expected_revision !== inventory.revision) return json(response, { error: '配置已更新' }, 409);
           inventory = { ...inventory, revision: 'config-2', editable_profiles: value.profiles, role_assignments: value.roles, profiles: Object.entries(value.profiles).map(([id, v]) => ({ id, ...v })) };
+          inventory.roles = inventory.roles.map(row => row.role !== 'executive_producer' ? row : { ...row, profile: value.roles.executive_producer || null, configured: !!value.roles.executive_producer, enabled: !!value.profiles[value.roles.executive_producer]?.enabled });
         }
         return json(response, inventory);
       }
+      if (url.pathname === '/api/factory/projects' && request.method === 'POST') {
+        if (!['guided', 'delegated'].includes(value.team_mode) || typeof value.brief !== 'string') return json(response, { error: 'Invalid mock creation payload' }, 400);
+        if (value.team_mode === 'delegated' && !inventory.role_assignments.executive_producer) return json(response, { error: 'Mock supervisor must be explicitly bound' }, 400);
+        project.team_mode = value.team_mode; project.brief = value.brief; project.revision += 1;
+        return json(response, { project }, 201);
+      }
       if (url.pathname === '/api/factory/projects/' + id) return json(response, project);
       if (url.pathname.endsWith('/shots')) return json(response, board);
-      if (url.pathname.endsWith('/flow')) return json(response, { project_id: id, revision: project.revision, nodes: [], edges: [], evidence: { scope: 'mock' } });
+      if (url.pathname.endsWith('/flow')) return json(response, teamFlowFixture(project));
       if (url.pathname.endsWith('/series')) return json(response, { series_key: '', assets: [], references: {}, sources: [], bible: null });
       if (url.pathname.endsWith('/cloud-budget')) return json(response, { project_id: id, tasks: [], authorizations: [], quote: null, totals: {} });
       if (url.pathname.endsWith('/decision') && request.method === 'POST') {

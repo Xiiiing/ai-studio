@@ -15,6 +15,7 @@ export function ingestInventory(state, inventory, reset = false) {
   state.models = inventory;
   if (!state.modelsDirty || reset) {
     state.modelsDraft = { profiles: clone(inventory.editable_profiles || {}), roles: clone(inventory.role_assignments || {}) };
+    if (list(inventory.roles).some(row => row?.role === 'executive_producer') && !Object.hasOwn(state.modelsDraft.roles, 'executive_producer')) state.modelsDraft.roles.executive_producer = '';
     if (inventory.video_profiles && typeof inventory.video_profiles === 'object' && !Array.isArray(inventory.video_profiles)) {
       state.modelsDraft.video_profiles = clone(inventory.video_profiles);
       state.modelsDraft.video_roles = clone(inventory.video_roles || {});
@@ -28,6 +29,7 @@ export function ingestInventory(state, inventory, reset = false) {
 export function registryPayload(state) {
   if (!state.models?.revision || !state.modelsDraft) throw new Error('请先读取当前模型配置。');
   const payload = { profiles: clone(state.modelsDraft.profiles), roles: clone(state.modelsDraft.roles), expected_revision: state.models.revision };
+  if (payload.roles.executive_producer === '') delete payload.roles.executive_producer;
   if (state.modelsDraft.video_profiles) {
     payload.video_profiles = clone(state.modelsDraft.video_profiles);
     payload.video_roles = clone(state.modelsDraft.video_roles || {});
@@ -55,7 +57,7 @@ export function modelsView(state) {
   const assignments = Object.entries(roles).map(([role, selected]) => {
     const meta = roleRows.find(item => (item.role || item.id) === role) || {};
     const selectedExists = profiles.some(([id]) => id === selected);
-    return '<div class="role-assignment"><label for="role-' + h(role) + '"><strong>' + h(meta.label || roleLabel(role)) + '</strong><code>' + h(role) + '</code></label><select id="role-' + h(role) + '" data-role-assignment="' + h(role) + '" ' + (state.modelsSaving ? 'disabled' : '') + '>' + (!selectedExists ? '<option value="" selected disabled>请选择有效的模型连接</option>' : '') + profiles.map(([id, profile]) => '<option value="' + h(id) + '" ' + (selected === id ? 'selected' : '') + (profile.enabled === false || (meta.requires_vision && !profile.vision) ? ' disabled' : '') + '>' + h(id + ' · ' + compactModel(profile.model) + (profile.enabled === false ? '（已停用）' : meta.requires_vision && !profile.vision ? '（不支持图像输入）' : '')) + '</option>').join('') + '</select></div>';
+    return '<div class="role-assignment"><label for="role-' + h(role) + '"><strong>' + h(meta.label || roleLabel(role)) + '</strong><code>' + h(role) + '</code></label><select id="role-' + h(role) + '" data-role-assignment="' + h(role) + '" ' + (state.modelsSaving ? 'disabled' : '') + '>' + (role === 'executive_producer' ? '<option value="" ' + (!selectedExists ? 'selected' : '') + '>不启用（保留人工关卡）</option>' : !selectedExists ? '<option value="" selected disabled>请选择有效的模型连接</option>' : '') + profiles.map(([id, profile]) => '<option value="' + h(id) + '" ' + (selected === id ? 'selected' : '') + (profile.enabled === false || (meta.requires_vision && !profile.vision) ? ' disabled' : '') + '>' + h(id + ' · ' + compactModel(profile.model) + (profile.enabled === false ? '（已停用）' : meta.requires_vision && !profile.vision ? '（不支持图像输入）' : '')) + '</option>').join('') + '</select></div>';
   }).join('');
   return heading + (state.modelsError ? notice(state.modelsError, true) : '') + (state.modelSaveError ? notice(state.modelSaveError, true) : '') + (state.modelsRemoteChanged ? notice('其他终端已更新配置。当前草稿仍保留；请先记下修改，再重新载入，避免覆盖他人的配置。', true) : '') +
     '<div class="connection-explainer"><div><span class="explain-index">01</span><strong>运行模型服务</strong><p>用 llama.cpp、Ollama、vLLM 或 LM Studio 运行本地 DeepSeek、千问等模型，也可登记云端 API。</p></div><div><span class="explain-index">02</span><strong>登记接口与模型</strong><p>设置地址、模型名和能力；密钥只从服务器环境变量读取。</p></div><div><span class="explain-index">03</span><strong>分配工作流角色</strong><p>编剧、审核、导演分别选择模型，视频另行配置。总控自动分工，项目页展示实际工作数据流。</p></div></div>' +

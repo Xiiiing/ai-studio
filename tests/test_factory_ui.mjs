@@ -2,6 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 import { api } from '../ui/factory/api.js';
 import { bindModelActions, ingestInventory, modelEditor, modelsView, profileFromForm, registryPayload } from '../ui/factory/models.js';
 import { workflowBoard } from '../ui/factory/workflow.js';
@@ -177,14 +178,14 @@ test('model and workflow reads use GET without request bodies', async () => {
   assert.ok(requests.every(r => r.options.method === 'GET' && r.options.body === undefined));
 });
 test('all deployed native JavaScript files parse', async () => {
-  const files = ['api.js', 'format.js', 'panels.js', 'views.js', 'actions.js', 'app.js', 'models.js', 'workflow.js', 'connections.js', 'video-models.js', 'team.js'];
+  const files = ['api.js', 'format.js', 'panels.js', 'views.js', 'actions.js', 'app.js', 'models.js', 'workflow.js', 'connections.js', 'video-models.js', 'team.js', 'team-cockpit.js'];
   const { SourceTextModule } = await import('node:vm');
   if (SourceTextModule) {
     for (const file of files) new SourceTextModule(await readFile(new URL('../ui/factory/' + file, import.meta.url), 'utf8'));
   } else {
     const { spawnSync } = await import('node:child_process');
     for (const file of files) {
-      const result = spawnSync(process.execPath, ['--check', new URL('../ui/factory/' + file, import.meta.url).pathname], { encoding: 'utf8' });
+      const result = spawnSync(process.execPath, ['--check', fileURLToPath(new URL('../ui/factory/' + file, import.meta.url))], { encoding: 'utf8' });
       assert.equal(result.status, 0, file + ': ' + result.stderr);
     }
   }
