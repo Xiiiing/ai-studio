@@ -4,10 +4,29 @@ import json
 from pathlib import Path
 import ssl
 import subprocess
+import re
+from email.message import Message
+from types import SimpleNamespace
 
 import pytest
 
 from scripts import wkp_live_gateway as gateway
+from studio.http_security import check_origin, HTTPError
+
+
+def test_gateway_origin_rewrite_matches_loopback_http_boundary():
+    config = gateway.caddyfile("172.20.12.202", 8789, "test-hash")
+    pattern, replacement = re.search(r'header_up Origin "([^"]+)" "([^"]+)"', config).groups()
+    headers = Message()
+    headers["Host"] = "127.0.0.1:8787"
+    headers["Origin"] = re.sub(pattern, replacement, "https://172.20.12.202:8789")
+    headers["Sec-Fetch-Site"] = "same-origin"
+    handler = SimpleNamespace(headers=headers, client_address=("127.0.0.1", 12345),
+                              server=SimpleNamespace(server_port=8787, server_address=("127.0.0.1", 8787)))
+    check_origin(handler)
+    headers.replace_header("Origin", re.sub(pattern, replacement, "https://untrusted.example"))
+    with pytest.raises(HTTPError, match="Origin rejected"):
+        check_origin(handler)
 
 
 @pytest.mark.parametrize("host", ["0.0.0.0", "8.8.8.8", "127.0.0.1", "100.82.71.126", "::1", "example.com", "172.20.114.10", "172.20.12.202\nrespond 200"])

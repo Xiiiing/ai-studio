@@ -184,7 +184,7 @@ https://:{port} {{
         handle {{
             reverse_proxy http://{upstream} {{
                 header_up Host {upstream}
-                header_up Origin "{origin_pattern}" "https://{upstream}"
+                header_up Origin "{origin_pattern}" "http://{upstream}"
                 header_up -Authorization
                 transport http {{
                     network_proxy none
