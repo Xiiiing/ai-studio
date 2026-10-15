@@ -5,7 +5,8 @@
     "independent_critic": "1.0.0",
     "screenwriter": "1.0.0",
     "visual_designer": "1.0.0",
-    "storyboard_director": "1.0.0"
+    "storyboard_director": "1.0.0",
+    "executive_producer": "1.0.0"
   },
   "prompts": [
     {
@@ -134,6 +135,19 @@
       "output_schema_refs": [
         "factory.storyboard:storyboard_schema"
       ]
+    },
+    {
+      "role": "executive_producer",
+      "version": "1.0.0",
+      "responsibility": "在显式委托范围内选择合格创意，汇总记录并上交人工终审；不能授权费用或发布。",
+      "path": "executive_producer/1.0.0.txt",
+      "sha256": "982f578fcdea540505bcc2332c99cd4bb1962d9499a71a8fe1e325891577d2fd",
+      "input_schema": {
+        "type": "object", "additionalProperties": false,
+        "properties": {"project": {}, "gate": {}, "candidates": {}, "review_summary": {}, "constraints": {}},
+        "required": ["project", "gate", "candidates", "review_summary", "constraints"]
+      },
+      "output_schema_refs": ["factory.supervision:DECISION_SCHEMA"]
     }
   ]
 }

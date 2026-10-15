@@ -103,7 +103,14 @@ def story_decision(state):
         raise ReviewBlocked("尚无通过评审的故事方案",{"kind":"creative_review"})
     version=state.get("story_generation",p["proposal_generation"])
     gate=store.gate(p["id"],"story",options,"故事提案评审已完成，请从合格方案中选择制作方向。",version)
-    answer=interrupt(gate)
+    from .supervision import supervise_gate
+    answer=supervise_gate(p["id"],gate)
+    if answer is None and p.get("team_mode") == "delegated":
+        # A receipt may outlive a lost graph checkpoint, or a human may answer
+        # during the model call. Consume that receipt without another request.
+        answer=store.answer_for(p["id"],gate["id"])
+    if answer is None:
+        answer=interrupt(gate)
     if answer.get("gate_id") != gate["id"]:
         raise ValueError("Story decision checkpoint mismatch")
     return {"story_answer":answer,"story_generation":version}
@@ -158,7 +165,14 @@ def style_decision(state):
     options=[{"id":v["id"],"label":v.get("name",v["id"])} for v in p["styles"]]
     version=state.get("style_generation",p["script_generation"])
     gate=store.gate(p["id"],"style",options,"三套视觉预览已完成，请选择人物与画风。",version)
-    answer=interrupt(gate)
+    from .supervision import supervise_gate
+    answer=supervise_gate(p["id"],gate)
+    if answer is None and p.get("team_mode") == "delegated":
+        # A receipt may outlive a lost graph checkpoint, or a human may answer
+        # during the model call. Consume that receipt without another request.
+        answer=store.answer_for(p["id"],gate["id"])
+    if answer is None:
+        answer=interrupt(gate)
     if answer.get("gate_id") != gate["id"]:
         raise ValueError("Style decision checkpoint mismatch")
     return {"style_answer":answer,"style_generation":version}
@@ -207,7 +221,14 @@ def final_decision(state):
     gate=store.gate(p["id"],"final",
         [{"id":"approve","label":"通过终版"},{"id":"revise","label":"局部修改"},{"id":"reedit","label":"重新剪辑"}],
         "完整初版已交付，请观看并决定最终版本。",version)
-    answer=interrupt(gate)
+    from .supervision import supervise_gate
+    answer=supervise_gate(p["id"],gate)
+    if answer is None and p.get("team_mode") == "delegated":
+        # A receipt may outlive a lost graph checkpoint, or a human may answer
+        # during the model call. Consume that receipt without another request.
+        answer=store.answer_for(p["id"],gate["id"])
+    if answer is None:
+        answer=interrupt(gate)
     if answer.get("gate_id") != gate["id"]:
         raise ValueError("Final decision checkpoint mismatch")
     return {"final_answer":answer,"final_generation":version}
