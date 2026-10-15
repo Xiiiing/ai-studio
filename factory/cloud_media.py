@@ -112,6 +112,9 @@ def raw_artifact(engine, profile, body, line, folder, batch, kind):
             if saved['request_signature']!=line['request_signature']: raise ValueError('云回执与当前请求不匹配')
             response=saved['response']
         else:
+            secret=os.environ.get(profile['api_key_env'])
+            if not secret or any(c in secret for c in '\r\n'):
+                raise ProviderError('missing_auth','制作 API 密钥环境变量缺失或无效')
             engine.boundary()
             cloud_budget.validate_live_profile(profile)
             cloud_budget.reserve(engine.ident,batch['id'],line,profile,

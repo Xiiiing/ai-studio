@@ -22,6 +22,9 @@ def main():
     if not image.exists():
         subprocess.run([str(FFMPEG), "-nostdin", "-hide_banner", "-loglevel", "error", "-n", "-i", str(video),
                         "-frames:v", "1", str(image)], check=True, timeout=20)
+    from factory.providers import public_inventory
+    config = json.loads((ROOT / "config/factory.empty.example.json").read_text())
+    (folder / "model-catalog.json").write_text(json.dumps(public_inventory(config), ensure_ascii=False))
     print(json.dumps({"fixture": "CPU_test_pattern_not_model_generation", "video_sha256": sha256(video),
                       "frame_sha256": sha256(image)}, ensure_ascii=False))
 

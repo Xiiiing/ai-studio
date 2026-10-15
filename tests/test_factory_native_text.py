@@ -71,3 +71,41 @@ def test_first_install_is_unconfigured_without_network_defaults():
     for ident, preset in data['presets'].items():
         if preset['model']:
             providers.normalize_profile(preset)
+
+
+def test_missing_live_config_prefers_empty_setup_and_first_save(tmp_path,monkeypatch):
+    from factory import config
+    value=json.loads(Path('config/factory.empty.example.json').read_text())
+    (tmp_path/'config').mkdir()
+    (tmp_path/'config/factory.empty.example.json').write_text(json.dumps(value))
+    legacy=tmp_path/'config/factory.example.json';legacy.write_text('{"schema_version":1,"llm":{"model":"unreachable-example"}}')
+    monkeypatch.setattr(config,'ROOT',tmp_path);monkeypatch.delenv('DRAMA_FACTORY_CONFIG',raising=False)
+    assert config.load_config()==value
+    inventory=providers.public_inventory()
+    providers.save_registry({}, {}, inventory['revision'])
+    assert json.loads((tmp_path/'config/factory.json').read_text())['llm_profiles']=={}
+    assert 'unreachable-example' in legacy.read_text()
+
+
+def test_cli_export_apply_preserves_image_audio_connections(tmp_path,monkeypatch):
+    from factory import cli,config
+    value=json.loads(Path('config/factory.api.example.json').read_text())
+    path=tmp_path/'factory.json';path.write_text(json.dumps(value))
+    monkeypatch.setenv('DRAMA_FACTORY_CONFIG',str(path))
+    exported=tmp_path/'export.json'
+    assert cli.main(['models','export','--file',str(exported),'--json'])==0
+    saved=json.loads(exported.read_text())
+    assert saved['image_roles']==value['image_roles'] and saved['audio_roles']==value['audio_roles']
+    assert cli.main(['models','apply','--file',str(exported),'--json'])==0
+    live=config.load_config()
+    assert live['image_profiles']['cloud_image']['provider']=='dashscope_image'
+    assert live['audio_profiles']['cloud_tts']['provider']=='dashscope_tts'
+
+
+def test_environment_paths_are_loaded_before_core_import(tmp_path):
+    import os,subprocess,sys
+    path=tmp_path/'runtime.env';comfy=tmp_path/'my-comfy';locks=tmp_path/'gpu-locks'
+    path.write_text(f'DRAMA_COMFY_HOME={comfy}\nDRAMA_GPU_LOCK_DIR={locks}\n');path.chmod(0o600)
+    script='from factory.environment import load_environment; import sys; load_environment(sys.argv[1]); from studio.core import COMFY,GPU_LOCK_DIR; assert str(COMFY)==sys.argv[2]; assert str(GPU_LOCK_DIR)==sys.argv[3]'
+    result=subprocess.run([sys.executable,'-c',script,str(path),str(comfy),str(locks)],env={k:v for k,v in os.environ.items() if k not in {'DRAMA_COMFY_HOME','DRAMA_GPU_LOCK_DIR'}},capture_output=True,text=True)
+    assert result.returncode==0,result.stderr

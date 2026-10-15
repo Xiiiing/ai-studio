@@ -218,3 +218,16 @@ def test_public_api_example_is_complete_but_not_claimed_verified():
     assert resolve(value,'audio')['provider']=='dashscope_tts'
     assert not any(__import__('factory.media_profiles',fromlist=['local_kinds']).local_kinds(value).values())
     assert providers.public_inventory(value)['readiness']['generation_verified'] is False
+
+
+def test_missing_key_never_reserves_a_paid_submission(cloud,monkeypatch):
+    p,cfg,flat,calls,_,root=cloud
+    from types import SimpleNamespace
+    from factory.providers import ProviderError
+    engine=SimpleNamespace(ident=p['id'],project=p,boundary=lambda:None)
+    profile=cm.paid_profile(flat['image_connection'],'image');body=cm.image_body(profile,'Portrait',[],(384,704),1)
+    line=cm.make_line(p['id'],'preview',{'source_signature':'same','take':'take_001','attempt':1},profile,body,'image')
+    costs.prepare_batch(p,profile,[line]);authorize_next(p['id'],cfg);batch=costs.ensure_batch(p,profile,[line])
+    monkeypatch.delenv('FIXTURE_CLOUD_KEY')
+    with pytest.raises(ProviderError):cm.raw_artifact(engine,profile,body,line,root/'take',batch,'image')
+    assert costs.summary(p['id'])['tasks']==[] and not calls
