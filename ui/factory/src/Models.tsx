@@ -274,6 +274,12 @@ export function Models({ notify }: { notify: (v: string) => void }) {
     Object.entries(video ? draft.video_profiles || {} : draft.profiles).map(
       ([id, p]: [string, any]) => {
         const result = probes[(video ? "video:" : "") + id];
+        const observed = !video
+          ? rows(inventory.profiles).find((entry) => entry.id === id)
+          : null;
+        const credentialMounted =
+          observed?.api_key_credential === p.api_key_credential &&
+          observed?.auth_configured === true;
         return (
           <article className="model-card" key={id}>
             <div className="row-between">
@@ -316,7 +322,14 @@ export function Models({ notify }: { notify: (v: string) => void }) {
             <code className="endpoint">
               {p.base_url || "服务器托管的生成工作流"}
             </code>
-            {p.api_key_env && <small>密钥变量：{p.api_key_env}</small>}
+            {!video && p.api_key_credential ? (
+              <small>
+                系统凭据：{p.api_key_credential} ·{" "}
+                {credentialMounted ? "已挂载" : "尚未挂载或状态待同步"}
+              </small>
+            ) : p.api_key_env ? (
+              <small>密钥变量：{p.api_key_env}</small>
+            ) : null}
             <div className="member-chips">
               {Object.entries(video ? draft.video_roles || {} : draft.roles)
                 .filter(([, v]) => v === id)
@@ -688,7 +701,9 @@ function ProfileEditor({
             </div>
             {field("api_key_env", "密钥环境变量名称", {
               pattern: "[A-Za-z_][A-Za-z0-9_]*",
-              hint: "只登记变量名称，真实密钥由服务端读取。",
+              hint: current.api_key_credential
+                ? "此连接已有 systemd 凭据关联，不能同时使用密钥环境变量。"
+                : "只登记变量名称，真实密钥由服务端读取。",
             })}
             {current.api_key_credential && (
               <small>保留系统凭据关联：{current.api_key_credential}</small>
