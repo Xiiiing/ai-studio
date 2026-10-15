@@ -10,6 +10,9 @@ import threading
 import time
 import traceback
 
+from .environment import load_environment
+load_environment()
+
 from studio.core import write_json
 from . import store
 from .config import DATA

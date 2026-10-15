@@ -18,7 +18,7 @@ def main():
         raise SystemExit("Python 3.11+ required; Python 3.12 is recommended.")
     config = ROOT / "config/factory.json"
     if not config.exists():
-        shutil.copyfile(ROOT / "config/factory.example.json", config)
+        shutil.copyfile(ROOT / "config/factory.empty.example.json", config)
         config.chmod(0o600)
         print("Created config/factory.json from the portable example.")
     else:

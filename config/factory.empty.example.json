@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "setup_incomplete": true,
+  "llm_profiles": {},
+  "llm_roles": {},
+  "video_profiles": {"unconfigured": {"provider": "comfyui_wan", "enabled": false, "model": "Wan2.2-TI2V-5B"}},
+  "video_roles": {"video_generator": "unconfigured"},
+  "production": {"gpu_cards": [0], "max_parallel": 1, "max_gpu_workers": 1},
+  "web": {"host": "127.0.0.1", "port": 8787}
+}

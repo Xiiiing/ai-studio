@@ -9,6 +9,9 @@ from collections import Counter
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
+from .environment import load_environment
+load_environment()
+
 from studio.core import ROOT
 from . import store
 

@@ -310,3 +310,11 @@ MiniMax 支持范围是上述 `/v1/video_generation` 生命周期及它支持的
 - [MiniMax image-to-video 参数](https://platform.minimax.io/docs/api-reference/video-generation-i2v)、[任务查询](https://platform.minimax.io/docs/api-reference/video-generation-query)、[文件取回](https://platform.minimax.io/docs/api-reference/file-management-retrieve)
 
 仓库中的 `tests/test_factory_text_adapters.py`、`tests/test_factory_providers.py`、`tests/test_factory_role_routing.py` 和 `tests/test_factory_video_providers.py` 验证协议、身份、网络限制、错误和恢复行为。它们不验证云账户权限、实际部署在线状态、显存容量、生成成本或创作质量；这些需要在目标部署上单独验收。
+
+## 用户自带模型：平台预设与首次配置
+
+新安装从空配置开始，不会连接 Wkp 或示例模型。进入“模型与连接”，选择购买 API、本地或混合使用，再添加连接、分配角色并保存。平台预设由服务端统一提供，模型 ID 可修改；预设不保证账号已开通模型。文本和视觉可以使用不同平台，视觉审核需要实际支持图片输入的模型。
+
+预设覆盖 OpenAI、DeepSeek、百炼、智谱、Moonshot、MiniMax、硅基流动、Claude 和 Gemini，以及原有本地运行时。Claude 使用原生 Messages，Gemini 使用原生 generateContent；两者目前使用完整 schema 提示词、本地校验及有界修复，不通过删减 schema 约束伪装为原生结构化输出。实际响应模型必须与配置或明确别名匹配。原生接口依据 [Claude Messages](https://platform.claude.com/docs/en/api/messages/create) 和 [Gemini generateContent](https://ai.google.dev/api/generate-content)。OpenAI 预设复用现有 [Chat Completions](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create) 适配器。
+
+密钥继续放在私有 `config/runtime.env`（权限 600），例如 `DEEPSEEK_API_KEY=...`。前台 Web、worker、CLI 与 systemd 都读取该文件；进程已有环境变量优先。文件只支持空行、注释和 KEY=value（可用单／双引号包裹整个值），不执行 shell、不展开变量。修改后重启两个服务。工作台只保存变量名称，不接受或导出密钥。跳过模型目录的预检只检查配置和密钥是否存在，不表示服务在线或生成成功。

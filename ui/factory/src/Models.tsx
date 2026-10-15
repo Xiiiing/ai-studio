@@ -18,53 +18,6 @@ import {
   Badge,
   Loading,
 } from "./ui";
-const providerDefaults: RecordData = {
-  openai_compatible: {
-    base_url: "http://127.0.0.1:8000/v1",
-    response_format: "json_object",
-  },
-  llama_cpp: {
-    base_url: "http://127.0.0.1:8090/v1",
-    response_format: "llama_json_schema",
-    context_validation: "llama_tokenize",
-  },
-  ollama_native: {
-    base_url: "http://127.0.0.1:11434",
-    response_format: "openai_json_schema",
-  },
-  ollama: {
-    base_url: "http://127.0.0.1:11434/v1",
-    response_format: "openai_json_schema",
-  },
-  vllm: {
-    base_url: "http://127.0.0.1:8000/v1",
-    response_format: "openai_json_schema",
-  },
-  lm_studio: {
-    base_url: "http://127.0.0.1:1234/v1",
-    response_format: "openai_json_schema",
-  },
-  deepseek: {
-    base_url: "https://api.deepseek.com",
-    response_format: "json_object",
-  },
-  dashscope: {
-    base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1",
-    response_format: "json_object",
-    model_discovery: "skip",
-    thinking: false,
-  },
-};
-const providers: Record<string, string> = {
-  llama_cpp: "llama.cpp",
-  ollama_native: "Ollama 原生",
-  ollama: "Ollama 兼容",
-  vllm: "vLLM",
-  lm_studio: "LM Studio",
-  openai_compatible: "OpenAI 兼容",
-  dashscope: "千问 / 百炼",
-  deepseek: "DeepSeek",
-};
 const videoDefaults: RecordData = {
   comfyui_wan: {
     provider: "comfyui_wan",
@@ -104,6 +57,7 @@ export function normalizeProfile(
     model: values.model.trim(),
     enabled: values.enabled === "on",
   };
+  delete out.discovered_models;
   if (video) {
     if (provider === "minimax")
       Object.assign(out, {
@@ -229,7 +183,7 @@ export function Models({ notify }: { notify: (v: string) => void }) {
     setSaving(true);
     setError("");
     try {
-      const roles = { ...draft.roles };
+      const roles = Object.fromEntries(Object.entries(draft.roles).filter(([, value]) => value !== ""));
       if (roles.executive_producer === "") delete roles.executive_producer;
       const result = await request("/models", {
         ...draft,
@@ -270,6 +224,8 @@ export function Models({ notify }: { notify: (v: string) => void }) {
     }
   }
   const inventory = query.data;
+  const providers = Object.fromEntries(rows(inventory?.providers).map((p) => [p.id, p.label]));
+  const [setupMode, setSetupMode] = useState("api");
   if (!draft || !inventory)
     return (
       <>
@@ -461,6 +417,19 @@ export function Models({ notify }: { notify: (v: string) => void }) {
           与视频服务在已配置的服务器运行。这里登记接口和环境变量名称；连接测试不会生成素材。
         </p>
       </div>
+      <Panel title="接入向导" description="连接使用你自己的模型或购买的 API。密钥保存在 config/runtime.env，修改后重启 Web 和 worker。">
+        <Field label="使用方式"><select value={setupMode} onChange={(e) => setSetupMode(e.target.value)}>
+          <option value="api">购买 API（无需 GPU）</option><option value="local">本地模型</option><option value="mixed">混合使用</option>
+        </select></Field>
+        <p>先添加连接，再分配下方角色并保存。{setupMode !== "api" && "localhost 指运行 AI Studio 后端的机器。"}</p>
+        <p role="status">尚未分配：{rows(inventory.roles).filter((r) => !r.optional && !draft.roles[r.role]).map((r) => r.label || roleName(r.role)).join("、") || "文本角色已分配；请测试连接并检查制作能力"}</p>
+        <div className="button-row"><button className="button" onClick={() => {
+          const entries = Object.entries(draft.profiles) as [string, any][];
+          const text = entries.find(([, p]) => p.enabled !== false);
+          const vision = entries.find(([, p]) => p.enabled !== false && p.vision);
+          change((d) => ({...d, roles: {...d.roles, ...Object.fromEntries(rows(inventory.roles).filter((r) => !r.optional).map((r) => [r.role, (r.requires_vision ? vision : text)?.[0] || ""]))}}));
+        }}>应用基础角色分工</button></div>
+      </Panel>
       <Panel
         title="文本与视觉理解"
         description="同一连接可以承担多个角色，创作与独立审核分别记录。"
@@ -531,10 +500,12 @@ export function Models({ notify }: { notify: (v: string) => void }) {
           key={(editing.video ? "v:" : "t:") + editing.id}
           id={editing.id}
           video={editing.video}
+          providerDefaults={inventory.presets || {}}
+          providers={providers}
           profile={
             (editing.video ? draft.video_profiles : draft.profiles)?.[
               editing.id
-            ] || {}
+            ] ? {...(editing.video ? draft.video_profiles : draft.profiles)[editing.id], discovered_models: probes[editing.id]?.models || []} : {}
           }
           onClose={() => setEditing(null)}
           onSave={(id, p) => {
@@ -555,7 +526,11 @@ function ProfileEditor({
   video,
   onClose,
   onSave,
+  providerDefaults,
+  providers,
 }: {
+  providerDefaults: RecordData;
+  providers: Record<string, string>;
   id: string;
   profile: RecordData;
   video: boolean;
@@ -563,12 +538,12 @@ function ProfileEditor({
   onSave: (id: string, p: RecordData) => void;
 }) {
   const [provider, setProvider] = useState(
-      profile.provider || (video ? "minimax" : "openai_compatible"),
+      profile.provider || (video ? "minimax" : "deepseek"),
     ),
     [current, setCurrent] = useState<RecordData>({
       ...((video
         ? videoDefaults[profile.provider || "minimax"]
-        : providerDefaults[profile.provider || "openai_compatible"]) || {}),
+        : providerDefaults[profile.provider || "deepseek"]) || {}),
       enabled: true,
       ...profile,
     }),
@@ -579,6 +554,7 @@ function ProfileEditor({
     <Field label={label} hint={options.hint}>
       <input
         name={name}
+        list={name === "model" ? "provider-models" : undefined}
         type={options.type || "text"}
         step={options.step}
         defaultValue={options.value ?? current[name] ?? options.fallback ?? ""}
@@ -591,48 +567,11 @@ function ProfileEditor({
     </Field>
   );
   function switchProvider(next: string) {
-    const prev = provider;
-    const formData = Object.fromEntries(new FormData(form.current!));
-    let values = { ...current, ...formData };
-    if (prev !== next)
-      for (const key of ["tls_ca_file_env", "tls_client_cert_env", "tls_client_key_env"])
-        delete values[key];
-    if (video) values = { ...videoDefaults[next] };
-    else {
-      const defaults = providerDefaults[next] || {};
-      if (
-        !values.base_url ||
-        values.base_url === providerDefaults[prev]?.base_url
-      ) {
-        let host = "";
-        try {
-          host = new URL(values.base_url).host;
-        } catch {}
-        values.base_url = defaults.base_url;
-        try {
-          if (host !== new URL(values.base_url).host) {
-            values.api_key_env = "";
-            delete values.api_key_credential;
-          }
-        } catch {}
-        values.network_mode = values.base_url?.startsWith("https:")
-          ? "remote"
-          : "loopback";
-        values.allowed_hosts =
-          values.network_mode === "remote"
-            ? [new URL(values.base_url).hostname]
-            : [];
-      }
-      values.response_format = defaults.response_format || "json_object";
-      values.context_validation =
-        defaults.context_validation || "conservative_estimate";
-      delete values.chat_template_kwargs;
-      values.model_discovery = next === "dashscope" ? "skip" : "required";
-      values.thinking = next === "dashscope" ? "false" : "";
-    }
-    setCurrent(values);
+    const defaults = video ? videoDefaults[next] : providerDefaults[next];
+    setCurrent({...defaults, model: defaults?.model || current.model || "", enabled: true});
     setProvider(next);
   }
+
   return (
     <Modal
       id="model-dialog"
@@ -659,6 +598,7 @@ function ProfileEditor({
         }}
       >
         <ErrorNotice error={error} />
+        <datalist id="provider-models">{[current.model, ...(profile.discovered_models || [])].filter(Boolean).map((m: string) => <option key={m} value={m} />)}</datalist>
         <div className="form-row">
           {field("id", "连接编号", {
             value: id,

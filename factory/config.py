@@ -47,6 +47,8 @@ def resolve_llm(config, role, *, require_vision=False):
                 raise ValueError("LLM profile requires " + key)
         lm = normalize_profile(lm)
     else:
+        if not config.get("llm") and config.get("setup_incomplete"):
+            raise ValueError("请先在模型与连接中为角色配置模型：" + role)
         lm = copy.deepcopy(config.get("llm", {}))
         if not isinstance(lm, dict):
             raise ValueError("llm must be an object")
@@ -109,6 +111,9 @@ def list_roles(config=None):
             rows.append({"role": role, "label": label, "profile": None, "endpoint": None, "model": None,
                          "provider": None, "network_mode": None, "enabled": False, "vision": False,
                          "configured": False, "requires_vision": False, "optional": True})
+            continue
+        if config.get("setup_incomplete") and role not in config.get("llm_roles", {}) and not config.get("llm"):
+            rows.append({"role": role, "label": label, "profile": None, "enabled": False, "configured": False, "requires_vision": role == "visual_critic"})
             continue
         lm = resolve_llm(config, role)
         rows.append({"role": role, "label": label, "profile": lm["profile"],
