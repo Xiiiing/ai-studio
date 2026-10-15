@@ -55,6 +55,10 @@ class Handler(LegacyHandler):
             if match:
                 from .cloud_budget import summary
                 return self.json(summary(match.group(1)))
+            match=re.fullmatch(r"/api/factory/projects/([a-f0-9]{12})/delivery-readiness",path)
+            if match:
+                from .delivery_readiness import snapshot as delivery_snapshot
+                return self.json(delivery_snapshot(store.get(match.group(1),False)))
             match=re.fullmatch(r"/api/factory/projects/([a-f0-9]{12})/flow",path)
             if match:
                 from .team_flow import build_flow

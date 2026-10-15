@@ -33,7 +33,7 @@ FACTORY_ROUTES = (
         "production-profiles", "workflow", "models", "overview", "capabilities")),
     Route("GET", PROJECT, "read", "project"),
     *(Route("GET", PROJECT + "/" + name, "read", name) for name in (
-        "shots", "series", "cloud-budget", "flow")),
+        "shots", "series", "cloud-budget", "flow", "delivery-readiness")),
     Route("GET", r"/api/factory/jobs/" + JID, "read", "job"),
     Route("POST", r"/api/factory/jobs/" + JID + r"/(pause|cancel)", "task_control", "job_control", 65536),
     Route("POST", r"/api/factory/models/test", "network_probe", "model_probe", 65536),
