@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from scripts import deploy_preview as preview
+from scripts import seed_preview as seed
 
 
 @pytest.fixture
@@ -61,3 +62,39 @@ def test_foreign_unit_is_rejected_without_writing_configuration(workspace, monke
 def test_systemd_path_escaping_is_rejected(path):
     with pytest.raises(ValueError, match="systemd"):
         preview.checked_path(Path(path))
+
+
+def test_seeder_rejects_data_outside_preview_before_creating_it(workspace, monkeypatch):
+    root, area, _ = workspace
+    release = area / "releases/example"
+    release.mkdir(parents=True)
+    config = preview.configuration(8787)
+    monkeypatch.setattr(seed, "SOURCE", release)
+    monkeypatch.setenv("DRAMA_FACTORY_CONFIG", str(config))
+    external = root / "production-data"
+    monkeypatch.setenv("DRAMA_FACTORY_DATA", str(external))
+    with pytest.raises(ValueError, match="DRAMA_FACTORY_DATA"):
+        seed.validate_workspace(area)
+    assert not external.exists()
+
+
+def test_seeder_keeps_user_changes_and_does_not_requeue_existing_sample(workspace, monkeypatch):
+    from factory import store
+    _, area, _ = workspace
+    data = area / "data"
+    monkeypatch.setattr(store, "DATA", data)
+    monkeypatch.setattr(store, "DATABASE", data / "preview.sqlite3")
+    store.initialize()
+    built = []
+    def build(project):
+        built.append(project["id"])
+        store.gate(project["id"], "story", [{"id": "A"}], "Synthetic initial state", 1)
+    first = seed.seed_one("idempotence-test", "示例 · 重启回归", build)
+    store.update(first["id"], {"title": "User's saved edit"})
+    before = store.get(first["id"])
+    second = seed.seed_one("idempotence-test", "示例 · 重启回归", build)
+    assert second == {"kind": "idempotence-test", "id": first["id"], "created": False}
+    assert store.get(first["id"]) == before
+    assert built == [first["id"]]
+    with store.connection() as db:
+        assert db.execute("SELECT COUNT(*) FROM jobs WHERE status IN ('queued','running')").fetchone()[0] == 0
