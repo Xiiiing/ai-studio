@@ -17,6 +17,7 @@ import os
 import queue
 import re
 import socket
+import stat
 import ssl
 import tempfile
 import threading
@@ -56,7 +57,7 @@ PROVIDERS = {
 }
 PROFILE_FIELDS = frozenset({
     "provider", "enabled", "network_mode", "allowed_hosts", "base_url", "model",
-    "context_tokens", "vision", "api_key_env", "response_format", "context_validation",
+    "context_tokens", "vision", "api_key_env", "api_key_credential", "response_format", "context_validation",
     "model_aliases", "revision", "request_timeout_seconds", "max_schema_attempts",
     "chat_template_kwargs", "temperature_override", "top_p", "system_prompt_mode",
     "image_token_budget", "max_tokens_field", "send_sampling_parameters", "thinking", "model_discovery",
@@ -69,6 +70,7 @@ SECRET_FIELDS = frozenset({
 })
 ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
 ENV_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,127}$")
+CREDENTIAL_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_-]{0,63}$")
 LAN_NETWORKS = tuple(ipaddress.ip_network(value) for value in
                      ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "fc00::/7"))
 
@@ -105,10 +107,60 @@ def _reject_secret_fields(value):
             _reject_secret_fields(item)
 
 
+def _credential_value(profile, *, required=False):
+    """Read only a named systemd LoadCredential, never a caller-supplied file path."""
+    name = profile.get("api_key_credential")
+    if not name:
+        return ""
+    if not isinstance(name, str) or not CREDENTIAL_RE.fullmatch(name):
+        raise ValueError("Invalid named systemd credential")
+    directory = os.environ.get("CREDENTIALS_DIRECTORY", "")
+    if not os.path.isabs(directory):
+        if required:
+            raise ProviderError("missing_auth", "The configured systemd credential is not mounted")
+        return ""
+    descriptor = None
+    try:
+        descriptor = os.open(os.path.join(directory, name), os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+        details = os.fstat(descriptor)
+        if not stat.S_ISREG(details.st_mode) or not 1 <= details.st_size <= 512:
+            raise ProviderError("invalid_auth", "The configured systemd credential has invalid metadata")
+        raw = os.read(descriptor, 513)
+        secret = raw.decode("utf-8").strip()
+        if not secret or len(secret) > 512 or any(ord(char) < 33 or ord(char) > 126 for char in secret):
+            raise ProviderError("invalid_auth", "The configured systemd credential is not a valid API token")
+        return secret
+    except (OSError, UnicodeError):
+        if required:
+            raise ProviderError("missing_auth", "The configured systemd credential cannot be read") from None
+        return ""
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+
+
+def _credential_available(profile):
+    """Inventory reports existence only; it does not read or expose a token."""
+    name = profile.get("api_key_credential")
+    directory = os.environ.get("CREDENTIALS_DIRECTORY", "")
+    if not isinstance(name, str) or not CREDENTIAL_RE.fullmatch(name) or not os.path.isabs(directory):
+        return False
+    try:
+        details = os.stat(os.path.join(directory, name), follow_symlinks=False)
+        return stat.S_ISREG(details.st_mode) and 1 <= details.st_size <= 512
+    except OSError:
+        return False
+
+
 def redact_secrets(value, profile=None):
     """Scrub both credential fields and the active environment value recursively."""
     env_name = (profile or {}).get("api_key_env")
     secret = os.environ.get(env_name, "") if isinstance(env_name, str) else ""
+    if not secret and (profile or {}).get("api_key_credential"):
+        try:
+            secret = _credential_value(profile)
+        except (ValueError, ProviderError):
+            secret = ""
     def clean(item):
         if isinstance(item, dict):
             return {clean(str(key)): "[REDACTED]" if str(key).lower() in SECRET_FIELDS else clean(part)
@@ -197,7 +249,7 @@ def validate_endpoint(profile):
             raise ValueError("Model endpoint host is not in allowed_hosts")
         if mode == "remote" and parsed.scheme != "https":
             raise ValueError("Remote model endpoints require HTTPS")
-        if profile.get("api_key_env") and parsed.scheme != "https":
+        if (profile.get("api_key_env") or profile.get("api_key_credential")) and parsed.scheme != "https":
             raise ValueError("Authenticated non-loopback model endpoints require HTTPS")
         try:
             address = ipaddress.ip_address(host)
@@ -253,6 +305,13 @@ def normalize_profile(value, *, legacy=False):
     elif not isinstance(env_name, str) or not ENV_RE.fullmatch(env_name):
         raise ValueError("api_key_env must be an environment variable name")
     # Validate authenticated LAN policy after environment-name normalization.
+    credential_name = profile.get("api_key_credential")
+    if credential_name in ("", None):
+        profile.pop("api_key_credential", None)
+    elif not isinstance(credential_name, str) or not CREDENTIAL_RE.fullmatch(credential_name):
+        raise ValueError("api_key_credential must be an approved systemd credential identifier")
+    if profile.get("api_key_env") and profile.get("api_key_credential"):
+        raise ValueError("Use exactly one model authentication source")
     validate_endpoint(profile)
     fmt = profile.setdefault("response_format", PROVIDERS[provider]["response_format"])
     if fmt not in ("llama_json_schema", "openai_json_schema", "json_object", "prompt"):
@@ -467,6 +526,10 @@ def request_json(base, route, payload=None, timeout=30, api_key_env=None, *, pro
         if any(character in secret for character in ("\r", "\n")):
             raise ProviderError("invalid_auth", "Configured model authentication contains invalid characters")
         headers["Authorization"] = "Bearer " + secret
+    elif policy.get("api_key_credential"):
+        if policy.get("api_key_env"):
+            raise ValueError("Conflicting model authentication sources")
+        headers["Authorization"] = "Bearer " + _credential_value(policy, required=True)
     body = None if payload is None else _json_bytes(payload)
     if body is not None and len(body) > MAX_REQUEST_BYTES:
         raise ProviderError("request_too_large", "Model request exceeds its size limit")
@@ -786,7 +849,8 @@ def public_inventory(config=None):
     rows = []
     for name, profile in normalized.items():
         row = {"id": name, **redact_secrets(profile, profile),
-               "auth_configured": bool(profile.get("api_key_env") and os.environ.get(profile["api_key_env"])),
+               "auth_configured": bool((profile.get("api_key_env") and os.environ.get(profile["api_key_env"]))
+                                         or _credential_available(profile)),
                "roles": [role for role, selected in current.get("llm_roles", {}).items() if selected == name]}
         rows.append(row)
     return {**public_video_inventory(current), "revision": config_revision(current), "profiles": rows,

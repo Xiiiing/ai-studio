@@ -84,7 +84,7 @@ def llm_identity(config, role):
     """Only non-secret model and request-policy fields may enter cache keys."""
     lm = resolve_llm(config, role)
     identity = {key: lm.get(key) for key in (
-        "base_url", "model", "endpoint", "provider", "revision", "api_key_env",
+        "base_url", "model", "endpoint", "provider", "revision", "api_key_env", "api_key_credential",
         "network_mode", "enabled", "allowed_hosts", "context_validation", "model_aliases",
         "image_token_budget", "max_tokens_field", "send_sampling_parameters",
         "max_schema_attempts", "thinking", "model_discovery")}
