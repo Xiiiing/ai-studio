@@ -187,12 +187,12 @@ https://:{port} {{
                     tls_client_auth {AREA / 'client-certificate.pem'} {AREA / 'client-private-key.pem'}
                     tls_trust_pool file {{
                         pem_file {AREA / 'wkp-server-certificate.pem'}
-                  }}
-                tls_server_name {WKP_HOST}
-                network_proxy none
-                dial_timeout 10s
+                    }}
+                    tls_server_name {WKP_HOST}
+                    network_proxy none
+                    dial_timeout 10s
+                }}
             }}
-          }}
         }}
     }}
 }}
