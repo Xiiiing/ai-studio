@@ -1,0 +1,531 @@
+diff --git a/docs/TEAM_COCKPIT.md b/docs/TEAM_COCKPIT.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..fd227759150121af119a9ef727c269feb0596ff1
+--- /dev/null
++++ b/docs/TEAM_COCKPIT.md
+@@ -0,0 +1,19 @@
++# 中文团队指挥台
++
++保留原生 JavaScript 和既有团队成员回执，在项目“团队”页增加职责工单、总制片记录、交付材料及平台待办。现有 /legacy、三个人工决策入口、镜头工作台、模型配置和媒体播放不替换。
++
++## 使用
++
++模型与连接页面增加可选的“总制片代理”角色。未绑定时显示“不启用（保留人工关卡）”；只有显式保存启用的绑定后，创建项目才能选择“委托总制片”。默认仍是人工把关。旧后端无该角色或相应 API 字段时安全降级，不通过前端伪造支持。
++
++委托允许总制片在合格候选内选择故事和视觉，终片仍由出品人审阅。文本模型请求可能按供应商计费；视频付费授权和最终发布不自动进行。本页只是界面，执行权限由后端受控 gate 校验。
++
++任务卡显示负责人、审核职责、上下游、输入/交付、实际尝试与当前版本状态。“执行已返回”不是“独立审核通过”；旧版本或缺少执行记录显示待执行。总制片请求记录不冒充实时心跳，requested 状态显示完成未确认。建议只基于文字和已有记录，不能声称看过成片。
++
++交付材料需匹配当前项目和版本，只允许本项目 release 目录的下载链接。读取失败或过期记录仍可查看，但旧材料链接停用。平台待办始终要求人工核验，不因后端传入 platform_ready=true 就显示红果审核通过。界面不会触发生成、验收、上传或自动批准。
++
++## 验证
++
++Node 测试覆盖角色绑定/撤销、创建参数、旧后端兼容、历史记录、错误恢复、XSS、跨项目和路径穿越链接。Chromium 测试使用明确标注的模拟团队记录、只访问 localhost，并通过真实页面保存可选绑定和创建委托项目；验证人工终审保留、桌面/手机布局、读取失败时材料链接停用。浏览器 CPU 测试图样不是 AI 短剧质量证据。
++
++发布前实际命令与数量记录在 PR；不把模拟后端测试称为真实模型或生产环境验收。前端可先独立部署而安全降级，但本轮不部署；完整功能应在任务、总制片、交付检查三个后端 PR 合并并完成组合回归后启用。
+diff --git a/tests/browser/server.mjs b/tests/browser/server.mjs
+index 3def6408c78dd4234df9de91e360a08fe1f89cc5..56d92e6a56ca369a14ad1731f77ac9a24112a182 100644
+--- a/tests/browser/server.mjs
++++ b/tests/browser/server.mjs
+@@ -3,6 +3,7 @@ import http from 'node:http';
+ import { readFile, realpath, stat } from 'node:fs/promises';
+ import path from 'node:path';
+ import { fileURLToPath } from 'node:url';
++import { teamFlowFixture } from './team-fixture.mjs';
+ 
+ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+ const port = Number(process.env.TEST_PORT || 18787);
+@@ -23,7 +24,7 @@ let project, board, inventory, fail, calls;
+ function reset() {
+   project = structuredClone(initial); board = { project_id: id, revision: 7, production_revision: 1, editable: true, shots: [structuredClone(shot)], errors: [] };
+   inventory = { revision: 'config-1', editable_profiles: structuredClone(profiles), profiles: Object.entries(profiles).map(([id, value]) => ({ id, ...value })),
+-    role_assignments: { screenwriter: 'writer', visual_critic: 'writer' }, roles: [{ role: 'screenwriter', label: '编剧', profile: 'writer' }, { role: 'visual_critic', label: '画面质检', profile: 'writer' }],
++    role_assignments: { screenwriter: 'writer', visual_critic: 'writer' }, roles: [{ role: 'screenwriter', label: '编剧', profile: 'writer' }, { role: 'visual_critic', label: '画面质检', profile: 'writer' }, { role: 'executive_producer', label: '总制片代理', profile: null, optional: true, configured: false, enabled: false }],
+     video_profiles: { local_wan: { provider: 'comfyui_wan', enabled: true, model: 'Wan2.2-TI2V-5B' } }, video_roles: { video_generator: 'local_wan' } };
+   fail = ''; calls = [];
+ }
+@@ -55,12 +56,19 @@ const server = http.createServer(async (request, response) => {
+         if (request.method === 'POST') {
+           if (value.expected_revision !== inventory.revision) return json(response, { error: '配置已更新' }, 409);
+           inventory = { ...inventory, revision: 'config-2', editable_profiles: value.profiles, role_assignments: value.roles, profiles: Object.entries(value.profiles).map(([id, v]) => ({ id, ...v })) };
++          inventory.roles = inventory.roles.map(row => row.role !== 'executive_producer' ? row : { ...row, profile: value.roles.executive_producer || null, configured: !!value.roles.executive_producer, enabled: !!value.profiles[value.roles.executive_producer]?.enabled });
+         }
+         return json(response, inventory);
+       }
++      if (url.pathname === '/api/factory/projects' && request.method === 'POST') {
++        if (!['guided', 'delegated'].includes(value.team_mode) || typeof value.brief !== 'string') return json(response, { error: 'Invalid mock creation payload' }, 400);
++        if (value.team_mode === 'delegated' && !inventory.role_assignments.executive_producer) return json(response, { error: 'Mock supervisor must be explicitly bound' }, 400);
++        project.team_mode = value.team_mode; project.brief = value.brief; project.revision += 1;
++        return json(response, { project }, 201);
++      }
+       if (url.pathname === '/api/factory/projects/' + id) return json(response, project);
+       if (url.pathname.endsWith('/shots')) return json(response, board);
+-      if (url.pathname.endsWith('/flow')) return json(response, { project_id: id, revision: project.revision, nodes: [], edges: [], evidence: { scope: 'mock' } });
++      if (url.pathname.endsWith('/flow')) return json(response, teamFlowFixture(project));
+       if (url.pathname.endsWith('/series')) return json(response, { series_key: '', assets: [], references: {}, sources: [], bible: null });
+       if (url.pathname.endsWith('/cloud-budget')) return json(response, { project_id: id, tasks: [], authorizations: [], quote: null, totals: {} });
+       if (url.pathname.endsWith('/decision') && request.method === 'POST') {
+diff --git a/tests/browser/team-fixture.mjs b/tests/browser/team-fixture.mjs
+new file mode 100644
+index 0000000000000000000000000000000000000000..fcf02b65731e72d6ca9d087a67a9c6be0676fbff
+--- /dev/null
++++ b/tests/browser/team-fixture.mjs
+@@ -0,0 +1,14 @@
++/* Deliberately simulated team records. Never used by application code. */
++export function teamFlowFixture(project) {
++  const names = [ ['research','选题研究','researcher','story_editor'], ['proposals','故事提案','creator','independent_critic'], ['screenplay','剧本与分镜','screenwriter','independent_critic'], ['visual_development','视觉预览','image_generator','producer'], ['production','制作与后期','editor','visual_critic'], ['revision','定向返修','story_editor','independent_critic'] ];
++  return { project_id: project.id, revision: project.revision, teams: [], nodes: [], edges: [], evidence: { scope: 'mock' },
++    assignment_semantics: '浏览器模拟记录，不调用真实模型。',
++    task_board: { schema: 'ai-studio.team-tasks.v1', tasks: names.map(([id,label,owner,reviewer], i) => ({ id,label,owner,reviewer,
++      inputs: ['需求与上游审核记录'], outputs: ['版本绑定的交付物'], depends_on: i ? [names[i-1][0]] : [],
++      current: i < 5, status: i < 5 ? 'succeeded' : 'pending', record: i < 5 ? { attempt: 1, started_at: '2026-10-15T06:00:00Z' } : null })) },
++    supervision: { mode: 'delegated', records: [ { kind: 'story', status: 'selected', current_gate_version: true, requested_model: 'mock-producer', proposal: { choice: 'A', rationale: '保留人物动机和明确结局；本条仅为模拟数据。', risks: ['需要核验原创素材授权'] } }, { kind: 'final', status: 'advisory', current_gate_version: true, requested_model: 'mock-producer', proposal: { choice: '', rationale: '请出品人观看最终视频，重点核对人物一致性、对白与字幕。', risks: ['文字记录不等于看过成片'] } } ] },
++    delivery_readiness: { schema: 'ai-studio.delivery-readiness.v1', project_id: project.id, project_revision: project.revision,
++      checks: [ { id: 'current_release', label: '交付物属于当前版本', status: 'recorded' }, { id: 'producer_final', label: '出品人人工终审', status: 'human_required' }, { id: 'fresh_acceptance', label: '重新验收文件和音画', status: 'not_run' } ],
++      artifacts: [ { name: 'episode.mp4', label: '带字幕成片', url: '/media/production/factory-' + project.id + '/release/v1-aaaaaaaaaaaa/episode.mp4' } ],
++      platform_checklist: [ { id: 'account', label: '核对红果官方账号及提交规格', status: 'human_required' }, { id: 'rights', label: '核验音乐、字体、人物与声音授权', status: 'human_required' }, { id: 'labels', label: '核验 AI 标识和上传声明', status: 'human_required' } ] } };
++}
+diff --git a/tests/browser/team.spec.mjs b/tests/browser/team.spec.mjs
+new file mode 100644
+index 0000000000000000000000000000000000000000..dee761d9a57a9cac57f59090e80b2943f3aedad6
+--- /dev/null
++++ b/tests/browser/team.spec.mjs
+@@ -0,0 +1,65 @@
++import { test, expect } from '@playwright/test';
++
++const id = '012345abcdef';
++test.beforeEach(async ({ request, page }) => {
++  await request.post('/__test/reset');
++  await page.route('**/*', route => ['127.0.0.1', 'localhost'].includes(new URL(route.request().url()).hostname)
++    ? route.continue() : route.abort('blockedbyclient'));
++});
++async function openTeam(page) {
++  await page.goto('/');
++  await page.locator('#project-list [data-id="' + id + '"]').click();
++  await page.locator('.tabbar [data-tab="team"]').click();
++  await expect(page.locator('[aria-label="团队指挥台"]')).toBeVisible();
++}
++
++test('team cockpit shows bounded evidence, manual final review and responsive layouts', async ({ page, request }) => {
++  const errors = []; page.on('pageerror', error => errors.push(error.message));
++  await openTeam(page);
++  await expect(page.locator('[data-team-task]')).toHaveCount(6);
++  await expect(page.locator('[data-team-task="production"]')).toContainText('执行已返回');
++  await expect(page.locator('.team-cockpit')).toContainText('节点返回 ≠ 审核通过');
++  await expect(page.locator('.supervisor-panel')).toContainText('终审建议已记录');
++  await expect(page.locator('.supervisor-panel')).toContainText('不代表已观看成片');
++  await expect(page.locator('.delivery-readiness')).toContainText('平台审核未核验');
++  await page.locator('[data-flow-detail="delivery-materials"] summary').click();
++  await expect(page.locator('.handoff-files a')).toHaveCount(1);
++  await page.screenshot({ path: 'runtime/browser-report/team-cockpit-desktop.png', fullPage: true });
++  await page.setViewportSize({ width: 390, height: 844 });
++  await expect(page.locator('[data-team-task="research"]')).toBeVisible();
++  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBeTruthy();
++  await page.screenshot({ path: 'runtime/browser-report/team-cockpit-mobile.png', fullPage: true });
++  await page.setViewportSize({ width: 1440, height: 1000 });
++  await request.post('/__test/failure', { data: { route: '/api/factory/projects/' + id + '/flow' } });
++  await page.locator('[data-action="refresh"]').click();
++  await expect(page.locator('.team-cockpit')).toContainText('旧交付链接已停用');
++  await expect(page.locator('.handoff-files a')).toHaveCount(0);
++  const calls = await (await request.get('/__test/calls')).json();
++  expect(calls.filter(call => call.method === 'POST' && call.path.startsWith('/api/'))).toEqual([]);
++  expect(errors).toEqual([]);
++});
++
++test('saved optional producer binding enables explicit delegated creation, not final approval', async ({ page, request }) => {
++  await page.goto('/');
++  await page.locator('[data-action="new-project"]').first().click();
++  await expect(page.locator('#project-dialog option[value="delegated"]')).toBeDisabled();
++  await page.locator('#project-dialog [data-action="close-dialog"]').first().click();
++  await page.locator('.main-nav [data-action="models"]').click();
++  await expect(page.locator('#role-executive_producer')).toHaveValue('');
++  await page.locator('#role-executive_producer').selectOption('writer');
++  await page.locator('[data-model-action="save"]').click();
++  await expect(page.locator('[data-model-action="save"]')).toBeDisabled();
++  await page.locator('[data-action="new-project"]').first().click();
++  await expect(page.locator('#project-dialog option[value="delegated"]')).toBeEnabled();
++  await page.locator('#project-dialog [name="team_mode"]').selectOption('delegated');
++  await page.locator('#project-dialog [name="brief"]').fill('一位成年修表师与成年邻居合作揭开旧时钟的秘密，误会解除，结局温暖。');
++  await expect(page.locator('#project-dialog')).toContainText('文本请求可能按所选模型计费');
++  await page.screenshot({ path: 'runtime/browser-report/team-delegated-create.png', fullPage: true });
++  await page.locator('#project-dialog button[type="submit"]').click();
++  await expect(page.locator('#project-dialog')).not.toBeVisible();
++  await expect(page.locator('form[data-form="final"]')).toBeVisible();
++  const calls = await (await request.get('/__test/calls')).json();
++  const create = calls.find(call => call.path === '/api/factory/projects' && call.method === 'POST');
++  expect(create?.body?.team_mode).toBe('delegated');
++  expect(calls.filter(call => call.method === 'POST' && /decisions|cloud|generate|\/test$/.test(call.path))).toEqual([]);
++});
+diff --git a/tests/test_factory_team_cockpit.mjs b/tests/test_factory_team_cockpit.mjs
+new file mode 100644
+index 0000000000000000000000000000000000000000..3ba3e62d45d23c640b752f05e5d18e38cae13512
+--- /dev/null
++++ b/tests/test_factory_team_cockpit.mjs
+@@ -0,0 +1,153 @@
++import test from 'node:test';
++import assert from 'node:assert/strict';
++import { parseHTML } from 'linkedom';
++import { applyTeamMode, supervisorSupport, teamModeFields, teamCockpit } from '../ui/factory/team-cockpit.js';
++import { ingestInventory, modelsView, registryPayload } from '../ui/factory/models.js';
++import { createForm } from '../ui/factory/views.js';
++import { ingestProjectFlow, teamFlowView } from '../ui/factory/team.js';
++
++globalThis.location = { origin: 'http://127.0.0.1:8787' };
++const pid = '012345abcdef';
++const dom = html => parseHTML('<html><body>' + html + '</body></html>').document;
++function inventory(bound = false) {
++  return { revision: 'fixture-1', editable_profiles: { writer: { enabled: true, model: 'mock-manager' } },
++    role_assignments: { screenwriter: 'writer', ...(bound ? { executive_producer: 'writer' } : {}) },
++    roles: [{ role: 'screenwriter', label: '编剧', profile: 'writer' },
++      { role: 'executive_producer', label: '总制片代理', optional: true, profile: bound ? 'writer' : null, configured: bound, enabled: bound }] };
++}
++function flow() {
++  return { project_id: pid, revision: 7, teams: [], nodes: [], edges: [],
++    task_board: { schema: 'ai-studio.team-tasks.v1', tasks: [{ id: 'research', label: '选题研究', owner: 'researcher', reviewer: 'story_editor', inputs: ['brief'], outputs: ['research'], depends_on: [], current: true, status: 'succeeded', record: { attempt: 1 } }] },
++    supervision: { mode: 'delegated', records: [{ kind: 'story', status: 'selected', current_gate_version: true, requested_model: 'request-model-only', proposal: { choice: 'B', rationale: '保留明确因果', risks: ['需要人工确认版权'] } }] },
++    delivery_readiness: { schema: 'ai-studio.delivery-readiness.v1', project_id: pid, project_revision: 7,
++      checks: [{ id: 'fresh_acceptance', label: '新鲜验收', status: 'not_run' }],
++      artifacts: [{ name: 'episode.mp4', label: '带字幕成片', url: '/media/production/factory-' + pid + '/release/v2-aaaaaaaaaaaa/episode.mp4' }],
++      platform_checklist: [{ id: 'rights', label: '核验授权', status: 'human_required' }] } };
++}
++
++test('old backend keeps the existing guided default and disables delegation', () => {
++  assert.deepEqual(supervisorSupport(null), { supported: false, configured: false });
++  const document = dom(teamModeFields(null));
++  assert(document.querySelector('option[value="guided"]').hasAttribute('selected'));
++  assert(document.querySelector('option[value="delegated"]').hasAttribute('disabled'));
++  const payload = applyTeamMode({ brief: '原创故事' }, {}, null);
++  assert.equal(payload.team_mode, 'guided');
++  assert.throws(() => applyTeamMode({}, { team_mode: 'delegated' }, null), /先在模型/);
++});
++test('explicit enabled and saved matching binding is required', () => {
++  assert.equal(supervisorSupport(inventory()).configured, false);
++  const info = inventory(true);
++  assert.equal(supervisorSupport(info).configured, true);
++  assert.equal(applyTeamMode({}, { team_mode: 'delegated' }, info).team_mode, 'delegated');
++  assert.throws(() => applyTeamMode({}, { team_mode: 'automatic_publish' }, info), /无效/);
++  info.role_assignments.executive_producer = '';
++  assert.equal(supervisorSupport(info).configured, false);
++});
++test('new-project form includes the real team mode input with the permission boundary', () => {
++  const document = dom(createForm(null, inventory(true)));
++  assert(document.querySelector('form [name="team_mode"]'));
++  assert(!document.querySelector('option[value="delegated"]').hasAttribute('disabled'));
++  assert.match(document.body.textContent, /付费视频授权/);
++  assert.match(document.body.textContent, /文本请求可能/);
++});
++test('optional manager can be bound and unbound without creating an implicit fallback', () => {
++  const state = {};
++  ingestInventory(state, inventory());
++  assert.equal(state.modelsDraft.roles.executive_producer, '');
++  assert(!Object.hasOwn(registryPayload(state).roles, 'executive_producer'));
++  const document = dom(modelsView(state));
++  assert(document.querySelector('#role-executive_producer option[value=""]'));
++  assert(!document.querySelector('#role-executive_producer option[value=""]').hasAttribute('disabled'));
++  state.modelsDraft.roles.executive_producer = 'writer';
++  assert.equal(registryPayload(state).roles.executive_producer, 'writer');
++  state.modelsDraft.roles.executive_producer = '';
++  assert(!Object.hasOwn(registryPayload(state).roles, 'executive_producer'));
++  assert.equal(state.modelsDraft.roles.screenwriter, 'writer');
++});
++test('legacy inventories do not gain an unsupported editable role', () => {
++  const info = inventory(); info.roles.pop();
++  const state = {}; ingestInventory(state, info);
++  assert.deepEqual(state.modelsDraft.roles, { screenwriter: 'writer' });
++  assert.deepEqual(registryPayload(state).roles, info.role_assignments);
++});
++test('tasks distinguish returned execution from independent approval', () => {
++  const document = dom(teamCockpit(flow()));
++  assert.match(document.body.textContent, /节点返回 ≠ 审核通过/);
++  assert.match(document.querySelector('[data-team-task="research"]').textContent, /执行已返回/);
++  assert.match(document.querySelector('[data-team-task="research"]').textContent, /审核职责/);
++});
++test('stale-generation task records do not become current successes', () => {
++  const data = flow(); data.task_board.tasks[0].current = false;
++  data.task_board.tasks[0].previous_run = data.task_board.tasks[0].record;
++  const document = dom(teamCockpit(data));
++  const task = document.querySelector('[data-team-task]');
++  assert.match(task.textContent, /待执行/);
++  assert.match(task.textContent, /旧版本记录已保留/);
++  assert.doesNotMatch(task.textContent, /执行已返回/);
++});
++test('unresolved supervisor request is not represented as live execution or approval', () => {
++  const data = flow(); data.supervision.records[0].status = 'requested';
++  const document = dom(teamCockpit(data));
++  assert.match(document.body.textContent, /完成情况未确认/);
++  assert.match(document.body.textContent, /不代表已观看成片/);
++  assert.match(document.body.textContent, /请求模型/);
++  assert(!document.querySelector('[data-action="decision"]'));
++});
++test('untrusted agent output is escaped and never creates executable elements', () => {
++  const data = flow(); const evil = '<img src=x onerror=alert(1)>';
++  data.task_board.tasks[0].label = evil;
++  data.supervision.records[0].proposal.rationale = evil;
++  data.supervision.records[0].proposal.risks = [evil];
++  data.delivery_readiness.artifacts[0].label = evil;
++  const document = dom(teamCockpit(data));
++  assert.equal(document.querySelectorAll('img,script,[onerror]').length, 0);
++  assert.match(document.body.textContent, /<img src=x onerror=alert\(1\)>/);
++});
++for (const url of ['javascript:alert(1)', 'https://outside.invalid/episode.mp4', '/media/production/factory-abcdef012345/release/v2-aaaaaaaaaaaa/episode.mp4', '/media/production/factory-' + pid + '/release/v2-aaaaaaaaaaaa/../private.txt']) {
++  test('unsafe or foreign material link is not actionable: ' + url, () => {
++    const data = flow(); data.delivery_readiness.artifacts[0].url = url;
++    assert.equal(dom(teamCockpit(data)).querySelectorAll('.handoff-files a').length, 0);
++  });
++}
++test('stale project projection disables formerly valid delivery links', () => {
++  assert.equal(dom(teamCockpit(flow())).querySelectorAll('.handoff-files a').length, 1);
++  const document = dom(teamCockpit(flow(), { stale: true }));
++  assert.equal(document.querySelectorAll('.handoff-files a').length, 0);
++  assert.match(document.body.textContent, /旧交付链接已停用/);
++});
++test('mismatched readiness revision is not displayed and platform flags cannot grant approval', () => {
++  const data = flow(); data.delivery_readiness.platform_ready = true;
++  data.delivery_readiness.platform_checklist[0].status = 'passed';
++  let document = dom(teamCockpit(data));
++  assert.match(document.body.textContent, /平台审核未核验/);
++  assert.match(document.body.textContent, /需人工核验/);
++  data.delivery_readiness.project_revision = 6;
++  document = dom(teamCockpit(data));
++  assert.match(document.body.textContent, /尚无与当前版本匹配/);
++  assert.equal(document.querySelectorAll('.handoff-files a').length, 0);
++});
++test('real team-flow view mounts the cockpit and rejects cross-project or older responses', () => {
++  const state = { projectId: pid, project: { id: pid, revision: 7 } };
++  assert(ingestProjectFlow(state, flow(), pid));
++  assert.match(teamFlowView(state), /aria-label="团队指挥台"/);
++  const other = flow(); other.project_id = 'abcdef012345';
++  assert.equal(ingestProjectFlow(state, other, pid), false);
++  const older = flow(); older.revision = 6;
++  assert.equal(ingestProjectFlow(state, older, pid), false);
++  state.project.revision = 8;
++  assert.match(teamFlowView(state), /旧交付链接已停用/);
++});
++test('task contracts use Chinese field labels and prototype names cannot crash badges', () => {
++  const data = flow(); data.task_board.tasks[0].status = '__proto__';
++  const document = dom(teamCockpit(data));
++  const task = document.querySelector('[data-team-task]');
++  assert.match(task.textContent, /创作需求/);
++  assert.match(task.textContent, /状态未记录/);
++  assert.doesNotMatch(task.textContent, /brief/);
++});
++test('legacy flow falls back to the existing member receipts rather than invented tasks', () => {
++  const data = { project_id: pid, revision: 7 };
++  const document = dom(teamCockpit(data));
++  assert.match(document.body.textContent, /尚无任务工单记录/);
++  assert.equal(document.querySelectorAll('[data-team-task]').length, 0);
++});
+diff --git a/tests/test_factory_ui.mjs b/tests/test_factory_ui.mjs
+index 5454ba94cd84be7a3d701e6f1fac5f7fa70297c2..92fda82c710988d31d3ed183dc04a6f1eddf5746 100644
+--- a/tests/test_factory_ui.mjs
++++ b/tests/test_factory_ui.mjs
+@@ -2,6 +2,7 @@
+ import test from 'node:test';
+ import assert from 'node:assert/strict';
+ import { readFile } from 'node:fs/promises';
++import { fileURLToPath } from 'node:url';
+ import { api } from '../ui/factory/api.js';
+ import { bindModelActions, ingestInventory, modelEditor, modelsView, profileFromForm, registryPayload } from '../ui/factory/models.js';
+ import { workflowBoard } from '../ui/factory/workflow.js';
+@@ -177,14 +178,14 @@ test('model and workflow reads use GET without request bodies', async () => {
+   assert.ok(requests.every(r => r.options.method === 'GET' && r.options.body === undefined));
+ });
+ test('all deployed native JavaScript files parse', async () => {
+-  const files = ['api.js', 'format.js', 'panels.js', 'views.js', 'actions.js', 'app.js', 'models.js', 'workflow.js', 'connections.js', 'video-models.js', 'team.js'];
++  const files = ['api.js', 'format.js', 'panels.js', 'views.js', 'actions.js', 'app.js', 'models.js', 'workflow.js', 'connections.js', 'video-models.js', 'team.js', 'team-cockpit.js'];
+   const { SourceTextModule } = await import('node:vm');
+   if (SourceTextModule) {
+     for (const file of files) new SourceTextModule(await readFile(new URL('../ui/factory/' + file, import.meta.url), 'utf8'));
+   } else {
+     const { spawnSync } = await import('node:child_process');
+     for (const file of files) {
+-      const result = spawnSync(process.execPath, ['--check', new URL('../ui/factory/' + file, import.meta.url).pathname], { encoding: 'utf8' });
++      const result = spawnSync(process.execPath, ['--check', fileURLToPath(new URL('../ui/factory/' + file, import.meta.url))], { encoding: 'utf8' });
+       assert.equal(result.status, 0, file + ': ' + result.stderr);
+     }
+   }
+diff --git a/ui/factory/actions.js b/ui/factory/actions.js
+index 0f015080d50cbda0779923fc23bd552fdfa78391..e4839389fe0f55469f48797b9be3cd05737a90db 100644
+--- a/ui/factory/actions.js
++++ b/ui/factory/actions.js
+@@ -1,3 +1,4 @@
++import { applyTeamMode } from './team-cockpit.js';
+ import { cloudAuthorizationPayload } from './cloud-budget.js';
+ import { applyProductionProfile } from './production-profile.js';
+ import { api } from './api.js';
+@@ -27,7 +28,7 @@ export function bindActions(state, ui) {
+   }
+   function openCreate() {
+     if (state.busy) return;
+-    open('project-dialog', createForm(state.productionProfiles));
++    open('project-dialog', createForm(state.productionProfiles, state.models));
+     const form = document.getElementById('create-form');
+     if (createDraft) {
+       form.dataset.requestId = createDraft.requestId;
+@@ -91,7 +92,7 @@ export function bindActions(state, ui) {
+       if (sources.some(url => !/^https?:\/\//i.test(url) || !safeUrl(url))) { errorBox.textContent = '资料来源请填写完整的 http:// 或 https:// 链接，每行一条。'; errorBox.hidden = false; return; }
+       if (sources.length > 12) { errorBox.textContent = '每个项目最多添加 12 条素材来源。'; errorBox.hidden = false; return; }
+       const payload = { request_id: form.dataset.requestId || requestId(), title: String(values.title || '').trim(), brief: String(values.brief || '').trim(), format: values.format, duration_seconds: Number(values.duration_seconds), budget: { gpu_minutes: Number(values.gpu_minutes), wall_minutes: Number(values.wall_minutes), max_attempts: Number(values.max_attempts) }, sources: sources.map(url => ({ url, title: new URL(url).hostname, rights: values.rights })) };
+-      try { applyProductionProfile(payload, values, state.productionProfiles); }
++      try { applyTeamMode(payload, values, state.models); applyProductionProfile(payload, values, state.productionProfiles); }
+       catch (error) { errorBox.textContent = error.message; errorBox.hidden = false; return; }
+       if (String(values.series_key || '').trim()) payload.series_key = String(values.series_key).trim();
+       createDraft = { requestId: payload.request_id, values };
+diff --git a/ui/factory/index.html b/ui/factory/index.html
+index b1b685bf8fed1ee7bab56d3786b4365645d6f90d..84807f4737d2447e28d87c7d34d5cd858d70a861 100644
+--- a/ui/factory/index.html
++++ b/ui/factory/index.html
+@@ -10,6 +10,7 @@
+   <link rel="stylesheet" href="/factory/static/cloud-budget.css">
+   <link rel="stylesheet" href="/factory/static/series.css">
+   <link rel="stylesheet" href="/factory/static/shot-workbench.css">
++  <link rel="stylesheet" href="/factory/static/team-cockpit.css">
+ </head>
+ <body>
+   <a class="skip-link" href="#workspace">跳至工作区</a>
+diff --git a/ui/factory/models.js b/ui/factory/models.js
+index eae40a3a5ceca0fbc97b4c5484da84fc39959149..17fa1d4330ef8e9ca55a39ef49efc59df5d4f302 100644
+--- a/ui/factory/models.js
++++ b/ui/factory/models.js
+@@ -15,6 +15,7 @@ export function ingestInventory(state, inventory, reset = false) {
+   state.models = inventory;
+   if (!state.modelsDirty || reset) {
+     state.modelsDraft = { profiles: clone(inventory.editable_profiles || {}), roles: clone(inventory.role_assignments || {}) };
++    if (list(inventory.roles).some(row => row?.role === 'executive_producer') && !Object.hasOwn(state.modelsDraft.roles, 'executive_producer')) state.modelsDraft.roles.executive_producer = '';
+     if (inventory.video_profiles && typeof inventory.video_profiles === 'object' && !Array.isArray(inventory.video_profiles)) {
+       state.modelsDraft.video_profiles = clone(inventory.video_profiles);
+       state.modelsDraft.video_roles = clone(inventory.video_roles || {});
+@@ -28,6 +29,7 @@ export function ingestInventory(state, inventory, reset = false) {
+ export function registryPayload(state) {
+   if (!state.models?.revision || !state.modelsDraft) throw new Error('请先读取当前模型配置。');
+   const payload = { profiles: clone(state.modelsDraft.profiles), roles: clone(state.modelsDraft.roles), expected_revision: state.models.revision };
++  if (payload.roles.executive_producer === '') delete payload.roles.executive_producer;
+   if (state.modelsDraft.video_profiles) {
+     payload.video_profiles = clone(state.modelsDraft.video_profiles);
+     payload.video_roles = clone(state.modelsDraft.video_roles || {});
+@@ -55,7 +57,7 @@ export function modelsView(state) {
+   const assignments = Object.entries(roles).map(([role, selected]) => {
+     const meta = roleRows.find(item => (item.role || item.id) === role) || {};
+     const selectedExists = profiles.some(([id]) => id === selected);
+-    return '<div class="role-assignment"><label for="role-' + h(role) + '"><strong>' + h(meta.label || roleLabel(role)) + '</strong><code>' + h(role) + '</code></label><select id="role-' + h(role) + '" data-role-assignment="' + h(role) + '" ' + (state.modelsSaving ? 'disabled' : '') + '>' + (!selectedExists ? '<option value="" selected disabled>请选择有效的模型连接</option>' : '') + profiles.map(([id, profile]) => '<option value="' + h(id) + '" ' + (selected === id ? 'selected' : '') + (profile.enabled === false || (meta.requires_vision && !profile.vision) ? ' disabled' : '') + '>' + h(id + ' · ' + compactModel(profile.model) + (profile.enabled === false ? '（已停用）' : meta.requires_vision && !profile.vision ? '（不支持图像输入）' : '')) + '</option>').join('') + '</select></div>';
++    return '<div class="role-assignment"><label for="role-' + h(role) + '"><strong>' + h(meta.label || roleLabel(role)) + '</strong><code>' + h(role) + '</code></label><select id="role-' + h(role) + '" data-role-assignment="' + h(role) + '" ' + (state.modelsSaving ? 'disabled' : '') + '>' + (role === 'executive_producer' ? '<option value="" ' + (!selectedExists ? 'selected' : '') + '>不启用（保留人工关卡）</option>' : !selectedExists ? '<option value="" selected disabled>请选择有效的模型连接</option>' : '') + profiles.map(([id, profile]) => '<option value="' + h(id) + '" ' + (selected === id ? 'selected' : '') + (profile.enabled === false || (meta.requires_vision && !profile.vision) ? ' disabled' : '') + '>' + h(id + ' · ' + compactModel(profile.model) + (profile.enabled === false ? '（已停用）' : meta.requires_vision && !profile.vision ? '（不支持图像输入）' : '')) + '</option>').join('') + '</select></div>';
+   }).join('');
+   return heading + (state.modelsError ? notice(state.modelsError, true) : '') + (state.modelSaveError ? notice(state.modelSaveError, true) : '') + (state.modelsRemoteChanged ? notice('其他终端已更新配置。当前草稿仍保留；请先记下修改，再重新载入，避免覆盖他人的配置。', true) : '') +
+     '<div class="connection-explainer"><div><span class="explain-index">01</span><strong>运行模型服务</strong><p>用 llama.cpp、Ollama、vLLM 或 LM Studio 运行本地 DeepSeek、千问等模型，也可登记云端 API。</p></div><div><span class="explain-index">02</span><strong>登记接口与模型</strong><p>设置地址、模型名和能力；密钥只从服务器环境变量读取。</p></div><div><span class="explain-index">03</span><strong>分配工作流角色</strong><p>编剧、审核、导演分别选择模型，视频另行配置。总控自动分工，项目页展示实际工作数据流。</p></div></div>' +
+diff --git a/ui/factory/team-cockpit.css b/ui/factory/team-cockpit.css
+new file mode 100644
+index 0000000000000000000000000000000000000000..8782e4dbe7de66b39fea3c032f64fa90190c4549
+--- /dev/null
++++ b/ui/factory/team-cockpit.css
+@@ -0,0 +1 @@
++.team-cockpit{display:grid;gap:20px;margin:20px 0 28px}.cockpit-block{background:var(--surface,#fff);border:1px solid var(--line,#deddd8);border-radius:14px;padding:22px;min-width:0}.cockpit-block h3,.cockpit-block h4{margin:0}.cockpit-block .panel-title{gap:14px;flex-wrap:wrap;margin-bottom:16px}.team-task-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.team-task{border:1px solid var(--line,#deddd8);border-radius:10px;padding:16px;min-width:0}.team-task>div,.supervisor-record>div{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}.team-task h4{font-size:14px}.team-task p,.supervisor-record p{font-size:13px;line-height:1.7;overflow-wrap:anywhere}.team-task dl{display:grid;grid-template-columns:48px minmax(0,1fr);gap:7px;margin:14px 0;font-size:12px;line-height:1.6}.team-task dt{color:var(--muted,#74746f)}.team-task dd{margin:0;overflow-wrap:anywhere}.team-task small,.supervisor-record small,.handoff-files small{font-size:11px;color:var(--muted,#74746f);overflow-wrap:anywhere}.cockpit-review-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start}.supervisor-record{padding:14px 0;border-bottom:1px solid var(--line,#deddd8);margin-bottom:12px}.supervisor-record>div span{font-size:11px;text-align:right}.supervisor-risk{border-left:2px solid currentColor;padding-left:10px}.handoff-checks{list-style:none;padding:0;margin:12px 0}.handoff-checks li{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:10px 0;border-bottom:1px solid var(--line,#deddd8);font-size:13px}.handoff-checks li>span:first-child{flex:1;min-width:140px}.handoff-checks small{flex-basis:100%;overflow-wrap:anywhere}.delivery-readiness details{margin-top:18px}.delivery-readiness summary{cursor:pointer;font-size:13px}.handoff-files{display:grid;gap:10px;padding:14px 0}.handoff-files>div{display:flex;justify-content:space-between;gap:12px;font-size:13px;flex-wrap:wrap}.team-mode-field{border-top:1px solid var(--line,#deddd8);padding-top:18px}@media(max-width:1100px){.team-task-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.cockpit-review-grid{grid-template-columns:1fr}}@media(max-width:680px){.team-task-grid{grid-template-columns:1fr}.cockpit-block{padding:16px}.team-task>div{flex-wrap:wrap}}
+diff --git a/ui/factory/team-cockpit.js b/ui/factory/team-cockpit.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..6717daac686866f90ec61d10f590d52c847f565a
+--- /dev/null
++++ b/ui/factory/team-cockpit.js
+@@ -0,0 +1,67 @@
++import { h, list, safeUrl, dateText } from './format.js';
++
++const NAMES = { researcher: '选题研究', creator: '故事策划', story_editor: '故事统筹', screenwriter: '编剧', storyboard_director: '分镜导演', visual_designer: '美术', independent_critic: '独立审稿', image_generator: '图像制作', video_generator: '视频制作', visual_critic: '画面质检', editor: '后期剪辑', producer: '出品人', executive_producer: '总制片代理' };
++const STATES = { pending: ['待执行', 'neutral'], running: ['执行中', 'attention'], succeeded: ['执行已返回', 'success'], blocked: ['需处理', 'danger'], failed: ['执行失败', 'danger'], waiting: ['等待外部任务', 'attention'], paused: ['已暂停', 'neutral'], interrupted: ['中断未完成', 'attention'], superseded: ['已失效', 'neutral'], recorded: ['已记录', 'neutral'], not_run: ['未执行', 'neutral'], human_required: ['需人工核验', 'attention'], passed: ['已通过本项检查', 'success'] };
++const FIELDS = { brief: '创作需求', submitted_sources: '研究资料', research: '选题研究', sources: '来源记录', selected_story: '已选故事', producer_feedback: '出品人意见', series_bible: '系列设定', proposals: '候选故事', creation_review: '独立提案审核', script: '剧本', script_review: '独立剧本审核', styles: '视觉方案', style_previews: '视觉预览', selected_style: '已选画风', cloud_authorization: '云端费用授权', shots: '镜头素材', audio: '声音素材', delivery: '成片文件', technical_checks: '技术检查', revision_request: '返修要求', approved_assets: '已通过素材', revised_script: '修订剧本', edit_plan: '重剪方案' };
++const label = role => Object.hasOwn(NAMES, role) ? NAMES[role] : role || '尚未分配';
++const fieldLabels = values => list(values).map(value => Object.hasOwn(FIELDS, value) ? FIELDS[value] : value);
++function badge(status) { const [text, tone] = Object.hasOwn(STATES, status) ? STATES[status] : ['状态未记录', 'neutral']; return '<span class="badge ' + tone + '">' + text + '</span>'; }
++function textList(values) { return list(values).slice(0, 12).map(value => h(String(value))).join(' · ') || '尚未记录'; }
++
++export function supervisorSupport(inventory) {
++  const role = list(inventory?.roles).find(row => row?.role === 'executive_producer');
++  const supported = !!role;
++  const configured = !!(role && role.configured === true && role.enabled !== false && typeof role.profile === 'string' && role.profile && inventory?.role_assignments?.executive_producer === role.profile);
++  return { supported, configured };
++}
++export function applyTeamMode(payload, values, inventory) {
++  const mode = values.team_mode || 'guided';
++  if (!['guided', 'delegated'].includes(mode)) throw new Error('团队模式无效，请重新选择。');
++  if (mode === 'delegated' && !supervisorSupport(inventory).configured) throw new Error('请先在模型与连接中保存启用的总制片代理绑定，再选择委托模式。');
++  payload.team_mode = mode;
++  return payload;
++}
++export function teamModeFields(inventory) {
++  const support = supervisorSupport(inventory);
++  return '<section class="field team-mode-field"><label for="project-team-mode">团队协作方式</label><select id="project-team-mode" name="team_mode"><option value="guided" selected>人工把关：我选择故事、视觉并审核终片</option><option value="delegated" ' + (!support.configured ? 'disabled' : '') + '>委托总制片：自动选择合格创意，终片由我审核</option></select><small>' + (!support.supported ? '当前后端尚未启用总制片功能，保留人工关卡。' : !support.configured ? '先在“模型与连接”为总制片代理显式绑定已启用的连接。' : '委托仅包含故事和视觉选择；付费视频授权、预算调整及终片发布仍由你确认。总制片文本请求可能按所选模型计费。') + '</small></section>';
++}
++function tasks(flow) {
++  const board = flow.task_board;
++  if (board?.schema !== 'ai-studio.team-tasks.v1') return '<section class="cockpit-block"><h3>团队任务</h3><p class="muted">当前后端尚无任务工单记录，下方仍可查看已有成员回执。</p></section>';
++  const rows = list(board.tasks).filter(row => row && typeof row === 'object').slice(0, 12);
++  return '<section class="cockpit-block"><div class="panel-title"><h3>团队任务</h3><span class="muted tiny">节点返回 ≠ 审核通过</span></div><div class="team-task-grid">' + rows.map(row => {
++    const record = row.current === true && row.record && typeof row.record === 'object' ? row.record : null;
++    const status = record ? row.status : 'pending';
++    const dependencies = list(row.depends_on).map(id => rows.find(peer => peer.id === id)?.label || id);
++    return '<article class="team-task" data-team-task="' + h(row.id) + '"><div><h4>' + h(row.label || row.id) + '</h4>' + badge(status) + '</div><p>负责：<strong>' + h(label(row.owner)) + '</strong> · 审核职责：' + h(label(row.reviewer)) + '</p><dl><dt>接收自</dt><dd>' + (dependencies.length ? textList(dependencies) : '出品人的需求') + '</dd><dt>输入</dt><dd>' + textList(fieldLabels(row.inputs)) + '</dd><dt>交付</dt><dd>' + textList(fieldLabels(row.outputs)) + '</dd></dl>' + (record ? '<small>第 ' + h(Number.isSafeInteger(record.attempt) ? record.attempt : '—') + ' 次执行' + (record.started_at ? ' · ' + h(dateText(record.started_at, true)) : '') + '</small>' : '<small>' + (row.previous_run ? '旧版本记录已保留，当前版本尚未执行。' : '尚无当前任务执行记录。') + '</small>') + '</article>';
++  }).join('') + '</div></section>';
++}
++function supervisor(flow) {
++  const info = flow.supervision;
++  const delegated = info?.mode === 'delegated';
++  const rows = list(info?.records).filter(row => row && typeof row === 'object').slice(0, 3);
++  return '<section class="cockpit-block supervisor-panel"><div class="panel-title"><h3>总制片与独立审核</h3><span class="badge neutral">' + (delegated ? '已委托创意选择' : '人工把关模式') + '</span></div><p class="muted tiny">独立审稿不能被总制片覆盖。这里的建议依据文字和已有记录，不代表已观看成片。</p>' + (rows.length ? rows.map(row => {
++    const state = { selected: '已作授权选择', advisory: '终审建议已记录', manual: '已交回人工', requested: '请求已记录，完成情况未确认', superseded: '决定已失效' }[row.status] || '状态未记录';
++    const proposal = row.proposal && typeof row.proposal === 'object' ? row.proposal : {};
++    return '<article class="supervisor-record"><div><strong>' + h({ story: '故事方向', style: '视觉方向', final: '终片建议' }[row.kind] || row.kind) + '</strong><span>' + h(state) + (row.current_gate_version !== true ? ' · 历史版本' : '') + '</span></div>' + (proposal.choice ? '<p>选择：' + h(proposal.choice) + '</p>' : '') + (proposal.rationale ? '<p>' + h(proposal.rationale) + '</p>' : '<p class="muted">尚无可用的总制片结论，继续保留人工处理入口。</p>') + (list(proposal.risks).length ? '<p class="supervisor-risk">待查：' + textList(proposal.risks) + '</p>' : '') + '<small>请求模型：' + h(row.requested_model || '未记录') + (row.reason_code ? ' · ' + h(row.reason_code) : '') + '</small></article>';
++  }).join('') : '<p class="muted">尚无总制片决策记录；专业成员继续按原流程执行。</p>') + '<button class="button small" data-action="tab" data-tab="overview">查看需要我处理的决策</button></section>';
++}
++function delivery(flow, stale) {
++  const info = flow.delivery_readiness;
++  const matching = info?.schema === 'ai-studio.delivery-readiness.v1' && info.project_id === flow.project_id && info.project_revision === flow.revision;
++  if (!matching) return '<section class="cockpit-block"><h3>交付与发布检查</h3><p class="muted">尚无与当前版本匹配的交付检查，请在成片页查看已有素材。</p></section>';
++  const rows = list(info.checks).filter(row => row && typeof row === 'object').slice(0, 12);
++  const files = list(info.artifacts).filter(row => row && typeof row === 'object').slice(0, 32);
++  const prefix = /^[a-f0-9]{12}$/.test(flow.project_id) ? '/media/production/factory-' + flow.project_id + '/release/' : null;
++  return '<section class="cockpit-block delivery-readiness"><div class="panel-title"><h3>交付与发布检查</h3><span class="badge attention">平台审核未核验</span></div><ul class="handoff-checks">' + rows.map(row => '<li><span>' + h(row.label || row.id) + '</span>' + badge(row.status) + (list(row.missing).length ? '<small>缺少：' + textList(row.missing) + '</small>' : '') + '</li>').join('') + '</ul><p class="muted tiny">在线记录不读取媒体；材料齐全后仍须重新验收文件和音画。工程验收不等于红果审核通过。</p>' + (files.length ? '<details data-flow-detail="delivery-materials"><summary>交付材料 · ' + files.length + ' 项</summary><div class="handoff-files">' + files.map(file => {
++    const raw = typeof file.url === 'string' ? file.url : '';
++    const relative = prefix && raw.startsWith(prefix) ? raw.slice(prefix.length) : '';
++    const allowed = /^v[1-9][0-9]*-[a-f0-9]{12}(?:-retry-[0-9]+)?\/[A-Za-z0-9][A-Za-z0-9_.-]{0,100}$/.test(relative);
++    const url = !stale && allowed ? safeUrl(raw) : '';
++    return '<div>' + (url ? '<a href="' + h(url) + '" target="_blank" rel="noopener noreferrer">' + h(file.label || file.name) + ' ↗</a>' : '<span>' + h(file.label || file.name) + '</span>') + '<small>已记录回执，未重新校验</small></div>';
++  }).join('') + '</div></details>' : '') + '<details data-flow-detail="platform-checklist"><summary>出品方发布前待办</summary><ul class="handoff-checks">' + list(info.platform_checklist).filter(row => row && typeof row === 'object').slice(0, 8).map(row => '<li><span>' + h(row.label || row.id) + '</span>' + badge('human_required') + '</li>').join('') + '</ul></details></section>';
++}
++export function teamCockpit(flow, { stale = false } = {}) {
++  if (!flow || typeof flow !== 'object') return '';
++  return '<section class="team-cockpit" aria-label="团队指挥台">' + (stale ? '<p class="notice" role="status">以下是上一次读取的团队记录，当前版本正在同步；旧交付链接已停用。</p>' : '') + tasks(flow) + '<div class="cockpit-review-grid">' + supervisor(flow) + delivery(flow, stale) + '</div></section>';
++}
+diff --git a/ui/factory/team.js b/ui/factory/team.js
+index ccc76c040ab983e63b058697b51bb84cf19eb497..c7443373423685f4a97b6559dbaba4128dc016ae 100644
+--- a/ui/factory/team.js
++++ b/ui/factory/team.js
+@@ -1,3 +1,4 @@
++import { teamCockpit } from './team-cockpit.js';
+ import { h, list, words, safeUrl, dateText } from './format.js';
+ import { compactModel, roleLabel } from './workflow.js';
+ 
+@@ -88,5 +89,5 @@ export function teamFlowView(state) {
+   const running = nodes.filter(node => node.status === 'running').length;
+   const waiting = nodes.filter(node => ['waiting', 'paused'].includes(node.status)).length;
+   const failed = nodes.filter(node => node.status === 'failed').length;
+-  return '<section class="team-flow">' + header + error + bounded + '<div class="flow-statusbar"><span class="badge neutral">' + h(flow.assignment_mode === 'orchestrator' ? '总控自动分工' : flow.assignment_mode || '分工方式未记录') + '</span><span>已完成 <b>' + completed + '</b></span><span>执行中 <b>' + running + '</b></span><span>等待 / 暂停 <b>' + waiting + '</b></span><span>失败 <b>' + failed + '</b></span>' + (flow.revision != null ? '<small>项目版本 ' + h(flow.revision) + '</small>' : '') + '</div><section class="team-roster" aria-label="当前团队模型分配">' + list(flow.teams).map(teamCard).join('') + '</section><div class="flow-section-label"><h3>任务与交接</h3><span>成员卡显示当前分配；回执保留历史实际模型，交接标注上游状态。</span></div>' + (nodes.length ? '<ol class="flow-node-list">' + nodes.map((node, index) => nodeCard(node, flow, index)).join('') + '</ol>' : '<section class="empty-state"><h3>尚无任务记录</h3><p>项目推进后，输入、输出与执行回执将在这里显示。</p></section>') + '</section>';
++  return '<section class="team-flow">' + header + error + bounded + teamCockpit(flow, { stale: !!state.projectFlowError || (Number.isFinite(state.project?.revision) && flow.revision < state.project.revision) }) + '<div class="flow-statusbar"><span class="badge neutral">' + h(flow.assignment_mode === 'orchestrator' ? '总控自动分工' : flow.assignment_mode || '分工方式未记录') + '</span><span>已完成 <b>' + completed + '</b></span><span>执行中 <b>' + running + '</b></span><span>等待 / 暂停 <b>' + waiting + '</b></span><span>失败 <b>' + failed + '</b></span>' + (flow.revision != null ? '<small>项目版本 ' + h(flow.revision) + '</small>' : '') + '</div><section class="team-roster" aria-label="当前团队模型分配">' + list(flow.teams).map(teamCard).join('') + '</section><div class="flow-section-label"><h3>任务与交接</h3><span>成员卡显示当前分配；回执保留历史实际模型，交接标注上游状态。</span></div>' + (nodes.length ? '<ol class="flow-node-list">' + nodes.map((node, index) => nodeCard(node, flow, index)).join('') + '</ol>' : '<section class="empty-state"><h3>尚无任务记录</h3><p>项目推进后，输入、输出与执行回执将在这里显示。</p></section>') + '</section>';
+ }
+\ No newline at end of file
+diff --git a/ui/factory/views.js b/ui/factory/views.js
+index 946d0025c997d1b9f478edf525ade3ba6f27dd7a..051722358cd2b88c29a8059d8d33c6e6d750b348 100644
+--- a/ui/factory/views.js
++++ b/ui/factory/views.js
+@@ -1,3 +1,4 @@
++import { teamModeFields } from './team-cockpit.js';
+ import { cloudBudgetPanel } from './cloud-budget.js';
+ import { shotWorkbenchView } from './shot-workbench.js';
+ import { productionProfileFields } from './production-profile.js';
+@@ -83,8 +84,8 @@ export function projectView(state) {
+   const decision = pendingDecisions(project)[0];
+   return '<section class="page-heading"><div><div class="eyebrow">PRODUCTION PROJECT / ' + h(String(project.id).slice(-8).toUpperCase()) + '</div><h1>' + h(project.title || '未命名制作') + '</h1>' + (project.is_validation ? '<span class="badge neutral">验收项目</span>' : '') + '<div class="project-meta">' + badge(project.status) + '<span>' + h(formatName(project.format)) + '</span><span>' + h(project.duration_seconds ?? '—') + ' 秒</span><span>' + h(stageNames[project.stage] || project.stage || '项目建立') + '</span></div></div><div class="heading-actions">' + actions + '<button class="button small" data-action="dashboard">全部项目</button></div></section>' + steps(project, state.models, state.overview?.capabilities) + (project.error ? '<div class="notice error"><div><strong>制作状态提示</strong>' + h(words(project.error)) + '</div></div>' : '') + (state.tab === 'overview' ? decisionPanel(project, state.busy) : decision ? '<div class="notice"><div><strong>有一个关键决策等待你处理</strong>完成选择后，系统会继续执行下一阶段。</div><button class="button small" style="margin-left:auto;flex:none" data-action="tab" data-tab="overview">查看决策</button></div>' : '') + '<nav class="tabbar" aria-label="项目内容">' + tabs.map(([id, name]) => '<button class="tab-button ' + (state.tab === id ? 'active' : '') + '" data-action="tab" data-tab="' + id + '" aria-current="' + (state.tab === id ? 'page' : 'false') + '">' + name + (id === 'script' && list(project.shots).length ? '<span>' + list(project.shots).length + '</span>' : '') + '</button>').join('') + '</nav>' + (state.tab === 'shots' ? shotWorkbenchView(state) : state.tab === 'team' ? teamFlowView(state) : (state.tab === 'overview' ? teamFlowSummary(state) : '') + (panes[state.tab] || overviewPanel)(project));
+ }
+-export function createForm(profileCatalog) {
+-  return '<div class="dialog-head"><div><div class="eyebrow">NEW PRODUCTION</div><h2 id="create-title">发起一部新制作</h2><p>给出题材与创作要求，系统开始自主研究和提案。</p></div><button type="button" class="icon-button" data-action="close-dialog" data-dialog="project-dialog" aria-label="关闭">×</button></div><form id="create-form" data-form="create" class="dialog-body"><div class="field"><label for="project-title">项目名称 <span class="muted">/ 可选</span></label><input id="project-title" name="title" maxlength="80" placeholder="可以先留空，待故事选定后命名"></div><div class="field"><label for="project-series">系列标识 / 可选</label><input id="project-series" name="series_key" maxlength="100" placeholder="同一系列的剧集使用相同标识"><small>留空保持原有单集格式；填写后可固定并复用已批准的系列资产。</small></div><div class="field"><label for="project-brief">创作方向</label><textarea id="project-brief" name="brief" rows="5" maxlength="6000" required minlength="5" placeholder="写下题材、受众、核心情绪，以及你希望避免的内容。也可以给出完整的原创故事想法。"></textarea><small>描述越具体，候选提案越贴近你的创作意图。</small></div><div class="field"><label>制作形式</label><div class="format-options"><label class="format-option"><input type="radio" name="format" value="motion_comic" checked>动态漫剧</label><label class="format-option"><input type="radio" name="format" value="live_action">真人影视</label><label class="format-option"><input type="radio" name="format" value="animation">二维动画</label></div><small>实际制作路径由当前模型能力决定；不可用能力会明确显示。</small></div>' + productionProfileFields(profileCatalog) + '<div class="form-row three"><div class="field"><label for="duration">经典规格目标时长</label><select id="duration" name="duration_seconds"><option value="60" selected>60 秒</option><option value="75">75 秒</option><option value="90">90 秒</option></select></div><div class="field"><label for="gpu-budget">GPU 分钟上限</label><input id="gpu-budget" name="gpu_minutes" type="number" value="120" min="5" max="1440" step="1" required></div><div class="field"><label for="max-attempts">每素材版本最多尝试</label><input id="max-attempts" name="max_attempts" type="number" value="3" min="1" max="5" step="1" required></div></div><div class="field"><label for="wall-budget">累计制作时间上限 / 分钟</label><input id="wall-budget" name="wall_minutes" type="number" value="180" min="10" max="1440" step="1" required><small>与 GPU 用量独立计量；包含已保存的各次制作耗时。</small></div><details class="source-options"><summary>添加研究资料或已授权素材</summary><div class="field"><label for="sources">来源链接 <span class="muted">/ 每行一条</span></label><textarea id="sources" name="sources" rows="3" maxlength="8000" placeholder="https://…"></textarea></div><div class="field"><label for="rights">这些资料的使用范围</label><select id="rights" name="rights"><option value="analysis_only">仅研究分析，不直接改编</option><option value="owned">我的自有原创作品</option><option value="licensed">已获得相应改编授权</option><option value="public_domain">确认属于可使用的公版素材</option></select></div></details><p class="form-note">你将在故事、视觉与成片三个节点做决定。项目在所设 GPU 用量、制作时间与尝试次数内自动制作和返修；遇到异常时暂停并说明原因。</p><div id="create-error" class="form-error" role="alert" hidden></div><div class="dialog-actions"><button type="button" class="button" data-action="close-dialog" data-dialog="project-dialog">取消</button><button type="submit" class="button primary">开始自主策划 <span aria-hidden="true">↗</span></button></div></form>';
++export function createForm(profileCatalog, inventory = null) {
++  return '<div class="dialog-head"><div><div class="eyebrow">NEW PRODUCTION</div><h2 id="create-title">发起一部新制作</h2><p>给出题材与创作要求，系统开始自主研究和提案。</p></div><button type="button" class="icon-button" data-action="close-dialog" data-dialog="project-dialog" aria-label="关闭">×</button></div><form id="create-form" data-form="create" class="dialog-body"><div class="field"><label for="project-title">项目名称 <span class="muted">/ 可选</span></label><input id="project-title" name="title" maxlength="80" placeholder="可以先留空，待故事选定后命名"></div><div class="field"><label for="project-series">系列标识 / 可选</label><input id="project-series" name="series_key" maxlength="100" placeholder="同一系列的剧集使用相同标识"><small>留空保持原有单集格式；填写后可固定并复用已批准的系列资产。</small></div><div class="field"><label for="project-brief">创作方向</label><textarea id="project-brief" name="brief" rows="5" maxlength="6000" required minlength="5" placeholder="写下题材、受众、核心情绪，以及你希望避免的内容。也可以给出完整的原创故事想法。"></textarea><small>描述越具体，候选提案越贴近你的创作意图。</small></div><div class="field"><label>制作形式</label><div class="format-options"><label class="format-option"><input type="radio" name="format" value="motion_comic" checked>动态漫剧</label><label class="format-option"><input type="radio" name="format" value="live_action">真人影视</label><label class="format-option"><input type="radio" name="format" value="animation">二维动画</label></div><small>实际制作路径由当前模型能力决定；不可用能力会明确显示。</small></div>' + teamModeFields(inventory) + productionProfileFields(profileCatalog) + '<div class="form-row three"><div class="field"><label for="duration">经典规格目标时长</label><select id="duration" name="duration_seconds"><option value="60" selected>60 秒</option><option value="75">75 秒</option><option value="90">90 秒</option></select></div><div class="field"><label for="gpu-budget">GPU 分钟上限</label><input id="gpu-budget" name="gpu_minutes" type="number" value="120" min="5" max="1440" step="1" required></div><div class="field"><label for="max-attempts">每素材版本最多尝试</label><input id="max-attempts" name="max_attempts" type="number" value="3" min="1" max="5" step="1" required></div></div><div class="field"><label for="wall-budget">累计制作时间上限 / 分钟</label><input id="wall-budget" name="wall_minutes" type="number" value="180" min="10" max="1440" step="1" required><small>与 GPU 用量独立计量；包含已保存的各次制作耗时。</small></div><details class="source-options"><summary>添加研究资料或已授权素材</summary><div class="field"><label for="sources">来源链接 <span class="muted">/ 每行一条</span></label><textarea id="sources" name="sources" rows="3" maxlength="8000" placeholder="https://…"></textarea></div><div class="field"><label for="rights">这些资料的使用范围</label><select id="rights" name="rights"><option value="analysis_only">仅研究分析，不直接改编</option><option value="owned">我的自有原创作品</option><option value="licensed">已获得相应改编授权</option><option value="public_domain">确认属于可使用的公版素材</option></select></div></details><p class="form-note">人工模式保留故事、视觉和终片关卡；委托模式仅代选合格创意，终片仍由你审核。项目在所设 GPU 用量、制作时间与尝试次数内自动制作和返修；遇到异常时暂停并说明原因。</p><div id="create-error" class="form-error" role="alert" hidden></div><div class="dialog-actions"><button type="button" class="button" data-action="close-dialog" data-dialog="project-dialog">取消</button><button type="submit" class="button primary">开始自主策划 <span aria-hidden="true">↗</span></button></div></form>';
+ }
+ export function capabilityStatus(row) {
+   if (row.available === true) return '可用';
