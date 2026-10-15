@@ -33,7 +33,7 @@ class Handler(LocalMediaHandler):
                 return self.json(public_inventory())
             if path=="/api/health":
                 return self.json({"service":"drama-studio","root":str(ROOT),"status":"ready",
-                                  "version":__version__,"factory":True})
+                                  "version":__version__,"factory":True,"control_host":socket.gethostname()})
             if path in {"/api/factory/overview", "/api/factory/console"}:
                 from .operator_console import dashboard
                 query = parse_qs(urlsplit(self.path).query, keep_blank_values=True)

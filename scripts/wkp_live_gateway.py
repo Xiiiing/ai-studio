@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Private, authenticated cami gateway to Wkp's actual Web and worker state."""
+"""One authenticated cami workbench entry; its control plane also runs on cami."""
 from __future__ import annotations
 
 import argparse
@@ -103,7 +103,7 @@ def certificate_pair(certificate, key, common_name, extension):
 def metadata(host, port):
     authority = endpoint(host, port)
     return {"host": host, "port": port, "authority": authority, "url": f"https://{authority}/",
-            "upstream": f"https://{WKP_HOST}:{WKP_PORT}", "access_file": str(AREA / "ACCESS.txt"),
+            "upstream": "http://127.0.0.1:8787", "access_file": str(AREA / "ACCESS.txt"),
             "client_certificate": str(AREA / "client-certificate.pem"),
             "server_fingerprint": WKP_FINGERPRINT,
             "client_fingerprint": hashlib.sha256(ssl.PEM_cert_to_DER_cert((AREA / "client-certificate.pem").read_text())).hexdigest()}
@@ -116,8 +116,11 @@ def prepare(host, port):
     safe_path(AREA)
     AREA.mkdir(parents=True, exist_ok=True, mode=0o700)
     AREA.chmod(0o700)
-    # Fetch and pin the public server certificate before creating local identities.
-    certificate = fetch_server_certificate()
+    # Existing trust material permits the cami workbench to start even while
+    # Wkp is offline. A first setup still verifies the independent fingerprint.
+    trusted = safe_path(AREA / "wkp-server-certificate.pem")
+    certificate = (verified_server_certificate(ssl.PEM_cert_to_DER_cert(trusted.read_text()))
+                   if trusted.exists() else fetch_server_certificate())
     private_write(AREA / "wkp-server-certificate.pem", certificate)
     certificate_pair(AREA / "client-certificate.pem", AREA / "client-private-key.pem",
                      "ai-studio-cami-live", "extendedKeyUsage=clientAuth")
@@ -127,7 +130,7 @@ def prepare(host, port):
     fingerprint = run("openssl", "x509", "-in", str(AREA / f"{host}-certificate.pem"),
                       "-noout", "-fingerprint", "-sha256").stdout.strip()
     private_write(AREA / "ACCESS.txt", f"真实生产工作台：https://{host}:{port}/\n账号：{credentials['username']}\n密码：{credentials['password']}\n"
-                  f"本地入口证书：{fingerprint}\n数据、模型与 worker 均位于 Wkp；操作会修改真实项目并可能产生费用。\n")
+                  f"本地入口证书：{fingerprint}\n工作流、项目数据与 worker 位于 cami；Wkp 只提供模型推理 API。\n")
     result = metadata(host, port)
     private_write(AREA / "prepared.json", json.dumps(result, indent=2))
     return result
@@ -135,7 +138,7 @@ def prepare(host, port):
 
 def caddyfile(host, port, password_hash):
     authority = endpoint(host, port)
-    upstream = f"{WKP_HOST}:{WKP_PORT}"
+    upstream = "127.0.0.1:8787"
     origin_pattern = "^https://" + host.replace(".", "[.]") + f":{port}$"
     return f"""{{
     admin off
@@ -179,16 +182,11 @@ https://:{port} {{
             file_server
         }}
         handle {{
-            reverse_proxy https://{upstream} {{
+            reverse_proxy http://{upstream} {{
                 header_up Host {upstream}
                 header_up Origin "{origin_pattern}" "https://{upstream}"
                 header_up -Authorization
                 transport http {{
-                    tls_client_auth {AREA / 'client-certificate.pem'} {AREA / 'client-private-key.pem'}
-                    tls_trust_pool file {{
-                        pem_file {AREA / 'wkp-server-certificate.pem'}
-                    }}
-                    tls_server_name {WKP_HOST}
                     network_proxy none
                     dial_timeout 10s
                 }}
@@ -207,14 +205,14 @@ def unit_path():
 
 
 def upstream_health():
-    context = ssl.create_default_context(cafile=str(AREA / "wkp-server-certificate.pem"))
-    context.load_cert_chain(AREA / "client-certificate.pem", AREA / "client-private-key.pem")
-    # Ignore ambient HTTP(S)_PROXY settings for this private, pinned connection.
-    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), urllib.request.HTTPSHandler(context=context))
-    with opener.open(f"https://{WKP_HOST}:{WKP_PORT}/api/health", timeout=15) as response:
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    with opener.open("http://127.0.0.1:8787/api/health", timeout=15) as response:
         if response.status != 200:
-            raise RuntimeError("Wkp mutual TLS gateway is not healthy")
-        return json.load(response)
+            raise RuntimeError("cami control API is not healthy")
+        observed = json.load(response)
+        if observed.get("root") != str(ROOT):
+            raise RuntimeError("The local API belongs to another installation")
+        return observed
 
 
 def start(host, port):
@@ -244,7 +242,7 @@ def start(host, port):
     try:
         private_write(path, f"""# AI-STUDIO-WKP-LIVE:{AREA}
 [Unit]
-Description=AI Studio real Wkp production gateway
+Description=AI Studio cami workbench HTTPS entry
 After=network.target
 
 [Service]

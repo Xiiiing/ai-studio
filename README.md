@@ -114,6 +114,8 @@ MiniMax 的当前适配器使用 v1 图生视频协议，支持任务、文件 I
 
 ## 架构
 
+当前测试部署采用 **cami 控制层 + Wkp 推理服务**：前端、业务 API、项目库、Agent 编排、工作流 worker 和剪辑全部在 cami；Wkp 只执行模型推理。只迁移系统，不迁移旧数据。详见 [部署与唯一测试入口](docs/CAMI_CONTROL_PLANE.md)。
+
 ```mermaid
 flowchart TD
   UI["中文工作台 / CLI"] --> API["项目状态与任务 API"]

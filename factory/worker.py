@@ -5,6 +5,7 @@ import fcntl
 import json
 import os
 import signal
+import socket
 import threading
 import time
 import traceback
@@ -23,7 +24,8 @@ _current=None
 def heartbeat():
     while not _stop.is_set():
         write_json(DATA/"worker.json",{"pid":os.getpid(),"heartbeat":time.time(),
-                   "current_project":_current,"status":"running","queue":"sqlite_durable"})
+                   "current_project":_current,"status":"running","queue":"sqlite_durable",
+                   "execution_host":socket.gethostname()})
         _stop.wait(10)
 
 

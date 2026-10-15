@@ -2,6 +2,8 @@
 
 ## 部署边界
 
+当前两台服务器部署：cami 运行完整控制层、工作流 worker、SQLite 和剪辑；Wkp 仅提供模型/GPU 推理 API。cami 不安装 GPU 模型、不启动本机推理进程。部署步骤见 [cami 控制层部署](CAMI_CONTROL_PLANE.md)。以下本机 GPU 步骤仅适用于推理服务器或单机安装。
+
 控制层是一个 Python Web 服务和一个持久化 worker，共用 SQLite。LLM 以外置服务的方式连接；图像、视频和配音各自使用独立推理环境。界面使用 React + TypeScript + Vite，在构建机生成 `ui/factory/dist` 静态资源，由 Python 同源提供。运行服务器无需 Node 服务。
 
 HTTP 管理面仅支持 loopback 绑定；配置非 loopback host 会在数据库初始化之前被拒绝。Factory、共享媒体和模型管理路由采用共同 Host/Origin 边界；这不代替公网认证。远程访问、代理限制、符号链接媒体兼容性和任务暂停/取消契约见 [HTTP 安全审查表](HTTP_SECURITY.md)。数据库沿用 SQLite 表结构；新项目保存 `workflow_version=2`，缺少该字段的已有项目按 v1 检查点恢复。
