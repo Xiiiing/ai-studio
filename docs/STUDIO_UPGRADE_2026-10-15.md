@@ -47,7 +47,7 @@ UI 在构建机执行 `npm ci --ignore-scripts`、`npm test`、`npm run build`�
 | `npm ci --ignore-scripts` | 锁文件安装成功，依赖审计 0 漏洞 |
 | `npm test` | 7 个测试文件、53 项通过，无跳过 |
 | `npm run build` | TypeScript 检查与生产构建通过，包含 26 个运行依赖授权 |
-| `FACTORY_TEST_PYTHON="$PWD/.venv/bin/python" npm run test:browser` | Chromium 15 项全部通过，7.9 秒 |
+| `FACTORY_TEST_PYTHON="$PWD/.venv/bin/python" npm run test:browser` | Chromium 15 项全部通过，7.7 秒 |
 | `git diff --check` | 通过 |
 
 实际浏览器验证包括旧接口 410、跨域 POST 拒绝、真实 Python Range 媒体播放、独立审稿人、人工接管、意见冲突保留、单镜 CAS，以及刷新时视频节点/播放时间连续且不重新加载。主代理还人工检查了桌面总览、产物优先项目页、手机终审与团队截图；测试数据均明确标为合成样片。

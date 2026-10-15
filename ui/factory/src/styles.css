@@ -6,7 +6,7 @@
   background: #f6f8fb;
   font-synthesis: none;
   --ink: #243047;
-  --muted: #8390a3;
+  --muted: #617089;
   --accent: #456ce3;
   --line: #e9edf4;
   --panel: #fff;
@@ -17,7 +17,7 @@
 }
 body {
   margin: 0;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.65;
 }
 button,
@@ -80,7 +80,7 @@ p {
   margin-bottom: 12px;
 }
 small {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--muted);
 }
 svg {
@@ -2878,10 +2878,6 @@ dialog::backdrop {
   display: flex;
 }
 /* Secondary copy remains readable on the light canvas. */
-small,
-.muted {
-  color: #71829d;
-}
 .panel-head p,
 .page-heading p {
   color: #7888a2;
@@ -3024,19 +3020,6 @@ textarea {
   color: #586d8d;
 }
 
-body {
-  font-size: 14px;
-}
-small {
-  font-size: 12px;
-}
-:root {
-  --muted: #617089;
-}
-.muted,
-small {
-  color: #617089;
-}
 .panel-head p,
 .page-heading p {
   color: #617089;
