@@ -386,6 +386,10 @@ def cached_json_call(project, config, role, stage, system, payload, schema,
     model_identity = llm_identity(config, role)
     from .profile_creative import adapt_schema, adapt_system
     schema, system = adapt_schema(schema, project), adapt_system(system, project)
+    from .prompt_registry import prompt_receipt
+    prompt_meta = prompt_receipt(system, role, payload, schema)
+    # Keep the original content-based signature and cache path. A byte-equal v1
+    # extraction must reuse old steps without claiming those calls ran a version.
     signature = fingerprint({"schema_version": SCHEMA_VERSION,
         "context": project_context(project), "model": model_identity,
         "role": role, "stage": stage, "system": system, "payload": payload,
@@ -405,7 +409,8 @@ def cached_json_call(project, config, role, stage, system, payload, schema,
                       schema=schema, output_dir=folder / "llm",
                       max_tokens=max_tokens, temperature=temperature)
     validate(value, schema)
-    write_json(cache, {"signature": signature, "generated_at": utc_now(), "value": value})
+    write_json(cache, {"signature": signature, "generated_at": utc_now(),
+                       "value": value, "prompt": prompt_meta})
     return copy.deepcopy(value)
 
 

@@ -1,0 +1,10 @@
+{
+  "baseline_commit": "4aaece74ab54f38c125c564accc20f4134fb5bab",
+  "prompts": {
+    "creator": "b9f58a5ed14b365308b2c3fc8a27b0717991c2cba8334a3d529c20beba27649d",
+    "independent_critic": "8bbf6e8beb157f7eab72ce0f1abfdc87865aeafd6de2f4f3d85f8a504403a207",
+    "screenwriter": "a16a6997df5717b4ae061ca4a056ffd9a78fc2321767a5332e67cb1ad2976568",
+    "visual_designer": "4f1f127cf125add97668152af4bcf5f35ff7b57911f87bdf65a26d5d160aea1c",
+    "storyboard_director": "00c28c7d134e6a32470917c14fbe1fc2ee5e5a9f1aa55e50824015fdc443aaa1"
+  }
+}

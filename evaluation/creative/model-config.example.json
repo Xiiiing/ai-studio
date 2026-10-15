@@ -1,0 +1,7 @@
+{
+  "llm": {
+    "base_url": "http://127.0.0.1:8090/v1",
+    "model": "offline-placeholder-not-validated",
+    "enabled": false
+  }
+}
