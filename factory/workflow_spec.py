@@ -13,7 +13,7 @@ def export_spec(config=None, workflow_version=2):
     assignment = team_spec(config)
     from .team_tasks import contracts as task_contracts
     from .video_providers import resolve_video
-    video = resolve_video(config)
+    video = resolve_video(config, require_enabled=False)
     remote_video = video["provider"] == "minimax"
     from .team_blueprint import topology as display_topology, GROUPS
     display_nodes,display_edges=display_topology(workflow_version)
@@ -48,6 +48,7 @@ def export_spec(config=None, workflow_version=2):
              "receipt_fields": ["prompt_id", "workflow_api.json", "history.json", "sha256"]},
             {"id": "selected_video", "label": "当前视频生成分配",
              "provider": video["provider"], "profile": video["profile"], "model": video["model"],
+             "enabled": video["enabled"],
              "protocol": "MiniMax v1 HTTP" if remote_video else "ComfyUI HTTP",
              "mode": "submit / query / file" if remote_video else "submit / history / artifacts",
              "location": video.get("network_mode", "remote") if remote_video else "managed local GPU process",

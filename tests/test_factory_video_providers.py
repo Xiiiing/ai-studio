@@ -471,3 +471,27 @@ def test_text_and_video_registry_save_is_atomic_and_uses_one_revision(tmp_path):
     updated = providers.save_registry(bad, saved["role_assignments"], saved["revision"], config_path=path)
     assert json.loads(path.read_text())["video_profiles"] == content["video_profiles"]
     assert updated["editable_profiles"]["text"]["model"] == "must-not-be-written"
+
+
+def test_disabled_assigned_video_can_be_inspected_but_cannot_execute(monkeypatch):
+    from factory.workflow_spec import export_spec
+    from factory.capabilities import _observe
+    cfg = config_fixture()
+    cfg.update(video_profiles={"cloud": remote_profile(enabled=False)},
+               video_roles={"video_generator": "cloud"})
+    # Public reads and a configuration preflight must not need a runnable model.
+    monkeypatch.setattr(socket.socket, "connect", lambda *_: pytest.fail("Unexpected network call"))
+    assert providers.public_inventory(cfg)["video_profiles"]["cloud"]["enabled"] is False
+    spec = export_spec(cfg)
+    selected = next(row for row in spec["engines"] if row["id"] == "selected_video")
+    assert selected["enabled"] is False
+    assert video_providers.probe_video_profile("cloud", cfg)["status"] == "disabled"
+    monkeypatch.setattr("factory.capabilities.check_model", lambda *_a, **_kw: {"data": []})
+    monkeypatch.setattr("factory.capabilities.subprocess.run", lambda *_a, **_kw: (_ for _ in ()).throw(OSError("no GPU")))
+    observed = _observe(cfg)
+    assert observed["video"]["status"] == "disabled" and observed["video"]["available"] is False
+    assert "worker" in observed
+    with pytest.raises(ValueError, match="must be enabled"):
+        video_providers.resolve_video(cfg)
+    with pytest.raises(ValueError, match="must be enabled"):
+        video_providers.validate_video_registry(cfg["video_profiles"], cfg["video_roles"], cfg)
