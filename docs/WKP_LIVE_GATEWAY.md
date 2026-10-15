@@ -16,7 +16,7 @@ cami 的新版界面通过独立 HTTPS 网关接入 **Wkp 上的 Web、SQLite、
 浏览器 → cami :8789（HTTPS + 独立 Basic Auth）
        → Wkp :8790（HTTPS + cami 客户端证书认证）
        → Wkp 127.0.0.1:8787（factory.web）
-       → Wkp 持久化队列 / worker / Qwen3.8 / Qwen3-TTS / MiniMax
+       → Wkp 持久化队列 / worker / Qwen3.8 / Qwen3-TTS / FLUX
 ```
 
 cami 只持有为此入口新建的网关登录信息和专用 TLS 客户端私钥。Wkp 的既有 Web 密码、供应商 Token、模型密钥和服务凭据不复制到 cami。客户端证书是公钥材料，可以交给 Wkp 管理入口；客户端私钥必须留在 cami。
@@ -83,3 +83,5 @@ Wkp 已更新到已合并主线 `main@1a183f7ae1cbfcc82e0bfca0011144ec4cdf5b72`�
 通过健康接口只能证明网关和 Web 可用。真实模型全流程验收要在 Wkp 实际完成创作、独立审核、视觉、镜头生成、配音、合成和终审，并检查产物、调用记录与费用；不能用示例预览或本地 mock 测试代替。
 
 Caddy 代理 TLS 字段按 [官方 reverse_proxy 文档](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy#the-http-transport) 配置。
+
+真实联调发现并修复了局部返修恢复问题：独立审稿拒绝 S01 的新分镜时，旧代码同时清空已批准的视觉规格，使下一次反馈无法编译画风。现在只保留该局部返修原有的已批准规格，失败结论、问题和人工待办继续保留；全新创作审稿失败仍不产出画风候选。回归覆盖连续两次拒绝后提交反馈、已批准画风文件保持、未涉及镜头和素材保持以及无新增费用。
