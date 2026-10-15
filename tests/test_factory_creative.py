@@ -750,6 +750,92 @@ class CreativeContractTests(unittest.TestCase):
         creative.revise_script(project, self.config, None, feedback)
         self.assertEqual(self.model.call_count, count)
 
+    def test_failed_scoped_revision_preserves_approved_style_for_feedback_retry(self):
+        project = self.approved_project()
+        project.update(creative.create_script_and_styles(project, self.config, None))
+        selected = project["styles"][0]
+        selected.update(name="已批准水彩", prompt="Approved soft watercolor, paper grain, muted blue and warm yellow.")
+        project.update(selected_style={"id": selected["id"]}, script_generation=2,
+                       budget={"gpu_minutes": 120, "max_attempts": 3},
+                       production={"gpu_seconds": 1040.537},
+                       assets={"characters": {"female": {"path": "retained/female.png"}}})
+        for shot in project["shots"]:
+            shot.update(status="pending", image={"path": shot["id"] + "/approved.png"},
+                        attempts=[{"take": "take_001", "source_signature": "approved"}])
+        before = copy.deepcopy(project)
+        affected = ["S01"]
+        feedback = {"shot_ids": affected, "notes": "仅简化第一镜构图，保留已批准画风与其他镜头。"}
+        original = self.reply
+        reject = True
+        compiled = "Soft watercolor illustration, paper grain, muted blue and warm yellow, diffuse lighting."
+        def respond(**request):
+            if request["role"] == "prompt_style_compiler":
+                self.calls.append(copy.deepcopy(request))
+                self.assertEqual(request["payload"]["approved_style"]["prompt"], selected["prompt"])
+                return {"render_style_prompt": compiled,
+                        "retained_visual_traits": ["水彩", "纸张纹理", "蓝黄配色"],
+                        "removed_scene_elements": []}
+            value = original(**request)
+            if reject and request["role"] == "independent_critic" and "episode" in request["payload"]:
+                value["issues"] = [major_issue()]
+            return value
+        self.model.side_effect = respond
+        start = len(self.calls)
+        revised = creative.revise_script(project, self.config, None, feedback)
+        calls = self.calls[start:]
+        self.assertEqual(sum(call["role"] == "independent_critic" for call in calls), 2)
+        self.assertFalse(revised["script_review"]["passed"])
+        self.assertTrue(all(not item["review"]["passed"] for item in revised["script_review"]["rounds"]))
+        self.assertEqual(revised["needs_decision"]["kind"], "script_review")
+        self.assertEqual(revised["styles"], before["styles"])
+        self.assertIsNot(revised["styles"], project["styles"])
+        self.assertIsNot(revised["styles"][0]["palette"], project["styles"][0]["palette"])
+        folder = schemas.planning_dir(project)
+        self.assertEqual(json.loads((folder / "styles.json").read_text()), before["styles"])
+        self.assertFalse(any(call["role"] == "visual_designer" for call in calls))
+        self.assertEqual(project, before)
+        project.update(copy.deepcopy(revised))
+        self.assertEqual(project["selected_style"], before["selected_style"])
+        for key in ("budget", "production", "assets"):
+            self.assertEqual(project[key], before[key])
+        for index, shot in enumerate(project["shots"]):
+            if shot["id"] not in affected:
+                self.assertEqual(shot, before["shots"][index])
+        # Apply new feedback as the service does after the failed review. The
+        # approved specification must still be available to the style compiler.
+        reject = False
+        project["script_generation"] = 3
+        start = len(self.calls)
+        retried = creative.revise_script(project, self.config, None,
+            {"shot_ids": affected, "notes": "第一镜只保留门口人物与钥匙交还动作，解决审稿问题。"})
+        self.assertTrue(retried["script_review"]["passed"])
+        self.assertIsNone(retried["needs_decision"])
+        self.assertEqual(retried["styles"], before["styles"])
+        self.assertEqual(retried["episode"]["shots"][0]["render_style_prompt"], compiled)
+        self.assertTrue((self.root / retried["episode"]["shots"][0]["render_style_source"]["artifact"]).is_file())
+        self.assertFalse(any(call["role"] == "visual_designer" for call in self.calls[start:]))
+        for index, shot in enumerate(retried["shots"]):
+            if shot["id"] not in affected:
+                self.assertEqual(shot, before["shots"][index])
+        for key in ("budget", "production", "assets"):
+            self.assertEqual(project[key], before[key])
+
+    def test_failed_unscoped_creation_does_not_retain_previous_style_candidates(self):
+        project = self.approved_project()
+        project.update(styles=fixture(schemas.STYLES_SCHEMA)["styles"])
+        original = self.reply
+        def reject_review(**request):
+            value = original(**request)
+            if request["role"] == "independent_critic" and "episode" in request["payload"]:
+                value["issues"] = [major_issue()]
+            return value
+        self.model.side_effect = reject_review
+        result = creative.create_script_and_styles(project, self.config, None)
+        self.assertFalse(result["script_review"]["passed"])
+        self.assertEqual(result["styles"], [])
+        self.assertEqual(json.loads((schemas.planning_dir(project) / "styles.json").read_text()), [])
+        self.assertFalse(any(call["role"] == "visual_designer" for call in self.calls))
+
     def test_canonical_episode_is_idempotent_without_mutating_input(self):
         for format_name in ("motion_comic", "animation", "live_action"):
             with self.subTest(format=format_name):
