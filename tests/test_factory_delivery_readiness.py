@@ -117,3 +117,14 @@ def test_submission_rejects_ambiguous_source_and_production_output(tmp_path):
         submission.prepare(PID, database=tmp_path / "db", project_json=tmp_path / "p", root=tmp_path)
     with pytest.raises(ValueError, match="production"):
         submission.prepare(PID, project_json=tmp_path / "p", root=tmp_path, output=tmp_path / "production/reports")
+
+
+def test_http_boundary_admits_delivery_readiness_get():
+    # The HTTP admission layer runs before factory.web.Handler.do_GET. A business
+    # handler route alone is unreachable unless it is in the strict allowlist.
+    from studio.http_routes import match_route
+    path = f"/api/factory/projects/{PID}/delivery-readiness"
+    entry = match_route("GET", path, factory=True)
+    assert entry is not None and entry.name == "delivery-readiness" and entry.access == "read"
+    assert match_route("POST", path, factory=True) is None
+    assert match_route("GET", path, factory=False) is None
