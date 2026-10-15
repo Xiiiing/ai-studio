@@ -107,3 +107,16 @@ test("API speech connection and custom workflow import save without generation",
     ),
   ).toBeFalsy();
 });
+
+test("video API presets provide a model ID and environment name", async ({
+  page,
+}) => {
+  await models(page);
+  await page.locator('[data-model-action="video-add"]').click();
+  await expect(page.locator('#model-dialog input[name="model"]')).toHaveValue(
+    "MiniMax-Hailuo-2.3",
+  );
+  await expect(
+    page.locator('#model-dialog input[name="api_key_env"]'),
+  ).toHaveValue("MINIMAX_API_KEY");
+});

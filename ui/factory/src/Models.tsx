@@ -19,28 +19,6 @@ import {
   Badge,
   Loading,
 } from "./ui";
-const videoDefaults: RecordData = {
-  comfyui_wan: {
-    provider: "comfyui_wan",
-    enabled: true,
-    model: "Wan2.2-TI2V-5B",
-  },
-  minimax: {
-    provider: "minimax",
-    enabled: true,
-    model: "",
-    base_url: "https://api.minimax.io/v1",
-    network_mode: "remote",
-    api_key_env: "MINIMAX_API_KEY",
-    allowed_hosts: ["api.minimax.io"],
-    download_hosts: [],
-    duration: 6,
-    resolution: "768P",
-    poll_interval_seconds: 5,
-    request_timeout_seconds: 60,
-    max_wait_seconds: 1800,
-  },
-};
 const split = (v: any) =>
   String(v || "")
     .split(",")
@@ -599,6 +577,10 @@ export function Models({ notify }: { notify: (v: string) => void }) {
           id={editing.id}
           video={editing.video}
           providerDefaults={inventory.presets || {}}
+          videoDefaults={inventory.video_presets || {}}
+          videoProviders={Object.fromEntries(
+            rows(inventory.video_providers).map((p) => [p.id, p.label]),
+          )}
           providers={providers}
           profile={
             (editing.video ? draft.video_profiles : draft.profiles)?.[
@@ -633,8 +615,12 @@ function ProfileEditor({
   onSave,
   providerDefaults,
   providers,
+  videoDefaults,
+  videoProviders,
 }: {
   providerDefaults: RecordData;
+  videoDefaults: RecordData;
+  videoProviders: Record<string, string>;
   providers: Record<string, string>;
   id: string;
   profile: RecordData;
@@ -729,15 +715,13 @@ function ProfileEditor({
               value={provider}
               onChange={(e) => switchProvider(e.target.value)}
             >
-              {Object.entries(
-                video
-                  ? { minimax: "MiniMax 视频", comfyui_wan: "ComfyUI / Wan" }
-                  : providers,
-              ).map(([v, label]) => (
-                <option key={v} value={v}>
-                  {label}
-                </option>
-              ))}
+              {Object.entries(video ? videoProviders : providers).map(
+                ([v, label]) => (
+                  <option key={v} value={v}>
+                    {label}
+                  </option>
+                ),
+              )}
             </select>
           </Field>
         </div>
