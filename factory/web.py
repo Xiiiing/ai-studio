@@ -1,12 +1,13 @@
 """Producer console API, served at the original studio address."""
 from __future__ import annotations
 
-import json
 import re
+import socket
 from http.server import ThreadingHTTPServer
 from urllib.parse import unquote,urlsplit
 
-from studio.core import ROOT, within
+from studio.core import ROOT
+from studio.http_security import HTTPError, validate_bind
 from studio.web import Handler as LegacyHandler
 from . import __version__, store
 from .capabilities import snapshot
@@ -16,26 +17,11 @@ from .config import load_config
 class Handler(LegacyHandler):
     server_version="DramaFactory/"+__version__
 
-    def _local_request(self):
-        """Keep the configuration surface on this server's loopback origin."""
-        hosts={f"127.0.0.1:{self.server.server_port}",f"localhost:{self.server.server_port}"}
-        host_values=self.headers.get_all("Host",[])
-        origin_values=self.headers.get_all("Origin",[])
-        if len(host_values)!=1 or host_values[0].lower() not in hosts:
-            return "Host rejected"
-        if len(origin_values)>1 or (origin_values and origin_values[0] not in {"http://"+h for h in hosts}):
-            return "Origin rejected"
-        if self.headers.get("Sec-Fetch-Site")=="cross-site":
-            return "Cross-site request rejected"
-        return None
+    factory_routes = True
 
     def do_GET(self):
         path=unquote(urlsplit(self.path).path)
         try:
-            if path=="/" or path.startswith(("/api/factory/","/factory/static/")):
-                rejected=self._local_request()
-                if rejected:
-                    return self.json({"error":rejected},403)
             if path=="/api/factory/production-profiles":
                 from .production_profiles import catalog
                 return self.json(catalog())
@@ -53,6 +39,10 @@ class Handler(LegacyHandler):
                                   "queue":store.queue_summary(),"version":__version__})
             if path=="/api/factory/capabilities":
                 return self.json(snapshot())
+            match=re.fullmatch(r"/api/factory/jobs/([a-f0-9]{32})",path)
+            if match:
+                from .job_api import snapshot as job_snapshot
+                return self.json(job_snapshot(match.group(1)))
             match=re.fullmatch(r"/api/factory/projects/([a-f0-9]{12})/shots",path)
             if match:
                 from .shot_workbench import snapshot as shot_snapshot
@@ -76,10 +66,10 @@ class Handler(LegacyHandler):
                 return self._static(ROOT/"ui/factory/index.html","text/html; charset=utf-8")
             if path.startswith("/factory/static/"):
                 rel=path[len("/factory/static/"):]
-                target=within(ROOT/"ui/factory",rel)
+                target=ROOT/"ui/factory"/rel
                 if target.suffix not in {".css",".js",".svg",".png",".jpg",".woff2"}:
                     return self.json({"error":"Static asset not found"},404)
-                return self.send_file(target)
+                return self.send_file(target,root=ROOT/"ui/factory")
             if path=="/legacy":
                 previous=self.path
                 self.path="/"
@@ -88,6 +78,8 @@ class Handler(LegacyHandler):
                 finally:
                     self.path=previous
             return super().do_GET()
+        except HTTPError as exc:
+            return self.json({"error":str(exc),"code":exc.code},exc.status)
         except KeyError as exc:
             return self.json({"error":str(exc)},404)
         except (ValueError,FileNotFoundError) as exc:
@@ -105,7 +97,6 @@ class Handler(LegacyHandler):
         self.send_header("Content-Type",mime)
         self.send_header("Content-Length",str(len(body)))
         self.send_header("Cache-Control","no-store")
-        self.send_header("X-Content-Type-Options","nosniff")
         self.end_headers()
         self.wfile.write(body)
 
@@ -114,20 +105,12 @@ class Handler(LegacyHandler):
         if not route.startswith("/api/factory/"):
             return super().do_POST()
         try:
-            rejected=self._local_request()
-            if rejected:
-                return self.json({"error":rejected},403)
-            if self.headers.get("Content-Type","").split(";")[0].strip().lower()!="application/json":
-                return self.json({"error":"JSON required"},415)
-            if len(self.headers.get_all("Content-Length",[]))!=1:
-                return self.json({"error":"请求长度无效"},400)
-            size=int(self.headers.get("Content-Length","0"))
-            if not 0<size<=65536:
-                return self.json({"error":"请求应为不超过64KB的JSON"},413)
-            payload=json.loads(self.rfile.read(size),
-                               parse_constant=lambda v: (_ for _ in ()).throw(ValueError(v)))
-            if not isinstance(payload,dict):
-                raise ValueError("JSON请求应为对象")
+            payload=self.read_json_body()
+            match=re.fullmatch(r"/api/factory/jobs/([a-f0-9]{32})/(pause|cancel)",route)
+            if match:
+                from .job_api import control
+                result,status=control(*match.groups(),payload)
+                return self.json(result,status)
             if route=="/api/factory/models/test":
                 from .providers import probe_profile
                 if (set(payload) not in ({"profile_id"}, {"profile_id","kind"}) or
@@ -174,6 +157,8 @@ class Handler(LegacyHandler):
                 result=store.decide(pid,payload) if action=="decision" else store.action(pid,payload)
                 return self.json({"project":result},202)
             return self.json({"error":"Not found"},404)
+        except HTTPError as exc:
+            return self.json({"error":str(exc),"code":exc.code},exc.status)
         except KeyError as exc:
             return self.json({"error":str(exc)},404)
         except (ValueError,TypeError,RuntimeError) as exc:
@@ -187,11 +172,15 @@ class Handler(LegacyHandler):
 
 
 def main():
-    store.initialize()
     config=load_config()["web"]
-    server=ThreadingHTTPServer((config["host"],int(config["port"])),Handler)
+    host,port=validate_bind(config["host"],config["port"])
+    store.initialize()
+    class LocalServer(ThreadingHTTPServer):
+        address_family=socket.AF_INET6 if ":" in host else socket.AF_INET
+    server=LocalServer((host,port),Handler)
     server.daemon_threads=True
-    print(f"DRAMA_FACTORY_READY http://{config['host']}:{config['port']}",flush=True)
+    authority=f"[{host}]" if ":" in host else host
+    print(f"DRAMA_FACTORY_READY http://{authority}:{server.server_port}",flush=True)
     server.serve_forever()
 
 

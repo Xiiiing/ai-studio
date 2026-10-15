@@ -1,9 +1,11 @@
 from __future__ import annotations
-import json,mimetypes,re,subprocess,threading,time,uuid
+import json,mimetypes,os,re,subprocess,threading,time,uuid
 from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import unquote,urlsplit
 from .core import ROOT,episode_path,load_episode,read_json,write_json,within,sha256
+from .http_security import HTTPError,LocalHTTPBoundary
+from .http_media import open_media
 
 JOBS={};LOCK=threading.Lock()
 ALLOWED={"images","video","voice","mix","lipsync","assemble","verify"}
@@ -67,10 +69,8 @@ def launch(payload):
         threading.Thread(target=finish,daemon=True).start()
     return state
 
-class Handler(BaseHTTPRequestHandler):
+class Handler(LocalHTTPBoundary,BaseHTTPRequestHandler):
     def log_message(self,fmt,*args):print(time.strftime("%Y-%m-%d %H:%M:%S"),fmt%args,flush=True)
-    def json(self,obj,status=200):
-        payload=json.dumps(obj,ensure_ascii=False).encode();self.send_response(status);self.send_header("Content-Type","application/json; charset=utf-8");self.send_header("Content-Length",str(len(payload)));self.send_header("Cache-Control","no-store");self.end_headers();self.wfile.write(payload)
     def do_GET(self):
         try:
             route=unquote(urlsplit(self.path).path)
@@ -94,46 +94,57 @@ class Handler(BaseHTTPRequestHandler):
                 markup=(ROOT/"ui/index.html").read_text().replace("<script>",'<script type="application/json" id="boot-data">'+payload+"</script><script>",1).encode()
                 self.send_response(200);self.send_header("Content-Type","text/html; charset=utf-8");self.send_header("Content-Length",str(len(markup)));self.send_header("Cache-Control","no-store");self.end_headers();self.wfile.write(markup);return
             if route.startswith("/media/"):
-                path=within(ROOT,route[len("/media/"):])
+                path=ROOT/route[len("/media/"):]
                 if not path.is_relative_to(ROOT/"production") or path.suffix.lower() not in {".png",".jpg",".jpeg",".mp4",".wav",".srt",".ass",".json",".md",".csv",".zip"}:raise ValueError("File is outside the production media set")
                 return self.send_file(path)
             self.json({"error":"Not found"},404)
+        except HTTPError as e:self.json({"error":str(e),"code":e.code},e.status)
         except (ValueError,KeyError,FileNotFoundError) as e:self.json({"error":str(e)},400)
         except (BrokenPipeError,ConnectionResetError):pass
+        except Exception as e:
+            self.log_error("Legacy HTTP failure: %s",type(e).__name__)
+            self.json({"error":"Internal request failure"},500)
     def do_POST(self):
         try:
-            origin=self.headers.get("Origin")
-            if origin and origin not in {"http://127.0.0.1:8787","http://localhost:8787"}:return self.json({"error":"Origin rejected"},403)
-            if self.headers.get("Content-Type","").split(";")[0]!="application/json":return self.json({"error":"JSON required"},415)
-            size=int(self.headers.get("Content-Length","0"))
-            if not 0<size<=8192:raise ValueError("Invalid request length")
-            payload=json.loads(self.rfile.read(size))
+            payload=self.read_json_body()
             if urlsplit(self.path).path!="/api/start":return self.json({"error":"Not found"},404)
             self.json(launch(payload),202)
-        except (ValueError,KeyError,FileNotFoundError,RuntimeError) as e:self.json({"error":str(e)},409)
-    def send_file(self,path):
-        if not path.is_file():return self.json({"error":"File not ready"},404)
-        size=path.stat().st_size;start=0;end=size-1;partial=False
-        header=self.headers.get("Range")
-        if header:
-            match=re.fullmatch(r"bytes=(\d*)-(\d*)",header)
-            if not match:return self.json({"error":"Unsupported range"},416)
-            a,b=match.groups()
-            if a:start=int(a);end=min(end,int(b)) if b else end
-            elif b:start=max(0,size-int(b))
-            else:return self.json({"error":"Empty range"},416)
-            if start>end or start>=size:return self.json({"error":"Range outside file"},416)
-            partial=True
-        self.send_response(206 if partial else 200);self.send_header("Content-Type",mimetypes.guess_type(str(path))[0] or "application/octet-stream");self.send_header("Content-Length",str(end-start+1));self.send_header("Accept-Ranges","bytes")
-        self.send_header("X-Content-Type-Options","nosniff")
-        if partial:self.send_header("Content-Range",f"bytes {start}-{end}/{size}")
-        self.end_headers()
-        with path.open("rb") as source:
-            source.seek(start);remaining=end-start+1
-            while remaining>0:
-                block=source.read(min(256*1024,remaining))
-                if not block:break
-                self.wfile.write(block);remaining-=len(block)
+        except HTTPError as e:self.json({"error":str(e),"code":e.code},e.status)
+        except (ValueError,TypeError,KeyError,FileNotFoundError,RuntimeError) as e:self.json({"error":str(e)},409)
+        except (BrokenPipeError,ConnectionResetError):pass
+        except Exception as e:
+            self.log_error("Legacy HTTP failure: %s",type(e).__name__)
+            self.json({"error":"Internal request failure"},500)
+    def send_file(self,path,*,root=None):
+        try:
+            with open_media(ROOT if root is None else root,path) as source:
+                size=os.fstat(source.fileno()).st_size
+                start,end,partial=0,size-1,False
+                header=self.headers.get("Range")
+                if header:
+                    match=re.fullmatch(r"bytes=([0-9]{0,20})-([0-9]{0,20})",header)
+                    if not match:raise HTTPError(416,"invalid_range","Unsupported range")
+                    a,b=match.groups()
+                    if a:start=int(a);end=min(end,int(b)) if b else end
+                    elif b and int(b)>0:start=max(0,size-int(b))
+                    else:raise HTTPError(416,"invalid_range","Empty range")
+                    if start>end or start>=size:raise HTTPError(416,"invalid_range","Range outside file")
+                    partial=True
+                self.send_response(206 if partial else 200)
+                self.send_header("Content-Type",mimetypes.guess_type(str(path))[0] or "application/octet-stream")
+                self.send_header("Content-Length",str(max(0,end-start+1)))
+                self.send_header("Accept-Ranges","bytes")
+                self.send_header("Cache-Control","no-store")
+                if partial:self.send_header("Content-Range",f"bytes {start}-{end}/{size}")
+                self.end_headers()
+                source.seek(start);remaining=end-start+1
+                while remaining>0:
+                    block=source.read(min(256*1024,remaining))
+                    if not block:break
+                    self.wfile.write(block);remaining-=len(block)
+        except HTTPError as exc:
+            return self.json({"error":str(exc),"code":exc.code},exc.status)
+
 
 if __name__=="__main__":
     server=ThreadingHTTPServer(("127.0.0.1",8787),Handler)
