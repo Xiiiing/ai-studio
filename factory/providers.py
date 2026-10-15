@@ -921,6 +921,7 @@ def validate_registry(profiles, roles, base_config=None):
 
 def public_inventory(config=None):
     from .config import load_config, list_roles
+    from .media_profiles import inventory as media_inventory
     from .video_providers import public_video_inventory
     current = load_config() if config is None else copy.deepcopy(config)
     normalized = {name: normalize_profile(profile)
@@ -935,7 +936,7 @@ def public_inventory(config=None):
                                          or _credential_available(profile)),
                "roles": [role for role, selected in current.get("llm_roles", {}).items() if selected == name]}
         rows.append(row)
-    return {**public_video_inventory(current), "presets": presets(PROVIDERS), "setup_incomplete": current.get("setup_incomplete", False), "revision": config_revision(current), "profiles": rows,
+    return {**public_video_inventory(current), **media_inventory(current), "presets": presets(PROVIDERS), "setup_incomplete": current.get("setup_incomplete", False), "revision": config_revision(current), "profiles": rows,
             "editable_profiles": {name: redact_secrets(profile, profile) for name, profile in normalized.items()},
             "role_assignments": copy.deepcopy(current.get("llm_roles", {})),
             "roles": list_roles(current),
@@ -981,7 +982,7 @@ def probe_profile(profile_id, config=None, timeout=8):
 
 
 def save_registry(profiles, roles, expected_revision, *, config_path=None,
-                  video_profiles=None, video_roles=None):
+                  video_profiles=None, video_roles=None, **media_updates):
     """Compare-and-swap registry update; running jobs retain their in-memory snapshot."""
     import fcntl
     from .config import config_read_path, config_write_path
@@ -1004,6 +1005,8 @@ def save_registry(profiles, roles, expected_revision, *, config_path=None,
         else:
             from .video_providers import video_registry
             video_registry(updated, require_enabled=False)
+        from .media_profiles import validate_registry as validate_media
+        updated = validate_media(updated, media_updates)
         data = (json.dumps(updated, ensure_ascii=False, indent=2, allow_nan=False) + "\n").encode("utf-8")
         descriptor, temporary = tempfile.mkstemp(prefix="." + target.name + ".", dir=target.parent)
         try:

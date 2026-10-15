@@ -31,6 +31,13 @@ class Handler(LocalMediaHandler):
             if path=="/api/factory/workflow":
                 from .workflow_spec import export_spec
                 return self.json(export_spec())
+            if path=="/api/factory/workflow-templates":
+                from .workflow_templates import templates
+                return self.json({"templates": templates()})
+            match=re.fullmatch(r"/api/factory/workflow-templates/([a-f0-9]{64})",path)
+            if match:
+                from .workflow_templates import load_template
+                return self.json(load_template(match[1]))
             if path=="/api/factory/models":
                 from .providers import public_inventory
                 return self.json(public_inventory())
@@ -116,12 +123,20 @@ class Handler(LocalMediaHandler):
                 from .job_api import control
                 result,status=control(*match.groups(),payload)
                 return self.json(result,status)
+            if route=="/api/factory/workflow-templates":
+                from .workflow_templates import import_template
+                return self.json(import_template(payload))
             if route=="/api/factory/models/test":
                 from .providers import probe_profile
                 if (set(payload) not in ({"profile_id"}, {"profile_id","kind"}) or
                         not isinstance(payload["profile_id"],str) or
-                        payload.get("kind","text") not in ("text","video")):
+                        payload.get("kind","text") not in ("text","video","image","audio")):
                     raise ValueError("请指定一个已保存的连接编号和连接类型")
+                if payload.get("kind") in ("image", "audio"):
+                    from .media_profiles import registry, probe
+                    profiles,_=registry(load_config(),payload["kind"])
+                    if payload["profile_id"] not in profiles: raise ValueError("未知制作连接")
+                    return self.json(probe(profiles[payload["profile_id"]],payload["kind"]))
                 if payload.get("kind")=="video":
                     from .video_providers import probe_video_profile
                     return self.json(probe_video_profile(payload["profile_id"],load_config()))
@@ -129,13 +144,15 @@ class Handler(LocalMediaHandler):
             if route=="/api/factory/models":
                 from .providers import save_registry
                 required={"profiles","roles","expected_revision"}
-                if set(payload) not in (required, required | {"video_profiles","video_roles"}):
+                optional={"video_profiles","video_roles","image_profiles","image_roles","audio_profiles","audio_roles"}
+                if not required <= set(payload) or set(payload) - required - optional:
                     raise ValueError("保存需要完整连接、角色分配和当前配置版本")
-                video={}
+                video={key:payload[key] for key in optional if key in payload}
+                if ("video_profiles" in payload) != ("video_roles" in payload): raise ValueError("视频连接与分工必须一起保存")
                 if "video_profiles" in payload:
                     if not isinstance(payload["video_profiles"],dict) or not isinstance(payload["video_roles"],dict):
                         raise ValueError("视频连接和分工应为对象")
-                    video={"video_profiles":payload["video_profiles"],"video_roles":payload["video_roles"]}
+                    video.update(video_profiles=payload["video_profiles"],video_roles=payload["video_roles"])
                 return self.json(save_registry(payload["profiles"],payload["roles"],
                                                payload["expected_revision"],**video))
             if route=="/api/factory/projects":

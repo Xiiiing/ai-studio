@@ -1,3 +1,4 @@
+import { MediaSettings } from "./MediaSettings";
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, Network, Save, PlugZap } from "lucide-react";
@@ -119,6 +120,8 @@ export function normalizeProfile(
 function makeDraft(data: RecordData) {
   return {
     profiles: structuredClone(data.editable_profiles || {}),
+    ...(data.image_profiles ? {image_profiles: structuredClone(data.image_profiles), image_roles: {...data.image_roles}} : {}),
+    ...(data.audio_profiles ? {audio_profiles: structuredClone(data.audio_profiles), audio_roles: {...data.audio_roles}} : {}),
     roles: {
       ...Object.fromEntries(
         rows(data.roles).map((r) => [r.role, r.profile || ""]),
@@ -235,7 +238,7 @@ export function Models({ notify }: { notify: (v: string) => void }) {
       </>
     );
   const profileCards = (video: boolean) =>
-    Object.entries(video ? draft.video_profiles || {} : draft.profiles).map(
+    Object.entries(video ? draft.video_profiles || {} : draft.profiles).filter(([, p]: [string, any]) => !video || !["comfyui_local", "comfyui_external"].includes(p.provider)).map(
       ([id, p]: [string, any]) => {
         const result = probes[(video ? "video:" : "") + id];
         const observed = !video
@@ -495,6 +498,7 @@ export function Models({ notify }: { notify: (v: string) => void }) {
           </button>
         </div>
       </div>
+      <MediaSettings draft={draft} inventory={inventory} onChange={change} notify={notify} />
       {editing && (
         <ProfileEditor
           key={(editing.video ? "v:" : "t:") + editing.id}

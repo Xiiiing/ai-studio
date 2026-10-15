@@ -33,6 +33,8 @@ FACTORY_ROUTES = (
     Route("GET", r"/factory/static/.+", "ui", "factory_static"),
     *(Route("GET", "/api/factory/" + name, "read", name) for name in (
         "production-profiles", "workflow", "models", "overview", "capabilities", "console")),
+    Route("GET", r"/api/factory/workflow-templates(?:/[a-f0-9]{64})?", "read", "workflow_templates"),
+    Route("POST", r"/api/factory/workflow-templates", "configuration", "workflow_template_import", 1048576),
     Route("GET", PROJECT, "read", "project"),
     *(Route("GET", PROJECT + "/" + name, "read", name) for name in (
         "shots", "series", "cloud-budget", "flow", "delivery-readiness", "workspace")),
