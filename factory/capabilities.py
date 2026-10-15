@@ -66,18 +66,40 @@ def _observe(config):
         info["video"].update(available=None,status=preflight["status"],configured=preflight["status"]=="configured",
                              model=video["model"],provider=video["provider"],profile=video["profile"],
                              message="已选择云视频连接；任务提交、生成和下载由实际回执确认。动态漫仍使用程序运镜。")
-    try:
-        p=subprocess.run(["nvidia-smi","--query-gpu=index,name,memory.total,memory.free,utilization.gpu","--format=csv,noheader,nounits"],
-                         capture_output=True,text=True,timeout=45,check=True)
-        for line in p.stdout.strip().splitlines():
-            idx,name,total,free,util=[x.strip() for x in line.split(",")]
-            info["gpus"].append({"index":int(idx),"name":name,"total_mb":int(total),
-                                 "free_mb":int(free),"utilization":int(util)})
-        gpu5=next((g for g in info["gpus"] if g["index"]==5),None)
-        if gpu5 and gpu5["free_mb"]>=21500 and gpu5["utilization"]<10:
-            info["lipsync"]["available"]=True
-    except Exception as exc:
-        info["gpu_message"]="GPU快照暂时不可用："+str(exc)[:150]
+    remote = config.get("production", {}).get("gpu_service")
+    if remote:
+        info["gpu_message"] = "GPU 由远端推理服务调度；控制服务器不加载模型或检查本机显卡。"
+        for kind in ("image", "audio"):
+            info[kind].update(available=False, message="远端模型推理接口待检查")
+        if video["provider"] != "minimax":
+            info["video"].update(available=False, message="远端视频推理接口待检查")
+        try:
+            from .gpu_client import GPUClient
+            observed = GPUClient(remote).request("/health", timeout=3)
+            host = observed.get("execution_host")
+            info["inference_service"] = {"available": True, "execution_host": host,
+                                          "gpu_cards": observed.get("gpu_cards", [])}
+            for kind in ("image", "audio", "video"):
+                if kind == "video" and (video["provider"] == "minimax" or not video["enabled"]):
+                    continue
+                info[kind].update(available=observed.get("models", {}).get(kind) is True,
+                                  execution_host=host,
+                                  message="远端推理服务可达；权重安装与实际生成验收分别记录")
+        except Exception:
+            info["inference_service"] = {"available": False, "message": "远端推理服务暂时不可用"}
+    else:
+        try:
+            p=subprocess.run(["nvidia-smi","--query-gpu=index,name,memory.total,memory.free,utilization.gpu","--format=csv,noheader,nounits"],
+                             capture_output=True,text=True,timeout=45,check=True)
+            for line in p.stdout.strip().splitlines():
+                idx,name,total,free,util=[x.strip() for x in line.split(",")]
+                info["gpus"].append({"index":int(idx),"name":name,"total_mb":int(total),
+                                     "free_mb":int(free),"utilization":int(util)})
+            gpu5=next((g for g in info["gpus"] if g["index"]==5),None)
+            if gpu5 and gpu5["free_mb"]>=21500 and gpu5["utilization"]<10:
+                info["lipsync"]["available"]=True
+        except Exception as exc:
+            info["gpu_message"]="GPU快照暂时不可用："+str(exc)[:150]
     state=DATA/"worker.json"
     if state.exists():
         try:

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import contextlib
 import fcntl
+import math
 import os
 import socket
 import subprocess
@@ -118,6 +119,8 @@ class Budget:
             raise ValueError("Production budgets must be positive and bounded")
         self.base_wall = max(0.0, float(previous.get("elapsed_seconds", 0)))
         self.base_gpu = max(0.0, float(previous.get("gpu_seconds", 0)))
+        self.remote_gpu_receipts = dict(previous.get("remote_gpu_receipts") or {})
+        self.remote_mode = bool(config.get("gpu_service"))
         self.started = time.monotonic()
         self.active = {}
         self.lock = threading.RLock()
@@ -129,8 +132,22 @@ class Budget:
             return {"elapsed_seconds": round(self.base_wall + now - self.started, 3),
                     "gpu_seconds": round(gpu, 3), "gpu_minutes": round(gpu / 60, 3),
                     "max_wall_seconds": self.max_wall, "max_gpu_seconds": self.max_gpu,
-                    "accounting": "leased_device_wall_seconds_including_service_startup",
+                    "accounting": "verified_remote_gpu_seconds_excluding_network_wait" if self.remote_mode else "local_leased_seconds_plus_verified_remote_receipts" if self.remote_gpu_receipts else "leased_device_wall_seconds_including_service_startup",
+                    "remote_gpu_receipts": dict(self.remote_gpu_receipts),
                     "active_gpu_leases": sum(count for _, count in self.active.values())}
+
+    def record_remote(self, job_id, gpu_seconds):
+        """Accumulate each remote execution once; polling time has no GPU charge."""
+        if (not isinstance(job_id,str) or len(job_id)!=64 or isinstance(gpu_seconds,bool)
+                or not isinstance(gpu_seconds,(int,float)) or not math.isfinite(gpu_seconds)
+                or not 0 <= gpu_seconds <= 604800*8):
+            raise ProductionNeedsDecision("Remote GPU usage receipt is invalid", "remote_gpu_receipt_invalid")
+        with self.lock:
+            previous=float(self.remote_gpu_receipts.get(job_id,0))
+            if gpu_seconds < previous:
+                raise ProductionNeedsDecision("Remote GPU usage receipt regressed", "remote_gpu_receipt_invalid")
+            self.base_gpu += gpu_seconds-previous
+            self.remote_gpu_receipts[job_id]=float(gpu_seconds)
 
     def remaining(self, gpu_count=0):
         state = self.snapshot()
@@ -277,6 +294,13 @@ class FactoryComfyWorker(ComfyWorker):
 class Scheduler:
     def __init__(self, config, budget, event_callback=None):
         self.config, self.budget, self.event_callback = config, budget, event_callback
+        self.remote = config.get("gpu_service") is not None
+        if self.remote:
+            if not isinstance(config["gpu_service"],dict) or not config["gpu_service"].get("base_url"):
+                raise ValueError("Remote GPU service requires an explicit endpoint")
+            self.budget.remote_mode=True
+            self.cards=[]
+            return
         self.cards = [int(c) for c in config.get("gpu_cards", list(range(8)))]
         if not self.cards or len(set(self.cards)) != len(self.cards) or any(c < 0 for c in self.cards):
             raise ValueError("gpu_cards must be a nonempty unique list of physical GPU indices")
@@ -371,6 +395,8 @@ class Scheduler:
         self._check(context, control)
 
     def choose_card(self, min_free=None, control=None, _context=None):
+        if self.remote:
+            raise ProductionNeedsDecision("GPU card selection belongs to Wkp inference service", "remote_gpu_local_lease_forbidden")
         minimum = self.min_free if min_free is None else int(min_free)
         context = _context or self._context(minimum, "gpu_selection")
         while True:
@@ -430,6 +456,11 @@ class Scheduler:
 
     @contextlib.contextmanager
     def worker(self, tag, control=None, min_free=None):
+        if self.config.get("gpu_service"):
+            from .gpu_client import RemoteComfyWorker
+            with RemoteComfyWorker(self.config["gpu_service"],self.budget,tag,control,self.event_callback) as worker:
+                yield worker
+            return
         minimum = self.min_free if min_free is None else int(min_free)
         def create(card, probe, check, heartbeat):
             return FactoryComfyWorker([card], self.port + card, tag, min_free=minimum,
@@ -442,6 +473,8 @@ class Scheduler:
 
     @contextlib.contextmanager
     def audio_lease(self, control=None):
+        if self.config.get("gpu_service"):
+            raise ProductionNeedsDecision("Remote speech must use the GPU service job API", "remote_gpu_local_lease_forbidden")
         minimum = int(self.config.get("audio_min_free_mib", self.min_free))
         with self._acquire("tts", control, minimum,
                            lambda card, probe, check, heartbeat: GpuLease([card], min_free=minimum,

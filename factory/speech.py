@@ -28,6 +28,12 @@ def spoken_length(text):
 class SpeechMixin:
     def _speech_sources(self, lines, voices):
         """Match the installed driver's real per-line source digest, without loading a model."""
+        if self.config.get("gpu_service"):
+            from .gpu_client import GPUClient
+            expected=GPUClient(self.config["gpu_service"]).sources(lines,voices,self._remote_speech_options(),
+                       self.project.get("production_profile"))
+            write_json(self.folder / "audio/tts/remote_sources" / (fingerprint({"lines":lines,"voices":voices})[:24]+".json"),expected)
+            return expected
         driver_path = ROOT / "audio/tts.py"
         spec = importlib.util.spec_from_file_location("_factory_tts_source", driver_path)
         driver = importlib.util.module_from_spec(spec)
@@ -87,7 +93,8 @@ class SpeechMixin:
                     "quality": quality, "source_signature": expected["key"],
                     "source_sha256": expected["source_sha256"], "source": expected["source"],
                     "model_state": expected["model_state"],
-                    "metadata_path": str(meta_path.relative_to(ROOT))}
+                    "metadata_path": str(meta_path.relative_to(ROOT)),
+                    **{key:meta[key] for key in ("execution_host","gpu_service_job_id") if key in meta}}
         except (ValueError, KeyError, TypeError, OSError):
             return None
 
@@ -133,6 +140,8 @@ class SpeechMixin:
                                                            "oom": any(line["oom"] for line in blocked)})
 
     def _speech_batch(self, lines, voices, expected):
+        if self.config.get("gpu_service"):
+            return self._remote_speech_batch(lines,voices,expected)
         signature = fingerprint([{"id": line["id"], "key": expected[line["id"]]["key"]} for line in lines])
         folder = self.folder / "audio/tts/batches" / signature[:24]
         folder.mkdir(parents=True, exist_ok=True)
@@ -236,6 +245,108 @@ class SpeechMixin:
                                       "voice_failed", {"batch": str(folder.relative_to(ROOT)), "attempts": attempts,
                                                        "completed_lines": list(records), "oom": bool(last.get("oom"))})
 
+    def _remote_speech_options(self):
+        return {"tts_dtype":self.config.get("tts_dtype","float32"),
+                "tts_seed":self.config.get("tts_seed",20261012),
+                "tts_temperature":self.config.get("tts_temperature",.7),
+                "tts_max_new_tokens":self.config.get("tts_max_new_tokens",768)}
+
+    def _remote_speech_batch(self,lines,voices,expected):
+        from .gpu_client import GPUClient
+        signature=fingerprint([{"id":line["id"],"key":expected[line["id"]]["key"]} for line in lines])
+        folder=self.folder / "audio/tts/batches" / signature[:24]
+        folder.mkdir(parents=True,exist_ok=True)
+        for line in lines:
+            if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,95}",line["id"]):
+                raise ValueError("Invalid remote speech line identifier")
+        def collect():
+            records={}
+            for line in lines:
+                record=self._speech_receipt(folder / (line["id"]+".wav"),expected[line["id"]])
+                if record:
+                    records[line["id"]]=self._speech_index(expected[line["id"]],record)
+            return records
+        records=collect()
+        if len(records)==len(lines):
+            return records
+        client=GPUClient(self.config["gpu_service"])
+        workload={"kind":"tts","lines":lines,"voices":voices,"options":self._remote_speech_options()}
+        if self.project.get("production_profile") is not None:
+            workload["project_profile"]=self.project["production_profile"]
+        maximum=int(self.config.get("tts_max_attempts",2))
+        if not 1 <= maximum <= 2:
+            raise ValueError("tts_max_attempts must be one or two")
+        attempts_path=folder / "attempts.json"
+        attempts=read_json(attempts_path) if attempts_path.exists() else []
+        while True:
+            if attempts and attempts[-1]["state"] in {"running","paused"}:
+                attempt=attempts[-1]
+            else:
+                if len(attempts)>=maximum:
+                    raise ProductionNeedsDecision("Remote speech exhausted its bounded retry allowance","voice_failed")
+                attempt={"attempt":len(attempts)+1,"state":"running","started_at":time.time(),
+                         "line_ids":[line["id"] for line in lines],"execution_host":client.execution_host}
+                attempts.append(attempt)
+            number=attempt["attempt"]
+            attempt_path=folder / f"attempt_{number:02d}.json"
+            job_folder=folder / f"remote_attempt_{number:02d}"
+            write_json(attempts_path,attempts)
+            write_json(attempt_path,attempt)
+            reference=str(attempt_path.relative_to(ROOT))
+            if reference not in self.production.setdefault("voice_attempts",[]):
+                self.production["voice_attempts"].append(reference)
+            self.emit("voice_rendering")
+            try:
+                answer=client.run(workload,job_folder,self.budget,self.control,
+                    lambda event:self.emit("voice_rendering",remote_inference=event),self.budget.timeout(3600))
+                result=answer.get("result",{})
+                if result.get("expected")!={line["id"]:expected[line["id"]] for line in lines}:
+                    raise ProductionNeedsDecision("Speech source changed between planning and inference","remote_gpu_source_changed")
+                remote_records=result.get("records",{})
+                artifacts={item["index"]:item for item in result.get("artifacts",[])}
+                if set(remote_records)!={line["id"] for line in lines}:
+                    raise ProductionNeedsDecision("Remote speech returned mismatched line receipts","remote_gpu_receipt_invalid")
+                for line in lines:
+                    record=remote_records[line["id"]]
+                    try:
+                        wave=artifacts[record["wave_artifact_index"]]
+                        meta=artifacts[record["metadata_artifact_index"]]
+                    except (KeyError,TypeError):
+                        raise ProductionNeedsDecision("Remote speech artifact mapping is invalid","remote_gpu_receipt_invalid")
+                    local_wave=client.download(answer["id"],wave,folder/(line["id"]+".wav"))
+                    raw_meta=client.download(answer["id"],meta,job_folder/"artifacts"/(str(meta["index"])+".json"))
+                    metadata=read_json(raw_meta)
+                    metadata.update(wav=str(local_wave.resolve()),gpu_service_job_id=answer["id"],
+                                    execution_host=result["receipt"].get("execution_host",client.execution_host))
+                    write_json(local_wave.with_suffix(".json"),metadata)
+                records=collect()
+                if len(records)!=len(lines):
+                    raise ProductionNeedsDecision("Downloaded speech failed per-line source verification","remote_gpu_receipt_invalid")
+                attempt.update(state="completed",finished_at=time.time(),completed_lines=list(records),
+                               gpu_service_job_id=answer["id"],gpu_seconds_delta=result["receipt"]["gpu_seconds"])
+                write_json(attempts_path,attempts)
+                write_json(attempt_path,attempt)
+                self.emit("voice_review")
+                return records
+            except (ProductionPaused,ProductionNeedsDecision):
+                # A transport interruption or unresolved remote process is not
+                # permission to submit a replacement inference attempt.
+                attempt["state"]="paused"
+                write_json(attempts_path,attempts)
+                write_json(attempt_path,attempt)
+                self.emit("voice_review")
+                raise
+            except RuntimeError:
+                attempt.update(state="failed",finished_at=time.time())
+                write_json(attempts_path,attempts)
+                write_json(attempt_path,attempt)
+                self.emit("voice_review")
+                # Only a proven server terminal failure authorizes the next
+                # bounded attempt; unknown local errors preserve this job.
+                terminal=job_folder / "remote_result.json"
+                if not terminal.exists() or read_json(terminal).get("status")!="failed":
+                    raise
+
     def _voice(self):
         self.emit("voice")
         lines = [copy.deepcopy(line) for shot in self.shots for line in shot.get("dialogue", [])]
@@ -269,7 +380,7 @@ class SpeechMixin:
             records.update(self._speech_batch(missing, voices, expected))
         self.assets["audio"] = {"source_signature": fingerprint([expected[line["id"]]["key"] for line in lines]),
                                 "lines": [records[line["id"]] for line in lines],
-                                "model": "local Qwen3-TTS CustomVoice", "cache": "verified_per_line_source_v2"}
+                                "model": "Wkp Qwen3-TTS CustomVoice" if self.config.get("gpu_service") else "local Qwen3-TTS CustomVoice", "cache": "verified_per_line_source_v2"}
         if explicit_profile(self.project):
             self.assets["audio"]["production_profile_signature"] = profile_signature(self.project)
         self.emit("voice_complete")

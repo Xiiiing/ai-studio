@@ -20,6 +20,11 @@ class VideoProductionMixin:
         return target["kind"] == "video" and self.video_connection.get("provider") == "minimax"
 
     def _guard_remote_submissions(self, target):
+        if self.config.get("gpu_service"):
+            from .gpu_client import guard_remote_submissions
+            guard_remote_submissions(self.config, target["folder"], self.budget, self.control,
+                                     event_callback=lambda event: self.emit("remote_gpu", remote_gpu_execution=event),
+                                     current_signature=target["signature"])
         if target["kind"] != "video":
             return
         for path in sorted(target["folder"].glob("take_*/remote_task.json")):

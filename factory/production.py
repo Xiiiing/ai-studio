@@ -140,7 +140,7 @@ def _grounded_repair_plan(assessment, stage, attempt, expected=None, reference_r
 
 def capabilities(config=None):
     config = config or {}
-    return {
+    info = {
         "image": {"backend": "ComfyUI / FLUX.2 klein 4B",
                   "installed": (ROOT / "models/diffusion_models/flux-2-klein-4b.safetensors").is_file()},
         "motion_comic": {"backend": "FLUX.2 images + FFmpeg procedural_camera_motion",
@@ -160,6 +160,15 @@ def capabilities(config=None):
                       "minimum_free_mib": config.get("image_min_free_mib", 15000),
                       "existing_services_preserved": True},
     }
+    if config.get("gpu_service"):
+        from urllib.parse import urlsplit
+        host = urlsplit(config["gpu_service"]["base_url"]).hostname
+        for key in ("image", "diffusion_video", "tts"):
+            info[key].update(installed=None, execution_host=host, remote_configured=True,
+                             validation="requires_remote_service_and_generation_receipts")
+        info["scheduler"]["execution_host"] = host
+        info["lip_sync"].update(available=False, validation="not_supported_by_remote_inference_api")
+    return info
 
 
 class ProductionEngine:
@@ -338,7 +347,8 @@ class _Run(SeriesProductionMixin, VideoProductionMixin, SpeechMixin, AudioEditor
             self.production["phase"] = phase
         self.production.update(self.budget.snapshot())
         self.production.update({"format": self.mode, "max_attempts": self.max_attempts,
-                                "engine": "local_autonomous_factory_v1", "active_workers_limit": 1,
+                                "engine": "cami_orchestrator_remote_gpu_v1" if self.config.get("gpu_service") else "local_autonomous_factory_v1",
+                                "active_workers_limit": 1,
                                 "semantic_enabled": self.semantic_enabled, "semantic_max_attempts": self.semantic_max_attempts})
         payload = {"production": copy.deepcopy(self.production),
                    "shots": copy.deepcopy(self.shots), "assets": copy.deepcopy(self.assets), **patch}
@@ -501,6 +511,21 @@ class _Run(SeriesProductionMixin, VideoProductionMixin, SpeechMixin, AudioEditor
                 target["resume_attempt"] = record
                 return None
             if record.get("state") == "rendering" and (folder / "submission.json").exists():
+                submission = read_json(folder / "submission.json")
+                if submission.get("gpu_service_job_id") and not (folder / "submission_error.json").exists():
+                    from .gpu_client import resume_remote_comfy
+                    try:
+                        resume_remote_comfy(self.config, folder, self.budget, self.control,
+                                            event_callback=lambda event: self.emit("remote_gpu", remote_gpu_execution=event))
+                    except RuntimeError:
+                        if not (folder / "submission_error.json").exists():
+                            raise
+                        record.update(state="failed", error="Remote GPU execution has a terminal failure receipt")
+                        self._save_attempt(target, record)
+                        continue
+                    media = read_json(result)
+                    _receipt_path(media)
+                    return record, media
                 history = read_json(folder / "history.json") if (folder / "history.json").exists() else {}
                 if history.get("status", {}).get("status_str") == "error" or (folder / "submission_error.json").exists():
                     record.update(state="failed", error="Previous generation failed with a recorded Comfy error")
@@ -509,6 +534,12 @@ class _Run(SeriesProductionMixin, VideoProductionMixin, SpeechMixin, AudioEditor
                     raise ProductionNeedsDecision("A previous GPU submission has no proven terminal result",
                                                   "unresolved_submission",
                                                   {"receipt": str((folder / "submission.json").relative_to(ROOT))})
+            elif record.get("state") == "rendering" and self.config.get("gpu_service"):
+                # A pause before the main submission may leave an accepted
+                # repair-keyframe job. Re-enter the same take so its client can
+                # reconcile that job before submitting the main generation.
+                target["resume_attempt"] = record
+                return None
         return None
 
     def _new_attempt(self, target):
@@ -591,7 +622,7 @@ class _Run(SeriesProductionMixin, VideoProductionMixin, SpeechMixin, AudioEditor
                 with self.scheduler.worker(self.slug + "_" + phase, self.control) as worker:
                     for target in generate:
                         self.boundary(gpu=True)
-                        record = self._new_attempt(target)
+                        record = target.pop("resume_attempt", None) or self._new_attempt(target)
                         shot = target.get("shot")
                         if shot is not None:
                             shot["status"] = "rendering" if record["attempt"] == 1 else "retrying"
