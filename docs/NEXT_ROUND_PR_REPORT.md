@@ -1,55 +1,51 @@
-# 下一轮 PR 交付报告
+# 下一轮 PR 交付报告：优化9
 
-开发基线：`origin/main@4aaece74ab54f38c125c564accc20f4134fb5bab`，恢复后再次 fetch 确认。只在隔离 worktree 开发，不更新生产配置、数据库、服务或模型环境。
+基线：实际获取的 `origin/main@4aaece74ab54f38c125c564accc20f4134fb5bab`。本分支为 `feat/consistent-project-backup`，base=main，与优化7/8独立。
 
-## 优化 7：已交付的独立分支
+## 已有独立交付
 
-[Draft PR #8](https://github.com/Xiiiing/ai-studio/pull/8)，head=`feat/http-security-hardening`，base=`main`，最终核查 head SHA `41bdb8ce4f37a92936a6b971d3d454f89dcf3806`。[CI run 38496985083](https://github.com/Xiiiing/ai-studio/actions/runs/38496985083) completed/success。状态 implemented、tested、pushed、draft_pr_open、ci_passed；未合并。此 PR 不含本分支的验收业务代码。
+优化7：[Draft PR #8](https://github.com/Xiiiing/ai-studio/pull/8)，head41bdb8ce4f37a92936a6b971d3d454f89dcf3806，CI38496985083 success。优化8：[Draft PR #9](https://github.com/Xiiiing/ai-studio/pull/9)，最终head893df2410e832288313bf4306ff69f6af3c17770，CI38507037044 success。两者均未合并。本分支没有复制其业务实现。
 
-## 优化 8：通用只读验收
+## 优化9本地状态
 
-独立 [Draft PR #9](https://github.com/Xiiiing/ai-studio/pull/9)，head=`test/production-acceptance-v2`，base=`main`，不依赖 PR #8。实现提交 `c35254f998c499458af9938aa8e9e49778021c12` 已核查为 Draft/open、未合并、17 个相关文件、无其他优化提交。[CI run 38506321414](https://github.com/Xiiiing/ai-studio/actions/runs/38506321414) 对应这一实现 SHA，已 completed/success。状态 implemented、tested、pushed、draft_pr_open、ci_passed；本次后续文档提交的新 head 必须另查 CI，不能借用旧 SHA 的成功。
+implemented、tested。pushed、draft_pr_open、ci_passed 在真实远端核查前为 not_run，不预填PR URL。源码为5个独立backup模块，2个测试文件和4份文档；没有修改原store/workflows/provider/worker/前端/配置/依赖，也没有改变原数据库模式。
 
-远端 tree `97cba6d505bb9d9dbd4e3ec8e5d3ebd673f2dd4f` 与已测试本地提交 `734e477cc68daf5cbbbf36328428b7e47e724a54` 完全相同，git fetch 后逐树比较通过。本地提交另存 `runtime/audit-evidence/acceptance-v2-final.bundle`；使用授权 GitHub 连接器写入 feature 分支，没有 force push、main 写入、PR 合并或 auto-merge。
+实现：明确操作者维护窗口确认、既有worker锁检测、双SQLite BEGIN IMMEDIATE写入保留锁、独立只读源连接Backup API、全实例媒体/系列引用闭合、源和目标文件哈希回读、数据库完整逻辑行/BLOB摘要、同一快照ID配对、完成清单最后写入。restore拒绝已有或源内目录，保存原数据及未确定云任务，不反序列化检查点、不调用recover/claim/网络，不自动运行制作。
 
-### 实现与源码依据
+参考和实际源码：restic/restic `9da3b87b07706956e8dc5fd5cb259b99ec940f51` 的 internal/data/snapshot.go、internal/restorer/restorer.go 与 restorer_test.go（BSD-2-Clause）；langchain-ai/langgraph `a6731f436700c7d46a9224ccd3a0e0ce3a5bfdb5` 的 SqliteSaver、test_sqlite.py、pregel/_retry.py（MIT）；SQLite官方Backup API与Python3.12文档。已读许可证，未复制上游源码/测试或加入新存储平台，具体取舍见 [CONSISTENT_BACKUP.md](CONSISTENT_BACKUP.md)。
 
-旧专项检查单独放入 `factory.acceptance_legacy` 并要求显式副作用授权；新的 `factory.acceptance` 复用原 film-evaluation v1 与七维规则。模块分为 inputs、checks、audio、baseline、reports；不引入第二套评分或任务系统。SQLite mode=ro 的同一事务读取项目/任务；项目 ID、production revision、media SHA 明确绑定；技术、未运行模型和人工证据分离；独立目录与最后写入的完成清单支持中断诊断和可校验基线。
+## 实际测试与失败证据
 
-上游固定版本：drama-skills `c2426e03c0e7722bebcc6a488b6658dc38c65ac3`（MIT），研究 evaluations/README.md、content_quality_gate.py 和 tests/test_content_quality_gate.py；VBench `fd18b3d055cb0fc6f066ca90fe2c3c8cbb698490`（Apache-2.0），研究 vbench/__init__.py 和 subject_consistency.py。许可、设计适配和未采用机制见 [PRODUCTION_ACCEPTANCE.md](PRODUCTION_ACCEPTANCE.md)。未复制第三方源码、语料或模型。
+| 命令 / 环境 | 实际结果 |
+| --- | --- |
+| 初始 tests/test_factory_backup.py | 18 failed：主分支没有所需备份/恢复接口；不是生产故障或漏洞利用 |
+| 新增 sidecar/边界元数据反例 | 修复前失败，日志 backup-safety-before.log；随后严格拒绝不完整或额外WAL状态 |
+| 未引用历史文件目标损坏 | backup与restore两项修复前失败；补全部目标回读，不仅核对当前引用 |
+| 任意费用字段副本变化 | 修复前失败；补锁内源与副本全逻辑内容摘要，不新增第二账本 |
+| Python3.12.13：python -m pytest -q tests/test_factory_backup*.py | 36 passed，2.74 s |
+| 宿主完整 tests/test_factory_*.py | 529 passed / 1 failed，94.05 s；原DNS超时断言实际约3.92s超过0.25s；1条原fork警告保留 |
+| 宿主 providers 单独复测 | 67 passed / 1 failed，同一原DNS断言约1.18s；未改源码或阈值 |
+| 固定隔离容器 providers 单独复测 | 68 passed，4.70 s，原测试与阈值 |
+| 同容器 python -m pytest -q tests/test_factory_*.py | 530 passed，160.47 s，原测试无跳过 |
+| npm ci --ignore-scripts --offline | 成功，固定lock和离线缓存 |
+| node --test tests/test_factory*.mjs | 54 passed、0 skipped |
+| python scripts/browser_fixtures.py | CPU合成媒体成功，未运行生成模型 |
+| npm run test:browser | 5 passed、20.2 s、0 skipped，原配置/超时/断言 |
 
-### 实际失败前证据与修复
+宿主DNS延迟与容器结果不同，根因尚未确定，不将一次容器通过当作已修复宿主DNS性能问题。providers.py和原测试没有差异；相关日志均保留，不通过放宽或删除测试掩盖失败。
 
-1. 最初 8 项新契约测试全失败：通用只读接口不存在，跨项目/代码版本比较不拒绝，移除检查不报告。
-2. CPU 媒体用例初次 17 passed / 2 failed：现有长句拆分字幕被旧单条假设误拒，过期人工证据应形成失败报告而非中断无报告。
-3. 14 项证据补充测试修复前全失败：模糊 JSON、完整性清单、媒体/锁定剧情字段和时长元数据等。
-4. Runner 上次失联导致编辑 outcome_unknown。恢复后已只读确认两项补充测试及文档修正确实落盘，没有盲目重放。
-5. 本次继续审查新增 8 项，修复前全失败：真实原混音器不输出 audio_edit 总时长；净版解码后变化未二次校验；5 类非法生产版本参与报告路径；完成清单可漏掉失败证据。修复不改原混音器、不放宽实际媒体时长，验证的是原生产格式。
+最终Python日志 runtime/audit-evidence/backup-focused-final.log、backup-python-container-final.log；宿主失败 backup-python-final.log、backup-dns-recheck.log；浏览器 backup-browser.log；修复前反例 backup-copy-before.log、backup-ledger-before.log。容器固定镜像 mcr.microsoft.com/playwright@sha256:06a9939e57531807f8d5fd76ce44b53165ffb7d7501d87ab10e285c20b1e971f，network=none、2CPU、4GiB物理内存限制、无GPU/生产DB/socket/端口发布。宿主内核不支持swap limit，运行时警告原样保留，不声称swap也已限额。
 
-最后一轮完整 Python 复测：专项 88 passed，45.12 s；完整 tests/test_factory_*.py 为 550 passed，124.96 s，5 条既有多线程 fork DeprecationWarning 保留。对应日志 runtime/audit-evidence/recovery-focused.log 与 recovery-python-all.log，已核对日志存在且运行结果一致。早期 540 项通过不是最终新增测试的替代证据。
+测试只使用临时SQLite/WAL、合成/不透明媒体和测试自建真实LangGraph人工中断图。恢复后只读取该测试图的状态/interrupt，没有继续调用节点。包括未完成云任务、pending writes、系列共享版本、外置DATA路径变化、符号链接/非法路径、缺失/哈希不匹配/版本错配、活动worker和DB写者、已有目录/重复恢复、复制中断及后验审计。
 
-前端同一固定 Playwright 镜像复测：`npm ci --ignore-scripts --offline` 成功；`node --test tests/test_factory*.mjs` 为 54 passed、0 skipped；`python scripts/browser_fixtures.py` 成功；`npm run test:browser` 为 5 passed、15.9 s、0 skipped。日志 `runtime/audit-evidence/recovery-browser-final.log`。浏览器分支不包含优化 7 的 3 项 HTTP 增量用例，没有删除既有测试。环境 Node 24.21.0、Python 3.12.13；镜像 `mcr.microsoft.com/playwright@sha256:06a9939e57531807f8d5fd76ce44b53165ffb7d7501d87ab10e285c20b1e971f`，network=none、2 CPU、4 GiB、有界进程数，无 GPU、生产数据或 Docker socket 挂载。合成媒体 SHA 与原 browser fixture 一致。
+## 安全、兼容与未验证
 
-测试后核对所有 factory/ 与 tests/ 改动仍与已导出的恢复包逐字节一致：恢复包 SHA-256 `4432b6c6d6bb1439f2e6f6e28365589d2e04bc56ba817f6910e7835cc6d630c8`。该包仅用于保留当前改动，不是工作包 9 的生产一致性备份。
+无生产读写/恢复实验、无模型/GPU/云调用、无服务停止/重启、无真实凭据提交。源库不迁移，副本切为自包含DELETE journal；原任务状态和账本原样保存。文件/数据库前后比较不等于文件系统原子快照；维护窗口是真实前提，不能只传布尔值就证明其他写者已经停止。
 
-测试包括三种现有规格真实 CPU FFmpeg/PyAV 解码、原混音器输出、分段字幕、人工旧证据拒绝、两个项目独立目录、WAL 并发读取、缺成片/媒体/字幕、SHA/版本不匹配、导出中断、错误基线、生产文件校验不变。CPU 测试图样/正弦音频及模拟人工记录均不是模型生成或实际艺术审片。
+支持当前已审查的Schema、共同快照协议和新目录恢复；不支持无清单旧文件复制、未知备份版本、任意未来表模式或单项目跨共享DB拆分。历史业务BLOB是原样备份，不承诺自动清除错误内嵌其中的秘密；私配和环境值默认不采集，备份仍应受控存储。恢复仅为数据目录，投入实际运行前须人工配置兼容环境并核对未知付费任务，不可让源/恢复实例同时制作。
 
-### 本轮局部集成与 CLI 输出
+GPU、云端、真实模型/艺术质量、生产数据恢复、跨主机部署与完整7–15链路均not_run。优化10–15未实施。后续真实回收必须另经授权并以完整性/恢复结果为前提，本工具不执行任何永久删除。
 
-在第三个全新 detached worktree 中实际合并 PR #8 head `41bdb8ce4f37a92936a6b971d3d454f89dcf3806` 与 PR #9 实现 head `c35254f998c499458af9938aa8e9e49778021c12`，仅本地，不更新任一远端分支。业务代码无冲突；三份 NEXT_ROUND 文档 add/add 冲突保留两份原文后解决。冻结本地 merge commit `a21e5b115d86cf44094dda1445f0278298b7eb0b`，tree `0fbc059600aa0f71661d52bd8a4dc53fdacd8b65`。
+## 部署与回滚
 
-组合执行 `python -m pytest -q tests/test_factory_*.py`：719 passed，126.93 s，5 条原警告保留；`npm ci --ignore-scripts --offline` 成功；Node 54 passed；CPU浏览器夹具成功；原 `npm run test:browser` 8 passed、28.0 s、0 skipped。日志在集成工作树 `runtime/audit-evidence/integration-python.log` 和 `integration-browser.log`。这是优化7+8离线组合回归，不是优化9–15或真实云生成全链路通过。
-
-在 PR #9 实现提交上实际运行四次 CLI：legacy15、compact6、ensemble10 的 CPU 合成工程返回 exit=3、technical_passed=true、human_approved=false；compact6 的错误请求SHA返回 exit=2、needs_repair。JSON报告、摘要和失败证据保存在忽略的 `runtime/audit-evidence/cli-examples/`，没有写生产工程。全部模型执行保持 not_run。
-
-### 安全与兼容性
-
-无数据库 Schema 迁移，无生产读写实验、服务重启或收费请求。旧项目不被自动补写字段；缺失证据保持失败/unknown/not_run。历史专项报告可读但不伪造可比性；新报告仍沿用原评估外层格式。media_context 仅在通用验收中加强人工证据绑定，原 evaluation 默认接口保留。
-
-完整性清单不是密码学身份认证；项目与文件前后复查不构成原子多数据库快照。复杂历史 reedit 的 source_range 等额外能力不在本 PR 声称覆盖范围内。原样片专项副作用路径、真实 GPU/TTS/LLM/云视频、艺术质量和外部代理部署均 not_run。
-
-### 部署、回滚与后续
-
-部署由操作者自行安排，本轮不执行。新 CLI 只向非 production 独立目录追加报告；回退代码无需数据库逆迁移，新报告可以保留但不能被旧版本冒认为同协议通过。多个独立 PR 的同名 NEXT_ROUND 文档可能在人工集成时产生 add/add 冲突，须合并审计记录，不能因此错误串联独立业务分支。
-
-优化 9–15 及整轮组合回归未执行，状态 not_run。GitHub CI 必须绑定实际 head SHA 单独记录，不把本地通过或前一 PR 的 CI 当作本分支通过。
+由操作者自行安排维护窗口和部署，本轮不执行。CLI只向外部新目录生成快照或恢复数据；回退工具代码不改源数据，无逆向数据库迁移。所有半成品目录保留，不能用覆盖重试掩盖中断。共享NEXT_ROUND文档的add/add冲突需要人工合并实际审计记录，不应错误串联独立PR。
