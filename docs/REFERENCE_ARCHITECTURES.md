@@ -149,6 +149,18 @@ vLLM 旧 `serving/openai_compatible_server/` 文档地址当前重定向至下�
 
 ## 6. 许可与来源管理
 
+### 2026-10-15 重构补充
+
+本轮重新阅读了下列官方源码，采用到本项目的具体设计为：
+
+- [Dify human-input-form](https://github.com/langgenius/dify/blob/1f3fdbc0d32ff7a52f94a2a34e00183e698f1c2f/web/app/components/base/chat/chat/answer/human-input-content/human-input-form.tsx)：服务端提供输入字段和可选动作；提交包含动作身份，按钮在提交期间禁用。本项目动作同时经过 SQLite 事务、项目 revision 和业务代数验证。
+- [Toonflow delegation](https://github.com/HBAI-Ltd/Toonflow-app/blob/d2e94aca7b59659ff6b4ca15f03cf134ec7f0e1d/apps/server/src/agent/runtime/delegation.ts)：委派关联角色、模型、父任务和执行事件。本项目将任务观察写入既有项目与事件账本，保留 LangGraph 作为执行权威。
+- [Toonflow question bridge](https://github.com/HBAI-Ltd/Toonflow-app/blob/d2e94aca7b59659ff6b4ca15f03cf134ec7f0e1d/apps/server/src/agent/bridge/question.ts)：结构化问题包含字段、选项与答案校验。本项目审批存放 SQLite 并关联产物代数，可在刷新和 worker 重启后恢复。
+- [xyflow custom nodes](https://github.com/xyflow/xyflow/blob/3d35b57317576b0916c0bfeaaedd573aaacc2839/examples/react/src/examples/CustomNode/index.tsx)：以组件承载节点状态、详情、缩放和定位。本项目节点和边从实际执行定义读取，画布交互不改变业务编排。
+- [Drama Skills DESIGN](https://github.com/zenstory-ai/drama-skills/blob/main/DESIGN.md)：围绕故事、角色、场景和镜头组织常驻内容阅读区，区分保存与启动生产。本项目结合跨项目总览和 Agent 任务详情，而不照搬其单页产品范围。
+
+这些源码用于设计研究，不构成部署或生成质量验收。依赖与许可见第三方说明。
+
 | 上游 | 核查时的许可边界 |
 |---|---|
 | Dify | Dify Open Source License，基于 Apache 2.0 并含附加条件；多租户服务及前端标识有特别要求。见 [LICENSE][dify-license]。 |

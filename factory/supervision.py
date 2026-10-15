@@ -15,10 +15,10 @@ from .creative_evidence_io import read_bytes
 from .prompt_registry import load_prompt
 from .providers import redact_secrets
 from .schemas import cached_json_call, fingerprint, object_schema, text_schema, array_schema
+from .attention_actions import generation, validate_gate
 
 ROLE = "executive_producer"
 KINDS = ("story", "style", "final")
-GENERATIONS = {"story": "proposal_generation", "style": "script_generation", "final": "production_revision"}
 BASIS = "text_and_record_review_not_film_review"
 DECISION_SCHEMA = object_schema({
     "action": {"type": "string", "enum": ["select", "escalate"]},
@@ -60,9 +60,10 @@ def context_for(project, gate):
     kind = gate["type"]
     if kind not in KINDS:
         raise ValueError("unsupported_gate")
-    version = project.get(GENERATIONS[kind])
+    version = generation(project, kind)
     if type(version) is not int or version < 1 or gate["id"] != f"{project['id']}:{kind}:{version}":
         raise ValueError("stale_gate")
+    validate_gate(project, gate)
     options = gate.get("options")
     if not isinstance(options, list) or len(options) > 12:
         raise ValueError("invalid_options")
@@ -78,7 +79,7 @@ def context_for(project, gate):
         fields = ("id", "title", "logline", "synopsis", "hook", "ending")
     elif kind == "style":
         if (not _current(project, "script_complete_generation", "script_generation")
-                or not _current(project, "style_previews_generation", "script_generation")
+                or project.get("style_previews_generation") != generation(project, "style")
                 or _object(project.get("script_review")).get("passed") is not True):
             raise ValueError("independent_review_not_current")
         source, fields = project.get("styles", []), ("id", "name", "description", "prompt")
@@ -99,6 +100,7 @@ def context_for(project, gate):
             continue
         if kind == "style" and not _preview_valid(project, item):
             continue
+        validate_gate(project, gate, item["id"])
         candidate = {key: item[key][:1800] for key in fields if isinstance(item.get(key), str)}
         if kind == "style":
             candidate["preview_sha256"] = item["preview"]["sha256"]
@@ -187,6 +189,13 @@ def _settle(pid, gate, claim, proposal, error_type):
             record.update(status="manual", reason_code="model_failure" if error_type else "invalid_selection")
             _save(db, project, record)
             return None
+        if select:
+            try:
+                validate_gate(project, current, proposal["choice"])
+            except ValueError:
+                record.update(status="manual", reason_code="invalid_selection")
+                _save(db, project, record)
+                return None
         record["proposal"] = proposal
         if escalate:
             record.update(status="advisory" if gate["type"] == "final" else "manual", reason_code="human_review_required")
@@ -240,7 +249,7 @@ def snapshot(project):
         record = _object(_object(project.get("supervision")).get(kind))
         if record:
             records.append({**{k: copy.deepcopy(v) for k, v in record.items() if k in PUBLIC_KEYS},
-                "current_gate_version": record.get("gate_id") == f"{project.get('id')}:{kind}:{project.get(GENERATIONS[kind])}"})
+                "current_gate_version": record.get("gate_id") == f"{project.get('id')}:{kind}:{generation(project, kind)}"})
     return {"mode": project.get("team_mode", "guided"), "role": ROLE, "basis": BASIS,
             "automatic_choices": ["story", "style"], "human_required": ["budget", "final", "platform_release"],
             "records": records}

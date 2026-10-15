@@ -37,6 +37,7 @@ class State(TypedDict, total=False):
     style_answer: dict
     final_answer: dict
     direct_production_revision: int
+    restart_revision: int
 
 
 def _project(state):
@@ -47,7 +48,8 @@ def _project(state):
 
 
 def _checkpoint(pid):
-    return lambda patch: store.update(pid,patch)
+    from .runtime_observations import checkpoint
+    return lambda patch: checkpoint(pid,patch)
 
 
 def _apply(pid, patch):
@@ -104,7 +106,9 @@ def story_decision(state):
     version=state.get("story_generation",p["proposal_generation"])
     gate=store.gate(p["id"],"story",options,"故事提案评审已完成，请从合格方案中选择制作方向。",version)
     from .supervision import supervise_gate
-    answer=supervise_gate(p["id"],gate)
+    answer=store.answer_for(p["id"],gate["id"])
+    if answer is None:
+        answer=supervise_gate(p["id"],gate)
     if answer is None and p.get("team_mode") == "delegated":
         # A receipt may outlive a lost graph checkpoint, or a human may answer
         # during the model call. Consume that receipt without another request.
@@ -140,18 +144,18 @@ def screenplay(state):
         patch=create_script_and_styles(p,load_config(),_checkpoint(p["id"]))
         patch["script_complete_generation"]=p["script_generation"]
         _apply(p["id"],patch)
-    return {"route":"continue","style_generation":p["script_generation"]}
+    return {"route":"continue","style_generation":p.get("style_generation",p["script_generation"])}
 
 
 def visual_development(state):
     from .production import generate_style_previews
     p=_project(state)
-    if p.get("style_previews_generation") != p["script_generation"]:
+    if p.get("style_previews_generation") != p.get("style_generation",p["script_generation"]):
         store.update(p["id"],{"status":"visual_development","stage":"style_previews","progress":40,
                              "message":"美术正在生成三套真实视觉预览，完成后交给出品人选择。"})
         styles=generate_style_previews(p,production_config(p,load_config()),_checkpoint(p["id"]),
                                       lambda:store.get(p["id"],False).get("pause_requested",False))
-        patch={"style_previews_generation":p["script_generation"],"progress":45}
+        patch={"style_previews_generation":p.get("style_generation",p["script_generation"]),"progress":45}
         if isinstance(styles,list):
             patch["styles"]=styles
         elif isinstance(styles,dict) and "styles" in styles:
@@ -163,10 +167,12 @@ def visual_development(state):
 def style_decision(state):
     p=_project(state)
     options=[{"id":v["id"],"label":v.get("name",v["id"])} for v in p["styles"]]
-    version=state.get("style_generation",p["script_generation"])
+    version=p.get("style_generation",p["script_generation"])
     gate=store.gate(p["id"],"style",options,"三套视觉预览已完成，请选择人物与画风。",version)
     from .supervision import supervise_gate
-    answer=supervise_gate(p["id"],gate)
+    answer=store.answer_for(p["id"],gate["id"])
+    if answer is None:
+        answer=supervise_gate(p["id"],gate)
     if answer is None and p.get("team_mode") == "delegated":
         # A receipt may outlive a lost graph checkpoint, or a human may answer
         # during the model call. Consume that receipt without another request.
@@ -182,7 +188,20 @@ def apply_style(state):
     p=_project(state)
     answer=state["style_answer"]
     if answer["gate_id"] in p.get("decision_effects",{}):
-        return {"route":"continue"}
+        return {"route":p["decision_effects"][answer["gate_id"]]["route"]}
+    if answer["choice"] == "__restyle__":
+        feedback=answer.get("feedback", "")
+        if not isinstance(feedback,str) or not feedback.strip():
+            raise ValueError("请说明对视觉方案不满意的原因")
+        generation=p.get("style_generation",p["script_generation"])+1
+        history=copy.deepcopy(p.get("style_history",[]))
+        history.append({"generation":generation-1,"styles":copy.deepcopy(p["styles"]),
+                        "feedback":feedback,"at":store.now()})
+        return store.commit_decision(p["id"],answer,
+            {"style_generation":generation,"style_history":history,"selected_style":None,
+             "style_feedback":feedback,"style_previews_generation":None,
+             "visual_design_complete_generation":None,"progress":38,
+             "message":"美术根据意见重新设计视觉方向；旧预览和累计费用保留。"},"restyle")
     chosen=next(v for v in p["styles"] if v["id"]==answer["choice"])
     script=copy.deepcopy(p["script"])
     script["visual_style"]=chosen["prompt"]
@@ -222,7 +241,9 @@ def final_decision(state):
         [{"id":"approve","label":"通过终版"},{"id":"revise","label":"局部修改"},{"id":"reedit","label":"重新剪辑"}],
         "完整初版已交付，请观看并决定最终版本。",version)
     from .supervision import supervise_gate
-    answer=supervise_gate(p["id"],gate)
+    answer=store.answer_for(p["id"],gate["id"])
+    if answer is None:
+        answer=supervise_gate(p["id"],gate)
     if answer is None and p.get("team_mode") == "delegated":
         # A receipt may outlive a lost graph checkpoint, or a human may answer
         # during the model call. Consume that receipt without another request.
@@ -308,12 +329,16 @@ def revision(state):
     return {"route":"continue"}
 
 
-def build_graph(checkpointer):
+def build_graph(checkpointer, workflow_version=1):
+    if workflow_version == 2:
+        return _build_graph_v2(checkpointer)
+    if workflow_version != 1:
+        raise ValueError("不支持的工作流版本")
     from .team_tasks import TASKS, tracked_node
     builder=StateGraph(State)
     for name,fn in [("research",research),("proposals",proposals),("story_decision",story_decision),
                     ("apply_story",apply_story),("apply_style",apply_style),("apply_final",apply_final),
-                    ("screenplay",screenplay),("visual_development",visual_development),
+                    ("screenplay",screenplay),("visual_design",visual_design),("visual_development",visual_development),
                     ("style_decision",style_decision),("production",production),
                     ("final_decision",final_decision),("revision",revision)]:
         builder.add_node(name,tracked_node(name,fn) if name in TASKS else fn)
@@ -326,7 +351,9 @@ def build_graph(checkpointer):
     builder.add_edge("screenplay","visual_development")
     builder.add_edge("visual_development","style_decision")
     builder.add_edge("style_decision","apply_style")
-    builder.add_edge("apply_style","production")
+    builder.add_conditional_edges("apply_style",lambda s:s["route"],
+                                  {"continue":"production","restyle":"visual_design"})
+    builder.add_edge("visual_design","visual_development")
     builder.add_conditional_edges("production",lambda s:s["route"],
                                   {"continue":"final_decision","revision":"revision"})
     builder.add_edge("final_decision","apply_final")
@@ -336,14 +363,14 @@ def build_graph(checkpointer):
 
 
 @contextmanager
-def durable_graph():
+def durable_graph(workflow_version=1):
     DATA.mkdir(parents=True,exist_ok=True)
     conn=sqlite3.connect(str(CHECKPOINTS),check_same_thread=False,timeout=30)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA busy_timeout=30000")
     try:
         saver=SqliteSaver(conn)
-        yield build_graph(saver)
+        yield build_graph(saver) if workflow_version == 1 else build_graph(saver,workflow_version)
     finally:
         conn.close()
 
@@ -361,9 +388,11 @@ def _advance(pid):
         raise ProjectPaused("已在检查点暂停")
     if p["status"] in {"blocked","failed","cancelled"}:
         return {"blocked":True,"status":p["status"]}
-    with durable_graph() as graph:
+    with durable_graph(p.get("workflow_version",1)) as graph:
         config={"configurable":{"thread_id":pid},"recursion_limit":100}
         snap=graph.get_state(config)
+        if p.get("workflow_restart_from"):
+            snap=_restart_graph(graph,snap,p,config)
         if p.get("production_edit_revision"):
             from .production_edits import resume_edited_graph
             snap=resume_edited_graph(graph,snap,p,config)
@@ -373,6 +402,13 @@ def _advance(pid):
         if pending:
             gate=pending[0].value
             answer=store.answer_for(pid,gate["id"])
+            if answer is None and gate.get("type") in {"story","style"} and store.get(pid,False).get("team_mode")=="delegated":
+                if store.get(pid,False).get("status")=="queued":
+                    store.update(pid,{"status":"awaiting_"+gate["type"],"stage":gate["type"]+"_decision"})
+                from .supervision import supervise_gate
+                answer=supervise_gate(pid,gate)
+                if answer is None:
+                    answer=store.answer_for(pid,gate["id"])
             if answer is None:
                 p=store.get(pid,False)
                 if p.get("pause_requested"):
@@ -383,3 +419,123 @@ def _advance(pid):
         if snap.next:
             return graph.invoke(None,config)
         return {"finished":True}
+
+
+def story_resolution(state):
+    from .creative_runtime import resolve_target
+    p=_project(state)
+    if p.get('story_resolution_complete_generation') != p['script_generation']:
+        store.update(p['id'],{'status':'scripting','stage':'story_resolution','progress':27,
+                              'message':'故事编辑正在落实出品人目标，独立目标审稿检查要求与因果。'})
+        _apply(p['id'],resolve_target(p,load_config(),_checkpoint(p['id'])))
+    resolved=_project(state).get('resolved_story_brief')
+    return {'route':'continue','skipped':_project(state).get('story_resolution_skipped',resolved is None)}
+
+
+def screenplay_v2(state):
+    from .creative_runtime import write_screenplay
+    p=_project(state)
+    if p.get('story_resolution_complete_generation') != p['script_generation']:
+        story_resolution(state)
+        p=_project(state)
+    marker=[p['script_generation'],p.get('creative_round',1)]
+    if p.get('screenplay_complete_round') != marker:
+        store.update(p['id'],{'status':'scripting','stage':'screenplay','progress':30,
+                              'message':'编剧正在编写剧情、人物动作与对白。'})
+        _apply(p['id'],write_screenplay(p,load_config(),_checkpoint(p['id'])))
+    return {'route':'continue'}
+
+
+def storyboard(state):
+    from .creative_runtime import direct_screenplay
+    p=_project(state)
+    marker=[p['script_generation'],p.get('creative_round',1)]
+    if p.get('storyboard_complete_round') != marker:
+        store.update(p['id'],{'status':'scripting','stage':'storyboard','progress':33,
+                              'message':'分镜导演正在落实镜头、画面与连续性依据。'})
+        _apply(p['id'],direct_screenplay(p,load_config(),_checkpoint(p['id'])))
+    return {'route':'continue'}
+
+
+def script_review(state):
+    from .creative_runtime import review_screenplay
+    p=_project(state)
+    if p.get('script_complete_generation') == p['script_generation']:
+        return {'route':'continue'}
+    if (p.get('script_review_complete_round')==p.get('screenplay_complete_round')
+            and p.get('script_review_route') in {'repair','continue'}):
+        return {'route':p['script_review_route']}
+    store.update(p['id'],{'status':'scripting','stage':'script_review','progress':36,
+                          'message':'独立审稿人正在检查剧本与分镜，未通过则定向返修。'})
+    patch=review_screenplay(p,load_config(),_checkpoint(p['id']))
+    _apply(p['id'],patch)
+    return {'route':'continue' if patch['script_review']['passed'] else 'repair'}
+
+
+def visual_design(state):
+    from .creative_runtime import design_visuals
+    p=_project(state)
+    generation=p.get('style_generation',p['script_generation'])
+    if p.get('visual_design_complete_generation') != generation:
+        store.update(p['id'],{'status':'visual_development','stage':'visual_design','progress':39,
+                              'message':'美术指导根据剧本和视觉反馈设计三套方向。'})
+        _apply(p['id'],design_visuals(p,load_config(),_checkpoint(p['id'])))
+    return {'route':'continue','style_generation':generation}
+
+
+def _build_graph_v2(checkpointer):
+    from .team_tasks import tracked_node
+    builder=StateGraph(State)
+    nodes={'research':research,'proposals':proposals,'story_decision':story_decision,
+           'apply_story':apply_story,'story_resolution':story_resolution,'screenplay':screenplay_v2,
+           'storyboard':storyboard,'script_review':script_review,'visual_design':visual_design,
+           'visual_development':visual_development,'style_decision':style_decision,'apply_style':apply_style,
+           'production':production,'final_decision':final_decision,'apply_final':apply_final,'revision':revision}
+    for name,fn in nodes.items():
+        builder.add_node(name,tracked_node(name,fn) if name not in {'story_decision','apply_story','style_decision','apply_style','final_decision','apply_final'} else fn)
+    for source,target in [(START,'research'),('research','proposals'),('proposals','story_decision'),
+                          ('story_decision','apply_story'),('story_resolution','screenplay'),
+                          ('screenplay','storyboard'),('storyboard','script_review'),
+                          ('visual_design','visual_development'),('visual_development','style_decision'),
+                          ('style_decision','apply_style'),('final_decision','apply_final'),('revision','production')]:
+        builder.add_edge(source,target)
+    builder.add_conditional_edges('apply_story',lambda s:s['route'],{'repropose':'proposals','continue':'story_resolution'})
+    builder.add_conditional_edges('script_review',lambda s:s['route'],{'repair':'screenplay','continue':'visual_design'})
+    builder.add_conditional_edges('apply_style',lambda s:s['route'],{'restyle':'visual_design','continue':'production'})
+    builder.add_conditional_edges('production',lambda s:s['route'],{'continue':'final_decision','revision':'revision'})
+    builder.add_conditional_edges('apply_final',lambda s:s['route'],{'done':END,'revision':'revision'})
+    return builder.compile(checkpointer=checkpointer)
+
+
+def _restart_graph(graph,snapshot,project,configuration):
+    """Fence explicit recovery in the graph checkpoint before consuming a command.
+
+    A crash between update_state and the store write sees restart_revision and
+    clears the same command without scheduling another generation.
+    """
+    version=project.get('workflow_version',1)
+    target=project['workflow_restart_from']
+    revision=project.get('workflow_restart_revision')
+    if type(revision) is not int or revision > project['revision']:
+        raise ValueError('恢复请求版本无效')
+    routes={'research':(START,'continue'),'proposals':('research','continue'),
+            'story_resolution':('apply_story','continue'),'screenplay':('story_resolution','continue'),
+            'visual_design':('script_review','continue')} if version == 2 else {
+            'research':(START,'continue'),'proposals':('research','continue'),
+            'story_resolution':('apply_story','continue'),'screenplay':('apply_story','continue'),
+            'visual_design':('apply_style','restyle')}
+    routes['revision']=('apply_final','revision')
+    if target not in routes:
+        raise ValueError('未知恢复节点')
+    if snapshot.values.get('restart_revision') != revision:
+        predecessor,route=routes[target]
+        graph.update_state(configuration,{'project_id':project['id'],'route':route,'restart_revision':revision},as_node=predecessor)
+        snapshot=graph.get_state(configuration)
+    with store.connection() as db:
+        db.execute('BEGIN IMMEDIATE')
+        current=store._read(db,project['id'])
+        if current.get('workflow_restart_revision') == revision:
+            current.pop('workflow_restart_from',None)
+            current.pop('workflow_restart_revision',None)
+            store._write(db,current)
+    return snapshot

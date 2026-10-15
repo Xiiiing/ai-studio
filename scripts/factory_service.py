@@ -26,7 +26,7 @@ def validate_install_path(root):
 
 def main():
     parser=argparse.ArgumentParser()
-    parser.add_argument("action",choices=["install","start","stop","restart","status","rollback"])
+    parser.add_argument("action",choices=["install","start","stop","restart","status"])
     parser.add_argument("--user", help="install only: system user; defaults to the checkout owner")
     args=parser.parse_args()
     if args.action=="install":
@@ -57,20 +57,10 @@ def main():
         print("Installed project-owned factory services")
         return
     if args.action in {"start","restart"}:
-        # The old dashboard launcher checks exact PID ownership and active work.
-        if (ROOT/".venv/bin/python").exists() and (ROOT/"scripts/studio_service.py").exists():
-            result=run([str(ROOT/".venv/bin/python"),str(ROOT/"scripts/studio_service.py"),"stop"],check=False)
-            if result.returncode:
-                raise RuntimeError(result.stderr.strip() or result.stdout.strip())
         run(["systemctl","enable",*UNITS])
         run(["systemctl",args.action,*UNITS])
     elif args.action=="stop":
         run(["systemctl","stop",*UNITS])
-    elif args.action=="rollback":
-        run(["systemctl","disable","--now",*UNITS])
-        run([str(ROOT/".venv/bin/python"),str(ROOT/"scripts/studio_service.py"),"start"])
-        print("Restored the original dashboard at port 8787; factory data retained")
-        return
     state={}
     for unit in UNITS:
         state[unit]=run(["systemctl","is-active",unit],check=False).stdout.strip()

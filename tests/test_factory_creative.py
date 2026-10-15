@@ -776,6 +776,60 @@ class CreativeContractTests(unittest.TestCase):
         with self.assertRaises(ValidationError):
             validate(value, schema)
 
+    def test_version_two_steps_keep_registered_prompts_and_review_evidence(self):
+        from factory import creative_runtime as runtime
+        project={**self.approved_project(), "workflow_version":2, "style_generation":1}
+        project.update(runtime.resolve_target(project,self.config,None))
+        project.update(runtime.write_screenplay(project,self.config,None))
+        writer_calls=[call for call in self.calls if call["role"]=="screenwriter"]
+        self.assertEqual(len(writer_calls),1)
+        self._patch("factory.creative.direct_storyboard",side_effect=lambda p,c,e,cb,**kw:{
+            "episode":copy.deepcopy(e),"issues":[],"receipt":{"role":"storyboard_director"},
+            "artifact":"production/"+p["slug"]+"/planning/director.json"})
+        project.update(runtime.direct_screenplay(project,self.config,None))
+        reviewed=runtime.review_screenplay(project,self.config,None)
+        self.assertTrue(reviewed["script_review"]["passed"])
+        self.assertEqual(reviewed["script_complete_generation"],1)
+        self.assertTrue(reviewed["script_review"]["rounds"][0]["storyboard"])
+        self.assertIn("script-review-v1-r1-",reviewed["planning_artifacts"]["script_review"])
+        project.update(reviewed)
+        designed=runtime.design_visuals(project,self.config,None)
+        self.assertEqual(len(designed["styles"]),3)
+        before=self.model.call_count
+        runtime.write_screenplay(project,self.config,None)
+        self.assertEqual(self.model.call_count,before)
+
+    def test_version_two_scoped_feedback_locks_unselected_shots_and_cast(self):
+        from factory import creative_runtime as runtime
+        project=self.approved_project()
+        project.update(creative.create_script_and_styles(project,self.config,None))
+        project['episode']['shots'][0]['action']='锁定镜头的原有动作，不允许改动'
+        project['script']=copy.deepcopy(project['episode'])
+        previous=copy.deepcopy(project['episode'])
+        project.update(workflow_version=2,script_generation=2,
+                       script_feedback={'notes':'只调整第三镜动作，其他镜头保持原样','shot_ids':['S03']})
+        count=self.model.call_count
+        resolved=runtime.resolve_target(project,self.config,None)
+        self.assertTrue(resolved['story_resolution_skipped'])
+        self.assertEqual(self.model.call_count,count)
+        project.update(resolved)
+        drafted=runtime.write_screenplay(project,self.config,None)
+        for shot in drafted['screenplay_draft']['shots']:
+            if shot['id']!='S03':
+                self.assertEqual(shot,previous['shots'][int(shot['id'][1:])-1])
+        self.assertEqual(drafted['screenplay_draft']['cast'],previous['cast'])
+        self.assertEqual(drafted['screenplay_draft']['visual_style'],previous['visual_style'])
+        latest=[call for call in self.calls if call['role']=='screenwriter'][-1]
+        self.assertEqual(latest['payload']['only_revise_shot_ids'],['S03'])
+        self.assertFalse(latest['payload']['creative_scope']['allow_restructure_second_half'])
+        project.update(drafted)
+        directed=[]
+        self._patch('factory.creative.direct_storyboard',side_effect=lambda p,c,e,cb,**kw:(
+            directed.append(kw['shot_ids']) or {'episode':e,'issues':[],
+                'receipt':{'role':'storyboard_director'},'artifact':'director.json'}))
+        runtime.direct_screenplay(project,self.config,None)
+        self.assertEqual(directed,[['S03']])
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

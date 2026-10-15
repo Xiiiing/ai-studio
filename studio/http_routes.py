@@ -1,4 +1,4 @@
-"""Auditable allowlist for both HTTP entry points; no handler may bypass admission."""
+"""Auditable allowlist for the application and shared media transport."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -14,13 +14,15 @@ class Route:
     body_limit: int = 0
 
 
-LEGACY_ROUTES = (
-    Route("GET", r"/", "ui", "legacy_home"),
+SHARED_ROUTES = (
+    Route("GET", r"/", "ui", "home"),
     Route("GET", r"/api/health", "read", "health"),
+    Route("GET", r"/media/.+", "media", "production_media"),
+)
+RETIRED_ROUTES = (
     Route("GET", r"/api/episodes", "read", "episodes"),
     Route("GET", r"/api/episode/[a-z0-9][a-z0-9_-]{0,60}", "read", "episode"),
     Route("GET", r"/api/jobs", "read", "legacy_jobs"),
-    Route("GET", r"/media/.+", "media", "production_media"),
     Route("POST", r"/api/start", "task_control", "legacy_start", 8192),
 )
 PID = r"[a-f0-9]{12}"
@@ -30,10 +32,10 @@ FACTORY_ROUTES = (
     Route("GET", r"/legacy", "ui", "legacy_alias"),
     Route("GET", r"/factory/static/.+", "ui", "factory_static"),
     *(Route("GET", "/api/factory/" + name, "read", name) for name in (
-        "production-profiles", "workflow", "models", "overview", "capabilities")),
+        "production-profiles", "workflow", "models", "overview", "capabilities", "console")),
     Route("GET", PROJECT, "read", "project"),
     *(Route("GET", PROJECT + "/" + name, "read", name) for name in (
-        "shots", "series", "cloud-budget", "flow", "delivery-readiness")),
+        "shots", "series", "cloud-budget", "flow", "delivery-readiness", "workspace")),
     Route("GET", r"/api/factory/jobs/" + JID, "read", "job"),
     Route("POST", r"/api/factory/jobs/" + JID + r"/(pause|cancel)", "task_control", "job_control", 65536),
     Route("POST", r"/api/factory/models/test", "network_probe", "model_probe", 65536),
@@ -47,7 +49,7 @@ FACTORY_ROUTES = (
 
 
 def routes(factory=False):
-    return LEGACY_ROUTES + (FACTORY_ROUTES if factory else ())
+    return SHARED_ROUTES + RETIRED_ROUTES + (FACTORY_ROUTES if factory else ())
 
 
 def invalid_identifier(path, *, factory=False):

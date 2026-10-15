@@ -16,7 +16,7 @@ import uuid
 from . import store
 
 TASKS = MappingProxyType({
-    "research": {"label": "选题研究", "owner": "researcher", "reviewer": "story_editor",
+    "research": {"label": "选题研究", "owner": "researcher", "reviewer": None,
                  "members": ["researcher"], "depends_on": [],
                  "inputs": ["brief", "submitted_sources"], "outputs": ["research", "sources"]},
     "proposals": {"label": "故事提案与独立审稿", "owner": "creator", "reviewer": "independent_critic",
@@ -26,6 +26,9 @@ TASKS = MappingProxyType({
                    "members": ["story_editor", "story_critic", "screenwriter", "storyboard_director", "independent_critic", "visual_designer"],
                    "depends_on": ["proposals"], "inputs": ["selected_story", "producer_feedback", "series_bible"],
                    "outputs": ["script", "script_review", "styles"]},
+    "visual_design": {"label": "视觉方案设计", "owner": "visual_designer", "reviewer": "producer",
+                      "members": ["visual_designer"], "depends_on": ["screenplay"],
+                      "inputs": ["script", "style_feedback"], "outputs": ["styles"]},
     "visual_development": {"label": "视觉预览", "owner": "image_generator", "reviewer": "producer",
                            "members": ["image_generator", "visual_critic"], "depends_on": ["screenplay"],
                            "inputs": ["script", "styles"], "outputs": ["style_previews"]},
@@ -38,18 +41,45 @@ TASKS = MappingProxyType({
                  "depends_on": ["production"], "inputs": ["revision_request", "approved_assets"],
                  "outputs": ["revised_script", "edit_plan", "script_review"]},
 })
-TERMINAL = frozenset({"succeeded", "failed", "blocked", "paused", "waiting", "interrupted"})
+V2_TASKS = MappingProxyType({
+    **{name: TASKS[name] for name in ('research', 'proposals')},
+    'story_resolution': {'label': '故事目标落实与独立审核', 'owner': 'story_editor', 'reviewer': 'story_critic',
+                         'members': ['story_editor', 'story_critic'], 'depends_on': ['proposals'],
+                         'inputs': ['selected_story', 'story_feedback', 'script_feedback'], 'outputs': ['resolved_story_brief', 'resolution_review']},
+    'screenplay': {'label': '剧本创作', 'owner': 'screenwriter', 'reviewer': 'independent_critic',
+                  'members': ['screenwriter'], 'depends_on': ['story_resolution'],
+                  'inputs': ['resolved_story_brief', 'producer_feedback', 'series_bible'], 'outputs': ['screenplay_draft']},
+    'storyboard': {'label': '分镜导演', 'owner': 'storyboard_director', 'reviewer': 'independent_critic',
+                  'members': ['storyboard_director'], 'depends_on': ['screenplay'],
+                  'inputs': ['screenplay_draft', 'resolved_story_brief'], 'outputs': ['storyboard', 'storyboard_receipt']},
+    'script_review': {'label': '剧本与分镜独立审核', 'owner': 'independent_critic', 'reviewer': 'producer',
+                      'members': ['independent_critic'], 'depends_on': ['storyboard'],
+                      'inputs': ['screenplay_draft', 'storyboard_receipt', 'producer_feedback'], 'outputs': ['script_review', 'script']},
+    'visual_design': {**TASKS['visual_design'], 'depends_on': ['script_review']},
+    **{name: TASKS[name] for name in ('visual_development', 'production', 'revision')},
+})
+
+
+def definitions(workflow_version=1):
+    return V2_TASKS if workflow_version == 2 else TASKS
+
+
+def definition(stage, project):
+    return definitions(project.get('workflow_version', 1))[stage]
+
+
+TERMINAL = frozenset({"succeeded", "failed", "blocked", "paused", "waiting", "interrupted", "skipped"})
 RECORD_KEYS = frozenset({"run_id", "task_id", "stage", "owner", "reviewer", "status", "attempt",
     "input_signature", "started_at", "finished_at", "error_type", "model", "completion_semantics"})
 COMPLETION = "graph_node_returned_not_quality_approval"
 
 
-def contracts():
-    return [{"id": name, **copy.deepcopy(spec)} for name, spec in TASKS.items()]
+def contracts(workflow_version=1):
+    return [{"id": name, **copy.deepcopy(spec)} for name, spec in definitions(workflow_version).items()]
 
 
 def _signature(project, stage):
-    if stage not in TASKS:
+    if stage not in TASKS and stage not in V2_TASKS:
         raise ValueError("Unknown team task")
     # These are command/version fences, not mutable outputs of the node itself.
     keys = ["id", "brief", "format", "creation_mode", "production_profile", "series_bible"]
@@ -57,7 +87,11 @@ def _signature(project, stage):
         "research": ["submitted_sources"],
         "proposals": ["proposal_generation", "story_feedback"],
         "screenplay": ["proposal_generation", "script_generation", "selected_story", "story_feedback", "script_feedback"],
-        "visual_development": ["script_generation"],
+        "story_resolution": ["proposal_generation", "script_generation", "selected_story", "story_feedback", "script_feedback"],
+        "storyboard": ["script_generation", "creative_round"],
+        "script_review": ["script_generation", "creative_round"],
+        "visual_design": ["script_generation", "style_generation", "style_feedback"],
+        "visual_development": ["script_generation", "style_generation"],
         "production": ["script_generation", "production_revision", "selected_style", "production_edit_revision"],
         "revision": ["script_generation", "production_revision", "revision_request"],
     }[stage]
@@ -75,12 +109,12 @@ def _public(record):
 def _save(db, project, row):
     project.setdefault("team_tasks", {})[row["stage"]] = row
     store._write(db, project)
-    store._event(db, project["id"], TASKS[row["stage"]]["label"] + " · " + row["status"],
+    store._event(db, project["id"], definition(row["stage"],project)["label"] + " · " + row["status"],
                  "team_task", _public(row))
 
 
 def begin(pid, stage):
-    if stage not in TASKS:
+    if stage not in TASKS and stage not in V2_TASKS:
         raise ValueError("Unknown team task")
     with store.connection() as db:
         db.execute("BEGIN IMMEDIATE")
@@ -97,7 +131,7 @@ def begin(pid, stage):
             store._event(db, pid, "恢复前的任务未记录完成", "team_task", _public(interrupted))
         signature = _signature(project, stage)
         row = {"run_id": uuid.uuid4().hex, "task_id": stage + ":" + signature,
-               "stage": stage, "owner": TASKS[stage]["owner"], "reviewer": TASKS[stage]["reviewer"],
+               "stage": stage, "owner": definition(stage,project)["owner"], "reviewer": definition(stage,project)["reviewer"],
                "status": "running", "attempt": attempt + 1, "input_signature": signature,
                "started_at": store.now(), "finished_at": None, "error_type": None,
                "model": None, "completion_semantics": COMPLETION}
@@ -106,7 +140,7 @@ def begin(pid, stage):
 
 
 def finish(pid, stage, run_id, status, *, error_type=None):
-    if stage not in TASKS or status not in TERMINAL:
+    if (stage not in TASKS and stage not in V2_TASKS) or status not in TERMINAL:
         raise ValueError("Invalid team task outcome")
     if error_type is not None and (not isinstance(error_type, str) or not error_type.isidentifier() or len(error_type) > 100):
         raise ValueError("Invalid exception type")
@@ -123,7 +157,7 @@ def finish(pid, stage, run_id, status, *, error_type=None):
 
 
 def tracked_node(stage, function):
-    if stage not in TASKS:
+    if stage not in TASKS and stage not in V2_TASKS:
         raise ValueError("Unknown team task")
     @wraps(function)
     def execute(state):
@@ -141,7 +175,7 @@ def tracked_node(stage, function):
             except Exception:
                 logging.getLogger(__name__).exception("Team audit failed; original task error is preserved")
             raise
-        status = "waiting" if stage == "production" and isinstance(result, dict) and result.get("route") == "revision" else "succeeded"
+        status = "skipped" if isinstance(result,dict) and result.get("skipped") else ("waiting" if stage == "production" and isinstance(result, dict) and result.get("route") == "revision" else "succeeded")
         finish(state["project_id"], stage, token["run_id"], status)
         return result
     return execute
@@ -151,7 +185,7 @@ def snapshot(project):
     recorded = project.get("team_tasks")
     recorded = recorded if isinstance(recorded, dict) else {}
     rows = []
-    for spec in contracts():
+    for spec in contracts(project.get("workflow_version",1)):
         old = _public(recorded.get(spec["id"]))
         current = bool(old and old.get("input_signature") == _signature(project, spec["id"]))
         rows.append({**spec, "current": current, "status": old.get("status", "pending") if current else "pending",

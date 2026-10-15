@@ -63,6 +63,9 @@ class FactoryCLITests(unittest.TestCase):
     def test_choose_uses_explicit_gate_and_replays_without_another_answer(self):
         p = self.project()
         old = store.gate(p["id"], "story", [{"id": "A"}], "旧提案", 1)
+        store.update(p["id"], {"proposal_generation": 2, "proposals_complete_generation": 2,
+                               "proposals": [{"id": "A", "eligible": True}],
+                               "creation_review": {"passed": True}})
         current = store.gate(p["id"], "story", [{"id": "A"}], "当前提案", 2)
         stale = self.invoke("choose", p["id"], "--type", "story", "--choice", "A",
                             "--decision-id", old["id"])
@@ -80,9 +83,12 @@ class FactoryCLITests(unittest.TestCase):
 
     def test_existing_style_and_final_choices_require_current_gate_and_feedback(self):
         p = self.project()
+        store.update(p["id"], {"styles": [{"id": "style-2"}], "style_previews_generation": 1,
+                               "script_complete_generation": 1, "script_review": {"passed": True}})
         style = store.gate(p["id"], "style", [{"id": "style-2"}], "选画风", 1)
         self.assertEqual(self.invoke("choose", p["id"], "--type", "style", "--choice", "style-2")[0], 0)
         self.assertIn(style["id"], store.get(p["id"])["answers"])
+        store.update(p["id"], {"delivery_complete_revision": 1, "delivery": {"path": "synthetic.mp4"}})
         final = store.gate(p["id"], "final", [{"id": "approve"}, {"id": "revise"}], "审片", 1)
         before = store.get(p["id"])
         self.assertEqual(self.invoke("choose", p["id"], "--type", "final", "--choice", "revise")[0], 2)

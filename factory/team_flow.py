@@ -63,6 +63,7 @@ STAGE_ROLES = {
     "story_review": "independent_critic", "story_resolution": "story_editor",
     "story_resolution_review": "story_critic", "screenplay": "screenwriter",
     "script_creation": "screenwriter", "storyboard_direction": "storyboard_director",
+    "storyboard": "storyboard_director", "visual_design": "visual_designer",
     "script_review": "independent_critic", "visual_development": "visual_designer",
     "style_previews": "image_generator", "story_decision": "producer",
     "style_decision": "producer", "final_decision": "producer",
@@ -320,7 +321,7 @@ def team_spec(config=None):
         "assignment_semantics": ("LangGraph 执行既有任务图；delegated 项目可委托总制片选择故事和视觉，预算与终片仍须人工确认。"
                                  if "executive_producer" in config.get("llm_roles", {}) else
                                  "LangGraph 编排器按任务调用已绑定的角色；未配置额外的 LLM 领导。"),
-        "supervisor_policy": {"role": "executive_producer", "opt_in": True,
+        "supervisor_policy": {"role": "executive_producer", "opt_in": False,
                               "automatic_choices": ["story", "style"], "final_advisory_only": True},
         "teams": _bindings(config),
         "handoffs": [{"source": source, "target": target, "label": label}
@@ -518,14 +519,36 @@ def build_flow(project, config=None):
     done("storyboard_director", script_current and any(row.get("storyboard") for row in _rows(_object(project.get("script_review")).get("rounds"), 5)))
     done("independent_critic", (proposals_current and bool(project.get("creation_review"))) or (script_current and bool(project.get("script_review"))))
     done("visual_designer", script_current and bool(styles))
-    done("image_generator", bool(shots) and image_count == len(shots))
-    done("video_generator", bool(shots) and video_count == len(shots))
+    def media_passed(shot, stage):
+        selected=_object(shot.get(stage))
+        if selected.get('state',selected.get('status')) == 'passed':
+            return True
+        return bool(selected) and any(
+            row.get('stage')==stage and row.get('state',row.get('status'))=='passed'
+            and (not selected.get('source_signature') or row.get('source_signature')==selected.get('source_signature'))
+            for row in _rows(shot.get('attempts'),20))
+    done("image_generator", bool(shots) and all(media_passed(shot,'image') for shot in shots))
+    done("video_generator", project.get('format')!='motion_comic' and bool(shots) and all(media_passed(shot,'video') for shot in shots))
     done("speech", production.get("phase") == "voice_complete" or bool(audio.get("source_signature")) or audio.get("speech") == "no_dialogue_in_script")
     done("visual_critic", bool(shots) and all(_object(_object(shot.get("qa")).get("semantic")).get("status") == "pass" for shot in shots))
     done("edit_director", bool(plan) and _current(project, "revision_prepared", "production_revision"))
-    done("editor", delivery_current and bool(_artifact_url(root, delivery.get("path") or delivery.get("video_url"))))
+    done("editor", delivery_current and bool(delivery) and bool(delivery.get("technical_checks") or delivery.get("qa") or delivery.get("manifest_url")))
     done("producer", project.get("status") == "approved")
 
+    if project.get('workflow_version',1)==2:
+        # V2 roles are tied to completed executable steps, not artifact presence.
+        from .team_tasks import snapshot as current_tasks
+        task_rows=current_tasks(project)['tasks']
+        for role_name in ('story_editor','story_critic','screenwriter','storyboard_director','independent_critic','visual_designer'):
+            owned=[r for r in task_rows if r['owner']==role_name or (role_name=='story_critic' and r['id']=='story_resolution')]
+            if owned:
+                successful=[r for r in owned if r['current'] and r['status']=='succeeded']
+                calls_recorded=any(r.get('status')=='succeeded' for r in nodes[role_name]['executions'])
+                explicit_review=(role_name=='story_critic' and resolution_review.get('passed') is True) or (
+                    role_name=='independent_critic' and script_current and _object(project.get('script_review')).get('passed') is True)
+                director_receipt=role_name=='storyboard_director' and bool(project.get('storyboard_receipt'))
+                verified=bool(successful) and (calls_recorded or explicit_review or director_receipt)
+                nodes[role_name].update(status='succeeded' if verified else 'pending',status_source='execution_or_review_receipt' if verified else 'not_recorded')
     status = str(project.get("status", "queued"))
     active = _active_role(project)
     if status == "approved":
@@ -569,7 +592,7 @@ def build_flow(project, config=None):
              for edge in specification["handoffs"]]
     from .team_tasks import snapshot as task_snapshot
     return {"project_id": project["id"], "revision": project.get("revision"),
-            "task_board": task_snapshot(project),
+            "task_board": task_snapshot(project), "production_tasks":list(_object(project.get("production_tasks")).values()),
             "assignment_mode": "orchestrator", "orchestrator": "LangGraph",
             "assignment_semantics": specification["assignment_semantics"],
             "teams": teams, "nodes": list(nodes.values()), "edges": edges,

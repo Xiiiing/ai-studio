@@ -2,9 +2,13 @@
 
 让不同模型分别负责故事策划、编剧、审稿、分镜和画面质检，组合本地图像、配音与剪辑，以及本地或云端视频生成，完成短剧交付。
 
-**AI Studio 的核心是一条可恢复的制作工作流。** 出品人主要选择故事、选择视觉方案、审阅初版成片；普通的结构修复、镜头重试和预算检查由执行器处理。CLI 和中文工作台共用同一套状态与任务队列。
+**AI Studio 的核心是一条可恢复的制作工作流。** 新项目默认由总制片代理选择合格故事与视觉方向，出品人可在安全边界接管，并负责初版成片的终审；普通修复在既有尝试与预算内执行。CLI 和中文工作台共用同一套状态与任务队列。
 
 ## 这版解决什么问题
+
+- **制作台与团队指挥连通。** 浅色制片总览展示实际执行、待办和作品；项目按故事、视觉、分镜、镜头与成片组织内容，Agent 任务直接关联产物与独立审核。
+- **待办有实际处理方式。** 补充授权素材、切回原创、修改方向、反馈后重新审核、全部否决视觉及指定镜头返修，共用服务端动作契约。
+- **执行图按项目版本恢复。** 新项目分别保存故事目标、剧本、分镜、独立审核和视觉设计步骤；已有项目使用原检查点。旧 UI、旧启动器及固定样片专项验收入口已删除。
 
 - **模型通过接口调用。** 同一角色可配置 llama.cpp、Ollama 原生或兼容接口、vLLM、LM Studio、DeepSeek、百炼或其他 OpenAI-compatible 服务；部署位置与协议分开配置。
 - **角色和模型分开。** 编剧、独立审稿、分镜导演、视觉质检有各自绑定；多个角色共用模型时也会明确显示。
@@ -31,7 +35,7 @@
 
 ## 快速开始
 
-控制层适合 Linux + Python 3.12。只使用文本创作或远程 LLM 接口时，控制层无需 GPU；本地图像、视频和配音需要另外准备对应模型、运行环境与显存。
+控制层适合 Linux + Python 3.12；UI 构建机需要 Node.js 24。只使用文本创作或远程 LLM 接口时，控制层无需 GPU；本地图像、视频和配音需要另外准备对应模型、运行环境与显存。
 
 ```bash
 git clone https://github.com/Xiiiing/ai-studio.git
@@ -41,7 +45,7 @@ python3.12 scripts/bootstrap.py
 ./drama workflow --json
 ```
 
-初始化仅在缺失时创建 `config/factory.json`，保留已有配置。公开示例中的模型 ID 是示例别名，需改成你的服务实际提供的 ID。Ollama、vLLM、LM Studio、DeepSeek、百炼和 MiniMax 示例连接默认禁用，启用前填写实际服务与模型 ID。
+初始化仅在缺失时创建 `config/factory.json`，保留已有配置，并将 React 工作台构建到 `ui/factory/dist`。运行服务器可安装匹配代码版本的预构建 UI，使用 `--skip-ui-build` 跳过 Node。公开示例中的模型 ID 是示例别名，需改成你的服务实际提供的 ID。Ollama、vLLM、LM Studio、DeepSeek、百炼和 MiniMax 示例连接默认禁用，启用前填写实际服务与模型 ID。
 
 启动工作台和后台执行器，分别在两个终端运行：
 
@@ -97,7 +101,7 @@ MiniMax 的当前适配器使用 v1 图生视频协议，支持任务、文件 I
   --request-id first-episode
 ```
 
-工作流到达决策点后，工作台会展示可选内容。CLI 可用：
+工作流需要人工处理时，工作台展示候选、审核依据和有效操作。新项目默认 AI 代管故事与视觉；总制片未配置时明确回到人工处理。创建时使用 `--team-mode guided` 可全程人工选择故事与画风。CLI 可用：
 
 ```bash
 ./drama status PROJECT_ID
@@ -159,7 +163,10 @@ flowchart TD
 
 ```bash
 envs/factory/bin/python -m pytest -q tests/test_factory_*.py
-node --test tests/test_factory_ui.mjs
+npm test
+npm run build
+python scripts/browser_fixtures.py
+FACTORY_TEST_PYTHON=envs/factory/bin/python npm run test:browser
 ```
 
 ## 文档
@@ -167,6 +174,7 @@ node --test tests/test_factory_ui.mjs
 - [模型接口与本地运行](docs/MODEL_PROVIDERS.md)
 - [部署、升级和恢复](docs/DEPLOYMENT.md)
 - [API 与工作流配置](docs/API.md)
-- [本轮问题、修复与验证范围](docs/AUDIT_2026-10-13.md)
+- [工作台重构、迁移与验证](docs/STUDIO_UPGRADE_2026-10-15.md)
+- [此前问题、修复与验证范围](docs/AUDIT_2026-10-13.md)
 - [参考架构研究](docs/REFERENCE_ARCHITECTURES.md)
 - [第三方组件说明](THIRD_PARTY_NOTICES.md)

@@ -18,11 +18,10 @@ def http_endpoint(request, tmp_path, monkeypatch):
     effects = []
     monkeypatch.setattr(legacy, "ROOT", tmp_path)
     monkeypatch.setattr(web, "ROOT", tmp_path)
-    monkeypatch.setattr(legacy, "launch", lambda payload: effects.append(payload) or {"state": "running"})
-    monkeypatch.setattr(legacy, "episode_state", lambda slug: {"slug": slug})
-    (tmp_path / "ui/factory").mkdir(parents=True)
-    (tmp_path / "ui/index.html").write_text("<html><script></script></html>")
-    (tmp_path / "ui/factory/index.html").write_text("<html>workbench</html>")
+    # The shared HTTP transport no longer contains a legacy process launcher.
+    assert not hasattr(legacy, "launch")
+    (tmp_path / "ui/factory/dist/assets").mkdir(parents=True)
+    (tmp_path / "ui/factory/dist/index.html").write_text("<html>workbench</html>")
     media = tmp_path / "production/example/clip.mp4"
     media.parent.mkdir(parents=True)
     media.write_bytes(b"synthetic-media-for-http-ranges")
@@ -97,11 +96,11 @@ def test_cli_no_origin_and_browser_actual_port(http_endpoint):
     client, effects, _ = http_endpoint
     assert client.request("GET", "/api/health")[0] == 200
     origin = f"http://127.0.0.1:{client.port}"
-    assert client.request("POST", "/api/start", b"{}", {"Origin": origin})[0] == 202
-    assert effects == [{}]
-    assert client.request("GET", "/")[0] == 200
+    assert client.request("POST", "/api/start", b"{}", {"Origin": origin})[0] == 410
+    assert effects == []
+    assert client.request("GET", "/")[0] == (200 if client.factory else 410)
     if client.factory:
-        assert client.request("GET", "/legacy")[0] == 200
+        assert client.request("GET", "/legacy")[0] == 410
 
 
 @pytest.mark.parametrize("headers,body,status", [
@@ -142,6 +141,22 @@ def test_media_symlinks_rejected_and_ranges_preserved(http_endpoint):
     code, headers, body = client.request("GET", "/media/production/example/clip.mp4", headers={"Range": "bytes=0-8"})
     assert code == 206 and body == b"synthetic"
     assert headers["Content-Length"] == "9" and headers["X-Content-Type-Options"] == "nosniff"
+
+
+def test_built_ui_assets_cannot_escape_bundle_root(http_endpoint):
+    client, _, root = http_endpoint
+    if not client.factory:
+        return
+    assets = root / "ui/factory/dist/assets"
+    secret = root / "private.js"
+    secret.write_text("PRIVATE_DO_NOT_SERVE")
+    (assets / "linked.js").symlink_to(secret)
+    assert client.request("GET", "/factory/static/assets/linked.js")[0] == 403
+    assert client.request("GET", "/factory/static/assets/../index.html")[0] == 400
+    index = root / "ui/factory/dist/index.html"
+    index.unlink()
+    index.symlink_to(secret)
+    assert client.request("GET", "/")[0] == 403
 
 
 @pytest.mark.parametrize("path", ["/api/episode/a/extra", "/api/factory/projects/not-a-project", "/api/factory/jobs/not-a-job"])
@@ -262,12 +277,15 @@ def test_loopback_bind_and_port_validation():
             validate_bind("127.0.0.1", value)
 
 
-@pytest.mark.parametrize("method,path", [("GET", "/api/episode/example"), ("POST", "/api/start")])
+@pytest.mark.parametrize("method,path", [("GET", "/media/production/example/clip.mp4"), ("POST", "/api/start")])
 def test_unexpected_legacy_errors_share_safe_json_contract(http_endpoint, monkeypatch, method, path):
     client, effects, _ = http_endpoint
     def fail(*_args):
         raise OSError("synthetic-private-provider-diagnostic")
-    monkeypatch.setattr(legacy, "episode_state" if method == "GET" else "launch", fail)
+    if method == "GET":
+        monkeypatch.setattr(legacy, "open_media", fail)
+    else:
+        monkeypatch.setattr(legacy.Handler, "read_json_body", fail)
     code, _, body = client.request(method, path, b"{}" if method == "POST" else None)
     assert code == 500
     result = json.loads(body)

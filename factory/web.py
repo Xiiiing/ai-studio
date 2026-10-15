@@ -4,17 +4,17 @@ from __future__ import annotations
 import re
 import socket
 from http.server import ThreadingHTTPServer
-from urllib.parse import unquote,urlsplit
+from urllib.parse import parse_qs,unquote,urlsplit
 
 from studio.core import ROOT
 from studio.http_security import HTTPError, validate_bind
-from studio.web import Handler as LegacyHandler
+from studio.web import Handler as LocalMediaHandler
 from . import __version__, store
 from .capabilities import snapshot
 from .config import load_config
 
 
-class Handler(LegacyHandler):
+class Handler(LocalMediaHandler):
     server_version="DramaFactory/"+__version__
 
     factory_routes = True
@@ -34,9 +34,18 @@ class Handler(LegacyHandler):
             if path=="/api/health":
                 return self.json({"service":"drama-studio","root":str(ROOT),"status":"ready",
                                   "version":__version__,"factory":True})
-            if path=="/api/factory/overview":
-                return self.json({"projects":store.list_projects(),"capabilities":snapshot(),
-                                  "queue":store.queue_summary(),"version":__version__})
+            if path in {"/api/factory/overview", "/api/factory/console"}:
+                from .operator_console import dashboard
+                query = parse_qs(urlsplit(self.path).query, keep_blank_values=True)
+                allowed = {"offset", "limit", "attention_offset", "attention_limit"}
+                if set(query) - allowed or any(len(values) != 1 or not re.fullmatch(r"[0-9]{1,9}", values[0]) for values in query.values()):
+                    raise ValueError("分页参数须为单个非负整数")
+                paging = {key: int(values[0]) for key, values in query.items()}
+                return self.json({**dashboard(**paging),"capabilities":snapshot(),"version":__version__})
+            match=re.fullmatch(r"/api/factory/projects/([a-f0-9]{12})/workspace",path)
+            if match:
+                from .operator_console import workspace
+                return self.json(workspace(match.group(1)))
             if path=="/api/factory/capabilities":
                 return self.json(snapshot())
             match=re.fullmatch(r"/api/factory/jobs/([a-f0-9]{32})",path)
@@ -67,20 +76,18 @@ class Handler(LegacyHandler):
             if match:
                 return self.json(store.get(match.group(1)))
             if path=="/":
-                return self._static(ROOT/"ui/factory/index.html","text/html; charset=utf-8")
+                index = ROOT / "ui/factory/dist/index.html"
+                if not index.is_file():
+                    return self.json({"error": "工作台尚未构建，请在开发环境运行 npm ci 和 npm run build，或安装包含已构建 UI 的发布包。", "code": "ui_build_missing"}, 503)
+                return self.send_file(index, root=ROOT / "ui/factory/dist")
             if path.startswith("/factory/static/"):
                 rel=path[len("/factory/static/"):]
-                target=ROOT/"ui/factory"/rel
-                if target.suffix not in {".css",".js",".svg",".png",".jpg",".woff2"}:
+                target=ROOT/"ui/factory/dist"/rel
+                if target.suffix not in {".css",".js",".svg",".png",".jpg",".jpeg",".webp",".woff2",".txt"}:
                     return self.json({"error":"Static asset not found"},404)
-                return self.send_file(target,root=ROOT/"ui/factory")
+                return self.send_file(target,root=ROOT/"ui/factory/dist")
             if path=="/legacy":
-                previous=self.path
-                self.path="/"
-                try:
-                    return super().do_GET()
-                finally:
-                    self.path=previous
+                return self.json({"error":"旧版已移除，请使用新版制片控制台。","code":"legacy_retired"},410)
             return super().do_GET()
         except HTTPError as exc:
             return self.json({"error":str(exc),"code":exc.code},exc.status)
@@ -94,15 +101,6 @@ class Handler(LegacyHandler):
             import traceback
             traceback.print_exc()
             return self.json({"error":"服务暂时无法完成请求，请检查本地日志。"},500)
-
-    def _static(self,path,mime):
-        body=path.read_bytes()
-        self.send_response(200)
-        self.send_header("Content-Type",mime)
-        self.send_header("Content-Length",str(len(body)))
-        self.send_header("Cache-Control","no-store")
-        self.end_headers()
-        self.wfile.write(body)
 
     def do_POST(self):
         route=urlsplit(self.path).path

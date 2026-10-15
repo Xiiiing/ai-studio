@@ -29,7 +29,7 @@ def env(tmp_path, monkeypatch):
 
 
 def project(**extra):
-    return store.create({"brief": "两个成年人解决误会的原创悬疑短剧", "team_mode": "delegated", **extra})
+    return store.create({"brief": "两个成年人解决误会的原创悬疑短剧", "team_mode": "delegated", "workflow_version": 1, **extra})
 
 
 def proposal(choice="B", action="select"):
@@ -69,8 +69,8 @@ def test_mode_is_strict(env, mode):
         project(team_mode=mode)
 
 
-def test_default_guided_does_not_request_model(env, monkeypatch):
-    p = store.create({"brief": "保留人工关卡的原创成年人故事"})
+def test_explicit_guided_does_not_request_model(env, monkeypatch):
+    p = store.create({"brief": "保留人工关卡的原创成年人故事", "team_mode": "guided"})
     gate = story_gate(p)
     called = []
     monkeypatch.setattr(sv, "cached_json_call", lambda *a, **k: called.append(True))

@@ -162,14 +162,31 @@ def test_actual_listening_port_and_localhost_origin_are_supported(endpoint):
     assert code == 200 and len(calls) == 1
 
 
-def test_console_loads_native_model_and_workflow_modules(endpoint):
+def test_console_serves_built_assets_only(endpoint, tmp_path, monkeypatch):
     client, calls, _, _ = endpoint
+    monkeypatch.setattr(web, "ROOT", tmp_path)
+    dist = tmp_path / "ui/factory/dist"
+    (dist / "assets").mkdir(parents=True)
+    (dist / "index.html").write_text('<html><div id="root"></div><script type="module" src="/factory/static/assets/app-hash.js"></script></html>')
+    (dist / "assets/app-hash.js").write_text('document.title = "AI Studio";')
+    (dist / "assets/app-hash.css").write_text('body { color: #172033; }')
     code, headers, html = client.request("GET", "/")
     assert code == 200 and headers["X-Content-Type-Options"] == "nosniff"
-    assert b'data-action="models"' in html and b'id="model-dialog"' in html
-    for name in ("app.js", "api.js", "models.js", "workflow.js", "views.js", "styles.css"):
+    assert b'id="root"' in html and b'/factory/static/assets/app-hash.js' in html
+    for name in ("assets/app-hash.js", "assets/app-hash.css"):
         code, _, body = client.request("GET", "/factory/static/" + name)
         assert code == 200 and body
+    assert client.request("GET", "/factory/static/src/main.tsx")[0] == 404
+    assert client.request("GET", "/factory/static/assets/app-hash.js.map")[0] == 404
+    assert calls == []
+
+
+def test_missing_ui_build_is_actionable_without_starting_work(endpoint, tmp_path, monkeypatch):
+    client, calls, _, _ = endpoint
+    monkeypatch.setattr(web, "ROOT", tmp_path)
+    code, _, body = client.request("GET", "/")
+    assert code == 503 and body["code"] == "ui_build_missing"
+    assert "npm run build" in body["error"]
     assert calls == []
 
 

@@ -83,6 +83,7 @@ def _read(db, pid):
         raise KeyError("项目不存在")
     item = json.loads(row["snapshot"])
     item["revision"] = row["revision"]
+    item.setdefault("workflow_version", 1)
     return item
 
 
@@ -116,9 +117,12 @@ def _enqueue(db, pid):
 
 
 def create(payload):
-    team_mode = payload.get("team_mode", "guided")
+    team_mode = payload.get("team_mode", "delegated")
     if not isinstance(team_mode, str) or team_mode not in {"guided", "delegated"}:
         raise ValueError("团队模式应为 guided 或 delegated")
+    workflow_version = payload.get("workflow_version", 2)
+    if type(workflow_version) is not int or workflow_version not in {1, 2}:
+        raise ValueError("工作流版本应为 1 或 2")
     brief = str(payload.get("brief", "")).strip()
     if not 5 <= len(brief) <= 6000:
         raise ValueError("请填写 5–6000 字的创作方向")
@@ -171,12 +175,14 @@ def create(payload):
                    "max_attempts": attempts, "wall_minutes": float(wall)},
         "production": {}, "delivery": None, "error": None, "pause_requested": False,
         "proposal_generation": 1, "script_generation": 1, "production_revision": 1,
-        "team_mode": team_mode,
+        "team_mode": team_mode, "workflow_version": workflow_version,
         "is_validation": bool(payload.get("is_validation", False)),
         "series_key": str(payload.get("series_key", "")).strip()[:100],
     }
     if profile is not None:
         project["production_profile"] = profile
+    from .attention_actions import delegation_status
+    project["delegation"] = delegation_status(project)
     import hashlib
     request_key = payload.get("request_id")
     request_hash = hashlib.sha256(encoded({k:v for k,v in payload.items() if k != "request_id"}).encode()).hexdigest()
@@ -264,6 +270,9 @@ def update(pid, patch):
 
 
 def gate(pid, kind, options, title, version):
+    options = copy.deepcopy(options)
+    if kind == "style" and not any(o.get("id") == "__restyle__" for o in options if isinstance(o, dict)):
+        options.append({"id": "__restyle__", "label": "全部不满意，重新设计"})
     ident = f"{pid}:{kind}:{version}"
     with connection() as db:
         db.execute("BEGIN IMMEDIATE")
@@ -308,6 +317,12 @@ def answer_for(pid, gate_id):
     return get(pid, False).get("answers", {}).get(gate_id)
 
 
+def _check_revision(project, payload):
+    expected = payload.get("expected_revision")
+    if "expected_revision" in payload and (type(expected) is not int or expected != project["revision"]):
+        raise ValueError("项目已更新，已保留你的意见；请刷新当前状态后再提交")
+
+
 def decide(pid, payload, actor=None):
     kind = payload.get("type")
     choice = payload.get("choice")
@@ -324,11 +339,13 @@ def decide(pid, payload, actor=None):
                 raise ValueError("该决策已经处理，请刷新项目状态")
         else:
             d = next((d for d in reversed(p["decisions"]) if d["type"] == kind and d["status"] == "pending"), None)
+        _check_revision(p, payload)
         if not d or d["type"] != kind or d["status"] != "pending":
             raise ValueError("当前没有对应的待办决策，请刷新后再选择")
-        valid = [o.get("id") if isinstance(o, dict) else o for o in d["options"]]
-        if choice not in valid and not (kind == "story" and choice == "__repropose__"):
-            raise ValueError("所选方案不属于当前决策")
+        from .attention_actions import validate_gate
+        validate_gate(p, d, choice)
+        if choice == "__restyle__" and not feedback:
+            raise ValueError("请说明需要调整的人物或画风要求")
         if kind == "final" and choice in {"revise", "reedit"} and not feedback:
             raise ValueError("请说明需要修改的镜头或剪辑意见")
         answer = {"gate_id": d["id"], "type":kind, "choice":choice, "feedback":feedback,
@@ -374,13 +391,68 @@ def _pause(db, project):
 
 
 def action(pid, payload):
+    from .attention_actions import REGISTRY, RECOVERY_ACTIONS, recover, _restart
     command = payload.get("action")
+    if command not in REGISTRY:
+        raise ValueError("不支持的项目操作")
+    if command in RECOVERY_ACTIONS | {"take_control", "delegate_control"} and type(payload.get("expected_revision")) is not int:
+        raise ValueError("此操作需要当前项目的 expected_revision，请刷新后提交")
     if command == "repropose":
-        return decide(pid, {"type":"story", "choice":"__repropose__", "feedback":payload.get("feedback","")})
+        return decide(pid, {**payload, "type":"story", "choice":"__repropose__"})
+    if command == "regenerate":
+        project = get(pid, False)
+        if project.get("status") in {"awaiting_story", "awaiting_style"}:
+            kind = "story" if project["status"] == "awaiting_story" else "style"
+            return decide(pid, {**payload, "type": kind,
+                               "choice": "__repropose__" if kind == "story" else "__restyle__"})
     with connection() as db:
         db.execute("BEGIN IMMEDIATE")
         p = _read(db, pid)
-        if command == "pause":
+        if command != "revise":
+            _check_revision(p, payload)
+        if command in RECOVERY_ACTIONS:
+            if db.execute("SELECT 1 FROM jobs WHERE project_id=? AND status='running'", (pid,)).fetchone():
+                raise ValueError("当前任务正在收尾，请完成后再提交创作修改")
+            recover(p, payload)
+            _enqueue(db, pid)
+            _event(db, pid, REGISTRY[command]["label"] + "：已保存并安排重新审核。", "recovery_action",
+                   {"action": command, "restart_from": p.get("workflow_restart_from")})
+        elif command == "take_control":
+            if p["status"] in TERMINAL:
+                raise ValueError("已完成项目不能切换控制方式")
+            p["team_mode"] = "guided"
+            p["delegation"] = {"requested": False, "available": False, "mode": "human", "reason_code": "producer_took_control", "reason": "出品人已接管后续故事与视觉选择"}
+            if db.execute("SELECT 1 FROM jobs WHERE project_id=? AND status='running'", (pid,)).fetchone():
+                _pause(db, p)
+                p["control_change_reason"] = "出品人接管：当前安全步骤完成后暂停，恢复时采用人工控制"
+            _event(db, pid, "出品人已接管后续创作决策。", "team_mode", {"team_mode": "guided"})
+        elif command == "delegate_control":
+            if p["status"] in TERMINAL or p["status"] == "awaiting_final":
+                raise ValueError("终审和已完成项目不能转交自动决策")
+            if db.execute("SELECT 1 FROM jobs WHERE project_id=? AND status='running'", (pid,)).fetchone():
+                raise ValueError("请等待当前执行步骤完成后再转交总制片")
+            if db.execute("SELECT 1 FROM cloud_tasks WHERE project_id=? AND status IN ('submitting','submission_unknown')", (pid,)).fetchone() or str((p.get("needs_decision") or {}).get("code", "")).startswith("cloud_"):
+                raise ValueError("请先核对云任务提交与费用授权，再转交总制片")
+            from .attention_actions import delegation_status
+            policy = delegation_status({**p, "team_mode": "delegated"})
+            if not policy["available"]:
+                raise ValueError(policy["reason"])
+            p.update(team_mode="delegated", delegation=policy)
+            if p["status"] in {"awaiting_story", "awaiting_style"}:
+                kind = "story" if p["status"] == "awaiting_story" else "style"
+                previous = p.get("supervision", {}).get(kind)
+                if previous and previous.get("status") == "requested":
+                    raise ValueError("此前总制片调用结果尚未确认，请先人工处理当前方案")
+                if previous:
+                    # Its full receipt remains in the event log. Explicitly
+                    # handing control back permits a new bounded model review.
+                    p["supervision"].pop(kind, None)
+                    _event(db, pid, "出品人重新委托当前关卡的总制片评审。", "supervision_redelegated",
+                           {"gate_id": previous.get("gate_id"), "previous_run_id": previous.get("run_id")})
+                p["status"] = "queued"
+                _enqueue(db, pid)
+            _event(db, pid, "后续故事与视觉交由总制片在授权范围内推进。", "team_mode", {"team_mode": "delegated"})
+        elif command == "pause":
             _pause(db, p)
         elif command == "revise":
             expected = payload.get("expected_revision")
@@ -451,6 +523,19 @@ def action(pid, payload):
                 p["script_feedback"] = feedback
             if need.get("type") == "edit_feedback" and (payload.get("feedback") or "shot_ids" in payload):
                 p["revision_request"]["feedback"] = _revision_feedback(p, payload)
+            # A creative failure can happen inside an existing revision before
+            # it is wrapped as edit_feedback. Keep the new producer direction.
+            elif creative_block and p.get("selected_style") and payload.get("feedback"):
+                if p.get("revision_request"):
+                    p["revision_request"]["feedback"] = _revision_feedback(p, payload)
+                    p.pop("revision_prepared", None)
+                else:
+                    from .attention_actions import recover as recover_creative
+                    recover_creative(p, {**payload, "action": "provide_feedback"})
+            if creative_block and p.get("workflow_version", 1) >= 2:
+                target = ("revision" if p.get("revision_request") else "story_resolution"
+                          if p.get("selected_story") else "research" if need.get("kind") == "source_rights" else "proposals")
+                _restart(p, target)
             p.update(pause_requested=False, error=None, status="queued")
             p.pop("needs_decision", None)
             _enqueue(db, pid)

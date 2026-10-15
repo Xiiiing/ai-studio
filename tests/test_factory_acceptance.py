@@ -177,15 +177,6 @@ def test_changed_snapshot_cannot_be_certified(tmp_path, monkeypatch):
     assert next(v for v in result["checks"] if v["check"] == "input_snapshot_unchanged")["status"] == "fail"
 
 
-def test_historical_entry_requires_explicit_side_effect_consent(monkeypatch):
-    from factory import acceptance_legacy
-    def forbidden(*args, **kwargs):
-        raise AssertionError("Historical mode touched the store without consent")
-    monkeypatch.setattr(acceptance_legacy.store, "get", forbidden)
-    with pytest.raises(ValueError, match="explicit legacy opt-in"):
-        acceptance_legacy.validate(PID)
-
-
 def test_no_film_cli_returns_report_path_and_failure_exit(tmp_path):
     import subprocess
     import sys

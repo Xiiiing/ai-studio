@@ -293,6 +293,7 @@ def test_langgraph_checkpoint_reentry_preserves_gate_and_remote_task(simulated, 
     from langgraph.graph import StateGraph, START, END
     from langgraph.types import interrupt
     p, profile, frame, clock, service, setup = simulated
+    store.update(p["id"], {"workflow_version": 1, "team_mode": "guided"})
     run, line = setup(p)
     monkeypatch.setattr(wf, "DATA", tmp_path / "graph")
     monkeypatch.setattr(wf, "CHECKPOINTS", tmp_path / "graph/checkpoints.sqlite3")

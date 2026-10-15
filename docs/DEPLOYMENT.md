@@ -2,9 +2,9 @@
 
 ## 部署边界
 
-控制层是一个 Python Web 服务和一个持久化 worker，共用 SQLite。LLM 以外置服务的方式连接；图像、视频和配音各自使用独立推理环境。界面为原生 ES modules，不需要 npm 构建或额外 Node 服务。
+控制层是一个 Python Web 服务和一个持久化 worker，共用 SQLite。LLM 以外置服务的方式连接；图像、视频和配音各自使用独立推理环境。界面使用 React + TypeScript + Vite，在构建机生成 `ui/factory/dist` 静态资源，由 Python 同源提供。运行服务器无需 Node 服务。
 
-HTTP 管理面仅支持 loopback 绑定；配置非 loopback host 会在数据库初始化之前被拒绝。Factory、Legacy、媒体和模型管理路由采用共同 Host/Origin 边界；这不代替公网认证。远程访问、代理限制、符号链接媒体兼容性和任务暂停/取消契约见 [HTTP 安全审查表](HTTP_SECURITY.md)。本轮代码升级不要求数据库迁移。
+HTTP 管理面仅支持 loopback 绑定；配置非 loopback host 会在数据库初始化之前被拒绝。Factory、共享媒体和模型管理路由采用共同 Host/Origin 边界；这不代替公网认证。远程访问、代理限制、符号链接媒体兼容性和任务暂停/取消契约见 [HTTP 安全审查表](HTTP_SECURITY.md)。数据库沿用 SQLite 表结构；新项目保存 `workflow_version=2`，缺少该字段的已有项目按 v1 检查点恢复。
 
 建议使用 Linux、Python 3.12，以及支持对应 CUDA/PyTorch/模型组合的 NVIDIA GPU。控制层本身不要求 GPU。多张卡是可调度资源，不代表每个视频模型会自动使用全部显卡。
 
@@ -16,7 +16,9 @@ cd ai-studio
 python3.12 scripts/bootstrap.py
 ```
 
-脚本创建 `envs/factory` 并安装 `requirements-factory.txt`，已有环境和 live 配置会保留。若没有原来的媒体环境，建立指向控制环境的 `.venv` 链接供媒体辅助命令使用。它不会下载模型、改动 NVIDIA 驱动或启动服务。
+脚本创建 `envs/factory` 并安装 `requirements-factory.txt`，再执行 `npm ci --ignore-scripts` 和 `npm run build`；构建机需要 Node.js 24。已有环境和 live 配置会保留。若没有原来的媒体环境，建立指向控制环境的 `.venv` 链接供媒体辅助命令使用。它不会下载模型、改动 NVIDIA 驱动或启动服务。
+
+在开发机或 CI 构建 UI 后，可将 `ui/factory/dist` 随对应代码提交的发布包传到运行服务器，并运行 `scripts/bootstrap.py --skip-ui-build`。不要从生产服务器复制私有配置到构建机。源码 checkout 没有已构建 UI 时，主页返回带构建说明的 503。
 
 仅初始化示例配置：
 
@@ -152,13 +154,17 @@ ssh -N -L 8787:127.0.0.1:8787 your-user@your-server
 
 先确认队列没有运行中的生成任务，再更新源码、检查依赖并重启两个控制服务。若有任务，先通过工作台请求暂停，等待其到达安全边界。成功素材与决策版本应保留，不因更新代码而清空。
 
-回退程序时恢复先前源码版本和相匹配的配置，保持模型服务与素材数据；涉及数据库 schema 变化时需要按对应版本迁移说明处理。本版仍使用现有 schema_version 1。
+回退程序时恢复先前源码版本和相匹配的配置，保持模型服务与素材数据；涉及数据库 schema 变化时需要按对应版本迁移说明处理。本版保留旧执行图读取能力，工作流版本固定到项目；不要将已有 LangGraph 检查点直接套用新版节点。回退时不得覆盖试用期间的新决策、费用账本和素材。
 
 ## 6. 测试
 
 ```bash
 envs/factory/bin/python -m pytest -q tests/test_factory_*.py
-node --test tests/test_factory_ui.mjs
+npm ci --ignore-scripts
+npm test
+npm run build
+python scripts/browser_fixtures.py
+FACTORY_TEST_PYTHON=envs/factory/bin/python npm run test:browser
 ```
 
-Node 仅用于 UI 开发测试，运行工作台不需要它。CPU/协议测试不代表真实 GPU 视频质量验收；新模型接入后应做小规模结构化文本、视觉输入和镜头生成验证，并检查实际输出回执。
+Node 用于 UI 构建和开发测试，运行已构建工作台不需要它。CPU/协议测试不代表真实 GPU 视频质量验收；新模型接入后应做小规模结构化文本、视觉输入和镜头生成验证，并检查实际输出回执。

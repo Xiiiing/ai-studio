@@ -144,7 +144,7 @@ def _request(config, role, system, payload, schema, output_dir, max_tokens=4096,
                 from .creative_evidence_io import digest
                 receipt["output_sha256"] = digest(result)
                 receipt["output_digest_format"] = "canonical-json-utf8.v1"
-                receipt.update(status="succeeded", elapsed_seconds=round(time.monotonic()-started, 3))
+                receipt.update(status="succeeded", finished_at=time.time(), elapsed_seconds=round(time.monotonic()-started, 3))
                 save("parsed.json", result)
                 save("receipt.json", receipt)
                 return result
@@ -154,7 +154,7 @@ def _request(config, role, system, payload, schema, output_dir, max_tokens=4096,
                              {"role":"user","content":"修复以下结构错误并返回完整JSON，保留已正确的内容："+json.dumps(errors[:15],ensure_ascii=False)}])
     except Exception as exc:
         safe_error = redact_secrets(str(exc), llm)[:2000]
-        receipt.update(status="failed", elapsed_seconds=round(time.monotonic()-started, 3), error=safe_error)
+        receipt.update(status="failed", finished_at=time.time(), elapsed_seconds=round(time.monotonic()-started, 3), error=safe_error)
         save("receipt.json", receipt)
         if safe_error != str(exc)[:2000]:
             raise RuntimeError(safe_error) from None

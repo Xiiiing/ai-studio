@@ -10,6 +10,8 @@
 | --- | --- |
 | GET `/api/health` | 控制服务版本与可用状态 |
 | GET `/api/factory/overview` | 项目列表、队列、后台资源快照 |
+| GET `/api/factory/console` | 制片总览；全量项目统计、有界最近项目、待办、实际运行和排队状态 |
+| GET `/api/factory/projects/{id}/workspace` | 一致快照中的项目、人工待办、有效动作、执行图和版本 |
 | GET `/api/factory/capabilities` | 有时间戳的资源观察；不等同于艺术质量验证 |
 | GET `/api/factory/projects/{id}` | 项目状态、决策、预算、镜头与交付 |
 | GET `/api/factory/projects/{id}/flow` | 当前分工、实际执行回执、输入输出与任务交接 |
@@ -87,6 +89,37 @@ POST `/api/factory/projects`，成功返回 202：
 ```
 
 同一创建请求的重试使用相同 `request_id`；不能用同一个 ID 改变创作参数。
+
+新项目默认 `team_mode: "delegated"`、`workflow_version: 2`。总制片尚未配置时，项目仍可创建，界面明确显示人工接管原因；终片始终需要出品人确认。已有项目缺少工作流版本时按 v1 恢复，其协作方式不因升级被修改。
+
+## 制作待办与有效动作
+
+工作台从 `workspace.operator.attention` 读取结构化问题、候选、审核依据和 `actions`，从 `workspace.operator.actions` 读取项目控制操作。动作格式为：
+
+```json
+{
+  "id": "provide_feedback",
+  "label": "提交意见并重新审核",
+  "inputs": [{"name": "feedback", "label": "修改要求", "type": "textarea", "required": true, "maxlength": 4000}],
+  "impact": "把意见落实到当前故事或返修稿，重新独立审核",
+  "enabled": true,
+  "disabled_reason": null
+}
+```
+
+字段类型包括 text、textarea、number、select、multiselect；选项由服务端提供。客户端只展示实际返回的动作，不根据错误文字推测重试方式。提交仍使用 `POST /api/factory/projects/{id}/action`，字段平铺到原有正文：
+
+```json
+{"action": "provide_feedback", "feedback": "明确 S03 人物选择的动机，保留其余故事。", "expected_revision": 12}
+```
+
+操作包括补充授权素材 `provide_authorized_source`（url 或 text 至少一项，并提供 rights）、切回原创 `switch_to_original`、修改需求 `revise_brief`、重新生成 `regenerate` 和提交反馈 `provide_feedback`。是否可执行以当前 descriptors 和服务端事务校验为准。`take_control` 在安全边界转为人工控制；`delegate_control` 只在允许委托且总制片可用时恢复代管。两者都不能扩大费用权限或批准终片。
+
+故事重新提案使用 `choice: "__repropose__"`，全部否决视觉使用 `choice: "__restyle__"` 并提交 feedback，均绑定当前 decision_id。候选选择同时验证关卡代数和当前审核/产物版本；项目 revision 正确不能使旧关卡重新有效。已有受理请求的完全相同重放保持幂等。
+
+CLI 同样使用动作契约：`./drama status ID` 列出有效操作；`./drama action ID provide_authorized_source --inputs-file SOURCE.json --expected-revision REV` 提交结构化输入。`./drama workflow --workflow-version 1` 可核对旧执行图。
+
+总览支持 `offset`、`limit`、`attention_offset`、`attention_limit` 查询参数。`projects` 和 `attention_projects` 独立分页，分别返回 `pagination` / `attention_pagination` 的 offset、limit、total、has_more、next_offset。统计始终覆盖全量项目；较早的阻断项目不会因不在最近项目页中而从待办入口消失。
 
 ## 人工决策
 

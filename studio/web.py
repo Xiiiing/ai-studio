@@ -1,152 +1,96 @@
+"""Shared local HTTP/media transport. The former dashboard and launcher are retired.
+
+There is deliberately no standalone server or subprocess production endpoint here.
+The only supported application entrypoint is factory.web.
+"""
 from __future__ import annotations
-import json,mimetypes,os,re,subprocess,threading,time,uuid
-from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
-from pathlib import Path
-from urllib.parse import unquote,urlsplit
-from .core import ROOT,episode_path,load_episode,read_json,write_json,within,sha256
-from .http_security import HTTPError,LocalHTTPBoundary
+
+import mimetypes
+import os
+import re
+import time
+from http.server import BaseHTTPRequestHandler
+from urllib.parse import unquote, urlsplit
+
+from .core import ROOT
+from .http_security import HTTPError, LocalHTTPBoundary
 from .http_media import open_media
 
-JOBS={};LOCK=threading.Lock()
-ALLOWED={"images","video","voice","mix","lipsync","assemble","verify"}
-def episode_state(slug):
-    folder,data=load_episode(slug);shots=[]
-    for shot in data["shots"]:
-        row={"id":shot["id"],"seconds":shot["seconds"],"dialogue":shot.get("dialogue",[]),"prompt":shot["prompt"],"lip_sync":shot.get("lip_sync",False)}
-        for kind,base in [("image","assets/shots"),("video","renders")]:
-            ref=folder/base/shot["id"]/"selected.json"
-            if ref.exists():
-                chosen=read_json(ref);path=within(ROOT,chosen["path"])
-                row[kind]={"path":str(path.relative_to(ROOT)),"sha256":chosen["sha256"],"origin":chosen.get("origin","local_inference")} if path.exists() else None
-            else:row[kind]=None
-        shots.append(row)
-    release=folder/"release"
-    state_path=folder/"quality/release_state.json";manifest_path=release/"manifest.json"
-    ready=False
-    if state_path.exists() and manifest_path.exists():
-        state=read_json(state_path)
-        ready=state.get("status")=="verified" and state.get("manifest_sha256")==sha256(manifest_path)
-    files=[{"name":x.name,"path":str(x.relative_to(ROOT)),"bytes":x.stat().st_size} for x in sorted(release.glob("*")) if x.is_file() and x.suffix in {".mp4",".jpg",".srt",".ass",".json",".zip"} and (ready or x.suffix not in {".mp4",".jpg"})]
-    for name in ["technical_report.json","visual_review.json"]:
-        path=folder/"quality"/name
-        if path.exists():files.append({"name":name,"path":str(path.relative_to(ROOT)),"bytes":path.stat().st_size})
-    return {"slug":slug,"title":data["title"],"logline":data.get("logline",""),"duration":sum(x["seconds"] for x in data["shots"]),"shots":shots,"files":files,"definition":str((folder/"episode.json").relative_to(ROOT))}
-def jobs_state():
-    out=[]
-    for path in sorted((ROOT/"runtime/ui_jobs").glob("*/state.json"),reverse=True)[:12]:
-        state=read_json(path);log=path.parent/"output.log"
-        if log.exists():
-            with log.open("rb") as f:f.seek(max(0,log.stat().st_size-4000));state["tail"]=f.read().decode(errors="replace")
-        out.append(state)
-    return out
-def launch(payload):
-    stage=payload.get("stage");slug=payload.get("episode")
-    if stage not in ALLOWED:raise ValueError("Unknown production stage")
-    folder,data=load_episode(slug);take=payload.get("take") or time.strftime("take_%Y%m%d_%H%M%S",time.gmtime())
-    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,60}",take):raise ValueError("Invalid take name")
-    argv=[str(ROOT/".venv/bin/python"),"-u",str(ROOT/"drama.py"),stage,slug]
-    if stage in {"images","video"}:
-        cards=str(payload.get("gpus","1,2" if stage=="images" else "1,2,3,4"))
-        if not re.fullmatch(r"[0-7](,[0-7])*",cards) or len(set(cards.split(",")))!=len(cards.split(",")):raise ValueError("GPU list must contain distinct indices 0 to 7")
-        argv+=["--gpus",cards,"--take",take]
-    if stage=="video":argv+=["--profile",payload.get("profile","quality")]
-    if stage=="lipsync":argv+=["--take",take]
-    if stage in {"images","video","lipsync"} and payload.get("shots"):
-        ids=payload["shots"]
-        if not isinstance(ids,list) or not set(ids)<={x["id"] for x in data["shots"]}:raise ValueError("Unknown shot selection")
-        argv+=["--shots",*ids]
-    with LOCK:
-        if any(j.poll() is None for j in JOBS.values()):raise RuntimeError("A dashboard production job is already running")
-        jid=time.strftime("%Y%m%dT%H%M%S",time.gmtime())+"_"+uuid.uuid4().hex[:8]
-        dest=ROOT/"runtime/ui_jobs"/jid;dest.mkdir(parents=True)
-        handle=(dest/"output.log").open("w")
-        child=subprocess.Popen(argv,cwd=ROOT,stdin=subprocess.DEVNULL,stdout=handle,stderr=subprocess.STDOUT)
-        JOBS[jid]=child
-        state={"id":jid,"episode":slug,"stage":stage,"take":take,"state":"running","started":time.time(),"pid":child.pid,"argv":argv}
-        write_json(dest/"state.json",state)
-        def finish():
-            code=child.wait();handle.close();state.update(state="completed" if code==0 else "failed",exit_code=code,finished=time.time());write_json(dest/"state.json",state)
-        threading.Thread(target=finish,daemon=True).start()
-    return state
 
-class Handler(LocalHTTPBoundary,BaseHTTPRequestHandler):
-    def log_message(self,fmt,*args):print(time.strftime("%Y-%m-%d %H:%M:%S"),fmt%args,flush=True)
+class Handler(LocalHTTPBoundary, BaseHTTPRequestHandler):
+    def log_message(self, fmt, *args):
+        print(time.strftime("%Y-%m-%d %H:%M:%S"), fmt % args, flush=True)
+
     def do_GET(self):
         try:
-            route=unquote(urlsplit(self.path).path)
-            if route=="/api/health":return self.json({"service":"drama-studio","root":str(ROOT),"status":"ready"})
-            if route=="/api/episodes":
-                rows=[]
-                for p in sorted((ROOT/"production").glob("*/episode.json")):
-                    try:
-                        d=read_json(p);rows.append({"slug":p.parent.name,"title":d["title"]})
-                    except (ValueError,KeyError):continue
-                return self.json(rows)
-            if route.startswith("/api/episode/"):return self.json(episode_state(route.rsplit("/",1)[1]))
-            if route=="/api/jobs":return self.json(jobs_state())
-            if route=="/":
-                episodes=[]
-                for path in sorted((ROOT/"production").glob("*/episode.json")):
-                    info=read_json(path);episodes.append({"slug":path.parent.name,"title":info["title"]})
-                slug="the-last-stop" if any(x["slug"]=="the-last-stop" for x in episodes) else episodes[0]["slug"] if episodes else None
-                initial={"episodes":episodes,"episode":episode_state(slug) if slug else None}
-                payload=json.dumps(initial,ensure_ascii=False).replace("<","\\u003c")
-                markup=(ROOT/"ui/index.html").read_text().replace("<script>",'<script type="application/json" id="boot-data">'+payload+"</script><script>",1).encode()
-                self.send_response(200);self.send_header("Content-Type","text/html; charset=utf-8");self.send_header("Content-Length",str(len(markup)));self.send_header("Cache-Control","no-store");self.end_headers();self.wfile.write(markup);return
+            route = unquote(urlsplit(self.path).path)
+            if route == "/api/health":
+                return self.json({"service": "drama-studio", "status": "ready"})
+            if route in {"/", "/legacy", "/api/episodes", "/api/jobs"} or route.startswith("/api/episode/"):
+                return self.json({"error": "旧版界面与工具已移除，请使用制片控制台。", "code": "legacy_retired"}, 410)
             if route.startswith("/media/"):
-                path=ROOT/route[len("/media/"):]
-                if not path.is_relative_to(ROOT/"production") or path.suffix.lower() not in {".png",".jpg",".jpeg",".mp4",".wav",".srt",".ass",".json",".md",".csv",".zip"}:raise ValueError("File is outside the production media set")
+                path = ROOT / route[len("/media/"):]
+                if not path.is_relative_to(ROOT / "production") or path.suffix.lower() not in {".png", ".jpg", ".jpeg", ".mp4", ".wav", ".srt", ".ass", ".json", ".md", ".csv", ".zip"}:
+                    raise ValueError("File is outside the production media set")
                 return self.send_file(path)
-            self.json({"error":"Not found"},404)
-        except HTTPError as e:self.json({"error":str(e),"code":e.code},e.status)
-        except (ValueError,KeyError,FileNotFoundError) as e:self.json({"error":str(e)},400)
-        except (BrokenPipeError,ConnectionResetError):pass
-        except Exception as e:
-            self.log_error("Legacy HTTP failure: %s",type(e).__name__)
-            self.json({"error":"Internal request failure"},500)
+            return self.json({"error": "Not found"}, 404)
+        except HTTPError as exc:
+            return self.json({"error": str(exc), "code": exc.code}, exc.status)
+        except (ValueError, KeyError, FileNotFoundError) as exc:
+            return self.json({"error": str(exc)}, 400)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+        except Exception as exc:
+            self.log_error("HTTP failure: %s", type(exc).__name__)
+            return self.json({"error": "Internal request failure"}, 500)
+
     def do_POST(self):
         try:
-            payload=self.read_json_body()
-            if urlsplit(self.path).path!="/api/start":return self.json({"error":"Not found"},404)
-            self.json(launch(payload),202)
-        except HTTPError as e:self.json({"error":str(e),"code":e.code},e.status)
-        except (ValueError,TypeError,KeyError,FileNotFoundError,RuntimeError) as e:self.json({"error":str(e)},409)
-        except (BrokenPipeError,ConnectionResetError):pass
-        except Exception as e:
-            self.log_error("Legacy HTTP failure: %s",type(e).__name__)
-            self.json({"error":"Internal request failure"},500)
-    def send_file(self,path,*,root=None):
-        try:
-            with open_media(ROOT if root is None else root,path) as source:
-                size=os.fstat(source.fileno()).st_size
-                start,end,partial=0,size-1,False
-                header=self.headers.get("Range")
-                if header:
-                    match=re.fullmatch(r"bytes=([0-9]{0,20})-([0-9]{0,20})",header)
-                    if not match:raise HTTPError(416,"invalid_range","Unsupported range")
-                    a,b=match.groups()
-                    if a:start=int(a);end=min(end,int(b)) if b else end
-                    elif b and int(b)>0:start=max(0,size-int(b))
-                    else:raise HTTPError(416,"invalid_range","Empty range")
-                    if start>end or start>=size:raise HTTPError(416,"invalid_range","Range outside file")
-                    partial=True
-                self.send_response(206 if partial else 200)
-                self.send_header("Content-Type",mimetypes.guess_type(str(path))[0] or "application/octet-stream")
-                self.send_header("Content-Length",str(max(0,end-start+1)))
-                self.send_header("Accept-Ranges","bytes")
-                self.send_header("Cache-Control","no-store")
-                if partial:self.send_header("Content-Range",f"bytes {start}-{end}/{size}")
-                self.end_headers()
-                source.seek(start);remaining=end-start+1
-                while remaining>0:
-                    block=source.read(min(256*1024,remaining))
-                    if not block:break
-                    self.wfile.write(block);remaining-=len(block)
+            self.read_json_body()
+            if urlsplit(self.path).path == "/api/start":
+                return self.json({"error": "旧版启动接口已删除，请从制片项目发起任务。", "code": "legacy_retired"}, 410)
+            return self.json({"error": "Not found"}, 404)
         except HTTPError as exc:
-            return self.json({"error":str(exc),"code":exc.code},exc.status)
+            return self.json({"error": str(exc), "code": exc.code}, exc.status)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+        except Exception as exc:
+            self.log_error("HTTP failure: %s", type(exc).__name__)
+            return self.json({"error": "Internal request failure"}, 500)
 
-
-if __name__=="__main__":
-    server=ThreadingHTTPServer(("127.0.0.1",8787),Handler)
-    print("DRAMA_STUDIO_READY http://127.0.0.1:8787",flush=True)
-    server.serve_forever()
+    def send_file(self, path, *, root=None):
+        try:
+            with open_media(ROOT if root is None else root, path) as source:
+                size = os.fstat(source.fileno()).st_size
+                start, end, partial = 0, size - 1, False
+                header = self.headers.get("Range")
+                if header:
+                    match = re.fullmatch(r"bytes=([0-9]{0,20})-([0-9]{0,20})", header)
+                    if not match:
+                        raise HTTPError(416, "invalid_range", "Unsupported range")
+                    a, b = match.groups()
+                    if a:
+                        start = int(a); end = min(end, int(b)) if b else end
+                    elif b and int(b) > 0:
+                        start = max(0, size - int(b))
+                    else:
+                        raise HTTPError(416, "invalid_range", "Empty range")
+                    if start > end or start >= size:
+                        raise HTTPError(416, "invalid_range", "Range outside file")
+                    partial = True
+                self.send_response(206 if partial else 200)
+                self.send_header("Content-Type", mimetypes.guess_type(str(path))[0] or "application/octet-stream")
+                self.send_header("Content-Length", str(max(0, end - start + 1)))
+                self.send_header("Accept-Ranges", "bytes")
+                self.send_header("Cache-Control", "no-store")
+                if partial:
+                    self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
+                self.end_headers()
+                source.seek(start); remaining = end - start + 1
+                while remaining > 0:
+                    block = source.read(min(256 * 1024, remaining))
+                    if not block:
+                        break
+                    self.wfile.write(block); remaining -= len(block)
+        except HTTPError as exc:
+            return self.json({"error": str(exc), "code": exc.code}, exc.status)

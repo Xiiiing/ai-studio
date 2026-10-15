@@ -227,7 +227,7 @@ def test_spec_keeps_executable_nodes_and_edges(context, monkeypatch):
         def to_json(self):
             return copy.deepcopy(topology)
     monkeypatch.setattr(workflows, "build_graph", lambda checkpointer: Graph())
-    spec = workflow_spec.export_spec(config)
+    spec = workflow_spec.export_spec(config,workflow_version=1)
     assert spec["nodes"] == topology["nodes"]
     assert spec["edges"] == topology["edges"]
     assert spec["orchestrator"] == "LangGraph"

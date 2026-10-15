@@ -1,7 +1,36 @@
 {
-  "name": "ai-studio-ui-tests",
+  "name": "ai-production-studio",
   "private": true,
-  "scripts": {"test": "node --test tests/test_factory*.mjs", "test:browser": "playwright test"},
-  "engines": {"node": ">=20"},
-  "devDependencies": {"linkedom": "0.18.12", "@playwright/test": "1.64.0"}
+  "type": "module",
+  "scripts": {
+    "dev": "vite build --watch",
+    "build": "tsc --noEmit && vite build && node scripts/ui_licenses.mjs",
+    "test": "vitest run",
+    "test:browser": "playwright test"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "dependencies": {
+    "@tanstack/react-query": "^5.90.0",
+    "@xyflow/react": "^12.10.0",
+    "lucide-react": "^0.468.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.0",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.0",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/node": "24.19.2",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^5.1.0",
+    "jsdom": "^27.0.0",
+    "prettier": "3.9.10",
+    "typescript": "^5.9.0",
+    "vite": "^7.1.0",
+    "vitest": "5.0.4"
+  }
 }
