@@ -81,7 +81,7 @@ def normalize_video_profile(value):
     return profile
 
 
-def video_registry(config):
+def video_registry(config, *, require_enabled=True):
     profiles = config.get("video_profiles", {"local_wan": LOCAL_PROFILE})
     roles = config.get("video_roles", {"video_generator": "local_wan"})
     if not isinstance(profiles, dict) or not 1 <= len(profiles) <= 32:
@@ -96,7 +96,7 @@ def video_registry(config):
     for role, name in roles.items():
         if not isinstance(name, str) or name not in result:
             raise ValueError("Unknown video profile for " + role)
-        if not result[name]["enabled"]:
+        if require_enabled and not result[name]["enabled"]:
             raise ValueError("The assigned video profile must be enabled")
     return result, copy.deepcopy(roles)
 
@@ -109,14 +109,14 @@ def validate_video_registry(profiles, roles, config):
     return candidate
 
 
-def resolve_video(config):
-    profiles, roles = video_registry(config)
+def resolve_video(config, *, require_enabled=True):
+    profiles, roles = video_registry(config, require_enabled=require_enabled)
     ident = roles["video_generator"]
     return {"profile": ident, **copy.deepcopy(profiles[ident])}
 
 
 def public_video_inventory(config):
-    profiles, roles = video_registry(config)
+    profiles, roles = video_registry(config, require_enabled=False)
     return {
         "video_profiles": {name: redact_secrets(value, value) for name, value in profiles.items()},
         "video_roles": roles,
@@ -128,7 +128,7 @@ def public_video_inventory(config):
 
 def probe_video_profile(profile_id, config):
     """Configuration preflight only. No network, generation, or paid API calls."""
-    profiles, _ = video_registry(config)
+    profiles, _ = video_registry(config, require_enabled=False)
     if not isinstance(profile_id, str) or profile_id not in profiles:
         raise ValueError("Unknown video profile")
     profile = profiles[profile_id]

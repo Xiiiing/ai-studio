@@ -56,8 +56,12 @@ def _observe(config):
             info["quality"]["available"]=any(model_matches(visual,m.get("id")) for m in visual_models.get("data",[]))
     except Exception:
         info["quality"]["available"]=False
-    video=resolve_video(config)
-    if video["provider"]=="minimax":
+    video=resolve_video(config, require_enabled=False)
+    if not video["enabled"]:
+        info["video"].update(available=False,status="disabled",model=video["model"],
+                             provider=video["provider"],profile=video["profile"],
+                             message="视频连接已禁用；可查看配置，不能提交生成。")
+    elif video["provider"]=="minimax":
         preflight=probe_video_profile(video["profile"],config)
         info["video"].update(available=None,status=preflight["status"],configured=preflight["status"]=="configured",
                              model=video["model"],provider=video["provider"],profile=video["profile"],

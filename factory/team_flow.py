@@ -294,7 +294,7 @@ def _bindings(config):
                            "assignment_source": "invalid_configuration"})
     from .video_providers import resolve_video
     try:
-        video = resolve_video(config)
+        video = resolve_video(config, require_enabled=False)
     except (ValueError, TypeError, KeyError):
         video = {}
     engines = {
