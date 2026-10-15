@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import csv
+from contextlib import closing
 import json
 import math
 import sqlite3
@@ -15,13 +16,44 @@ def read_json(path, maximum=16 * 1024 * 1024):
     path = Path(path)
     if not path.is_file() or path.stat().st_size > maximum:
         raise ValueError("Evaluation JSON is missing or exceeds its size bound")
-    return json.loads(path.read_text(encoding="utf-8"), parse_constant=lambda value: (_ for _ in ()).throw(ValueError(value)))
+    def members(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError("Duplicate evaluation JSON member")
+            result[key] = value
+        return result
+    def number(value):
+        result = float(value)
+        if not math.isfinite(result):
+            raise ValueError("Non-finite evaluation JSON number")
+        return result
+    try:
+        result = json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=members,
+                            parse_float=number, parse_constant=lambda value: (_ for _ in ()).throw(ValueError(value)))
+        pending = [(result, 0)]
+        while pending:
+            value, depth = pending.pop()
+            if depth > 64:
+                raise ValueError("Evaluation JSON exceeds 64 nesting levels")
+            if isinstance(value, dict):
+                for key, item in value.items():
+                    key.encode("utf-8")
+                    pending.append((item, depth + 1))
+            elif isinstance(value, list):
+                pending.extend((item, depth + 1) for item in value)
+            elif isinstance(value, str):
+                value.encode("utf-8")
+        return result
+    except (UnicodeError, RecursionError) as exc:
+        raise ValueError("Evaluation JSON must be bounded UTF-8") from exc
 
 
 def database_project(database, pid):
     """Do not initialize, migrate, checkpoint, enqueue or approve a live project."""
     path = Path(database).resolve(strict=True)
-    with sqlite3.connect(path.as_uri() + "?mode=ro", uri=True) as db:
+    with closing(sqlite3.connect(path.as_uri() + "?mode=ro", uri=True)) as db:
+        db.execute("BEGIN")  # Project snapshot and paid-task evidence share one read snapshot.
         row = db.execute("SELECT snapshot,revision FROM projects WHERE id=?", (pid,)).fetchone()
         if row is None:
             raise KeyError("Project does not exist")
@@ -62,7 +94,7 @@ def row(category, check, status, *, shot_id=None, evidence=None, metrics=None, s
             "evidence": evidence or [], "metrics": metrics or {}, "source": source}
 
 
-def export_report(report, output, observations_dir=None):
+def export_report(report, output, observations_dir=None, *, finalize=True):
     output = Path(output)
     output.mkdir(parents=True, exist_ok=False)
     write_json(output / "report.json", report)
@@ -86,7 +118,8 @@ def export_report(report, output, observations_dir=None):
         "production_revision": report["production_revision"], "media_signature": report["media_signature"],
         "reviewer": "", "reviewed_at": "", "decision": "pending",
         "dimensions": {name: {"status": "pending", "evidence": [], "notes": ""} for name in report["dimensions"]}})
-    write_json(output / "export-manifest.json", {"schema": "ai-studio.evaluation-export.v1", "run_id": report["run_id"],
-        "files": [{"path": path.relative_to(output).as_posix(), "sha256": sha256(path), "bytes": path.stat().st_size}
-                  for path in sorted(output.rglob("*")) if path.is_file()]})
+    if finalize:
+        write_json(output / "export-manifest.json", {"schema": "ai-studio.evaluation-export.v1", "run_id": report["run_id"],
+            "files": [{"path": path.relative_to(output).as_posix(), "sha256": sha256(path), "bytes": path.stat().st_size}
+                      for path in sorted(output.rglob("*")) if path.is_file()]})
     return output

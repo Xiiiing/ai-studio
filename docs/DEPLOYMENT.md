@@ -4,6 +4,8 @@
 
 控制层是一个 Python Web 服务和一个持久化 worker，共用 SQLite。LLM 以外置服务的方式连接；图像、视频和配音各自使用独立推理环境。界面为原生 ES modules，不需要 npm 构建或额外 Node 服务。
 
+HTTP 管理面仅支持 loopback 绑定；配置非 loopback host 会在数据库初始化之前被拒绝。Factory、Legacy、媒体和模型管理路由采用共同 Host/Origin 边界；这不代替公网认证。远程访问、代理限制、符号链接媒体兼容性和任务暂停/取消契约见 [HTTP 安全审查表](HTTP_SECURITY.md)。本轮代码升级不要求数据库迁移。
+
 建议使用 Linux、Python 3.12，以及支持对应 CUDA/PyTorch/模型组合的 NVIDIA GPU。控制层本身不要求 GPU。多张卡是可调度资源，不代表每个视频模型会自动使用全部显卡。
 
 ## 1. 安装控制层
