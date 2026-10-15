@@ -721,11 +721,12 @@ def _make_script(project, config, checkpoint, feedback=None):
         if final_review["passed"]:
             break
     passed = final_review["passed"]
-    if passed:
-        if affected and project.get("styles"):
-            styles = copy.deepcopy(project["styles"])
-        else:
-            styles = _styles(project, config, episode, checkpoint)
+    if affected and project.get("styles"):
+        # A rejected local script revision does not revoke the approved visual
+        # specification: later feedback still needs it to compile changed shots.
+        styles = copy.deepcopy(project["styles"])
+    elif passed:
+        styles = _styles(project, config, episode, checkpoint)
     else:
         styles = []
     write_json(folder / "styles.json", styles)
