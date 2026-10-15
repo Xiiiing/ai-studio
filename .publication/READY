@@ -1,0 +1,6 @@
+Verified publication scope: three new feature branches only, stacked on Draft PR #12.
+Combined source tree: 43f071d8fc90c78414fbafa9e3c5462aa57b4163
+Local combined Python: 886 passed, 4 preexisting warnings.
+Local combined Node: 72 passed.
+All three uploaded patches were byte-verified against the tested local Git deltas.
+No main merge, production deployment, service changes, real model generation, or platform upload.
