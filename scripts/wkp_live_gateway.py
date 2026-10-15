@@ -166,19 +166,33 @@ https://:{port} {{
         basic_auth {{
             studio {password_hash}
         }}
-        reverse_proxy https://{upstream} {{
-            header_up Host {upstream}
-            header_up Origin "{origin_pattern}" "https://{upstream}"
-            header_up -Authorization
-            transport http {{
-                tls_client_auth {AREA / 'client-certificate.pem'} {AREA / 'client-private-key.pem'}
-                tls_trust_pool file {{
-                    pem_file {AREA / 'wkp-server-certificate.pem'}
-                }}
+        @workbench path /
+        handle @workbench {{
+            header Cache-Control no-store
+            header X-Studio-Frontend cami
+            root * {ROOT / 'ui/factory/dist'}
+            rewrite * /index.html
+            file_server
+        }}
+        handle_path /factory/static/* {{
+            root * {ROOT / 'ui/factory/dist'}
+            file_server
+        }}
+        handle {{
+            reverse_proxy https://{upstream} {{
+                header_up Host {upstream}
+                header_up Origin "{origin_pattern}" "https://{upstream}"
+                header_up -Authorization
+                transport http {{
+                    tls_client_auth {AREA / 'client-certificate.pem'} {AREA / 'client-private-key.pem'}
+                    tls_trust_pool file {{
+                        pem_file {AREA / 'wkp-server-certificate.pem'}
+                  }}
                 tls_server_name {WKP_HOST}
                 network_proxy none
                 dial_timeout 10s
             }}
+          }}
         }}
     }}
 }}
@@ -207,6 +221,8 @@ def start(host, port):
     path = unit_path()  # Reject foreign units before preparing or reading private material.
     prepare(host, port)
     upstream_health()  # Never replace a working local service with an unverified upstream.
+    if not (ROOT / "ui/factory/dist/index.html").is_file():
+        raise RuntimeError("Build the current frontend with npm run build before starting")
     caddy = shutil.which("caddy") or str(ROOT / "runtime/cami-preview/lan/bin/caddy")
     if not Path(caddy).is_file():
         raise RuntimeError("Install Caddy 2.11+; this script never downloads executables")

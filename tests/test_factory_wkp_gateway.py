@@ -119,6 +119,9 @@ def test_unhealthy_remote_does_not_change_installed_unit_or_config(tmp_path, mon
 
 
 def test_failed_service_restart_restores_previous_enabled_active_service(tmp_path, monkeypatch):
+    monkeypatch.setattr(gateway, "ROOT", tmp_path)
+    (tmp_path / "ui/factory/dist").mkdir(parents=True)
+    (tmp_path / "ui/factory/dist/index.html").write_text("built frontend")
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
     monkeypatch.setattr(gateway, "AREA", tmp_path / "private")
     gateway.AREA.mkdir()
@@ -151,3 +154,13 @@ def test_failed_service_restart_restores_previous_enabled_active_service(tmp_pat
     assert config.read_text() == "previous valid config"
     assert calls.count(("systemctl", "--user", "restart", gateway.UNIT)) == 2
     assert not (gateway.AREA / "deployed.json").exists()
+
+
+def test_missing_frontend_does_not_replace_running_gateway(tmp_path, monkeypatch):
+    monkeypatch.setattr(gateway, "ROOT", tmp_path)
+    monkeypatch.setattr(gateway, "unit_path", lambda: tmp_path / "gateway.service")
+    monkeypatch.setattr(gateway, "prepare", lambda *args: None)
+    monkeypatch.setattr(gateway, "upstream_health", lambda: {"status": "ready"})
+    monkeypatch.setattr(gateway, "run", lambda *args, **kwargs: pytest.fail("must not modify service"))
+    with pytest.raises(RuntimeError, match="Build the current frontend"):
+        gateway.start("172.20.12.202", 8789)
