@@ -548,7 +548,9 @@ def build_flow(project, config=None):
     teams = [{**row, "status": nodes[row["role"]]["status"]} for row in specification["teams"]]
     edges = [{**edge, "status": nodes[edge["source"]]["status"]}
              for edge in specification["handoffs"]]
+    from .team_tasks import snapshot as task_snapshot
     return {"project_id": project["id"], "revision": project.get("revision"),
+            "task_board": task_snapshot(project),
             "assignment_mode": "orchestrator", "orchestrator": "LangGraph",
             "assignment_semantics": specification["assignment_semantics"],
             "teams": teams, "nodes": list(nodes.values()), "edges": edges,

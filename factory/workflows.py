@@ -288,13 +288,14 @@ def revision(state):
 
 
 def build_graph(checkpointer):
+    from .team_tasks import TASKS, tracked_node
     builder=StateGraph(State)
     for name,fn in [("research",research),("proposals",proposals),("story_decision",story_decision),
                     ("apply_story",apply_story),("apply_style",apply_style),("apply_final",apply_final),
                     ("screenplay",screenplay),("visual_development",visual_development),
                     ("style_decision",style_decision),("production",production),
                     ("final_decision",final_decision),("revision",revision)]:
-        builder.add_node(name,fn)
+        builder.add_node(name,tracked_node(name,fn) if name in TASKS else fn)
     builder.add_edge(START,"research")
     builder.add_edge("research","proposals")
     builder.add_edge("proposals","story_decision")

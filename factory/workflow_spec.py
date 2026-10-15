@@ -11,6 +11,7 @@ def export_spec(config=None):
     topology = build_graph(None).get_graph().to_json()
     from .team_flow import team_spec
     assignment = team_spec(config)
+    from .team_tasks import contracts as task_contracts
     from .video_providers import resolve_video
     video = resolve_video(config)
     remote_video = video["provider"] == "minimax"
@@ -23,6 +24,7 @@ def export_spec(config=None):
         "assignment_mode": assignment["assignment_mode"],
         "assignment_semantics": assignment["assignment_semantics"],
         "teams": assignment["teams"], "handoffs": assignment["handoffs"],
+        "task_contracts": task_contracts(),
         "human_gates": [
             {"id": "story_decision", "label": "选择故事", "choices": "eligible proposals"},
             {"id": "style_decision", "label": "选择视觉方案", "choices": "generated previews"},
