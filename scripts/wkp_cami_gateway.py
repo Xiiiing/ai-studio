@@ -35,22 +35,7 @@ http {{
     fastcgi_temp_path {AREA / 'fastcgi'};
     uwsgi_temp_path {AREA / 'uwsgi'};
     scgi_temp_path {AREA / 'scgi'};
-    client_max_body_size 4m;
-    map $http_origin $upstream_origin {{
-        default invalid;
-        "" "";
-        "https://172.20.114.10:8790" "http://127.0.0.1:8787";
-    }}
-    map $http_sec_fetch_site $bad_site {{
-        default 1;
-        "" 0;
-        none 0;
-        same-origin 0;
-    }}
-    map "$request_method:$http_origin" $missing_origin {{
-        default 0;
-        ~^(POST|PUT|PATCH|DELETE):$ 1;
-    }}
+    client_max_body_size 32m;
     server {{
         listen 172.20.114.10:8790 ssl;
         server_name _;
@@ -63,18 +48,18 @@ http {{
         ssl_verify_depth 1;
         ssl_protocols TLSv1.2 TLSv1.3;
         if ($http_host != "172.20.114.10:8790") {{ return 403; }}
-        if ($upstream_origin = invalid) {{ return 403; }}
-        if ($bad_site = 1) {{ return 403; }}
-        if ($missing_origin = 1) {{ return 403; }}
-        location / {{
-            proxy_pass http://127.0.0.1:8787;
+        if ($http_origin != "") {{ return 403; }}
+        if ($http_sec_fetch_site != "") {{ return 403; }}
+        location /inference/ {{
+            proxy_pass http://127.0.0.1:8791/;
             proxy_http_version 1.1;
             proxy_set_header Connection "";
-            proxy_set_header Host "127.0.0.1:8787";
-            proxy_set_header Origin $upstream_origin;
+            proxy_set_header Host "127.0.0.1:8791";
             proxy_set_header Authorization "";
-            proxy_read_timeout 60s;
+            proxy_read_timeout 600s;
+            proxy_buffering off;
         }}
+        location / {{ return 404; }}
     }}
 }}
 """
@@ -114,7 +99,7 @@ def install(public_certificate, checksum):
         staged.unlink(missing_ok=True)
     target.write_text(f"""[Unit]
 Description=AI Studio mTLS gateway for cami ({AREA})
-After=network.target drama-factory-web.service
+After=network.target ai-studio-inference.service
 
 [Service]
 Type=simple
