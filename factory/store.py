@@ -354,6 +354,21 @@ def _revision_feedback(project, payload):
     return feedback
 
 
+def _pause(db, project):
+    """Shared transaction-local pause boundary; never cancel a provider request."""
+    from .remote_tasks import settle_wait
+    settle_wait(project)
+    if project["status"] in TERMINAL:
+        raise ValueError("已完成项目不需要暂停")
+    pid = project["id"]
+    project["pause_requested"] = True
+    if not db.execute("SELECT 1 FROM jobs WHERE project_id=? AND status='running'", (pid,)).fetchone():
+        project["status"] = "paused"
+        db.execute("UPDATE jobs SET status='cancelled',finished=? WHERE project_id=? AND status='queued'",
+                   (time.time(), pid))
+    _event(db, pid, "暂停请求已记录；当前执行单元结束后保留进度。", "pause")
+
+
 def action(pid, payload):
     command = payload.get("action")
     if command == "repropose":
@@ -362,16 +377,7 @@ def action(pid, payload):
         db.execute("BEGIN IMMEDIATE")
         p = _read(db, pid)
         if command == "pause":
-            from .remote_tasks import settle_wait
-            settle_wait(p)
-            if p["status"] in TERMINAL:
-                raise ValueError("已完成项目不需要暂停")
-            p["pause_requested"] = True
-            if not db.execute("SELECT 1 FROM jobs WHERE project_id=? AND status='running'", (pid,)).fetchone():
-                p["status"] = "paused"
-                db.execute("UPDATE jobs SET status='cancelled',finished=? WHERE project_id=? AND status='queued'",
-                           (time.time(), pid))
-            _event(db, pid, "暂停请求已记录；当前执行单元结束后保留进度。", "pause")
+            _pause(db, p)
         elif command == "revise":
             expected = payload.get("expected_revision")
             if isinstance(expected, bool) or not isinstance(expected, int):

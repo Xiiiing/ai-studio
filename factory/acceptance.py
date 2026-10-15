@@ -1,153 +1,122 @@
-"""Inspect a real factory delivery and emit evidence without approving it."""
+"""Read-only, version-bound production acceptance. Never starts services or models."""
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
-import subprocess
 from pathlib import Path
-from urllib.parse import unquote, urlsplit
 
-from studio.core import ROOT, read_json, write_json
-from . import store
-
-
-def checksum(path):
-    digest=hashlib.sha256()
-    with Path(path).open("rb") as stream:
-        for chunk in iter(lambda:stream.read(1024*1024),b""):
-            digest.update(chunk)
-    return digest.hexdigest()
+from studio.core import ROOT, fingerprint, sha256
+from . import evaluation
+from .acceptance_inputs import SHA, guard, output_parent, project_id, source_path
+from .acceptance_checks import contracts, receipt_evidence
+from .acceptance_audio import contracts as audio_contracts
+from .acceptance_reports import compare, export, provenance, load_report
+from .evaluation_io import database_project, read_json, row
+from .evaluation_external import human_checks, vbench_checks
 
 
-def confined(value):
-    if not value:
-        return None
-    path=Path(value)
-    path=(path if path.is_absolute() else ROOT/path).resolve()
-    if not path.is_relative_to(ROOT.resolve()):
-        raise ValueError("Artifact escapes project root")
-    return path
+def validate(pid, *, database=None, project_json=None, root=ROOT, output=None,
+             production_revision=None, media_sha=None, human=None, vbench=None, baseline=None):
+    """Evaluate an immutable observed revision, exporting only to a new report folder."""
+    project_id(pid)
+    root = Path(root).resolve(strict=True)
+    parent = output_parent(root, output if output is not None else root / "runtime/factory/acceptance")
+    if production_revision is not None and (type(production_revision) is not int or production_revision < 1):
+        raise ValueError("production_revision must be a positive integer")
+    if media_sha is not None and (not isinstance(media_sha, str) or not SHA.fullmatch(media_sha)):
+        raise ValueError("media_sha must be an exact lowercase SHA-256")
+    if database is not None and project_json is not None:
+        raise ValueError("Choose a read-only database or a snapshot JSON, not both")
+    if project_json is None and database is None:
+        from .config import DATABASE
+        database = DATABASE
+    load = (lambda: read_json(project_json)) if project_json is not None else (lambda: database_project(database, pid))
+    project = load()
+    if not isinstance(project, dict) or project.get("id") != pid:
+        raise ValueError("Snapshot project ID does not match the requested project")
+    slug = guard(project, root)
+    signature = fingerprint(project)
+    checks, profile = contracts(project, root, slug, production_revision=production_revision, media_sha=media_sha)
+    checks.extend(audio_contracts(project, root, slug))
+    context = {"delivery_artifacts": [receipt_evidence(v) for v in (project.get("delivery") or {}).get("artifacts", [])],
+               "voice_artifacts": [{"id": v.get("id"), **receipt_evidence(v)} for v in (project.get("assets") or {}).get("audio", {}).get("lines", [])]}
+    report = evaluation.evaluate(project, root, additional_checks=checks, media_context=context)
+    for document, kind in ((human, "human"), (vbench, "vbench")):
+        if document is None:
+            continue
+        try:
+            imported = (human_checks(document, project, report["media_signature"], report["dimensions"])
+                        if kind == "human" else vbench_checks(document, report["media"]))
+            report["checks"] = [v for v in report["checks"] if not (
+                v["source"] == kind and (kind == "vbench" or v["check"] == "producer_review"))]
+            report["checks"].extend(imported)
+            if kind == "human":
+                report["human_approved"] = document.get("decision") == "approve" and bool(imported) and all(v["status"] == "pass" for v in imported)
+        except (ValueError, TypeError, AttributeError) as exc:
+            report["checks"].append(row("delivery", kind + "_review_binding", "fail", source=kind,
+                                        evidence=[str(exc)]))
+    # Observe-only: if another process advances a project or changes receipt-backed
+    # input while decoding, this run cannot certify the originally selected state.
+    try:
+        stable = fingerprint(load()) == signature
+    except (ValueError, OSError, KeyError):
+        stable = False
+    report["checks"].append(row("delivery", "input_snapshot_unchanged", "pass" if stable else "fail",
+                                evidence=[{"input_snapshot_sha256": signature}]))
+    evidence = {}
+    for check in report["checks"]:
+        if check.get("source") != "deterministic":
+            continue  # User-authored review evidence is never a filesystem read instruction.
+        for item in check.get("evidence", []):
+            if isinstance(item, dict) and item.get("path") and item.get("sha256"):
+                evidence[(item["path"], item["sha256"])] = check.get("shot_id")
+    for (path, digest), sid in evidence.items():
+        try:
+            stable = sha256(source_path(root, path)) == digest
+        except (ValueError, OSError):
+            stable = False
+        report["checks"].append(row("delivery", "evidence_unchanged", "pass" if stable else "fail",
+                                    shot_id=sid, evidence=[{"path": path, "sha256": digest}]))
+    report.update(evaluation.conclusion(report["checks"], report["human_approved"], report["dimensions"]))
+    report["acceptance"] = provenance(project, report, profile)
+    report["acceptance"]["requested"] = {"project_id": pid, "production_revision": production_revision, "media_sha": media_sha}
+    report["acceptance"]["evidence_receipts_signature"] = fingerprint(context)
+    report["acceptance"]["imported_document_signatures"] = {key: fingerprint(value) if value is not None else None for key, value in (("human", human), ("vbench", vbench), ("baseline", baseline))}
+    report["evaluation_code"].update(report["acceptance"]["source_code"])
+    if baseline is not None:
+        report["comparison"] = compare(report, baseline)
+    return export(report, parent)
 
 
-def validate(pid):
-    import av
-    import numpy as np
-    from PIL import Image,ImageDraw,ImageFont
-
-    p=store.get(pid)
-    folder=ROOT/"production"/p["slug"]
-    delivery=p.get("delivery") or {}
-    report={"schema":"autonomous_factory.acceptance.v1","checked_at":store.now(),
-        "project_id":pid,"title":p["title"],"deployment_root":str(ROOT),
-        "project_status":p["status"],"is_validation":p.get("is_validation",False),
-        "human_final_approval":any(a.get("type")=="final" and a.get("choice")=="approve" and a.get("actor")=="producer"
-                                   for a in p.get("answers",{}).values()),
-        "script_shots":len((p.get("script") or {}).get("shots",[])),
-        "requested_duration_seconds":p.get("duration_seconds"),
-        "planned_duration_seconds":sum(s.get("seconds",0) for s in (p.get("script") or {}).get("shots",[])),
-        "research":{"status":p.get("research",{}).get("status"),"source_count":len(p.get("sources",[])),
-                    "trend_verification":p.get("research",{}).get("trend_verification")},
-        "proposals":{"count":len(p.get("proposals",[])),
-                     "eligible":sum(v.get("eligible",False) for v in p.get("proposals",[]))},
-        "styles":{"count":len(p.get("styles",[])),
-                  "generated":sum(bool(v.get("preview_url")) for v in p.get("styles",[]))},
-        "production":p.get("production"),"budget":p.get("budget"),"decisions":p.get("answers"),
-        "services":{},"checks":{}}
-    for unit in ["drama-factory-web.service","drama-factory-worker.service"]:
-        r=subprocess.run(["systemctl","is-active",unit],capture_output=True,text=True,timeout=10)
-        report["services"][unit]=r.stdout.strip()
-    checks=report["checks"]
-    checks["script_passed"]=bool(p.get("script_review",{}).get("passed"))
-    checks["three_real_style_previews"]=(report["styles"]["count"]==3 and report["styles"]["generated"]==3
-        and all(s.get("preview_path") and confined(s["preview_path"]).is_file() for s in p.get("styles",[])))
-    from .production_profiles import explicit, resolve
-    profile = resolve(p)
-    report["expected_shots"] = profile["shot_count"]
-    if explicit(p):
-        report["production_profile"] = profile
-    checks["all_profile_planned_shots_present" if explicit(p) else "all_fifteen_planned_shots_present"]=(report["script_shots"]==profile["shot_count"]
-        and [s.get("id") for s in p.get("shots",[])]==[s.get("id") for s in (p.get("script") or {}).get("shots",[])])
-    checks["script_matches_requested_duration"]=abs(report["planned_duration_seconds"]-float(report["requested_duration_seconds"] or 0))<0.001
-    checks["all_shots_semantically_passed"]=bool(p.get("shots")) and all(s.get("qa",{}).get("semantic",{}).get("status")=="pass" for s in p.get("shots",[]))
-    checks["delivery_present"]=bool(delivery)
-    old=ROOT/"production/the-last-stop/release/manifest.json"
-    report["preserved_original_manifest_sha256"]=checksum(old) if old.exists() else None
-    checks["original_manifest_unchanged"]=report["preserved_original_manifest_sha256"]=="c4a057b541b0469beb8533b2e5ff3823be66dea41abd76c6967daa18c6b56dfb"
-    checks["service_health"]=all(v=="active" for v in report["services"].values())
-    calls=[]
-    for receipt in folder.rglob("receipt.json"):
-        if "/calls/" in str(receipt):
-            try:
-                item=read_json(receipt)
-                calls.append({"path":str(receipt.relative_to(ROOT)),"role":item.get("role"),
-                              "model":item.get("model"),"status":item.get("status"),
-                              "elapsed_seconds":item.get("elapsed_seconds")})
-            except (ValueError,OSError):
-                pass
-    report["model_calls"]=calls
-    report["artifact_checks"]=[]
-    for artifact in delivery.get("artifacts",[]):
-        path=confined(artifact["path"])
-        valid=path.is_file() and checksum(path)==artifact.get("sha256")
-        report["artifact_checks"].append({"path":str(path.relative_to(ROOT)),"valid":valid})
-    checks["delivery_checksums"]=bool(report["artifact_checks"]) and all(a["valid"] for a in report["artifact_checks"])
-    path=confined(delivery.get("path"))
-    if path and path.exists():
-        with av.open(str(path)) as container:
-            stream=container.streams.video[0]
-            info={"path":str(path.relative_to(ROOT)),"bytes":path.stat().st_size,
-                  "sha256":checksum(path),"width":stream.width,"height":stream.height,
-                  "fps":float(stream.average_rate),"audio_streams":len(container.streams.audio)}
-            frames=0
-            samples=[]
-            desired={round(sum(s.get("seconds",0) for s in p["shots"][:i])*24+min(24,s.get("seconds",4)*12))
-                     for i,s in enumerate(p["shots"])}
-            for frame in container.decode(stream):
-                if frames in desired:
-                    samples.append(frame.to_image())
-                frames+=1
-            info.update(decoded_frames=frames,duration_seconds=frames/info["fps"],sampled_frames=len(samples))
-        with av.open(str(path)) as container:
-            energy=0.; values=0
-            for frame in container.decode(audio=0):
-                data=frame.to_ndarray().astype("float64")
-                if frame.format.is_planar:
-                    pass
-                energy+=float(np.square(data).sum())
-                values+=data.size
-            info["audio_rms"]=float((energy/max(1,values))**.5)
-        report["video"]=info
-        checks["full_video_decodes"]=frames==round(report["planned_duration_seconds"]*24)
-        checks["video_matches_requested_duration"]=abs(info["duration_seconds"]-float(report["requested_duration_seconds"] or 0))<=1/24
-        checks["delivery_duration_receipt_matches_video"]=abs(info["duration_seconds"]-float(delivery.get("duration_seconds",0)))<=1/24
-        checks["portrait_delivery"]=info["width"]==720 and info["height"]==1280 and info["fps"]==24
-        checks["audible_audio_track"]=info["audio_streams"]>0 and info["audio_rms"]>0.0001
-        if samples:
-            tile_w,tile_h=180,320
-            cols=5
-            rows=(len(samples)+cols-1)//cols
-            sheet=Image.new("RGB",(cols*tile_w,rows*(tile_h+30)),(22,24,25))
-            draw=ImageDraw.Draw(sheet)
-            for i,im in enumerate(samples):
-                x,y=(i%cols)*tile_w,(i//cols)*(tile_h+30)
-                sheet.paste(im.resize((tile_w,tile_h)),(x,y))
-                draw.text((x+8,y+tile_h+6),"S%02d · %ss"%(i+1,sum(s.get("seconds",0) for s in p["shots"][:i])),fill=(240,238,224))
-            preview=ROOT/"runtime/factory"/(pid+"-contact-sheet.jpg")
-            sheet.save(preview,quality=91)
-            report["contact_sheet"]=str(preview.relative_to(ROOT))
-    checks["awaits_or_has_final_decision"]=p["status"] in {"awaiting_final","approved"}
-    report["result"]="passed_automated_checks_pending_producer" if checks and all(checks.values()) else "incomplete"
-    destination=ROOT/"runtime/factory/acceptance_report.json"
-    write_json(destination,report)
-    write_json(folder/"acceptance_report.json",report)
-    return report
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("project", nargs="?", help="Legacy positional project ID remains accepted")
+    parser.add_argument("--project-id")
+    source = parser.add_mutually_exclusive_group()
+    source.add_argument("--database", type=Path, help="Existing SQLite file, opened mode=ro in one read transaction")
+    source.add_argument("--project-json", type=Path, help="Frozen project snapshot; exact project ID still required")
+    parser.add_argument("--root", type=Path, default=ROOT)
+    parser.add_argument("--output", type=Path, help="Report parent outside production; each run gets a new child directory")
+    parser.add_argument("--production-revision", type=int)
+    parser.add_argument("--media-sha")
+    parser.add_argument("--human-review", type=Path)
+    parser.add_argument("--vbench-report", type=Path, help="Import existing hash-bound evidence; do not execute VBench")
+    parser.add_argument("--baseline", type=Path)
+    args = parser.parse_args()
+    if bool(args.project) == bool(args.project_id):
+        parser.error("Provide one positional project ID or --project-id")
+    try:
+        report = validate(args.project or args.project_id, database=args.database, project_json=args.project_json,
+                          root=args.root, output=args.output, production_revision=args.production_revision,
+                          media_sha=args.media_sha, human=read_json(args.human_review) if args.human_review else None,
+                          vbench=read_json(args.vbench_report) if args.vbench_report else None,
+                          baseline=load_report(args.baseline) if args.baseline else None)
+    except (ValueError, OSError, KeyError) as exc:
+        print(json.dumps({"status": "blocked", "error": str(exc)}, ensure_ascii=False))
+        return 2
+    print(json.dumps({key: report[key] for key in ("project_id", "production_revision", "verdict", "technical_passed", "human_approved", "report_dir")}, ensure_ascii=False))
+    return 0 if report["verdict"] == "human_approved" else 2 if report["verdict"] == "needs_repair" else 3
 
 
-if __name__=="__main__":
-    parser=argparse.ArgumentParser()
-    parser.add_argument("project")
-    args=parser.parse_args()
-    report=validate(args.project)
-    print(json.dumps({k:v for k,v in report.items() if k not in {"model_calls","decisions"}},ensure_ascii=False,indent=2))
-    raise SystemExit(0 if report["result"].startswith("passed_") else 2)
+if __name__ == "__main__":
+    raise SystemExit(main())

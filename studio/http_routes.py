@@ -1,0 +1,69 @@
+"""Auditable allowlist for both HTTP entry points; no handler may bypass admission."""
+from __future__ import annotations
+
+from dataclasses import dataclass
+import re
+
+
+@dataclass(frozen=True)
+class Route:
+    method: str
+    pattern: str
+    access: str
+    name: str
+    body_limit: int = 0
+
+
+LEGACY_ROUTES = (
+    Route("GET", r"/", "ui", "legacy_home"),
+    Route("GET", r"/api/health", "read", "health"),
+    Route("GET", r"/api/episodes", "read", "episodes"),
+    Route("GET", r"/api/episode/[a-z0-9][a-z0-9_-]{0,60}", "read", "episode"),
+    Route("GET", r"/api/jobs", "read", "legacy_jobs"),
+    Route("GET", r"/media/.+", "media", "production_media"),
+    Route("POST", r"/api/start", "task_control", "legacy_start", 8192),
+)
+PID = r"[a-f0-9]{12}"
+JID = r"[a-f0-9]{32}"
+PROJECT = r"/api/factory/projects/" + PID
+FACTORY_ROUTES = (
+    Route("GET", r"/legacy", "ui", "legacy_alias"),
+    Route("GET", r"/factory/static/.+", "ui", "factory_static"),
+    *(Route("GET", "/api/factory/" + name, "read", name) for name in (
+        "production-profiles", "workflow", "models", "overview", "capabilities")),
+    Route("GET", PROJECT, "read", "project"),
+    *(Route("GET", PROJECT + "/" + name, "read", name) for name in (
+        "shots", "series", "cloud-budget", "flow")),
+    Route("GET", r"/api/factory/jobs/" + JID, "read", "job"),
+    Route("POST", r"/api/factory/jobs/" + JID + r"/(pause|cancel)", "task_control", "job_control", 65536),
+    Route("POST", r"/api/factory/models/test", "network_probe", "model_probe", 65536),
+    Route("POST", r"/api/factory/models", "configuration", "model_save", 65536),
+    Route("POST", r"/api/factory/projects", "modify", "create_project", 65536),
+    Route("POST", PROJECT + r"/shots/S[0-9]{2,3}", "modify", "shot_edit", 65536),
+    Route("POST", PROJECT + r"/series", "modify", "series_edit", 65536),
+    Route("POST", PROJECT + r"/(cloud-authorize|cloud-confirm-cost)", "financial", "cloud_consent", 65536),
+    Route("POST", PROJECT + r"/(decision|action)", "task_control", "project_control", 65536),
+)
+
+
+def routes(factory=False):
+    return LEGACY_ROUTES + (FACTORY_ROUTES if factory else ())
+
+
+def invalid_identifier(path, *, factory=False):
+    if path.startswith("/api/episode/"):
+        return not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,60}", path[len("/api/episode/"):])
+    if factory:
+        for prefix, pattern in (("/api/factory/projects/", PID), ("/api/factory/jobs/", JID)):
+            if path.startswith(prefix):
+                parts = path[len(prefix):].split("/")
+                if not re.fullmatch(pattern, parts[0]):
+                    return True
+                if prefix.endswith("projects/") and len(parts) >= 3 and parts[1] == "shots":
+                    return not re.fullmatch(r"S[0-9]{2,3}", parts[2])
+    return False
+
+
+def match_route(method, path, *, factory=False):
+    return next((route for route in routes(factory)
+                 if route.method == method and re.fullmatch(route.pattern, path)), None)
