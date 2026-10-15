@@ -4,9 +4,11 @@ import { shotWorkbenchView } from './shot-workbench.js';
 import { productionProfileFields } from './production-profile.js';
 import { seriesPanel } from './series.js';
 import { h, list, numeric, clamp, words, safeUrl, dateText, formatName, stageNames, statusNames, badge, pendingDecisions, isRunning } from './format.js';
-import { decisionPanel, overviewPanel, scriptPanel, qualityPanel, deliveryPanel } from './panels.js';
-import { workflowBoard, modelChips, phaseRoles } from './workflow.js';
-import { teamFlowSummary, teamFlowView } from './team.js';
+import { overviewPanel, scriptPanel, qualityPanel, deliveryPanel, eventsPanel } from './panels.js';
+import { dashboardView, projectsView, inboxView, activityView } from './console-dashboard.js';
+import { flowCanvas, organizationView, workflowView } from './flow-canvas.js';
+import { decisionPage } from './decision-center.js';
+import { icon, sectionTitle } from './console-ui.js';
 export function capabilities(caps = {}) {
   const labels = { worker: '制片执行器', optimizer: '反馈优化', llm: '创作与推理', research: '选题研究', image: '图像生成', images: '图像生成', video: '视频制作', audio: '配音与声音', tts: '配音与声音', editor: '剪辑与导出', editing: '剪辑与导出', vlm: '视觉质量评审', quality: '质量评审', comfyui: 'ComfyUI 服务', lipsync: '口型同步', scheduler: 'GPU 调度' };
   const source = caps.services || caps.models || caps;
@@ -19,70 +21,49 @@ export function capabilities(caps = {}) {
 }
 const count = value => Array.isArray(value) ? value.length : numeric(value);
 const waitingCount = project => pendingDecisions(project).length || numeric(project.pending_decisions ?? project.decision_count);
+const VIEW_NAMES = { dashboard:'制片总览', projects:'全部项目', inbox:'待办决策', workflow:'工作流与分工', models:'模型与连接', activity:'运行记录' };
 export function renderSidebar(state) {
-  const projects = list(state.overview?.projects);
-  document.getElementById('project-count').textContent = projects.length;
-  document.getElementById('decision-count').textContent = projects.reduce((total, project) => total + waitingCount(project), 0);
-  document.getElementById('project-list').innerHTML = projects.length ? projects.map(project => '<button class="project-item ' + (state.projectId === project.id ? 'active' : '') + '" data-action="select-project" data-id="' + h(project.id) + '"><span class="project-symbol" aria-hidden="true">◫</span><span><strong>' + h(project.title || '未命名制作') + '</strong><small>' + h(statusNames[project.status] || stageNames[project.stage] || project.status || '待开始') + '</small></span></button>').join('') : '<p class="sidebar-empty">第一部作品<br>从一个创作方向开始。</p>';
-  const rows = capabilities(state.overview?.capabilities);
-  const available = rows.filter(row => row.available === true).length;
-  const dot = document.getElementById('engine-dot');
-  dot.className = 'dot ' + (rows.length && available === rows.length ? 'ready' : available ? 'partial' : '');
-  document.getElementById('engine-label').textContent = rows.length ? available + ' / ' + rows.length + ' 项能力可用' : state.overview?.capabilities?.refreshing ? '资源检测中' : '查看实测能力';
-  document.getElementById('breadcrumb').textContent = state.view === 'models' ? '模型与连接' : state.project?.title || '工作流与项目';
-  document.querySelector('[data-action="dashboard"]').classList.toggle('active', !state.projectId && state.view !== 'models');
-  document.querySelector('[data-action="models"]').classList.toggle('active', state.view === 'models');
-  document.querySelector('[data-action="dashboard"]').setAttribute('aria-current', !state.projectId && state.view !== 'models' ? 'page' : 'false');
-  document.querySelector('[data-action="models"]').setAttribute('aria-current', state.view === 'models' ? 'page' : 'false');
+  const projects=list(state.overview?.projects);
+  document.getElementById('project-count').textContent=projects.length;
+  document.getElementById('decision-count').textContent=state.overview?.metrics?.attention ?? projects.reduce((s,p)=>s+waitingCount(p),0);
+  document.getElementById('project-list').innerHTML=projects.length?projects.slice(0,12).map(p=>'<button class="project-item '+(state.projectId===p.id?'active':'')+'" data-action="select-project" data-id="'+h(p.id)+'"><span class="project-symbol">'+icon('film',16)+'</span><span><strong>'+h(p.title||'未命名制作')+'</strong><small>'+h(p.current_activity||statusNames[p.status]||'待执行')+'</small></span><span class="sidebar-status status-'+h(p.status)+'"></span></button>').join(''):'<p class="sidebar-empty">新建制作后，项目会显示在这里。</p>';
+  const rows=capabilities(state.overview?.capabilities),available=rows.filter(r=>r.available===true).length;
+  document.getElementById('engine-dot').className='dot '+(available===rows.length&&available?'ready':available?'partial':'');
+  document.getElementById('engine-label').textContent=rows.length?available+' / '+rows.length+' 项可用':'等待实测状态';
+  document.getElementById('breadcrumb').textContent=state.project?.title||VIEW_NAMES[state.view]||'制片总览';
+  for(const item of document.querySelectorAll('.main-nav [data-action]')){
+    const view=item.dataset.view||(item.dataset.action==='models'?'models':'dashboard');
+    const active=!state.projectId&&view===(state.view||'dashboard');
+    item.classList.toggle('active',active);item.setAttribute('aria-current',active?'page':'false');
+  }
 }
 export function dashboard(state) {
-  const projects = list(state.overview?.projects);
-  const waiting = projects.filter(project => waitingCount(project));
-  const running = projects.filter(isRunning).length;
-  const completed = projects.filter(project => ['completed', 'approved'].includes(project.status) && !project.is_validation).length;
-  const rows = capabilities(state.overview?.capabilities);
-  const activeQueue = count(state.overview?.queue?.active ?? state.overview?.queue?.running);
-  return '<section class="page-heading"><div><div class="eyebrow">AI STUDIO / WORKFLOW</div><h1>一个方向，一支制作团队。</h1><p>分配模型，推进工作流，在关键创作节点做决定。</p></div><button class="button primary" data-action="new-project">＋ 发起新制作</button></section><section class="stats-row" aria-label="制作总览"><div class="stat"><span class="stat-label">等待你决定</span><div class="stat-value">' + waiting.length + '<small>个项目</small></div><span class="stat-foot">故事 · 视觉 · 成片</span></div><div class="stat"><span class="stat-label">正在制作</span><div class="stat-value">' + running + '<small>个项目</small></div><span class="stat-foot">当前执行任务 ' + activeQueue + '</span></div><div class="stat"><span class="stat-label">已交付作品</span><div class="stat-value">' + completed + '<small>部</small></div><span class="stat-foot">通过本制片台完成验收</span></div><div class="stat"><span class="stat-label">制作能力</span><div class="stat-value">' + (rows.length ? rows.filter(row => row.available === true).length + '<small>/ ' + rows.length + ' 项</small>' : '<span style="font-size:20px">检测中</span>') + '</div><button class="button quiet small" data-action="capabilities" style="padding:0;min-height:0;font-size:9px">查看资源详情 ↗</button></div></section>' + workflowBoard(state.models, state.overview?.capabilities, state.workflow) + (!projects.length ? '<section class="empty-hero"><div><div class="eyebrow">YOUR NEXT STORY STARTS HERE</div><h2>给一个方向，<br>让下一部故事开始发生。</h2><p>系统研究选题、创作提案，并在你选定故事与视觉后，继续完成分镜、生产和交付。</p><button class="button primary" data-action="new-project">写下创作方向 <span aria-hidden="true">↗</span></button></div><div class="decision-path"><div><b>01</b><span><strong>选一个故事</strong><p>从真实创作的候选提案中选择</p></span></div><div><b>02</b><span><strong>确定视觉</strong><p>批准人物、场景与画面风格</p></span></div><div><b>03</b><span><strong>审看成片</strong><p>通过、局部修改或重新剪辑</p></span></div></div></section><p class="empty-project-note">原项目已有素材与成片，可从左侧「原有作品与工具」继续查看。</p>' : (waiting.length ? '<div class="section-heading"><h2>待决策项目</h2><span>你的选择将推进下一阶段</span></div><div class="project-grid">' + waiting.map(projectCard).join('') + '</div>' : '') + '<div class="section-heading"><h2>全部制作</h2><span>' + projects.length + ' 个项目</span></div><div class="project-grid">' + projects.map(projectCard).join('') + '</div>');
-}
-function projectCard(project) {
-  const progress = clamp(project.progress);
-  return '<article class="project-card">' + badge(project.status, waitingCount(project) ? '等待你的决定' : undefined) + (project.is_validation ? ' <span class="badge neutral">验收项目</span>' : '') + '<h3>' + h(project.title || '未命名制作') + '</h3><p>' + h(String(project.brief || project.logline || '项目已建立，正在准备创作任务。').slice(0, 100)) + '</p><div class="progress-track"><span style="width:' + progress + '%"></span></div><div class="card-foot"><span>' + h(formatName(project.format)) + ' · ' + h(dateText(project.created_at)) + '</span><button class="button small" data-action="select-project" data-id="' + h(project.id) + '">进入制作 ↗</button></div></article>';
-}
-function phaseIndex(project) {
-  const stage = String(project.stage || '');
-  const pending = pendingDecisions(project)[0]?.type;
-  if (['completed', 'approved'].includes(project.status)) return 5;
-  if (pending === 'story' || project.status === 'awaiting_story') return 0;
-  if (pending === 'style' || project.status === 'awaiting_style') return 2;
-  if (pending === 'final' || project.status === 'awaiting_final') return 4;
-  if (/^(research|proposal|story)(_|$|s)/.test(stage) && stage !== 'storyboard') return 0;
-  if (/^(screenplay|script|screenwriting|writing)/.test(stage)) return 1;
-  if (/visual|style/.test(stage)) return 2;
-  if (/review|quality|final|edit|deliver/.test(stage)) return 4;
-  if (/production|render|image|video|audio|storyboard|character|shot|revision/.test(stage)) return 3;
-  if (project.delivery?.video_url) return 4;
-  if (project.selected_style) return 3;
-  if (list(project.styles).length) return 2;
-  if (project.selected_story) return 1;
-  return 0;
-}
-function steps(project, registry, caps = {}) {
-  const current = phaseIndex(project);
-  const names = ['选题与提案', '剧本开发', '视觉决策', '镜头制作', '质检与审片', '成片交付'];
-  return '<div class="production-steps" aria-label="制作阶段">' + names.map((name, index) => '<div class="step ' + (index === current ? 'current' : index < current ? 'complete' : '') + '"><span class="step-no">' + (index < current ? '✓' : String(index + 1).padStart(2, '0')) + '</span><div><strong>' + name + '</strong><div class="step-models">' + (phaseRoles[index].length ? modelChips(registry, phaseRoles[index]) : '<span>' + h(caps.image?.model || 'GPU 制作引擎') + '</span>') + '</div></div></div>').join('') + '</div>';
+  return ({projects:projectsView,inbox:inboxView,workflow:workflowView,activity:activityView}[state.view]||dashboardView)(state);
 }
 export function projectView(state) {
-  const project = state.project;
-  if (!project) return '<section class="loading-panel"><div class="loader"></div><h1>正在读取制作项目</h1></section>';
-  let actions = '';
-  if (isRunning(project)) actions = '<button class="button small" data-action="project-action" data-command="pause">暂停制作</button>';
-  if (project.status === 'paused') actions = '<button class="button small primary" data-action="project-action" data-command="resume">恢复制作</button>';
-  if (pendingDecisions(project)[0]?.type === 'budget') actions = '<button class="button small primary" data-action="budget">调整预算并继续</button>';
-  else if (['failed', 'blocked'].includes(project.status) && !pendingDecisions(project).length) actions = '<button class="button small primary" data-action="project-action" data-command="retry">重试当前阶段</button>';
-  const tabs = [['overview', '项目概览'], ['team', '团队与数据流'], ['shots', '镜头制作台'], ['script', '剧本与分镜'], ['series', '系列资产'], ['quality', '制作与质检'], ['costs', '云任务与费用'], ['delivery', '交付文件']];
-  const panes = { overview: overviewPanel, script: scriptPanel, series: project => seriesPanel(project, state.seriesDrafts), quality: qualityPanel, costs: cloudBudgetPanel, delivery: deliveryPanel };
-  const decision = pendingDecisions(project)[0];
-  return '<section class="page-heading"><div><div class="eyebrow">PRODUCTION PROJECT / ' + h(String(project.id).slice(-8).toUpperCase()) + '</div><h1>' + h(project.title || '未命名制作') + '</h1>' + (project.is_validation ? '<span class="badge neutral">验收项目</span>' : '') + '<div class="project-meta">' + badge(project.status) + '<span>' + h(formatName(project.format)) + '</span><span>' + h(project.duration_seconds ?? '—') + ' 秒</span><span>' + h(stageNames[project.stage] || project.stage || '项目建立') + '</span></div></div><div class="heading-actions">' + actions + '<button class="button small" data-action="dashboard">全部项目</button></div></section>' + steps(project, state.models, state.overview?.capabilities) + (project.error ? '<div class="notice error"><div><strong>制作状态提示</strong>' + h(words(project.error)) + '</div></div>' : '') + (state.tab === 'overview' ? decisionPanel(project, state.busy) : decision ? '<div class="notice"><div><strong>有一个关键决策等待你处理</strong>完成选择后，系统会继续执行下一阶段。</div><button class="button small" style="margin-left:auto;flex:none" data-action="tab" data-tab="overview">查看决策</button></div>' : '') + '<nav class="tabbar" aria-label="项目内容">' + tabs.map(([id, name]) => '<button class="tab-button ' + (state.tab === id ? 'active' : '') + '" data-action="tab" data-tab="' + id + '" aria-current="' + (state.tab === id ? 'page' : 'false') + '">' + name + (id === 'script' && list(project.shots).length ? '<span>' + list(project.shots).length + '</span>' : '') + '</button>').join('') + '</nav>' + (state.tab === 'shots' ? shotWorkbenchView(state) : state.tab === 'team' ? teamFlowView(state) : (state.tab === 'overview' ? teamFlowSummary(state) : '') + (panes[state.tab] || overviewPanel)(project));
+  const project=state.project;
+  if(!project)return '<section class="loading-panel"><div class="loader"></div><h1>正在读取制作项目</h1></section>';
+  const issue=project.operator?.attention;
+  const pending=pendingDecisions(project)[0];
+  let controls='';
+  if(isRunning(project)&&!project.pause_requested)controls='<button class="button small" data-action="project-action" data-command="pause">'+icon('pause',15)+'暂停制作</button>';
+  if(project.status==='paused')controls='<button class="button small primary" data-action="project-action" data-command="resume">恢复制作</button>';
+  const tabs=[['overview','制作工作流'],['decisions','待办决策'],['team','团队与回执'],['shots','镜头制作台'],['script','剧本与分镜'],['quality','制作与质检'],['delivery','成片交付'],['series','系列资产'],['costs','云任务与费用']];
+  const top='<header class="console-heading project-heading"><div><button class="breadcrumb-link" data-action="view" data-view="projects">全部项目 /</button><h1>'+h(project.title||'未命名制作')+'</h1><div class="project-meta">'+badge(project.status)+'<span>'+h(formatName(project.format))+' · '+h(project.duration_seconds)+' 秒</span><span>'+(project.team_mode==='delegated'?'总制片协作':'人工把关')+'</span><code>'+h(project.id)+'</code></div></div><div class="heading-actions">'+controls+'<button class="button small" data-action="tab" data-tab="delivery">'+icon('film',15)+'查看成片</button></div></header>';
+  const notice=state.mutationError?'<div class="notice error" role="alert"><div><strong>操作未完成，已保留你的输入</strong>'+h(state.mutationError)+'</div></div>':'';
+  const banner=pending&&state.tab!=='decisions'&&state.tab!=='costs'?'<div class="project-attention-banner">'+icon('inbox',21)+'<div><strong>'+h(issue?.title||'有待处理的出品人决策')+'</strong><span>'+h(issue?.summary||pending.message||'查看可选方案或审核问题，完成处理后继续制作。')+'</span></div><button class="button primary small" data-action="tab" data-tab="'+h(issue?.target_tab||'decisions')+'">'+h(issue?.action_label||'处理待办')+icon('arrow',14)+'</button></div>':'';
+  const navigation='<nav class="tabbar" aria-label="项目内容">'+tabs.map(([id,name])=>'<button class="tab-button '+(state.tab===id?'active':'')+'" data-action="tab" data-tab="'+id+'" aria-current="'+(state.tab===id?'page':'false')+'">'+name+(id==='decisions'&&pending?'<span class="tab-alert">1</span>':'')+'</button>').join('')+'</nav>';
+  let content;
+  if(state.tab==='overview')content=flowCanvas(state)+'<div class="project-bottom-grid"><section class="console-panel">'+sectionTitle('创作任务','你提供的需求是整个团队的共同目标')+'<p class="brief-text">'+h(project.brief||'尚未提供需求')+'</p><div class="project-output-counts"><span><b>'+list(project.shots).length+'</b>计划镜头</span><span><b>'+list(project.shots).filter(s=>s.image?.path||s.image_url).length+'</b>已有关键帧</span><span><b>'+list(project.shots).filter(s=>s.video?.path||s.video_url).length+'</b>已有视频</span></div></section>'+eventsPanel(project)+'</div>';
+  else if(state.tab==='decisions')content=decisionPage(project,state.busy);
+  else if(state.tab==='team')content=organizationView(state)+(state.projectFlowError?'<div class="notice error">历史回执读取失败：'+h(state.projectFlowError)+'</div>':'');
+  else if(state.tab==='shots')content=shotWorkbenchView(state);
+  else if(state.tab==='script')content=scriptPanel(project);
+  else if(state.tab==='quality')content=qualityPanel(project);
+  else if(state.tab==='series')content=seriesPanel(project,state.seriesDrafts);
+  else if(state.tab==='costs')content=cloudBudgetPanel(project);
+  else content=deliveryPanel(project);
+  return top+notice+banner+navigation+'<div class="project-pane" data-dom-key="pane-'+h(project.id+':'+state.tab)+'">'+content+'</div>';
 }
 export function createForm(profileCatalog, inventory = null) {
   return '<div class="dialog-head"><div><div class="eyebrow">NEW PRODUCTION</div><h2 id="create-title">发起一部新制作</h2><p>给出题材与创作要求，系统开始自主研究和提案。</p></div><button type="button" class="icon-button" data-action="close-dialog" data-dialog="project-dialog" aria-label="关闭">×</button></div><form id="create-form" data-form="create" class="dialog-body"><div class="field"><label for="project-title">项目名称 <span class="muted">/ 可选</span></label><input id="project-title" name="title" maxlength="80" placeholder="可以先留空，待故事选定后命名"></div><div class="field"><label for="project-series">系列标识 / 可选</label><input id="project-series" name="series_key" maxlength="100" placeholder="同一系列的剧集使用相同标识"><small>留空保持原有单集格式；填写后可固定并复用已批准的系列资产。</small></div><div class="field"><label for="project-brief">创作方向</label><textarea id="project-brief" name="brief" rows="5" maxlength="6000" required minlength="5" placeholder="写下题材、受众、核心情绪，以及你希望避免的内容。也可以给出完整的原创故事想法。"></textarea><small>描述越具体，候选提案越贴近你的创作意图。</small></div><div class="field"><label>制作形式</label><div class="format-options"><label class="format-option"><input type="radio" name="format" value="motion_comic" checked>动态漫剧</label><label class="format-option"><input type="radio" name="format" value="live_action">真人影视</label><label class="format-option"><input type="radio" name="format" value="animation">二维动画</label></div><small>实际制作路径由当前模型能力决定；不可用能力会明确显示。</small></div>' + teamModeFields(inventory) + productionProfileFields(profileCatalog) + '<div class="form-row three"><div class="field"><label for="duration">经典规格目标时长</label><select id="duration" name="duration_seconds"><option value="60" selected>60 秒</option><option value="75">75 秒</option><option value="90">90 秒</option></select></div><div class="field"><label for="gpu-budget">GPU 分钟上限</label><input id="gpu-budget" name="gpu_minutes" type="number" value="120" min="5" max="1440" step="1" required></div><div class="field"><label for="max-attempts">每素材版本最多尝试</label><input id="max-attempts" name="max_attempts" type="number" value="3" min="1" max="5" step="1" required></div></div><div class="field"><label for="wall-budget">累计制作时间上限 / 分钟</label><input id="wall-budget" name="wall_minutes" type="number" value="180" min="10" max="1440" step="1" required><small>与 GPU 用量独立计量；包含已保存的各次制作耗时。</small></div><details class="source-options"><summary>添加研究资料或已授权素材</summary><div class="field"><label for="sources">来源链接 <span class="muted">/ 每行一条</span></label><textarea id="sources" name="sources" rows="3" maxlength="8000" placeholder="https://…"></textarea></div><div class="field"><label for="rights">这些资料的使用范围</label><select id="rights" name="rights"><option value="analysis_only">仅研究分析，不直接改编</option><option value="owned">我的自有原创作品</option><option value="licensed">已获得相应改编授权</option><option value="public_domain">确认属于可使用的公版素材</option></select></div></details><p class="form-note">人工模式保留故事、视觉和终片关卡；委托模式仅代选合格创意，终片仍由你审核。项目在所设 GPU 用量、制作时间与尝试次数内自动制作和返修；遇到异常时暂停并说明原因。</p><div id="create-error" class="form-error" role="alert" hidden></div><div class="dialog-actions"><button type="button" class="button" data-action="close-dialog" data-dialog="project-dialog">取消</button><button type="submit" class="button primary">开始自主策划 <span aria-hidden="true">↗</span></button></div></form>';

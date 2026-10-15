@@ -44,7 +44,7 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
-test('real Python boundary admits workbench and legacy on its actual loopback port', async ({ page }) => {
+test('real Python boundary admits the new console and rejects the retired interface', async ({ page }) => {
   const errors = []; page.on('pageerror', error => errors.push(error.message));
   expect((await page.goto(endpoint + '/')).status()).toBe(200);
   await expect(page.locator('#project-list')).toContainText('HTTP 边界隔离测试');
@@ -53,7 +53,7 @@ test('real Python boundary admits workbench and legacy on its actual loopback po
   await page.locator('.main-nav [data-action="models"]').click();
   await expect(page.locator('#workspace h1')).toHaveText('模型与连接');
   expect(errors).toEqual([]);
-  expect((await page.goto(endpoint + '/legacy')).status()).toBe(200);
+  expect((await page.goto(endpoint + '/legacy')).status()).toBe(410);
 });
 
 test('real Python media response supports browser decoding and range playback', async ({ page }) => {

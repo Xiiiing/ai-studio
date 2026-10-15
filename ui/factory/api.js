@@ -14,7 +14,10 @@ async function request(path, body, timeout = 30000) {
     let data;
     try { data = raw ? JSON.parse(raw) : {}; }
     catch { throw new Error(response.ok ? '服务返回了无法识别的数据，请刷新重试。' : '制片服务暂时无法响应，请稍后重试。'); }
-    if (!response.ok) throw new Error(typeof data.error === 'string' ? data.error : data.error?.message || data.message || '操作失败（HTTP ' + response.status + '）');
+    if (!response.ok) {
+      const error = new Error(typeof data.error === 'string' ? data.error : data.error?.message || data.message || '操作失败（HTTP ' + response.status + '）');
+      error.status = response.status; error.code = data.code; throw error;
+    }
     return data;
   } catch (error) {
     if (error.name === 'AbortError') throw new Error('请求超时。请先刷新查看实际状态，避免重复提交。');
@@ -30,6 +33,7 @@ export const api = {
   testModel: (profile_id, kind) => request('/models/test', kind ? { profile_id, kind } : { profile_id }, 15000),
   saveModels: payload => request('/models', payload),
   project: id => request('/projects/' + encodeURIComponent(id)),
+  workspace: id => request('/projects/' + encodeURIComponent(id) + '/workspace'),
   shots: id => request('/projects/' + encodeURIComponent(id) + '/shots'),
   shotAction: (id, shot, payload) => request('/projects/' + encodeURIComponent(id) + '/shots/' + encodeURIComponent(shot), payload),
   series: id => request('/projects/' + encodeURIComponent(id) + '/series'),

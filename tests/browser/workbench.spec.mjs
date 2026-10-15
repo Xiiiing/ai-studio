@@ -44,7 +44,7 @@ test('shot preview opens actual media and the final producer decision is actiona
   await page.waitForFunction(() => document.querySelector('#preview-dialog video')?.readyState >= 2);
   await page.locator('#preview-dialog [data-action="close-dialog"]').click();
   await expect(page.locator('#preview-dialog video')).toHaveCount(0);
-  await page.locator('.tabbar [data-tab="overview"]').click();
+  await page.locator('.tabbar [data-tab="decisions"]').click();
   await page.locator('form[data-form="final"] button[value="approve"]').click();
   await expect(page.locator('#workspace .project-meta')).toContainText('已通过');
   const calls = await (await request.get('/__test/calls')).json();

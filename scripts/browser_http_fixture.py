@@ -35,8 +35,6 @@ def main():
         config.CHECKPOINTS = store.DATA / "checkpoints.sqlite3"
         config.load_config = lambda: copy.deepcopy(public_config)
         web.snapshot = lambda: {"fixture": True, "models_run": False}
-        legacy.episode_state = lambda slug: {"slug": slug, "fixture": True}
-        legacy.jobs_state = lambda: []
 
         effects = {"launch_attempts": 0}
 
@@ -44,7 +42,9 @@ def main():
             effects["launch_attempts"] += 1
             raise RuntimeError("Browser fixture cannot start production")
 
-        legacy.launch = forbid_launch
+        # Retired launcher has no implementation. Keep the counter as evidence
+        # that cross-origin/retired routes cannot submit production.
+        assert not hasattr(legacy, "launch")
         def forbid_outbound(*_args, **_kwargs):
             raise RuntimeError("Browser HTTP fixture forbids outbound connections")
 

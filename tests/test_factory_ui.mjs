@@ -118,7 +118,7 @@ test('workflow empty states never invent an available model', () => {
   assert.ok(html.includes('执行图接口尚未返回'));
 });
 test('existing final review remains a real decision form without autoapproval', () => {
-  const s = { project: { id: '012345abcdef', title: '待审项目', format: 'motion_comic', duration_seconds: 60, status: 'awaiting_final', stage: 'final_decision', delivery: { video_url: '/media/production/test/release/movie.mp4' }, decisions: [{ id: 'gate-1', type: 'final', status: 'pending' }], shots: [], budget: {} }, models: inventory(), overview: { capabilities: {} }, tab: 'overview', busy: false };
+  const s = { project: { id: '012345abcdef', title: '待审项目', format: 'motion_comic', duration_seconds: 60, status: 'awaiting_final', stage: 'final_decision', delivery: { video_url: '/media/production/test/release/movie.mp4' }, decisions: [{ id: 'gate-1', type: 'final', status: 'pending' }], shots: [], budget: {} }, models: inventory(), overview: { capabilities: {} }, tab: 'decisions', busy: false };
   const html = projectView(s);
   assert.ok(html.includes('data-decision-id="gate-1"'));
   assert.ok(html.includes('data-form="final"'));
@@ -212,33 +212,36 @@ test('the real app navigates workflow, models and a pending project through read
     addEventListener(type, listener) { (events.get('element:' + type) || events.set('element:' + type, []).get('element:' + type)).push(listener); }
   }
   const node = id => { if (!nodes.has(id)) nodes.set(id, new Element()); return nodes.get(id); };
-  globalThis.document = { hidden: false, activeElement: null, getElementById: node, querySelector: node, querySelectorAll() { return []; }, addEventListener(type, listener) { (events.get(type) || events.set(type, []).get(type)).push(listener); } };
+  globalThis.document = { body:{classList:{remove(){}}}, hidden: false, activeElement: null, getElementById: node, querySelector: node, querySelectorAll() { return []; }, addEventListener(type, listener) { (events.get(type) || events.set(type, []).get(type)).push(listener); } };
   globalThis.window = { scrollTo() {}, addEventListener(type, listener) { (windowEvents.get(type) || windowEvents.set(type, []).get(type)).push(listener); } };
   globalThis.location = { origin: 'http://127.0.0.1:8787', pathname: '/', search: '', hash: '' };
   globalThis.history = { replaceState(_state, _title, value) { globalThis.location.hash = value.includes('#') ? '#' + value.split('#')[1] : ''; } };
   let timer = 0;
   globalThis.setTimeout = () => ++timer;
   globalThis.clearTimeout = () => {};
-  const project = { id: '012345abcdef', title: '待审项目', format: 'motion_comic', duration_seconds: 60, status: 'awaiting_final', stage: 'final_decision', decisions: [{ id: 'gate-app', type: 'final', status: 'pending' }], shots: [], budget: {}, delivery: {} };
+  const project = { id: '012345abcdef', revision:7, title: '待审项目', format: 'motion_comic', duration_seconds: 60, status: 'awaiting_final', stage: 'final_decision', decisions: [{ id: 'gate-app', type: 'final', status: 'pending' }], shots: [], budget: {}, delivery: {video_url:'/media/production/factory-012345abcdef/release/movie.mp4'} };
   globalThis.fetch = async (url, options) => {
     requests.push({ url, method: options.method });
-    const result = url === '/api/factory/models' ? inventory() : url === '/api/factory/workflow' ? { nodes: [{ id: 'research' }], edges: [], orchestrator: 'LangGraph', version: '3.0.0' } : url === '/api/factory/overview' ? { projects: [project], capabilities: {}, queue: {} } : url === '/api/factory/projects/012345abcdef' ? project : url === '/api/factory/projects/012345abcdef/flow' ? flowFixture() : {};
+    const result = url === '/api/factory/models' ? inventory() : url === '/api/factory/workflow' ? { nodes: [{ id: 'research' }], edges: [], orchestrator: 'LangGraph', version: '3.0.0' } : url === '/api/factory/overview' ? { projects: [project], capabilities: {}, queue: {} } : url === '/api/factory/projects/012345abcdef/workspace' ? {project,revision:7} : url === '/api/factory/projects/012345abcdef' ? project : url === '/api/factory/projects/012345abcdef/flow' ? flowFixture() : {};
     return new Response(JSON.stringify(result), { status: 200 });
   };
   try {
     await import('../ui/factory/app.js?ui-contract-smoke');
     await new Promise(resolve => setImmediate(resolve));
-    assert.ok(node('workspace').innerHTML.includes('一个方向，一支制作团队'));
+    assert.ok(node('workspace').innerHTML.includes('制片总览'));
+    assert.ok(node('workspace').innerHTML.includes('data-metric="0"'));
     const click = { target: { closest(selector) { return selector === '[data-action]' ? { dataset: { action: 'models' }, disabled: false } : null; } } };
     for (const listener of events.get('click') || []) await listener(click);
     assert.ok(node('workspace').innerHTML.includes('模型与连接'));
     assert.ok(node('workspace').innerHTML.includes('writer-model'));
-    globalThis.location.hash = '#project=012345abcdef';
+    globalThis.location.hash = '#project=012345abcdef&tab=decisions';
     for (const listener of windowEvents.get('hashchange') || []) await listener();
+    await new Promise(resolve=>setImmediate(resolve));
     assert.ok(node('workspace').innerHTML.includes('待审项目'));
     assert.ok(node('workspace').innerHTML.includes('data-decision-id="gate-app"'));
     const teamClick = { target: { closest(selector) { return selector === '[data-action]' ? { dataset: { action: 'tab', tab: 'team' }, disabled: false } : null; } } };
     for (const listener of events.get('click') || []) await listener(teamClick);
+    await new Promise(resolve=>setImmediate(resolve));
     assert.ok(node('workspace').innerHTML.includes('actual-history-model'));
     assert.ok(node('workspace').innerHTML.includes('经审核的剧本'));
     assert.ok(requests.some(request => request.url === '/api/factory/projects/012345abcdef/flow'));

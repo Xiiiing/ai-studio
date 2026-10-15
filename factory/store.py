@@ -308,6 +308,12 @@ def answer_for(pid, gate_id):
     return get(pid, False).get("answers", {}).get(gate_id)
 
 
+def _check_revision(project, payload):
+    expected = payload.get("expected_revision")
+    if "expected_revision" in payload and (type(expected) is not int or expected != project["revision"]):
+        raise ValueError("项目已更新，已保留你的意见；请刷新当前状态后再提交")
+
+
 def decide(pid, payload, actor=None):
     kind = payload.get("type")
     choice = payload.get("choice")
@@ -324,6 +330,7 @@ def decide(pid, payload, actor=None):
                 raise ValueError("该决策已经处理，请刷新项目状态")
         else:
             d = next((d for d in reversed(p["decisions"]) if d["type"] == kind and d["status"] == "pending"), None)
+        _check_revision(p, payload)
         if not d or d["type"] != kind or d["status"] != "pending":
             raise ValueError("当前没有对应的待办决策，请刷新后再选择")
         valid = [o.get("id") if isinstance(o, dict) else o for o in d["options"]]
@@ -380,6 +387,8 @@ def action(pid, payload):
     with connection() as db:
         db.execute("BEGIN IMMEDIATE")
         p = _read(db, pid)
+        if command != "revise":
+            _check_revision(p, payload)
         if command == "pause":
             _pause(db, p)
         elif command == "revise":

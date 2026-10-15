@@ -8,13 +8,13 @@ from urllib.parse import unquote,urlsplit
 
 from studio.core import ROOT
 from studio.http_security import HTTPError, validate_bind
-from studio.web import Handler as LegacyHandler
+from studio.web import Handler as LocalMediaHandler
 from . import __version__, store
 from .capabilities import snapshot
 from .config import load_config
 
 
-class Handler(LegacyHandler):
+class Handler(LocalMediaHandler):
     server_version="DramaFactory/"+__version__
 
     factory_routes = True
@@ -34,9 +34,13 @@ class Handler(LegacyHandler):
             if path=="/api/health":
                 return self.json({"service":"drama-studio","root":str(ROOT),"status":"ready",
                                   "version":__version__,"factory":True})
-            if path=="/api/factory/overview":
-                return self.json({"projects":store.list_projects(),"capabilities":snapshot(),
-                                  "queue":store.queue_summary(),"version":__version__})
+            if path in {"/api/factory/overview", "/api/factory/console"}:
+                from .operator_console import dashboard
+                return self.json({**dashboard(),"capabilities":snapshot(),"version":__version__})
+            match=re.fullmatch(r"/api/factory/projects/([a-f0-9]{12})/workspace",path)
+            if match:
+                from .operator_console import workspace
+                return self.json(workspace(match.group(1)))
             if path=="/api/factory/capabilities":
                 return self.json(snapshot())
             match=re.fullmatch(r"/api/factory/jobs/([a-f0-9]{32})",path)
@@ -75,12 +79,7 @@ class Handler(LegacyHandler):
                     return self.json({"error":"Static asset not found"},404)
                 return self.send_file(target,root=ROOT/"ui/factory")
             if path=="/legacy":
-                previous=self.path
-                self.path="/"
-                try:
-                    return super().do_GET()
-                finally:
-                    self.path=previous
+                return self.json({"error":"旧版已移除，请使用新版制片控制台。","code":"legacy_retired"},410)
             return super().do_GET()
         except HTTPError as exc:
             return self.json({"error":str(exc),"code":exc.code},exc.status)

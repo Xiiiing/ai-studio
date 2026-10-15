@@ -57,9 +57,14 @@ def handle(job):
             needs["type"]="runtime"
         store.update(pid,{"status":"blocked","error":str(exc)[:2500],"needs_decision":needs,
                           "message":"制片已保留进度并暂停："+str(exc)[:1500]})
-        store.event(pid,"异常详情已写入本地运行日志。","error",{"exception_type":name})
+        expected = isinstance(exc, ReviewBlocked) or name in {"ProductionNeedsDecision", "ProductionBudgetExceeded"}
+        store.event(pid,"请在待办决策中查看问题并选择处理方式。" if expected else "异常详情已写入本地运行日志。",
+                    "review_blocked" if expected else "error",{"exception_type":name,"stage":store.get(pid,False).get("stage")})
         store.finish_job(job["id"],str(exc)[:2500],lease=job["lease"])
-        traceback.print_exc()
+        if expected:
+            print(json.dumps({"event":"project_needs_attention","project":pid,"reason_type":needs.get("kind") or needs.get("type"),"exception_type":name},ensure_ascii=False),flush=True)
+        else:
+            traceback.print_exc()
 
 
 def main():

@@ -30,10 +30,10 @@ FACTORY_ROUTES = (
     Route("GET", r"/legacy", "ui", "legacy_alias"),
     Route("GET", r"/factory/static/.+", "ui", "factory_static"),
     *(Route("GET", "/api/factory/" + name, "read", name) for name in (
-        "production-profiles", "workflow", "models", "overview", "capabilities")),
+        "production-profiles", "workflow", "models", "overview", "capabilities", "console")),
     Route("GET", PROJECT, "read", "project"),
     *(Route("GET", PROJECT + "/" + name, "read", name) for name in (
-        "shots", "series", "cloud-budget", "flow", "delivery-readiness")),
+        "shots", "series", "cloud-budget", "flow", "delivery-readiness", "workspace")),
     Route("GET", r"/api/factory/jobs/" + JID, "read", "job"),
     Route("POST", r"/api/factory/jobs/" + JID + r"/(pause|cancel)", "task_control", "job_control", 65536),
     Route("POST", r"/api/factory/models/test", "network_probe", "model_probe", 65536),

@@ -17,13 +17,17 @@ export function bindActions(state, ui) {
   const setBusy = busy => {
     state.busy = busy;
     if (busy) state.epoch += 1;
-    document.querySelectorAll('[data-action="decide"],[data-action="project-action"],[data-action="budget"],form button[type="submit"],form button:not([type])').forEach(button => { button.disabled = busy || button.dataset.locked === 'true'; });
+    document.querySelectorAll('[data-action="decide"],[data-action="project-action"],[data-action="budget"],form button[type="submit"],form button:not([type])').forEach(button => {
+      if (busy) { button.dataset.busyOriginal = String(button.disabled); button.disabled = true; }
+      else if (button.dataset.busyOriginal !== undefined) { button.disabled = button.dataset.busyOriginal === 'true' || button.dataset.locked === 'true'; delete button.dataset.busyOriginal; }
+    });
   };
   async function mutate(work, message) {
     if (state.busy) return;
     setBusy(true);
-    try { await work(); ui.toast(message); }
-    catch (error) { ui.toast(error.message, true); }
+    state.mutationError = '';
+    try { await work(); state.clearDrafts = true; ui.toast(message); }
+    catch (error) { state.mutationError = error.message; ui.toast(error.message, true); }
     finally { setBusy(false); await ui.refresh({ force: true }); }
   }
   function openCreate() {
@@ -56,7 +60,7 @@ export function bindActions(state, ui) {
     const action = button.dataset.action;
     if (action === 'new-project') openCreate();
     if (action === 'close-dialog') dialog(button.dataset.dialog)?.close();
-    if (action === 'dashboard') await ui.selectProject('');
+    if (action === 'dashboard') await ui.selectView('dashboard');
     if (action === 'models') await ui.selectView('models');
     if (action === 'select-project') await ui.selectProject(button.dataset.id);
     if (action === 'refresh') await ui.refresh({ force: true, notify: true });
@@ -68,9 +72,9 @@ export function bindActions(state, ui) {
       const displayedId = button.closest('[data-decision-id]')?.dataset.decisionId;
       const decision = pendingDecisions(state.project).find(item => item.type === button.dataset.type && item.id === displayedId);
       if (!decision) { ui.toast('该决策状态已变化，请刷新后再选择。', true); await ui.refresh({ force: true }); return; }
-      await mutate(() => api.decide(state.projectId, { type: button.dataset.type, choice: button.dataset.choice, decision_id: decision.id }), '选择已提交，制作团队继续推进。');
+      await mutate(() => api.decide(state.projectId, { type: button.dataset.type, choice: button.dataset.choice, decision_id: decision.id, expected_revision: Number(button.closest('[data-decision-revision]')?.dataset.decisionRevision || state.project.revision) }), '选择已提交，制作团队继续推进。');
     }
-    if (action === 'project-action') await mutate(() => api.action(state.projectId, { action: button.dataset.command }), { pause: '暂停请求已提交，正在执行的安全步骤会收尾。', resume: '项目已恢复。', retry: '重试请求已提交。' }[button.dataset.command] || '操作已提交。');
+    if (action === 'project-action') await mutate(() => api.action(state.projectId, { action: button.dataset.command, expected_revision: state.project.revision }), { pause: '暂停请求已提交，正在执行的安全步骤会收尾。', resume: '项目已恢复。', retry: '重试请求已提交。' }[button.dataset.command] || '操作已提交。');
   });
   document.addEventListener('submit', async event => {
     const form = event.target.closest('form[data-form]');
@@ -125,22 +129,23 @@ export function bindActions(state, ui) {
       return;
     }
     if (form.dataset.form === 'final') {
-      const choice = event.submitter?.value || 'approve';
+      const choice = event.submitter?.value;
+      if (!['approve','revise','reedit'].includes(choice)) { ui.toast('请明确点击通过、局部修改或重新剪辑；不会默认批准。', true); return; }
       if (['revise', 'reedit'].includes(choice) && !feedback) { ui.toast('请填写具体审片意见，再提交修改或重剪。', true); form.elements.feedback.focus(); return; }
       const displayedId = form.closest('[data-decision-id]')?.dataset.decisionId;
       const decision = pendingDecisions(state.project).find(item => item.type === 'final' && item.id === displayedId);
       if (!decision) { ui.toast('当前审片决策已变化，请刷新。', true); await ui.refresh({ force: true }); return; }
-      await mutate(() => api.decide(state.projectId, { type: 'final', choice, feedback, decision_id: decision.id }), choice === 'approve' ? '成片已通过，正在更新交付状态。' : '审片意见已提交，系统继续处理。');
+      await mutate(() => api.decide(state.projectId, { type: 'final', choice, feedback, decision_id: decision.id, expected_revision: Number(form.dataset.projectRevision || state.project.revision) }), choice === 'approve' ? '成片已通过，正在更新交付状态。' : '审片意见已提交，系统继续处理。');
     }
     if (form.dataset.form === 'repropose') {
       const displayedId = form.closest('[data-decision-id]')?.dataset.decisionId;
       const decision = pendingDecisions(state.project).find(item => item.type === 'story' && item.id === displayedId);
       if (!decision) { ui.toast('故事决策已变化，请刷新。', true); await ui.refresh({ force: true }); return; }
-      await mutate(() => api.decide(state.projectId, { type: 'story', choice: '__repropose__', feedback, decision_id: decision.id }), '已提交重新提案。');
+      await mutate(() => api.decide(state.projectId, { type: 'story', choice: '__repropose__', feedback, decision_id: decision.id, expected_revision: Number(form.dataset.projectRevision || state.project.revision) }), '已提交重新提案。');
     }
-    if (form.dataset.form === 'retry') await mutate(() => api.action(state.projectId, { action: 'retry', feedback }), '调整意见已记录，正在重试。');
+    if (form.dataset.form === 'retry') await mutate(() => api.action(state.projectId, { action: 'retry', feedback, expected_revision: Number(form.dataset.projectRevision || state.project.revision) }), '调整意见已记录，正在重试。');
     if (form.dataset.form === 'budget') {
-      const payload = { action: 'resume' };
+      const payload = { action: 'resume', expected_revision: state.project.revision };
       for (const key of ['gpu_minutes', 'wall_minutes']) if (Number(values[key]) > numeric(state.project?.budget?.[key])) payload[key] = Number(values[key]);
       await mutate(async () => { await api.action(state.projectId, payload); dialog('project-dialog').close(); }, '预算已更新，项目继续制作。');
     }

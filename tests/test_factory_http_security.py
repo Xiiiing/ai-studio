@@ -18,8 +18,8 @@ def http_endpoint(request, tmp_path, monkeypatch):
     effects = []
     monkeypatch.setattr(legacy, "ROOT", tmp_path)
     monkeypatch.setattr(web, "ROOT", tmp_path)
-    monkeypatch.setattr(legacy, "launch", lambda payload: effects.append(payload) or {"state": "running"})
-    monkeypatch.setattr(legacy, "episode_state", lambda slug: {"slug": slug})
+    # The shared HTTP transport no longer contains a legacy process launcher.
+    assert not hasattr(legacy, "launch")
     (tmp_path / "ui/factory").mkdir(parents=True)
     (tmp_path / "ui/index.html").write_text("<html><script></script></html>")
     (tmp_path / "ui/factory/index.html").write_text("<html>workbench</html>")
@@ -97,11 +97,11 @@ def test_cli_no_origin_and_browser_actual_port(http_endpoint):
     client, effects, _ = http_endpoint
     assert client.request("GET", "/api/health")[0] == 200
     origin = f"http://127.0.0.1:{client.port}"
-    assert client.request("POST", "/api/start", b"{}", {"Origin": origin})[0] == 202
-    assert effects == [{}]
-    assert client.request("GET", "/")[0] == 200
+    assert client.request("POST", "/api/start", b"{}", {"Origin": origin})[0] == 410
+    assert effects == []
+    assert client.request("GET", "/")[0] == (200 if client.factory else 410)
     if client.factory:
-        assert client.request("GET", "/legacy")[0] == 200
+        assert client.request("GET", "/legacy")[0] == 410
 
 
 @pytest.mark.parametrize("headers,body,status", [
@@ -262,12 +262,15 @@ def test_loopback_bind_and_port_validation():
             validate_bind("127.0.0.1", value)
 
 
-@pytest.mark.parametrize("method,path", [("GET", "/api/episode/example"), ("POST", "/api/start")])
+@pytest.mark.parametrize("method,path", [("GET", "/media/production/example/clip.mp4"), ("POST", "/api/start")])
 def test_unexpected_legacy_errors_share_safe_json_contract(http_endpoint, monkeypatch, method, path):
     client, effects, _ = http_endpoint
     def fail(*_args):
         raise OSError("synthetic-private-provider-diagnostic")
-    monkeypatch.setattr(legacy, "episode_state" if method == "GET" else "launch", fail)
+    if method == "GET":
+        monkeypatch.setattr(legacy, "open_media", fail)
+    else:
+        monkeypatch.setattr(legacy.Handler, "read_json_body", fail)
     code, _, body = client.request(method, path, b"{}" if method == "POST" else None)
     assert code == 500
     result = json.loads(body)

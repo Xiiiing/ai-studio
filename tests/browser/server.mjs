@@ -4,6 +4,7 @@ import { readFile, realpath, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { teamFlowFixture } from './team-fixture.mjs';
+import { overviewFor, workspaceFor, scenario } from './console-fixture.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const port = Number(process.env.TEST_PORT || 18787);
@@ -38,6 +39,7 @@ const server = http.createServer(async (request, response) => {
     for await (const part of request) { body += part; if (body.length > 65536) throw new Error('Fixture body too large'); }
     const value = body ? JSON.parse(body) : {};
     if (url.pathname === '/__test/reset' && request.method === 'POST') { reset(); return json(response, { reset: true }); }
+    if (url.pathname === '/__test/scenario' && request.method === 'POST') { scenario(project,value.kind); board.revision=project.revision; return json(response,{scenario:value.kind}); }
     if (url.pathname === '/__test/progress' && request.method === 'POST') {
       project.revision += 1; project.title = '制作进度已更新'; project.progress = 98; board.revision = project.revision;
       board.shots[0].dramatic_beat = '其他区域已更新，视频继续播放';
@@ -48,7 +50,8 @@ const server = http.createServer(async (request, response) => {
     if (url.pathname.startsWith('/api/')) {
       calls.push({ method: request.method, path: url.pathname, body: value });
       if (fail && url.pathname.endsWith(fail)) return json(response, { error: '模拟服务暂时不可用' }, 503);
-      if (url.pathname === '/api/factory/overview') return json(response, { projects: [project], capabilities: {}, queue: { running: 0, queued: 0 }, version: 'browser-fixture' });
+      if (url.pathname === '/api/factory/overview') return json(response, overviewFor(project));
+      if (url.pathname === '/api/factory/projects/' + id + '/workspace') return json(response, workspaceFor(project));
       if (url.pathname === '/api/factory/workflow') return json(response, { teams: [], nodes: [], edges: [], roles: [] });
       if (url.pathname === '/api/factory/production-profiles') return json(response, { presets: { legacy15: { label: '经典短剧 · 15 镜' }, compact6: { label: '紧凑短片 · 6 镜 / 30 秒' } } });
       if (url.pathname === '/api/factory/models/test') return json(response, { status: 'unverified', message: '模拟预检，不调用模型', elapsed_ms: 1 });
@@ -71,9 +74,21 @@ const server = http.createServer(async (request, response) => {
       if (url.pathname.endsWith('/flow')) return json(response, teamFlowFixture(project));
       if (url.pathname.endsWith('/series')) return json(response, { series_key: '', assets: [], references: {}, sources: [], bible: null });
       if (url.pathname.endsWith('/cloud-budget')) return json(response, { project_id: id, tasks: [], authorizations: [], quote: null, totals: {} });
+      if (url.pathname.endsWith('/action') && request.method === 'POST') {
+        if(value.expected_revision!==project.revision)return json(response,{error:'项目已更新，已保留你的意见；请刷新当前状态后再提交'},409);
+        if(value.action==='retry'){ project.needs_decision=null;project.status='queued';project.decisions=[];project.revision+=1; }
+        return json(response,{project},202);
+      }
       if (url.pathname.endsWith('/decision') && request.method === 'POST') {
         if (value.decision_id !== project.decisions[0].id || project.decisions[0].status !== 'pending') return json(response, { error: '决策已处理' }, 409);
-        project.decisions[0].status = 'answered'; project.status = 'approved'; project.revision += 1; return json(response, { project }, 202);
+        if(value.expected_revision!==undefined&&value.expected_revision!==project.revision)return json(response,{error:'项目已更新，请刷新后提交'},409);
+        const current=project.decisions[0];
+        if(!current.options.some(o=>o.id===value.choice))return json(response,{error:'方案不属于当前决策'},409);
+        current.status='answered';
+        if(current.type==='story'){project.selected_story=value.choice;scenario(project,'style');}
+        else if(current.type==='style'){project.selected_style=value.choice;scenario(project,'final');}
+        else {project.status=value.choice==='approve'?'approved':'queued';project.revision+=1;}
+        return json(response,{project},202);
       }
       if (url.pathname.endsWith('/shots/S01') && request.method === 'POST') {
         if (value.expected_revision !== project.revision) return json(response, { error: '项目已更新，请刷新' }, 409);
@@ -88,6 +103,7 @@ const server = http.createServer(async (request, response) => {
     if (url.pathname === '/') file = path.join(root, 'ui/factory/index.html');
     else if (url.pathname.startsWith('/factory/static/')) file = path.join(root, 'ui/factory', decodeURIComponent(url.pathname.slice('/factory/static/'.length)));
     else if (url.pathname === '/fixture/clip.mp4') file = path.join(root, 'runtime/browser-fixtures/clip.mp4');
+    else if (url.pathname.startsWith('/media/production/factory-' + id + '/style_previews/')) file = path.join(root,'runtime/browser-fixtures/frame.png');
     else if (url.pathname === '/fixture/frame.png') file = path.join(root, 'runtime/browser-fixtures/frame.png');
     else return json(response, { error: 'Not found' }, 404);
     file = await realpath(file);
