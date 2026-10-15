@@ -97,6 +97,8 @@ def write_new(path, value):
     """Exclusive, fsynced evidence file. Caller owns the isolated parent directory."""
     path = Path(path)
     raw = canonical(value) + b"\n"
+    if len(raw) > 2 * 1024 * 1024:
+        raise ValueError("Evidence file exceeds the readable size bound")
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
     parent, path = _parent(path)
     try:

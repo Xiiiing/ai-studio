@@ -76,8 +76,9 @@ def _generation_check(record, task, request, plan):
     else:
         raise ValueError("Unknown generation evidence status")
     if record["evidence_mode"] == "external":
-        if receipt.get("status") not in {"succeeded", "failed"}:
-            raise ValueError("External generation lacks an actual call status")
+        expected_status = "succeeded" if record["status"] == "recorded" else "failed"
+        if receipt.get("status") != expected_status:
+            raise ValueError("External generation status contradicts its original call receipt")
         if receipt.get("model_identity") != plan["model_identity"] or receipt.get("config_revision") != plan["config_revision"]:
             raise ValueError("Generation model/config does not match the frozen comparison")
         prompt = receipt.get("prompt", {})

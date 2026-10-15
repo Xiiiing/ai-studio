@@ -94,6 +94,15 @@ def load_prompt(role, version=None, *, root=None):
     if (not isinstance(inputs, dict) or inputs.get("type") != "object"
             or inputs.get("additionalProperties") is not False):
         raise ValueError("Prompt input context must be a closed object schema")
+    pending = [inputs]
+    while pending:
+        node = pending.pop()
+        if isinstance(node, dict):
+            if {"$ref", "$dynamicRef", "$recursiveRef"}.intersection(node):
+                raise ValueError("Prompt context schemas must be self-contained; references are disabled")
+            pending.extend(node.values())
+        elif isinstance(node, list):
+            pending.extend(node)
     try:
         Draft202012Validator.check_schema(inputs)
     except SchemaError as exc:

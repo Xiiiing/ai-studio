@@ -95,11 +95,11 @@ def test_holdout_cannot_be_reused_after_unrelated_development_edits(experiment):
     corpus = json.loads((tmp_path / "corpus.json").read_text())
     corpus["cases"][0]["genre"] = "changed-development-label"
     write(tmp_path / "corpus.json", corpus)
-    second = build("holdout-two", split="holdout", allow_holdout=True, seed=99)
-    imported_values(tmp_path, second, "holdout-two")
-    import_reviews(tmp_path, second, run_name="holdout-two")
+    # Reject earlier than the old compare-time gate: do not release inputs
+    # for another plan once these cases have been exposed, even without scores.
     with pytest.raises(ValueError, match="holdout already consumed"):
-        compare(tmp_path / "holdout-two", tmp_path / "holdout-two.seal.json")
+        build("holdout-two", split="holdout", allow_holdout=True, seed=99)
+    assert not (tmp_path / "holdout-two").exists()
 
 
 def test_director_fixture_cannot_expand_editable_fields_or_invent_shot_ids(experiment):

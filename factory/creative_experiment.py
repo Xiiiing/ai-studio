@@ -17,6 +17,7 @@ from .prompt_registry import prompt_receipt, PromptText
 from .creative_evidence_io import digest, read_json, read_bytes, new_directory, write_new
 from .schemas import SCORE_KEYS, episode_schema
 from .storyboard import storyboard_schema, DIRECTOR_FIELDS
+from .creative_holdout import reserve_holdout
 
 PROTOCOL = "ai-studio.creative-ab.v1"
 CORPUS = "ai-studio.creative-corpus.v1"
@@ -24,6 +25,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SOURCE_FILES = (
     "factory/creative_experiment.py", "factory/creative_comparison.py",
     "factory/creative_experiment_cli.py", "factory/creative_evidence_io.py",
+    "factory/creative_holdout.py",
     "factory/prompt_registry.py", "factory/profile_creative.py",
     "factory/llm.py", "factory/schemas.py", "factory/storyboard.py",
     "factory/production_profiles.py", "factory/config.py", "factory/providers.py",
@@ -193,7 +195,9 @@ def freeze(corpus_path, baseline, candidate, config, output, seal_path, *, role,
                 requests[task_id] = request
                 plan["tasks"].append({"id": task_id, "case_id": case["id"], "arm": arm,
                                       "replicate": replicate, "request_sha256": digest(request), "prompt": meta})
-    # Preflight is complete before creating any persistent output.
+    # Holdout inputs become visible as soon as requests are exported. Reserve
+    # the release first, even if no generation or final comparison ever follows.
+    reserve_holdout(plan, seal_path)
     output = new_directory(output)
     for directory in ("requests", "results", "reviews"):
         new_directory(output / directory)
@@ -237,6 +241,7 @@ def verify(run, seal_path):
         request = read_json(run / "requests" / (task["id"] + ".json"))
         if digest(request) != task["request_sha256"]:
             raise ValueError("Frozen request checksum mismatch")
+    reserve_holdout(plan, seal_path, verify_only=True)
     return plan
 
 
