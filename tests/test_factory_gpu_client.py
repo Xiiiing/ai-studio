@@ -70,6 +70,7 @@ def service(tmp_path,monkeypatch):
             result={"receipt":receipt,"expected":expected,"records":records}
         result["artifacts"]=[{"index":i,"name":str(i)+".bin","sha256":hashlib.sha256(blob).hexdigest(),"bytes":len(blob)} for i,blob in enumerate(blobs)]
         return {"id":ident,"status":state["status"],"result":result},blobs
+    state["make_result"]=complete
     class Handler(BaseHTTPRequestHandler):
         def log_message(self,*args):
             pass
@@ -476,3 +477,45 @@ def test_project_fence_transport_failure_never_creates_a_new_intent(service,monk
         with pytest.raises(ProductionPaused):worker.execute(graph(),project/"shots/S02/take_001","image")
     assert len(state["posts"])==1
     assert not (project/"shots/S02/take_001/submission.json").exists()
+
+
+def test_legacy_voice_map_aliases_are_not_sent_to_real_http_speech_contract(service):
+    """Use the bundled aliases and the real server validator, not a permissive mock."""
+    from factory import gpu_service
+    root,config,state=service
+    bundled=json.loads((Path(__file__).resolve().parents[1]/"audio/voices.json").read_text())
+    assert {"女","女主","男","男主","female","male"} <= bundled.keys()
+    core.write_json(root/"audio/voices.json",bundled)
+    class Engine:
+        def __init__(self):
+            self.source_requests=[];self.jobs=[]
+        def sources(self,payload,folder):
+            self.source_requests.append(copy.deepcopy(payload))
+            return {"expected":sources(payload["lines"],payload["voices"])}
+        def execute(self,payload,folder):
+            self.jobs.append(copy.deepcopy(payload))
+            answer,blobs=state["make_result"](payload)
+            artifacts=folder/"artifacts";artifacts.mkdir()
+            for record,blob in zip(answer["result"]["artifacts"],blobs):
+                (artifacts/record["name"]).write_bytes(blob)
+            return answer["result"]
+    engine=Engine()
+    store=gpu_service.InferenceStore(root/"real-tts-service",engine)
+    server=ThreadingHTTPServer(("127.0.0.1",0),gpu_service.Handler)
+    server.store=store
+    thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
+    remote={**config,"gpu_service":{**config["gpu_service"],"base_url":f"http://127.0.0.1:{server.server_port}"}}
+    try:
+        session=SpeechSession(root,remote)
+        assert not session.project.get("production_profile")
+        result=session._voice()
+        assert result["S01_L1"].is_file()
+        assert len(engine.jobs)==1 and len(engine.source_requests)==1
+        for payload in [*engine.source_requests,*engine.jobs]:
+            assert set(payload["voices"])=={"female"}
+            assert payload["voices"]["female"]==bundled["female"]
+        session._voice()
+        assert len(engine.jobs)==1
+        assert session.budget.snapshot()["gpu_seconds"]==7.25
+    finally:
+        server.shutdown();server.server_close();thread.join(timeout=2);store.close()

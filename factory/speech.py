@@ -30,6 +30,7 @@ class SpeechMixin:
         """Match the installed driver's real per-line source digest, without loading a model."""
         if self.config.get("gpu_service"):
             from .gpu_client import GPUClient
+            voices=self._remote_voice_subset(lines,voices)
             expected=GPUClient(self.config["gpu_service"]).sources(lines,voices,self._remote_speech_options(),
                        self.project.get("production_profile"))
             write_json(self.folder / "audio/tts/remote_sources" / (fingerprint({"lines":lines,"voices":voices})[:24]+".json"),expected)
@@ -245,6 +246,17 @@ class SpeechMixin:
                                       "voice_failed", {"batch": str(folder.relative_to(ROOT)), "attempts": attempts,
                                                        "completed_lines": list(records), "oom": bool(last.get("oom"))})
 
+    def _remote_voice_subset(self,lines,voices):
+        """Only active dialogue roles belong to the remote speech contract.
+
+        The bundled voice map also contains legacy Chinese aliases. Those are
+        useful locally but must not become unused server request role bindings.
+        """
+        roles={line["role"] for line in lines}
+        if not roles <= voices.keys():
+            raise ValueError("Every remote dialogue role requires a configured voice")
+        return {role:copy.deepcopy(voices[role]) for role in sorted(roles)}
+
     def _remote_speech_options(self):
         return {"tts_dtype":self.config.get("tts_dtype","float32"),
                 "tts_seed":self.config.get("tts_seed",20261012),
@@ -270,7 +282,7 @@ class SpeechMixin:
         if len(records)==len(lines):
             return records
         client=GPUClient(self.config["gpu_service"])
-        workload={"kind":"tts","lines":lines,"voices":voices,"options":self._remote_speech_options()}
+        workload={"kind":"tts","lines":lines,"voices":self._remote_voice_subset(lines,voices),"options":self._remote_speech_options()}
         if self.project.get("production_profile") is not None:
             workload["project_profile"]=self.project["production_profile"]
         maximum=int(self.config.get("tts_max_attempts",2))
