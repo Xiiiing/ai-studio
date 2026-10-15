@@ -43,6 +43,8 @@ def adapt_schema(schema, project):
 def adapt_system(system, project):
     if not explicit(project):
         return system
+    from .prompt_registry import derive_prompt
+    source = system
     profile = resolve(project)
     system = system.split("\nCREATIVE_PROFILE_JSON:")[0]
     ids = "/".join(roles(project))
@@ -61,7 +63,8 @@ def adapt_system(system, project):
     }
     for old, new in replacements.items():
         system = system.replace(old, new)
-    return system + "\nCREATIVE_PROFILE_JSON:\n" + json.dumps(profile, ensure_ascii=False, sort_keys=True) + (
+    rendered = system + "\nCREATIVE_PROFILE_JSON:\n" + json.dumps(profile, ensure_ascii=False, sort_keys=True) + (
         "\n严格遵循此规格的镜头数量、逐镜秒数、稳定人物ID及声线映射。不要添加角色或扩展片长。"
         "对新规格，characters明确列出每镜可见的角色；reference_group仅为概要，不替代人物列表。"
         "逐镜服装、手持物、位置和剧情状态独立于不变身份。短对白仅作时长预估，实际声音须另行实测。")
+    return derive_prompt(source, rendered, "production_profile")

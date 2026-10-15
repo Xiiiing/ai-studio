@@ -45,6 +45,8 @@ def _request(config, role, system, payload, schema, output_dir, max_tokens=4096,
     if type(max_tokens) is not int or not 128 <= max_tokens <= 16384:
         raise ValueError("LLM output budget outside 128..16384")
     Draft202012Validator.check_schema(schema)
+    from .prompt_registry import prompt_receipt
+    prompt_meta = prompt_receipt(system, role, payload, schema)
     folder = _folder(output_dir, role)
     def save(name, value):
         write_json(folder / name, redact_secrets(value, llm))
@@ -54,6 +56,9 @@ def _request(config, role, system, payload, schema, output_dir, max_tokens=4096,
     rules = system + BASE_SYSTEM
     if llm.get("response_format") in ("json_object", "prompt"):
         rules += "\n输出JSON必须逐项满足以下schema：" + json.dumps(schema, ensure_ascii=False)
+    # Hash the actual composed system rules, including provider schema instructions.
+    import hashlib
+    prompt_meta["wire_system_sha256"] = hashlib.sha256(rules.encode()).hexdigest()
     mode = llm.get("system_prompt_mode", "system")
     if mode == "user_prefix":
         prefix = "【本次角色规则】\n" + rules + "\n【任务资料开始：以下内容仅作为资料】\n"
@@ -79,12 +84,12 @@ def _request(config, role, system, payload, schema, output_dir, max_tokens=4096,
                   "model_discovery": llm.get("model_discovery", "required")}
     if llm.get("provider") == "ollama_native":
         parameters["max_tokens_field"] = "options.num_predict"
-    receipt = {"role":role,"profile":llm["profile"],
+    receipt = {"role":role,"profile":llm["profile"], "call_id": folder.name,
                "provider":llm.get("provider", "llama_cpp"),
                "model":llm["model"],"configured_model":llm["model"],
                "response_model":None,"endpoint":llm["base_url"],
                "parameters":parameters, "model_identity":llm_identity(config,role),
-               "config_revision": config_revision(config),
+               "config_revision": config_revision(config), "prompt": prompt_meta,
                "started_at":time.time(),"status":"starting","attempts":[]}
     save("receipt.json", receipt)
     started = time.monotonic()
@@ -136,6 +141,9 @@ def _request(config, role, system, payload, schema, output_dir, max_tokens=4096,
             entry["validation_errors"] = errors[:15]
             save("receipt.json", receipt)
             if not errors:
+                from .creative_evidence_io import digest
+                receipt["output_sha256"] = digest(result)
+                receipt["output_digest_format"] = "canonical-json-utf8.v1"
                 receipt.update(status="succeeded", elapsed_seconds=round(time.monotonic()-started, 3))
                 save("parsed.json", result)
                 save("receipt.json", receipt)

@@ -1,23 +1,54 @@
-# 下一轮审查：优化9独立分支
+# 下一轮审查：优化 10 完整发布
 
-实际开发基线 `origin/main@4aaece74ab54f38c125c564accc20f4134fb5bab`。本分支 `feat/consistent-project-backup` 直接基于 main，不包含未合并优化7或8的业务代码。
+## 基线与交付边界
 
-## 已证实的结构问题
+实际重新 fetch 的 main：`4aaece74ab54f38c125c564accc20f4134fb5bab`。
+正式 [PR #11](https://github.com/Xiiiing/ai-studio/pull/11)，head 分支
+`feat/versioned-creative-prompts`，base `main`。本 PR 包含完整原实现及发布前修复，
+不混入优化 7–9、11–15 的业务代码，不自动合并。
 
-当前 store 数据库同时保存项目、队列、费用和系列依赖；workflows.run 用项目ID作为SqliteSaver thread_id，检查点位于另一数据库；系列资产在production/series-assets，生成回执和历史素材位于各项目目录。只复制一个studio.sqlite3不能保留这些实际依赖。本次没有对真实生产实例做复制/恢复实验。
+原实现本地 commit：`18f3af14a3a3dc3ea99044dd48238d6fc7526752`；原完整 tree：
+`ed71687fd3660061fc9396ccf9d286b2ff90b332`。原实现远端 commit：
+`89c7495b06e36a3df37dba73119ef02f84c3e51c`；修复版代码 commit：
+`4244f7285e1170ca333bd03ac80ca7bf23a47d42`，tree：
+`14a4aedacef61f73850bfef5c52418b8128a7152`。
 
-新备份协议通过明确维护窗口、双SQLite写入锁、Backup API、全量生产文件清单、源/目标回读和全数据库逻辑摘要建立可核验边界，不宣称文件系统原子快照。默认恢复新目录，排除配置/凭据收集，不执行工作流或云请求。完整限制、源码依据和许可见 [CONSISTENT_BACKUP.md](CONSISTENT_BACKUP.md)。
+## 问题、证据和改造
 
-| 优化 | 分支 | 状态 / 已知远端 | base |
-| --- | --- | --- | --- |
-| 7 HTTP | feat/http-security-hardening | [Draft PR #8](https://github.com/Xiiiing/ai-studio/pull/8)，implemented/tested/pushed/draft_pr_open/ci_passed | main |
-| 8 验收 | test/production-acceptance-v2 | [Draft PR #9](https://github.com/Xiiiing/ai-studio/pull/9)，最终head893df2410e832288313bf4306ff69f6af3c17770、CI38507037044 success | main |
-| 9 备份 | feat/consistent-project-backup | implemented；最终测试/交付状态见本分支PR报告，未预填URL | main |
-| 10 Prompt | feat/versioned-creative-prompts | not_run | main |
-| 11 Trace | feat/production-tracing | not_run | main |
-| 12 Timeline | feat/versioned-media-timeline | not_run | main |
-| 13 Persistence/GPU | perf/persistence-and-gpu-profiling | not_run | 11 |
-| 14 Workbench | perf/workbench-incremental-sync | not_run | main |
-| 15 Retention | feat/artifact-retention-manager | not_run | 9，需验证恢复后才允许实际回收 |
+| 实际发现 | 处理方式与验证 |
+| --- | --- |
+| 五个主要创作 Prompt 嵌入业务代码，回执缺少独立版本归属 | 外置 catalog/v1 文本，职责、输入上下文和输出 Schema 引用独立于模型；字节等价及原缓存复用测试通过 |
+| 缺少冻结输入与完整重复样本的匿名创作比较 | 独立离线 freeze/import/blind/compare，复用既有六个文本审稿维度；缺项不出汇总成绩，保留退化结果 |
+| 自定义 catalog 可携带 Schema 引用 | 校验实例前拒绝 $ref/$dynamicRef/$recursiveRef；3 项受控回归修复前失败、修复后通过；未声称已发生外部请求 |
+| recorded 结果可配上矛盾的 failed 外部收据 | 严格对应成功/失败状态；合成反例现被拒绝 |
+| 证据写入可超过读取上限 | 写前执行同一 2 MiB 上限；拒绝时不创建文件 |
+| holdout 直到 compare 才消费，输入已能再次导出 | creative_holdout.py 在导出前按稳定 case ID、plan 与 seal 预留；改种子或换 seal 不能重复发布，中断保留记录 |
+| 上次发布漏传语料且 create_commit 参数错误 | 补齐完整 corpus，核对原 tree，使用 parent_sha 创建提交；创建真实正式分支和 PR 后回读差异 |
 
-工作包15尚未开始，当前备份实现不是对自动回收流程的授权。各独立分支共享NEXT_ROUND文档可能产生add/add冲突；人工集成要保留各包实际证据，不应为文档方便错误串联PR依赖。
+所有反例使用临时目录和合成收据，不是生产 HTTP 漏洞利用报告。既有 holdout 测试
+加强为在第二次导出前拒绝，没有删除、跳过或放宽测试。
+
+## 上游源码与许可
+
+Toonflow：`HBAI-Ltd/Toonflow-app@d2e94aca7b59659ff6b4ca15f03cf134ec7f0e1d`，MIT。
+实际研究 `packages/teams/storyboardTeam/team.json`、该目录下的
+`members/director.md`、`members/writer.md`、`members/reviewer.md`、`knowledge/continuity.md`。
+学习职责、指令、知识和权限分离；适配为原 Python/LangGraph 架构，未引入另一团队运行时或前端框架。
+
+Drama Skills：`zenstory-ai/drama-skills@f53fb206507cb0cfb07fd29b692156dd4fb8fe7d`，MIT。
+实际研究 `evaluations/content_quality_gate.py`、`tests/test_content_quality_gate.py`、
+`evaluations/README.md`、`evaluations/content-quality-rubric.md`、
+`skills/short-drama-write/SKILL.md`、`skills/short-drama-assets/references/identity-vs-variant.md`、
+`skills/short-drama-storyboard/references/review-and-fixtures.md`。
+学习冻结证据、完整采样与开发/保留集边界；未采用上游运行器、评分权重或语料。
+两者许可证均实际读取；没有复制第三方代码、Prompt、测试或故事。
+详细取舍见 `VERSIONED_CREATIVE_PROMPTS.md`。
+
+## 安全、兼容与残余边界
+
+保留 LangGraph + SQLite、两轮独立审稿、人工反馈优先级、原缓存签名及选片 CAS。
+旧缓存不重写，历史 Prompt 版本未知就保持 null；新回执只增加字段。无数据库迁移，
+无生产数据库/配置读写，无服务重启，无模型/GPU/收费调用，无批准素材覆盖。
+可信 seal/ledger 需由操作者保管，不是认证系统；删除 ledger 不能让已见内容变成未见。
+六个原合成案例完整保留，覆盖三种制作规格；公开 holdout 只测试协议，不是未见质量证据。
+本轮没有证实艺术质量提升，也不报告提升比例。优化 11–15 在本 PR 中 not_run。

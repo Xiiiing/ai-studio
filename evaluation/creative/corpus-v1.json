@@ -1,0 +1,2285 @@
+{
+  "schema": "ai-studio.creative-corpus.v1",
+  "corpus_id": "creative-contract-v1",
+  "cases": [
+    {
+      "id": "dev-coats",
+      "split": "development",
+      "genre": "comedy",
+      "negative_control": true,
+      "conflict_case": false,
+      "project": {
+        "id": "ee446f03a488",
+        "slug": "factory-ee446f03a488",
+        "title": "两袋围巾",
+        "brief": "两位成年摊主把外观相同的纸袋拿反，以可见物品与双方选择解决一场善意误会；没有盗窃、反派或倒计时。",
+        "format": "motion_comic",
+        "creation_mode": "original",
+        "production_profile": {
+          "shot_count": 6,
+          "duration_seconds": 30,
+          "shot_seconds": [
+            4,
+            5,
+            6,
+            4,
+            5,
+            6
+          ],
+          "characters": [
+            {
+              "character_id": "char_lead",
+              "name": "主角",
+              "voice_id": "female"
+            },
+            {
+              "character_id": "char_partner",
+              "name": "搭档",
+              "voice_id": "male"
+            }
+          ],
+          "preset": "compact6",
+          "schema_version": 1
+        }
+      },
+      "inputs": {
+        "screenwriter": {
+          "project": {
+            "id": "ee446f03a488",
+            "slug": "factory-ee446f03a488",
+            "title": "两袋围巾",
+            "brief": "两位成年摊主把外观相同的纸袋拿反，以可见物品与双方选择解决一场善意误会；没有盗窃、反派或倒计时。",
+            "format": "motion_comic",
+            "creation_mode": "original",
+            "production_profile": {
+              "shot_count": 6,
+              "duration_seconds": 30,
+              "shot_seconds": [
+                4,
+                5,
+                6,
+                4,
+                5,
+                6
+              ],
+              "characters": [
+                {
+                  "character_id": "char_lead",
+                  "name": "主角",
+                  "voice_id": "female"
+                },
+                {
+                  "character_id": "char_partner",
+                  "name": "搭档",
+                  "voice_id": "male"
+                }
+              ],
+              "preset": "compact6",
+              "schema_version": 1
+            }
+          },
+          "selected_proposal": {
+            "title": "两袋围巾",
+            "logline": "两位成年摊主把外观相同的纸袋拿反，以可见物品与双方选择解决一场善意误会；没有盗窃、反派或倒计时。",
+            "synopsis": "阿岚的红围巾袋在柜台左侧，周河的蓝围巾袋在右侧。。阿岚手中纸袋露出蓝围巾，停在自己的红色外套旁。。周河手中纸袋露出红围巾，望向柜台另一端的阿岚。。两人把已拿错的袋子同时放回柜台各自面前。。红围巾袋已在阿岚手中，蓝围巾袋已在周河手中，两人对视。。两人戴好各自围巾，空纸袋压在柜台边，误会已结束。。",
+            "ending": "两人戴好各自围巾，空纸袋压在柜台边，误会已结束。。本集主冲突在此闭合。"
+          },
+          "timeline": [
+            {
+              "id": "S01",
+              "seconds": 4
+            },
+            {
+              "id": "S02",
+              "seconds": 5
+            },
+            {
+              "id": "S03",
+              "seconds": 6
+            },
+            {
+              "id": "S04",
+              "seconds": 4
+            },
+            {
+              "id": "S05",
+              "seconds": 5
+            },
+            {
+              "id": "S06",
+              "seconds": 6
+            }
+          ],
+          "producer_feedback": {
+            "priority_order": [
+              "revision_feedback",
+              "script_feedback",
+              "story_feedback",
+              "selected_proposal"
+            ],
+            "instructions": [],
+            "conflict_rule": "按priority_order解决冲突；较新且具体的反馈覆盖旧反馈或原提案冲突部分，其余意见继续生效。出品人要求删除的支线、人物或道具不得被旧提案、旧稿或旧评审恢复。",
+            "evaluation_target": "依据反馈修订后的完整故事目标评审；原提案只保留未被反馈覆盖的设定，不因遵守删除要求而扣分。"
+          },
+          "only_revise_shot_ids": []
+        },
+        "storyboard_director": {
+          "approved_story": {
+            "title": "两袋围巾",
+            "logline": "两位成年摊主把外观相同的纸袋拿反，以可见物品与双方选择解决一场善意误会；没有盗窃、反派或倒计时。",
+            "synopsis": "阿岚的红围巾袋在柜台左侧，周河的蓝围巾袋在右侧。。阿岚手中纸袋露出蓝围巾，停在自己的红色外套旁。。周河手中纸袋露出红围巾，望向柜台另一端的阿岚。。两人把已拿错的袋子同时放回柜台各自面前。。红围巾袋已在阿岚手中，蓝围巾袋已在周河手中，两人对视。。两人戴好各自围巾，空纸袋压在柜台边，误会已结束。。",
+            "ending": "两人戴好各自围巾，空纸袋压在柜台边，误会已结束。。本集主冲突在此闭合。"
+          },
+          "producer_feedback": {
+            "priority_order": [
+              "revision_feedback",
+              "script_feedback",
+              "story_feedback",
+              "selected_proposal"
+            ],
+            "instructions": [],
+            "conflict_rule": "按priority_order解决冲突；较新且具体的反馈覆盖旧反馈或原提案冲突部分，其余意见继续生效。出品人要求删除的支线、人物或道具不得被旧提案、旧稿或旧评审恢复。",
+            "evaluation_target": "依据反馈修订后的完整故事目标评审；原提案只保留未被反馈覆盖的设定，不因遵守删除要求而扣分。"
+          },
+          "repair_issues": [],
+          "current_episode": {
+            "title": "两袋围巾",
+            "logline": "两位成年摊主把外观相同的纸袋拿反，以可见物品与双方选择解决一场善意误会；没有盗窃、反派或倒计时。",
+            "synopsis": "阿岚的红围巾袋在柜台左侧，周河的蓝围巾袋在右侧。。阿岚手中纸袋露出蓝围巾，停在自己的红色外套旁。。周河手中纸袋露出红围巾，望向柜台另一端的阿岚。。两人把已拿错的袋子同时放回柜台各自面前。。红围巾袋已在阿岚手中，蓝围巾袋已在周河手中，两人对视。。两人戴好各自围巾，空纸袋压在柜台边，误会已结束。。",
+            "ending": "两人戴好各自围巾，空纸袋压在柜台边，误会已结束。。本集主冲突在此闭合。",
+            "story_structure": {
+              "setup": "阿岚的红围巾袋在柜台左侧，周河的蓝围巾袋在右侧。",
+              "inciting_incident": "阿岚手中纸袋露出蓝围巾，停在自己的红色外套旁。",
+              "turning_point": "两人把已拿错的袋子同时放回柜台各自面前。",
+              "climax": "红围巾袋已在阿岚手中，蓝围巾袋已在周河手中，两人对视。",
+              "resolution": "两人戴好各自围巾，空纸袋压在柜台边，误会已结束。"
+            },
+            "character_names": {
+              "char_lead": "阿岚",
+              "char_partner": "周河"
+            },
+            "visual_style": "Consistent restrained ink illustration, warm paper texture, soft neutral light, no lettering.",
+            "cast": {
+              "char_lead": "A fictional adult character named 阿岚, age 30, distinct oval face, short dark hair, plain navy outerwear, stable facial proportions. No held prop or narrative action in identity references.",
+              "char_partner": "A fictional adult character named 周河, age 37, distinct oval face, short dark hair, plain ochre outerwear, stable facial proportions. No held prop or narrative action in identity references."
+            },
+            "shots": [
+              {
+                "dramatic_beat": "阿岚的红围巾袋在柜台左侧，周河的蓝围巾袋在右侧。",
+                "action": "阿岚的红围巾袋在柜台左侧，周河的蓝围巾袋在右侧。",
+                "location": "同一处可见生活或工作空间",
+                "prompt": "A restrained illustrative keyframe of the same fictional adult characters in a stable shared space, draft composition for shot 1; no visible text or logos.",
+                "motion_prompt": "A gentle camera push toward the still composition; closed mouths.",
+                "camera_motion": "hold",
+                "reference_group": "ensemble",
+                "dialogue": [],
+                "continuity": "当前边界事实：阿岚的红围巾袋在柜台左侧，周河的蓝围巾袋在右侧。。人物身份沿用固定cast，不能把后续状态提前。",
+                "sfx": "轻微环境底噪",
+                "characters": [
+                  "char_lead",
+                  "char_partner"
+                ],
+                "id": "S01",
+                "seconds": 4
+              },
+              {
+                "dramatic_beat": "阿岚手中纸袋露出蓝围巾，停在自己的红色外套旁。",
+                "action": "阿岚手中纸袋露出蓝围巾，停在自己的红色外套旁。",
+                "location": "同一处可见生活或工作空间",
+                "prompt": "A restrained illustrative keyframe of the same fictional adult characters in a stable shared space, draft composition for shot 2; no visible text or logos.",
+                "motion_prompt": "A gentle camera push toward the still composition; closed mouths.",
+                "camera_motion": "hold",
+                "reference_group": "ensemble",
+                "dialogue": [],
+                "continuity": "当前边界事实：阿岚手中纸袋露出蓝围巾，停在自己的红色外套旁。。人物身份沿用固定cast，不能把后续状态提前。",
+                "sfx": "轻微环境底噪",
+                "characters": [
+                  "char_lead",
+                  "char_partner"
+                ],
+                "id": "S02",
+                "seconds": 5
+              },
+              {
+                "dramatic_beat": "周河手中纸袋露出红围巾，望向柜台另一端的阿岚。",
+                "action": "周河手中纸袋露出红围巾，望向柜台另一端的阿岚。",
+                "location": "同一处可见生活或工作空间",
+                "prompt": "A restrained illustrative keyframe of the same fictional adult characters in a stable shared space, draft composition for shot 3; no visible text or logos.",
+                "motion_prompt": "A gentle camera push toward the still composition; closed mouths.",
+                "camera_motion": "hold",
+                "reference_group": "ensemble",
+                "dialogue": [],
+                "continuity": "当前边界事实：周河手中纸袋露出红围巾，望向柜台另一端的阿岚。。人物身份沿用固定cast，不能把后续状态提前。",
+                "sfx": "轻微环境底噪",
+                "characters": [
+                  "char_lead",
+                  "char_partner"
+                ],
+                "id": "S03",
+                "seconds": 6
+              },
+              {
+                "dramatic_beat": "两人把已拿错的袋子同时放回柜台各自面前。",
+                "action": "两人把已拿错的袋子同时放回柜台各自面前。",
+                "location": "同一处可见生活或工作空间",
+                "prompt": "A restrained illustrative keyframe of the same fictional adult characters in a stable shared space, draft composition for shot 4; no visible text or logos.",
+                "motion_prompt": "A gentle camera push toward the still composition; closed mouths.",
+                "camera_motion": "hold",
+                "reference_group": "ensemble",
+                "dialogue": [],
+                "continuity": "当前边界事实：两人把已拿错的袋子同时放回柜台各自面前。。人物身份沿用固定cast，不能把后续状态提前。",
+                "sfx": "轻微环境底噪",
+                "characters": [
+                  "char_lead",
+                  "char_partner"
+                ],
+                "id": "S04",
+                "seconds": 4
+              },
+              {
+                "dramatic_beat": "红围巾袋已在阿岚手中，蓝围巾袋已在周河手中，两人对视。",
+                "action": "红围巾袋已在阿岚手中，蓝围巾袋已在周河手中，两人对视。",
+                "location": "同一处可见生活或工作空间",
+                "prompt": "A restrained illustrative keyframe of the same fictional adult characters in a stable shared space, draft composition for shot 5; no visible text or logos.",
+                "motion_prompt": "A gentle camera push toward the still composition; closed mouths.",
+                "camera_motion": "hold",
+                "reference_group": "ensemble",
+                "dialogue": [],
+                "continuity": "当前边界事实：红围巾袋已在阿岚手中，蓝围巾袋已在周河手中，两人对视。。人物身份沿用固定cast，不能把后续状态提前。",
+                "sfx": "轻微环境底噪",
+                "characters": [
+                  "char_lead",
+                  "char_partner"
+                ],
+                "id": "S05",
+                "seconds": 5
+              },
+              {
+                "dramatic_beat": "两人戴好各自围巾，空纸袋压在柜台边，误会已结束。",
+                "action": "两人戴好各自围巾，空纸袋压在柜台边，误会已结束。",
+                "location": "同一处可见生活或工作空间",
+                "prompt": "A restrained illustrative keyframe of the same fictional adult characters in a stable shared space, draft composition for shot 6; no visible text or logos.",
+                "motion_prompt": "A gentle camera push toward the still composition; closed mouths.",
+                "camera_motion": "hold",
+                "reference_group": "ensemble",
+                "dialogue": [],
+                "continuity": "当前边界事实：两人戴好各自围巾，空纸袋压在柜台边，误会已结束。。人物身份沿用固定cast，不能把后续状态提前。",
+                "sfx": "轻微环境底噪",
+                "characters": [
+                  "char_lead",
+                  "char_partner"
+                ],
+                "id": "S06",
+                "seconds": 6
+              }
+            ]
+          },
+          "editable_shot_ids": [
+            "S01",
+            "S02",
+            "S03",
+            "S04",
+            "S05",
+            "S06"
+          ],
+          "locked_shot_ids": [],
+          "editable_fields": [
+            "prompt",
+            "motion_prompt",
+            "camera_motion",
+            "reference_group"
+          ],
+          "model_capabilities": {
+            "format": "motion_comic",
+            "continuous_character_action_in_motion_comic": false,
+            "synchronized_lip_motion": false,
+            "dialogue_delivery": "off-screen voice-over; visible mouths stay closed",
+            "camera_motions": [
+              "push_in",
+              "pull_out",
+              "pan_left",
+              "pan_right",
+              "hold"
+            ]
+          },
+          "instruction": "仅修订指定镜头的四个制作字段。这里是合成文本案例，不存在已生成的图像或视频。"
+        }
+      }
+    },
+    {
+      "id": "dev-credit",
+      "split": "development",
+      "genre": "workplace",
+      "negative_control": false,
+      "conflict_case": true,
+      "project": {
+        "id": "1ff6499eae5e",
+        "slug": "factory-1ff6499eae5e",
+        "title": "泥盘的背面",
+        "brief": "三个成年陶艺合作者准备展示一只泥盘；图案由搭档设计，主角完成成形，见证者帮助摆放。通过可见的共同劳动修正独占功劳的误会，不使用广播对质或文字证书。",
+        "format": "motion_comic",
+        "creation_mode": "original",
+        "production_profile": {
+          "shot_count": 10,
+          "duration_seconds": 50,
+          "shot_seconds": [
+            4,
+            5,
+            6,
+            4,
+            5,
+            6,
+            4,
+            5,
+            5,
+            6
+          ],
+          "characters": [
+            {
+              "character_id": "char_lead",
+              "name": "主角",
+              "voice_id": "female"
+            },
+            {
+              "character_id": "char_partner",
+              "name": "搭档",
+              "voice_id": "male"
+            },
+            {
+              "character_id": "char_witness",
+              "name": "见证者",
+              "voice_id": "narrator"
+            }
+          ],
+          "preset": "ensemble10",
+          "schema_version": 1
+        },
+        "story_feedback": "曾考虑用广播公开对质。",
+        "script_feedback": "删去广播、证书和公开羞辱，以共同修补泥盘的实际行动收束。"
+      },
+      "inputs": {
+        "screenwriter": {
+          "project": {
+            "id": "1ff6499eae5e",
+            "slug": "factory-1ff6499eae5e",
+            "title": "泥盘的背面",
+            "brief": "三个成年陶艺合作者准备展示一只泥盘；图案由搭档设计，主角完成成形，见证者帮助摆放。通过可见的共同劳动修正独占功劳的误会，不使用广播对质或文字证书。",
+            "format": "motion_comic",
+            "creation_mode": "original",
+            "production_profile": {
+              "shot_count": 10,
+              "duration_seconds": 50,
+              "shot_seconds": [
+                4,
+                5,
+                6,
+                4,
+                5,
+                6,
+                4,
+                5,
+                5,
+                6
+              ],
+              "characters": [
+                {
+                  "character_id": "char_lead",
+                  "name": "主角",
+                  "voice_id": "female"
+                },
+                {
+                  "character_id": "char_partner",
+                  "name": "搭档",
+                  "voice_id": "male"
+                },
+                {
+                  "character_id": "char_witness",
+                  "name": "见证者",
+                  "voice_id": "narrator"
+                }
+              ],
+              "preset": "ensemble10",
+              "schema_version": 1
+            },
+            "story_feedback": "曾考虑用广播公开对质。",
+            "script_feedback": "删去广播、证书和公开羞辱，以共同修补泥盘的实际行动收束。"
+          },
+          "selected_proposal": {
+            "title": "泥盘的背面",
+            "logline": "三个成年陶艺合作者准备展示一只泥盘；图案由搭档设计，主角完成成形，见证者帮助摆放。通过可见的共同劳动修正独占功劳的误会，不使用广播对质或文字证书。",
+            "synopsis": "主角双手托着同一只泥盘，搭档站在旁边，见证者扶着空展示架。。搭档面前摊着颜色相近的未用花纹样片，泥盘仍由主角托住。。主角把泥盘放在空展示架上，搭档的手留在身侧。。见证者指向盘边一处未压稳的花纹，三人的视线集中在那里。。搭档的手指停在盘边花纹旁，展示架未移动。。主角把泥盘从展示架上取下托稳，搭档轻扶未压稳处。。花纹已贴平，泥盘仍由主角托着，搭档收回手。。主角和搭档各扶盘的一侧，将它置回同一展示架。。见证者站到一旁，主角主动给搭档让出展示架正前方的位置。。主角与搭档并肩在泥盘后，见证者在侧边，作品与合作关系同时留在画面中。。",
+            "ending": "主角与搭档并肩在泥盘后，见证者在侧边，作品与合作关系同时留在画面中。。本集主冲突在此闭合。"
+          },
+          "timeline": [
+            {
+              "id": "S01",
+              "seconds": 4
+            },
+            {
+              "id": "S02",
+              "seconds": 5
+            },
+            {
+              "id": "S03",
+              "seconds": 6
+            },
+            {
+              "id": "S04",
+              "seconds": 4
+            },
+            {
+              "id": "S05",
+              "seconds": 5
+            },
+            {
+              "id": "S06",
+              "seconds": 6
+            },
+            {
+              "id": "S07",
+              "seconds": 4
+            },
+            {
+              "id": "S08",
+              "seconds": 5
+            },
+            {
+              "id": "S09",
+              "seconds": 5
+            },
+            {
+              "id": "S10",
+              "seconds": 6
+            }
+          ],
+          "producer_feedback": {
+            "priority_order": [
+              "revision_feedback",
+              "script_feedback",
+              "story_feedback",
+              "selected_proposal"
+            ],
+            "instructions": [
+              {
+                "source": "script_feedback",
+                "content": "删去广播、证书和公开羞辱，以共同修补泥盘的实际行动收束。"
+              },
+              {
+                "source": "story_feedback",
+                "content": "曾考虑用广播公开对质。"
+              }
+            ],
+            "conflict_rule": "按priority_order解决冲突；较新且具体的反馈覆盖旧反馈或原提案冲突部分，其余意见继续生效。出品人要求删除的支线、人物或道具不得被旧提案、旧稿或旧评审恢复。",
+            "evaluation_target": "依据反馈修订后的完整故事目标评审；原提案只保留未被反馈覆盖的设定，不因遵守删除要求而扣分。"
+          },
+          "only_revise_shot_ids": []
+        },
+        "storyboard_director": {
+          "approved_story": {
+            "title": "泥盘的背面",
+            "logline": "三个成年陶艺合作者准备展示一只泥盘；图案由搭档设计，主角完成成形，见证者帮助摆放。通过可见的共同劳动修正独占功劳的误会，不使用广播对质或文字证书。",
+            "synopsis": "主角双手托着同一只泥盘，搭档站在旁边，见证者扶着空展示架。。搭档面前摊着颜色相近的未用花纹样片，泥盘仍由主角托住。。主角把泥盘放在空展示架上，搭档的手留在身侧。。见证者指向盘边一处未压稳的花纹，三人的视线集中在那里。。搭档的手指停在盘边花纹旁，展示架未移动。。主角把泥盘从展示架上取下托稳，搭档轻扶未压稳处。。花纹已贴平，泥盘仍由主角托着，搭档收回手。。主角和搭档各扶盘的一侧，将它置回同一展示架。。见证者站到一旁，主角主动给搭档让出展示架正前方的位置。。主角与搭档并肩在泥盘后，见证者在侧边，作品与合作关系同时留在画面中。。",
+            "ending": "主角与搭档并肩在泥盘后，见证者在侧边，作品与合作关系同时留在画面中。。本集主冲突在此闭合。"
+          },
+          "producer_feedback": {
+            "priority_order": [
+              "revision_feedback",
+              "script_feedback",
+              "story_feedback",
+              "selected_proposal"
+            ],
+            "instructions": [
+              {
+                "source": "script_feedback",
+                "content": "删去广播、证书和公开羞辱，以共同修补泥盘的实际行动收束。"
+              },
+              {
+                "source": "story_feedback",
+                "content": "曾考虑用广播公开对质。"
+              }
+            ],
+            "conflict_rule": "按priority_order解决冲突；较新且具体的反馈覆盖旧反馈或原提案冲突部分，其余意见继续生效。出品人要求删除的支线、人物或道具不得被旧提案、旧稿或旧评审恢复。",
+            "evaluation_target": "依据反馈修订后的完整故事目标评审；原提案只保留未被反馈覆盖的设定，不因遵守删除要求而扣分。"
+          },
+          "repair_issues": [],
+          "current_episode": {
+            "title": "泥盘的背面",
+            "logline": "三个成年陶艺合作者准备展示一只泥盘；图案由搭档设计，主角完成成形，见证者帮助摆放。通过可见的共同劳动修正独占功劳的误会，不使用广播对质或文字证书。",
+            "synopsis": "主角双手托着同一只泥盘，搭档站在旁边，见证者扶着空展示架。。搭档面前摊着颜色相近的未用花纹样片，泥盘仍由主角托住。。主角把泥盘放在空展示架上，搭档的手留在身侧。。见证者指向盘边一处未压稳的花纹，三人的视线集中在那里。。搭档的手指停在盘边花纹旁，展示架未移动。。主角把泥盘从展示架上取下托稳，搭档轻扶未压稳处。。花纹已贴平，泥盘仍由主角托着，搭档收回手。。主角和搭档各扶盘的一侧，将它置回同一展示架。。见证者站到一旁，主角主动给搭档让出展示架正前方的位置。。主角与搭档并肩在泥盘后，见证者在侧边，作品与合作关系同时留在画面中。。",
+            "ending": "主角与搭档并肩在泥盘后，见证者在侧边，作品与合作关系同时留在画面中。。本集主冲突在此闭合。",
+            "story_structure": {
+              "setup": "主角双手托着同一只泥盘，搭档站在旁边，见证者扶着空展示架。",
+              "inciting_incident": "搭档面前摊着颜色相近的未用花纹样片，泥盘仍由主角托住。",
+              "turning_point": "主角把泥盘从展示架上取下托稳，搭档轻扶未压稳处。",
+              "climax": "见证者站到一旁，主角主动给搭档让出展示架正前方的位置。",
+              "resolution": "主角与搭档并肩在泥盘后，见证者在侧边，作品与合作关系同时留在画面中。"
+            },
+            "character_names": {
+              "char_lead": "阿岚",
+              "char_partner": "周河",
+              "char_witness": "林青"
+            },
+            "visual_style": "Consistent restrained ink illustration, warm paper texture, soft neutral light, no lettering.",
+            "cast": {
+              "char_lead": "A fictional adult character named 阿岚, age 30, distinct oval face, short dark hair, plain navy outerwear, stable facial proportions. No held prop or narrative action in identity references.",
+              "char_partner": "A fictional adult character named 周河, age 37, distinct oval face, short dark hair, plain ochre outerwear, stable facial proportions. No held prop or narrative action in identity references.",
+              "char_witness": "A fictional adult character named 林青, age 44, distinct oval face, short dark hair, plain gray outerwear, stable facial proportions. No held prop or narrative action in identity references."
+            },
+            "shots": [
+              {
+                "dramatic_beat": "主角双手托着同一只泥盘，搭档站在旁边，见证者扶着空展示架。",
+                "action": "主角双手托着同一只泥盘，搭档站在旁边，见证者扶着空展示架。",
+                "location": "同一处可见生活或工作空间",
+                "prompt": "A restrained illustrative keyframe of the same fictional adult characters in a stable shared space, draft composition for shot 1; no visible text or logos.",
+                "motion_prompt": "A gentle camera push toward the still composition; closed mouths.",
+                "camera_motion": "hold",
+                "reference_group": "ensemble",
+                "dialogue": [],
+                "continuity": "当前边界事实：主角双手托着同一只泥盘，搭档站在旁边，见证者扶着空展示架。。人物身份沿用固定cast，不能把后续状态提前。",
+                "sfx": "轻微环境底噪",
+                "characters": [
+                  "char_lead",
+                  "char_partner",
+                  "char_witness"
+                ],
+                "id": "S01",
+                "seconds": 4
+              },
+              {
+                "dramatic_beat": "搭档面前摊着颜色相近的未用花纹样片，泥盘仍由主角托住。",
+                "action": "搭档面前摊着颜色相近的未用花纹样片，泥盘仍由主角托住。",
+                "location": "同一处可见生活或工作空间",
+                "prompt": "A restrained illustrative keyframe of the same fictional adult characters in a stable shared space, draft composition for shot 2; no visible text or logos.",
+                "motion_prompt": "A gentle camera push toward the still composition; closed mouths.",
+                "camera_motion": "hold",
+                "reference_group": "ensemble",
+                "dialogue": [],
+                "continuity": "当前边界事实：搭档面前摊着颜色相近的未用花纹样片，泥盘仍由主角托住。。人物身份沿用固定cast，不能把后续状态提前。",
+                "sfx": "轻微环境底噪",
+                "characters": [
+                  "char_lead",
+                  "char_partner",
+                  "char_witness"
+                ],
+                "id": "S02",
+                "seconds": 5
+              },
+              {
+                "dramatic_beat": "主角把泥盘放在空展示架上，搭档的手留在身侧。",
+                "action": "主角把泥盘放在空展示架上，搭档的手留在身侧。",
+                "location": "同一处可见生活或工作空间",
+                "prompt": "A restrained illustrative keyframe of the same fictional adult characters in a stable shared space, draft composition for shot 3; no visible text or logos.",
+                "motion_prompt": "A gentle camera push toward the still composition; closed mouths.",
+                "camera_motion": "hold",
+                "reference_group": "ensemble",
+                "dialogue": [],
+                "continuity": "当前边界事实：主角把泥盘放在空展示架上，搭档的手留在身侧。。人物身份沿用固定cast，不能把后续状态提前。",
+                "sfx": "轻微环境底噪",
+                "characters": [
+                  "char_lead",
+                  "char_partner",
+                  "char_witness"
+                ],
+                "id": "S03",
+                "seconds": 6
+              },
+              {
+                "dramatic_beat": "见证者指向盘边一处未压稳的花纹，三人的视线集中在那里。",
+                "action": "见证者指向盘边一处未压稳的花纹，三人的视线集中在那里。",
+                "location": "同一处可见生活或工作空间",
+                "prompt": "A restrained illustrative keyframe of the same fictional adult characters in a stable shared space, draft composition for shot 4; no visible text or logos.",
+                "motion_prompt": "A gentle camera push toward the still composition; closed mouths.",
+                "camera_motion": "hold",
+                "reference_group": "ensemble",
+                "dialogue": [],
+                "continuity": "当前边界事实：见证者指向盘边一处未压稳的花纹，三人的视线集中在那里。。人物身份沿用固定cast，不能把后续状态提前。",
+                "sfx": "轻微环境底噪",
+                "characters": [
+                  "char_lead",
+                  "char_partner",
+                  "char_witness"
+                ],
+                "id": "S04",
+                "seconds": 4
+              },
+              {
+                "dramatic_beat": "搭档的手指停在盘边花纹旁，展示架未移动。",
+                "action": "搭档的手指停在盘边花纹旁，展示架未移动。",
+                "location": "同一处可见生活或工作空间",
+                "prompt": "A restrained illustrative keyframe of the same fictional adult characters in a stable shared space, draft composition for shot 5; no visible text or logos.",
+                "motion_prompt": "A gentle camera push toward the still composition; closed mouths.",
+                "camera_motion": "hold",
+                "reference_group": "ensemble",
+                "dialogue": [],
+                "continuity": "当前边界事实：搭档的手指停在盘边花纹旁，展示架未移动。。人物身份沿用固定cast，不能把后续状态提前。",
+                "sfx": "轻微环境底噪",
+                "characters": [
+                  "char_lead",
+                  "char_partner",
+                  "char_witness"
+                ],
+                "id": "S05",
+                "seconds": 5
+              },
+              {
+                "dramatic_beat": "主角把泥盘从展示架上取下托稳，搭档轻扶未压稳处。",
+                "action": "主角把泥盘从展示架上取下托稳，搭档轻扶未压稳处。",
+                "location": "同一处可见生活或工作空间",
+                "prompt": "A restrained illustrative keyframe of the same fictional adult characters in a stable shared space, draft composition for shot 6; no visible text or logos.",
+                "motion_prompt": "A gentle camera push toward the still composition; closed mouths.",
+                "camera_motion": "hold",
+                "reference_group": "ensemble",
+                "dialogue": [],
+                "continuity": "当前边界事实：主角把泥盘从展示架上取下托稳，搭档轻扶未压稳处。。人物身份沿用固定cast，不能把后续状态提前。",
+                "sfx": "轻微环境底噪",
+                "characters": [
+                  "char_lead",
+                  "char_partner",
+                  "char_witness"
+                ],
+                "id": "S06",
+                "seconds": 6
+              },
+              {
+                "dramatic_beat": "花纹已贴平，泥盘仍由主角托着，搭档收回手。",
+                "action": "花纹已贴平，泥盘仍由主角托着，搭档收回手。",
+                "location": "同一处可见生活或工作空间",
+                "prompt": "A restrained illustrative keyframe of the same fictional adult characters in a stable shared space, draft composition for shot 7; no visible text or logos.",
+                "motion_prompt": "A gentle camera push toward the still composition; closed mouths.",
+                "camera_motion": "hold",
+                "reference_group": "ensemble",
+                "dialogue": [],
+                "continuity": "当前边界事实：花纹已贴平，泥盘仍由主角托着，搭档收回手。。人物身份沿用固定cast，不能把后续状态提前。",
+                "sfx": "轻微环境底噪",
+                "characters": [
+                  "char_lead",
+                  "char_partner",
+                  "char_witness"
+                ],
+                "id": "S07",
+                "seconds": 4
+              },
+              {
+                "dramatic_beat": "主角和搭档各扶盘的一侧，将它置回同一展示架。",
+                "action": "主角和搭档各扶盘的一侧，将它置回同一展示架。",
+                "location": "同一处可见生活或工作空间",
+                "prompt": "A restrained illustrative keyframe of the same fictional adult characters in a stable shared space, draft composition for shot 8; no visible text or logos.",
+                "motion_prompt": "A gentle camera push toward the still composition; closed mouths.",
+                "camera_motion": "hold",
+                "reference_group": "ensemble",
+                "dialogue": [],
+                "continuity": "当前边界事实：主角和搭档各扶盘的一侧，将它置回同一展示架。。人物身份沿用固定cast，不能把后续状态提前。",
+                "sfx": "轻微环境底噪",
+                "characters": [
+                  "char_lead",
+                  "char_partner",
+                  "char_witness"
+                ],
+                "id": "S08",
+                "seconds": 5
+              },
+              {
+                "dramatic_beat": "见证者站到一旁，主角主动给搭档让出展示架正前方的位置。",
+                "action": "见证者站到一旁，主角主动给搭档让出展示架正前方的位置。",
+                "location": "同一处可见生活或工作空间",
+                "prompt": "A restrained illustrative keyframe of the same fictional adult characters in a stable shared space, draft composition for shot 9; no visible text or logos.",
+                "motion_prompt": "A gentle camera push toward the still composition; closed mouths.",
+                "camera_motion": "hold",
+                "reference_group": "ensemble",
+                "dialogue": [],
+                "continuity": "当前边界事实：见证者站到一旁，主角主动给搭档让出展示架正前方的位置。。人物身份沿用固定cast，不能把后续状态提前。",
+                "sfx": "轻微环境底噪",
+                "characters": [
+                  "char_lead",
+                  "char_partner",
+                  "char_witness"
+                ],
+                "id": "S09",
+                "seconds": 5
+              },
+              {
+                "dramatic_beat": "主角与搭档并肩在泥盘后，见证者在侧边，作品与合作关系同时留在画面中。",
+                "action": "主角与搭档并肩在泥盘后，见证者在侧边，作品与合作关系同时留在画面中。",
+                "location": "同一处可见生活或工作空间",
+                "prompt": "A restrained illustrative keyframe of the same fictional adult characters in a stable shared space, draft composition for shot 10; no visible text or logos.",
+                "motion_prompt": "A gentle camera push toward the still composition; closed mouths.",
+                "camera_motion": "hold",
+                "reference_group": "ensemble",
+                "dialogue": [],
+                "continuity": "当前边界事实：主角与搭档并肩在泥盘后，见证者在侧边，作品与合作关系同时留在画面中。。人物身份沿用固定cast，不能把后续状态提前。",
+                "sfx": "轻微环境底噪",
+                "characters": [
+                  "char_lead",
+                  "char_partner",
+                  "char_witness"
+                ],
+                "id": "S10",
+                "seconds": 6
+              }
+            ]
+          },
+          "editable_shot_ids": [
+            "S01",
+            "S02",
+            "S03",
+            "S04",
+            "S05",
+            "S06",
+            "S07",
+            "S08",
+            "S09",
+            "S10"
+          ],
+          "locked_shot_ids": [],
+          "editable_fields": [
+            "prompt",
+            "motion_prompt",
+            "camera_motion",
+            "reference_group"
+          ],
+          "model_capabilities": {
+            "format": "motion_comic",
+            "continuous_character_action_in_motion_comic": false,
+            "synchronized_lip_motion": false,
+            "dialogue_delivery": "off-screen voice-over; visible mouths stay closed",
+            "camera_motions": [
+              "push_in",
+              "pull_out",
+              "pan_left",
+              "pan_right",
+              "hold"
+            ]
+          },
+          "instruction": "仅修订指定镜头的四个制作字段。这里是合成文本案例，不存在已生成的图像或视频。"
+        }
+      }
+    },
+    {
+      "id": "dev-stool",
+      "split": "development",
+      "genre": "family",
+      "negative_control": true,
+      "conflict_case": false,
+      "project": {
+        "id": "cbc462300c43",
+        "slug": "factory-cbc462300c43",
+        "title": "矮凳留下的位置",
+        "brief": "两名成年家人修补一张旧矮凳，冲突来自一个想换新、一个想保留。用普通生活动作呈现彼此理解，不增加遗嘱、巨额赔偿、秘密身份或精确期限。",
+        "format": "motion_comic",
+        "creation_mode": "original",
+        "production_profile": {
+          "shot_count": 15,
+          "duration_seconds": 60,
+          "shot_seconds": [
+            4,
+            4,
+            4,
+            4,
+            4,
+            4,
+            4,
+            4,
+            4,
+            4,
+            4,
+            4,
+            4,
+            4,
+            4
+          ],
+          "characters": [
+            {
+              "character_id": "female",
+              "name": "角色一",
+              "voice_id": "female"
+            },
+            {
+              "character_id": "male",
+              "name": "角色二",
+              "voice_id": "male"
+            }
+          ],
+          "preset": "legacy15",
+          "schema_version": 1
+        }
+      },
+      "inputs": {
+        "screenwriter": {
+          "project": {
+            "id": "cbc462300c43",
+            "slug": "factory-cbc462300c43",
+            "title": "矮凳留下的位置",
+            "brief": "两名成年家人修补一张旧矮凳，冲突来自一个想换新、一个想保留。用普通生活动作呈现彼此理解，不增加遗嘱、巨额赔偿、秘密身份或精确期限。",
+            "format": "motion_comic",
+            "creation_mode": "original",
+            "production_profile": {
+              "shot_count": 15,
+              "duration_seconds": 60,
+              "shot_seconds": [
+                4,
+                4,
+                4,
+                4,
+                4,
+                4,
+                4,
+                4,
+                4,
+                4,
+                4,
+                4,
+                4,
+                4,
+                4
+              ],
+              "characters": [
+                {
+                  "character_id": "female",
+                  "name": "角色一",
+                  "voice_id": "female"
+                },
+                {
+                  "character_id": "male",
+                  "name": "角色二",
+                  "voice_id": "male"
+                }
+              ],
+              "preset": "legacy15",
+              "schema_version": 1
+            }
+          },
+          "selected_proposal": {
+            "title": "矮凳留下的位置",
+            "logline": "两名成年家人修补一张旧矮凳，冲突来自一个想换新、一个想保留。用普通生活动作呈现彼此理解，不增加遗嘱、巨额赔偿、秘密身份或精确期限。",
+            "synopsis": "成年女儿将旧矮凳放在院中，成年父亲手中拿着替换用的新坐垫。。旧凳的一条腿悬空，女儿扶着凳面，父亲停在旁边。。父亲把新坐垫放到一旁空椅上，手未碰旧凳。。女儿从旧凳下取出松动木楔，木楔仍在她掌心。。父亲指向凳腿的旧楔口，女儿看向同一位置。。女儿把木楔放在小桌上，双手扶稳凳面。。父亲从小桌拿起同一木楔，女儿的手仍扶着凳面。。木楔已进入原楔口，父亲的手停在楔口旁。。女儿轻压凳面，四条凳腿都接触地面。。父亲把小木锤放回小桌，修补已经结束。。女儿将稳固的旧凳放回院门旁留出的空处。。父亲从椅上拿回新坐垫，旧凳没有移动。。父亲将新坐垫放在旧凳凳面，女儿站在门边看着。。女儿坐在垫好的旧凳上，父亲坐到一旁原来的椅子。。院门旁两位成年人并坐，旧凳与新坐垫一起被保留下来。。",
+            "ending": "院门旁两位成年人并坐，旧凳与新坐垫一起被保留下来。。本集主冲突在此闭合。"
+          },
+          "timeline": [
+            {
+              "id": "S01",
+              "seconds": 4
+            },
+            {
+              "id": "S02",
+              "seconds": 4
+            },
+            {
+              "id": "S03",
+              "seconds": 4
+            },
+            {
+              "id": "S04",
+              "seconds": 4
+            },
+            {
+              "id": "S05",
+              "seconds": 4
+            },
+            {
+              "id": "S06",
+              "seconds": 4
+            },
+            {
+              "id": "S07",
+              "seconds": 4
+            },
+            {
+              "id": "S08",
+              "seconds": 4
+            },
+            {
+              "id": "S09",
+              "seconds": 4
+            },
+            {
+              "id": "S10",
+              "seconds": 4
+            },
+            {
+              "id": "S11",
+              "seconds": 4
+            },
+            {
+              "id": "S12",
+              "seconds": 4
+            },
+            {
+              "id": "S13",
+              "seconds": 4
+            },
+            {
+              "id": "S14",
+              "seconds": 4
+            },
+            {
+              "id": "S15",
+              "seconds": 4
+            }
+          ],
+          "producer_feedback": {
+            "priority_order": [
+              "revision_feedback",
+              "script_feedback",
+              "story_feedback",
+              "selected_proposal"
+            ],
+            "instructions": [],
+            "conflict_rule": "按priority_order解决冲突；较新且具体的反馈覆盖旧反馈或原提案冲突部分，其余意见继续生效。出品人要求删除的支线、人物或道具不得被旧提案、旧稿或旧评审恢复。",
+            "evaluation_target": "依据反馈修订后的完整故事目标评审；原提案只保留未被反馈覆盖的设定，不因遵守删除要求而扣分。"
+          },
+          "only_revise_shot_ids": []
+        },
+        "storyboard_director": {
+          "approved_story": {
+            "title": "矮凳留下的位置",
+            "logline": "两名成年家人修补一张旧矮凳，冲突来自一个想换新、一个想保留。用普通生活动作呈现彼此理解，不增加遗嘱、巨额赔偿、秘密身份或精确期限。",
+            "synopsis": "成年女儿将旧矮凳放在院中，成年父亲手中拿着替换用的新坐垫。。旧凳的一条腿悬空，女儿扶着凳面，父亲停在旁边。。父亲把新坐垫放到一旁空椅上，手未碰旧凳。。女儿从旧凳下取出松动木楔，木楔仍在她掌心。。父亲指向凳腿的旧楔口，女儿看向同一位置。。女儿把木楔放在小桌上，双手扶稳凳面。。父亲从小桌拿起同一木楔，女儿的手仍扶着凳面。。木楔已进入原楔口，父亲的手停在楔口旁。。女儿轻压凳面，四条凳腿都接触地面。。父亲把小木锤放回小桌，修补已经结束。。女儿将稳固的旧凳放回院门旁留出的空处。。父亲从椅上拿回新坐垫，旧凳没有移动。。父亲将新坐垫放在旧凳凳面，女儿站在门边看着。。女儿坐在垫好的旧凳上，父亲坐到一旁原来的椅子。。院门旁两位成年人并坐，旧凳与新坐垫一起被保留下来。。",
+            "ending": "院门旁两位成年人并坐，旧凳与新坐垫一起被保留下来。。本集主冲突在此闭合。"
+          },
+          "producer_feedback": {
+            "priority_order": [
+              "revision_feedback",
+              "script_feedback",
+              "story_feedback",
+              "selected_proposal"
+            ],
+            "instructions": [],
+            "conflict_rule": "按priority_order解决冲突；较新且具体的反馈覆盖旧反馈或原提案冲突部分，其余意见继续生效。出品人要求删除的支线、人物或道具不得被旧提案、旧稿或旧评审恢复。",
+            "evaluation_target": "依据反馈修订后的完整故事目标评审；原提案只保留未被反馈覆盖的设定，不因遵守删除要求而扣分。"
+          },
+          "repair_issues": [],
+          "current_episode": {
+            "title": "矮凳留下的位置",
+            "logline": "两名成年家人修补一张旧矮凳，冲突来自一个想换新、一个想保留。用普通生活动作呈现彼此理解，不增加遗嘱、巨额赔偿、秘密身份或精确期限。",
+            "synopsis": "成年女儿将旧矮凳放在院中，成年父亲手中拿着替换用的新坐垫。。旧凳的一条腿悬空，女儿扶着凳面，父亲停在旁边。。父亲把新坐垫放到一旁空椅上，手未碰旧凳。。女儿从旧凳下取出松动木楔，木楔仍在她掌心。。父亲指向凳腿的旧楔口，女儿看向同一位置。。女儿把木楔放在小桌上，双手扶稳凳面。。父亲从小桌拿起同一木楔，女儿的手仍扶着凳面。。木楔已进入原楔口，父亲的手停在楔口旁。。女儿轻压凳面，四条凳腿都接触地面。。父亲把小木锤放回小桌，修补已经结束。。女儿将稳固的旧凳放回院门旁留出的空处。。父亲从椅上拿回新坐垫，旧凳没有移动。。父亲将新坐垫放在旧凳凳面，女儿站在门边看着。。女儿坐在垫好的旧凳上，父亲坐到一旁原来的椅子。。院门旁两位成年人并坐，旧凳与新坐垫一起被保留下来。。",
+            "ending": "院门旁两位成年人并坐，旧凳与新坐垫一起被保留下来。。本集主冲突在此闭合。",
+            "story_structure": {
+              "setup": "成年女儿将旧矮凳放在院中，成年父亲手中拿着替换用的新坐垫。",
+              "inciting_incident": "旧凳的一条腿悬空，女儿扶着凳面，父亲停在旁边。",
+              "turning_point": "木楔已进入原楔口，父亲的手停在楔口旁。",
+              "climax": "女儿坐在垫好的旧凳上，父亲坐到一旁原来的椅子。",
+              "resolution": "院门旁两位成年人并坐，旧凳与新坐垫一起被保留下来。"
+            },
+            "character_names": {
+              "female": "阿岚",
+              "male": "周河"
+            },
+            "visual_style": "Consistent restrained ink illustration, warm paper texture, soft neutral light, no lettering.",
+            "cast": {
+              "female": "A fictional adult character named 阿岚, age 30, distinct oval face, short dark hair, plain navy outerwear, stable facial proportions. No held prop or narrative action in identity references.",
+              "male": "A fictional adult character named 周河, age 37, distinct oval face, short dark hair, plain ochre outerwear, stable facial proportions. No held prop or narrative action in identity references."
+            },
+            "shots": [
+              {
+                "dramatic_beat": "成年女儿将旧矮凳放在院中，成年父亲手中拿着替换用的新坐垫。",
+                "action": "成年女儿将旧矮凳放在院中，成年父亲手中拿着替换用的新坐垫。",
+                "location": "同一处可见生活或工作空间",
+                "prompt": "A restrained illustrative keyframe of the same fictional adult characters in a stable shared space, draft composition for shot 1; no visible text or logos.",
+                "motion_prompt": "A gentle camera push toward the still composition; closed mouths.",
+                "camera_motion": "hold",
+                "reference_group": "two",
+                "dialogue": [],
+                "continuity": "当前边界事实：成年女儿将旧矮凳放在院中，成年父亲手中拿着替换用的新坐垫。。人物身份沿用固定cast，不能把后续状态提前。",
+                "sfx": "轻微环境底噪",
+                "id": "S01",
+                "seconds": 4
+              },
+              {
+                "dramatic_beat": "旧凳的一条腿悬空，女儿扶着凳面，父亲停在旁边。",
+                "action": "旧凳的一条腿悬空，女儿扶着凳面，父亲停在旁边。",
+                "location": "同一处可见生活或工作空间",
+                "prompt": "A restrained illustrative keyframe of the same fictional adult characters in a stable shared space, draft composition for shot 2; no visible text or logos.",
+                "motion_prompt": "A gentle camera push toward the still composition; closed mouths.",
+                "camera_motion": "hold",
+                "reference_group": "two",
+                "dialogue": [],
+                "continuity": "当前边界事实：旧凳的一条腿悬空，女儿扶着凳面，父亲停在旁边。。人物身份沿用固定cast，不能把后续状态提前。",
+                "sfx": "轻微环境底噪",
+                "id": "S02",
+                "seconds": 4
+              },
+              {
+                "dramatic_beat": "父亲把新坐垫放到一旁空椅上，手未碰旧凳。",
+                "action": "父亲把新坐垫放到一旁空椅上，手未碰旧凳。",
+                "location": "同一处可见生活或工作空间",
+                "prompt": "A restrained illustrative keyframe of the same fictional adult characters in a stable shared space, draft composition for shot 3; no visible text or logos.",
+                "motion_prompt": "A gentle camera push toward the still composition; closed mouths.",
+                "camera_motion": "hold",
+                "reference_group": "two",
+                "dialogue": [],
+                "continuity": "当前边界事实：父亲把新坐垫放到一旁空椅上，手未碰旧凳。。人物身份沿用固定cast，不能把后续状态提前。",
+                "sfx": "轻微环境底噪",
+                "id": "S03",
+                "seconds": 4
+              },
+              {
+                "dramatic_beat": "女儿从旧凳下取出松动木楔，木楔仍在她掌心。",
+                "action": "女儿从旧凳下取出松动木楔，木楔仍在她掌心。",
+                "location": "同一处可见生活或工作空间",
+                "prompt": "A restrained illustrative keyframe of the same fictional adult characters in a stable shared space, draft composition for shot 4; no visible text or logos.",
+                "motion_prompt": "A gentle camera push toward the still composition; closed mouths.",
+                "camera_motion": "hold",
+                "reference_group": "two",
+                "dialogue": [],
+                "continuity": "当前边界事实：女儿从旧凳下取出松动木楔，木楔仍在她掌心。。人物身份沿用固定cast，不能把后续状态提前。",
+                "sfx": "轻微环境底噪",
+                "id": "S04",
+                "seconds": 4
+              },
+              {
+                "dramatic_beat": "父亲指向凳腿的旧楔口，女儿看向同一位置。",
+                "action": "父亲指向凳腿的旧楔口，女儿看向同一位置。",
+                "location": "同一处可见生活或工作空间",
+                "prompt": "A restrained illustrative keyframe of the same fictional adult characters in a stable shared space, draft composition for shot 5; no visible text or logos.",
+                "motion_prompt": "A gentle camera push toward the still composition; closed mouths.",
+                "camera_motion": "hold",
+                "reference_group": "two",
+                "dialogue": [],
+                "continuity": "当前边界事实：父亲指向凳腿的旧楔口，女儿看向同一位置。。人物身份沿用固定cast，不能把后续状态提前。",
+                "sfx": "轻微环境底噪",
+                "id": "S05",
+                "seconds": 4
+              },
+              {
+                "dramatic_beat": "女儿把木楔放在小桌上，双手扶稳凳面。",
+                "action": "女儿把木楔放在小桌上，双手扶稳凳面。",
+                "location": "同一处可见生活或工作空间",
+                "prompt": "A restrained illustrative keyframe of the same fictional adult characters in a stable shared space, draft composition for shot 6; no visible text or logos.",
+                "motion_prompt": "A gentle camera push toward the still composition; closed mouths.",
+                "camera_motion": "hold",
+                "reference_group": "two",
+                "dialogue": [],
+                "continuity": "当前边界事实：女儿把木楔放在小桌上，双手扶稳凳面。。人物身份沿用固定cast，不能把后续状态提前。",
+                "sfx": "轻微环境底噪",
+                "id": "S06",
+                "seconds": 4
+              },
+              {
+                "dramatic_beat": "父亲从小桌拿起同一木楔，女儿的手仍扶着凳面。",
+                "action": "父亲从小桌拿起同一木楔，女儿的手仍扶着凳面。",
+                "location": "同一处可见生活或工作空间",
+                "prompt": "A restrained illustrative keyframe of the same fictional adult characters in a stable shared space, draft composition for shot 7; no visible text or logos.",
+                "motion_prompt": "A gentle camera push toward the still composition; closed mouths.",
+                "camera_motion": "hold",
+                "reference_group": "two",
+                "dialogue": [],
+                "continuity": "当前边界事实：父亲从小桌拿起同一木楔，女儿的手仍扶着凳面。。人物身份沿用固定cast，不能把后续状态提前。",
+                "sfx": "轻微环境底噪",
+                "id": "S07",
+                "seconds": 4
+              },
+              {
+                "dramatic_beat": "木楔已进入原楔口，父亲的手停在楔口旁。",
+                "action": "木楔已进入原楔口，父亲的手停在楔口旁。",
+                "location": "同一处可见生活或工作空间",
+                "prompt": "A restrained illustrative keyframe of the same fictional adult characters in a stable shared space, draft composition for shot 8; no visible text or logos.",
+                "motion_prompt": "A gentle camera push toward the still composition; closed mouths.",
+                "camera_motion": "hold",
+                "reference_group": "two",
+                "dialogue": [],
+                "continuity": "当前边界事实：木楔已进入原楔口，父亲的手停在楔口旁。。人物身份沿用固定cast，不能把后续状态提前。",
+                "sfx": "轻微环境底噪",
+                "id": "S08",
+                "seconds": 4
+              },
+              {
+                "dramatic_beat": "女儿轻压凳面，四条凳腿都接触地面。",
+                "action": "女儿轻压凳面，四条凳腿都接触地面。",
+                "location": "同一处可见生活或工作空间",
+                "prompt": "A restrained illustrative keyframe of the same fictional adult characters in a stable shared space, draft composition for shot 9; no visible text or logos.",
+                "motion_prompt": "A gentle camera push toward the still composition; closed mouths.",
+                "camera_motion": "hold",
+                "reference_group": "two",
+                "dialogue": [],
+                "continuity": "当前边界事实：女儿轻压凳面，四条凳腿都接触地面。。人物身份沿用固定cast，不能把后续状态提前。",
+                "sfx": "轻微环境底噪",
+                "id": "S09",
+                "seconds": 4
+              },
+              {
+                "dramatic_beat": "父亲把小木锤放回小桌，修补已经结束。",
+                "action": "父亲把小木锤放回小桌，修补已经结束。",
+                "location": "同一处可见生活或工作空间",
+                "prompt": "A restrained illustrative keyframe of the same fictional adult characters in a stable shared space, draft composition for shot 10; no visible text or logos.",
+                "motion_prompt": "A gentle camera push toward the still composition; closed mouths.",
+                "camera_motion": "hold",
+                "reference_group": "two",
+                "dialogue": [],
+                "continuity": "当前边界事实：父亲把小木锤放回小桌，修补已经结束。。人物身份沿用固定cast，不能把后续状态提前。",
+                "sfx": "轻微环境底噪",
+                "id": "S10",
+                "seconds": 4
+              },
+              {
+                "dramatic_beat": "女儿将稳固的旧凳放回院门旁留出的空处。",
+                "action": "女儿将稳固的旧凳放回院门旁留出的空处。",
+                "location": "同一处可见生活或工作空间",
+                "prompt": "A restrained illustrative keyframe of the same fictional adult characters in a stable shared space, draft composition for shot 11; no visible text or logos.",
+                "motion_prompt": "A gentle camera push toward the still composition; closed mouths.",
+                "camera_motion": "hold",
+                "reference_group": "two",
+                "dialogue": [],
+                "continuity": "当前边界事实：女儿将稳固的旧凳放回院门旁留出的空处。。人物身份沿用固定cast，不能把后续状态提前。",
+                "sfx": "轻微环境底噪",
+                "id": "S11",
+                "seconds": 4
+              },
+              {
+                "dramatic_beat": "父亲从椅上拿回新坐垫，旧凳没有移动。",
+                "action": "父亲从椅上拿回新坐垫，旧凳没有移动。",
+                "location": "同一处可见生活或工作空间",
+                "prompt": "A restrained illustrative keyframe of the same fictional adult characters in a stable shared space, draft composition for shot 12; no visible text or logos.",
+                "motion_prompt": "A gentle camera push toward the still composition; closed mouths.",
+                "camera_motion": "hold",
+                "reference_group": "two",
+                "dialogue": [],
+                "continuity": "当前边界事实：父亲从椅上拿回新坐垫，旧凳没有移动。。人物身份沿用固定cast，不能把后续状态提前。",
+                "sfx": "轻微环境底噪",
+                "id": "S12",
+                "seconds": 4
+              },
+              {
+                "dramatic_beat": "父亲将新坐垫放在旧凳凳面，女儿站在门边看着。",
+                "action": "父亲将新坐垫放在旧凳凳面，女儿站在门边看着。",
+                "location": "同一处可见生活或工作空间",
+                "prompt": "A restrained illustrative keyframe of the same fictional adult characters in a stable shared space, draft composition for shot 13; no visible text or logos.",
+                "motion_prompt": "A gentle camera push toward the still composition; closed mouths.",
+                "camera_motion": "hold",
+                "reference_group": "two",
+                "dialogue": [],
+                "continuity": "当前边界事实：父亲将新坐垫放在旧凳凳面，女儿站在门边看着。。人物身份沿用固定cast，不能把后续状态提前。",
+                "sfx": "轻微环境底噪",
+                "id": "S13",
+                "seconds": 4
+              },
+              {
+                "dramatic_beat": "女儿坐在垫好的旧凳上，父亲坐到一旁原来的椅子。",
+                "action": "女儿坐在垫好的旧凳上，父亲坐到一旁原来的椅子。",
+                "location": "同一处可见生活或工作空间",
+                "prompt": "A restrained illustrative keyframe of the same fictional adult characters in a stable shared space, draft composition for shot 14; no visible text or logos.",
+                "motion_prompt": "A gentle camera push toward the still composition; closed mouths.",
+                "camera_motion": "hold",
+                "reference_group": "two",
+                "dialogue": [],
+                "continuity": "当前边界事实：女儿坐在垫好的旧凳上，父亲坐到一旁原来的椅子。。人物身份沿用固定cast，不能把后续状态提前。",
+                "sfx": "轻微环境底噪",
+                "id": "S14",
+                "seconds": 4
+              },
+              {
+                "dramatic_beat": "院门旁两位成年人并坐，旧凳与新坐垫一起被保留下来。",
+                "action": "院门旁两位成年人并坐，旧凳与新坐垫一起被保留下来。",
+                "location": "同一处可见生活或工作空间",
+                "prompt": "A restrained illustrative keyframe of the same fictional adult characters in a stable shared space, draft composition for shot 15; no visible text or logos.",
+                "motion_prompt": "A gentle camera push toward the still composition; closed mouths.",
+                "camera_motion": "hold",
+                "reference_group": "two",
+                "dialogue": [],
+                "continuity": "当前边界事实：院门旁两位成年人并坐，旧凳与新坐垫一起被保留下来。。人物身份沿用固定cast，不能把后续状态提前。",
+                "sfx": "轻微环境底噪",
+                "id": "S15",
+                "seconds": 4
+              }
+            ]
+          },
+          "editable_shot_ids": [
+            "S01",
+            "S02",
+            "S03",
+            "S04",
+            "S05",
+            "S06",
+            "S07",
+            "S08",
+            "S09",
+            "S10",
+            "S11",
+            "S12",
+            "S13",
+            "S14",
+            "S15"
+          ],
+          "locked_shot_ids": [],
+          "editable_fields": [
+            "prompt",
+            "motion_prompt",
+            "camera_motion",
+            "reference_group"
+          ],
+          "model_capabilities": {
+            "format": "motion_comic",
+            "continuous_character_action_in_motion_comic": false,
+            "synchronized_lip_motion": false,
+            "dialogue_delivery": "off-screen voice-over; visible mouths stay closed",
+            "camera_motions": [
+              "push_in",
+              "pull_out",
+              "pan_left",
+              "pan_right",
+              "hold"
+            ]
+          },
+          "instruction": "仅修订指定镜头的四个制作字段。这里是合成文本案例，不存在已生成的图像或视频。"
+        }
+      }
+    },
+    {
+      "id": "dev-reflection",
+      "split": "development",
+      "genre": "suspense",
+      "negative_control": false,
+      "conflict_case": true,
+      "project": {
+        "id": "ea7980578134",
+        "slug": "factory-ea7980578134",
+        "title": "灯罩上的亮点",
+        "brief": "两名成年维修者发现断电灯罩上的亮点；先出现反光线索，再产生误判，最后从窗边反光板的位置解释亮点。不得让澄清证据在时序上先于其原因。",
+        "format": "motion_comic",
+        "creation_mode": "original",
+        "production_profile": {
+          "shot_count": 6,
+          "duration_seconds": 30,
+          "shot_seconds": [
+            4,
+            5,
+            6,
+            4,
+            5,
+            6
+          ],
+          "characters": [
+            {
+              "character_id": "char_lead",
+              "name": "主角",
+              "voice_id": "female"
+            },
+            {
+              "character_id": "char_partner",
+              "name": "搭档",
+              "voice_id": "male"
+            }
+          ],
+          "preset": "compact6",
+          "schema_version": 1
+        },
+        "script_feedback": "最终解释只能使用已在第一镜出现的反光板，不增加隐藏电源或第三个人。"
+      },
+      "inputs": {
+        "screenwriter": {
+          "project": {
+            "id": "ea7980578134",
+            "slug": "factory-ea7980578134",
+            "title": "灯罩上的亮点",
+            "brief": "两名成年维修者发现断电灯罩上的亮点；先出现反光线索，再产生误判，最后从窗边反光板的位置解释亮点。不得让澄清证据在时序上先于其原因。",
+            "format": "motion_comic",
+            "creation_mode": "original",
+            "production_profile": {
+              "shot_count": 6,
+              "duration_seconds": 30,
+              "shot_seconds": [
+                4,
+                5,
+                6,
+                4,
+                5,
+                6
+              ],
+              "characters": [
+                {
+                  "character_id": "char_lead",
+                  "name": "主角",
+                  "voice_id": "female"
+                },
+                {
+                  "character_id": "char_partner",
+                  "name": "搭档",
+                  "voice_id": "male"
+                }
+              ],
+              "preset": "compact6",
+              "schema_version": 1
+            },
+            "script_feedback": "最终解释只能使用已在第一镜出现的反光板，不增加隐藏电源或第三个人。"
+          },
+          "selected_proposal": {
+            "title": "灯罩上的亮点",
+            "logline": "两名成年维修者发现断电灯罩上的亮点；先出现反光线索，再产生误判，最后从窗边反光板的位置解释亮点。不得让澄清证据在时序上先于其原因。",
+            "synopsis": "窗边的银色反光板斜放在桌面，光线正好落在断电灯罩上。。主角看见灯罩亮点，搭档站在桌旁，反光板仍在原处。。主角的手停在灯座断开的插头旁，眼睛仍看着亮点。。搭档用一只手扶住桌上的反光板边缘，主角站在灯罩旁。。反光板已转向墙面，亮点出现在墙上，灯罩表面不再发亮。。两人一同望向墙上的反光，断开的插头仍在灯座旁，误判得到解释。。",
+            "ending": "两人一同望向墙上的反光，断开的插头仍在灯座旁，误判得到解释。。本集主冲突在此闭合。"
+          },
+          "timeline": [
+            {
+              "id": "S01",
+              "seconds": 4
+            },
+            {
+              "id": "S02",
+              "seconds": 5
+            },
+            {
+              "id": "S03",
+              "seconds": 6
+            },
+            {
+              "id": "S04",
+              "seconds": 4
+            },
+            {
+              "id": "S05",
+              "seconds": 5
+            },
+            {
+              "id": "S06",
+              "seconds": 6
+            }
+          ],
+          "producer_feedback": {
+            "priority_order": [
+              "revision_feedback",
+              "script_feedback",
+              "story_feedback",
+              "selected_proposal"
+            ],
+            "instructions": [
+              {
+                "source": "script_feedback",
+                "content": "最终解释只能使用已在第一镜出现的反光板，不增加隐藏电源或第三个人。"
+              }
+            ],
+            "conflict_rule": "按priority_order解决冲突；较新且具体的反馈覆盖旧反馈或原提案冲突部分，其余意见继续生效。出品人要求删除的支线、人物或道具不得被旧提案、旧稿或旧评审恢复。",
+            "evaluation_target": "依据反馈修订后的完整故事目标评审；原提案只保留未被反馈覆盖的设定，不因遵守删除要求而扣分。"
+          },
+          "only_revise_shot_ids": []
+        },
+        "storyboard_director": {
+          "approved_story": {
+            "title": "灯罩上的亮点",
+            "logline": "两名成年维修者发现断电灯罩上的亮点；先出现反光线索，再产生误判，最后从窗边反光板的位置解释亮点。不得让澄清证据在时序上先于其原因。",
+            "synopsis": "窗边的银色反光板斜放在桌面，光线正好落在断电灯罩上。。主角看见灯罩亮点，搭档站在桌旁，反光板仍在原处。。主角的手停在灯座断开的插头旁，眼睛仍看着亮点。。搭档用一只手扶住桌上的反光板边缘，主角站在灯罩旁。。反光板已转向墙面，亮点出现在墙上，灯罩表面不再发亮。。两人一同望向墙上的反光，断开的插头仍在灯座旁，误判得到解释。。",
+            "ending": "两人一同望向墙上的反光，断开的插头仍在灯座旁，误判得到解释。。本集主冲突在此闭合。"
+          },
+          "producer_feedback": {
+            "priority_order": [
+              "revision_feedback",
+              "script_feedback",
+              "story_feedback",
+              "selected_proposal"
+            ],
+            "instructions": [
+              {
+                "source": "script_feedback",
+                "content": "最终解释只能使用已在第一镜出现的反光板，不增加隐藏电源或第三个人。"
+              }
+            ],
+            "conflict_rule": "按priority_order解决冲突；较新且具体的反馈覆盖旧反馈或原提案冲突部分，其余意见继续生效。出品人要求删除的支线、人物或道具不得被旧提案、旧稿或旧评审恢复。",
+            "evaluation_target": "依据反馈修订后的完整故事目标评审；原提案只保留未被反馈覆盖的设定，不因遵守删除要求而扣分。"
+          },
+          "repair_issues": [],
+          "current_episode": {
+            "title": "灯罩上的亮点",
+            "logline": "两名成年维修者发现断电灯罩上的亮点；先出现反光线索，再产生误判，最后从窗边反光板的位置解释亮点。不得让澄清证据在时序上先于其原因。",
+            "synopsis": "窗边的银色反光板斜放在桌面，光线正好落在断电灯罩上。。主角看见灯罩亮点，搭档站在桌旁，反光板仍在原处。。主角的手停在灯座断开的插头旁，眼睛仍看着亮点。。搭档用一只手扶住桌上的反光板边缘，主角站在灯罩旁。。反光板已转向墙面，亮点出现在墙上，灯罩表面不再发亮。。两人一同望向墙上的反光，断开的插头仍在灯座旁，误判得到解释。。",
+            "ending": "两人一同望向墙上的反光，断开的插头仍在灯座旁，误判得到解释。。本集主冲突在此闭合。",
+            "story_structure": {
+              "setup": "窗边的银色反光板斜放在桌面，光线正好落在断电灯罩上。",
+              "inciting_incident": "主角看见灯罩亮点，搭档站在桌旁，反光板仍在原处。",
+              "turning_point": "搭档用一只手扶住桌上的反光板边缘，主角站在灯罩旁。",
+              "climax": "反光板已转向墙面，亮点出现在墙上，灯罩表面不再发亮。",
+              "resolution": "两人一同望向墙上的反光，断开的插头仍在灯座旁，误判得到解释。"
+            },
+            "character_names": {
+              "char_lead": "阿岚",
+              "char_partner": "周河"
+            },
+            "visual_style": "Consistent restrained ink illustration, warm paper texture, soft neutral light, no lettering.",
+            "cast": {
+              "char_lead": "A fictional adult character named 阿岚, age 30, distinct oval face, short dark hair, plain navy outerwear, stable facial proportions. No held prop or narrative action in identity references.",
+              "char_partner": "A fictional adult character named 周河, age 37, distinct oval face, short dark hair, plain ochre outerwear, stable facial proportions. No held prop or narrative action in identity references."
+            },
+            "shots": [
+              {
+                "dramatic_beat": "窗边的银色反光板斜放在桌面，光线正好落在断电灯罩上。",
+                "action": "窗边的银色反光板斜放在桌面，光线正好落在断电灯罩上。",
+                "location": "同一处可见生活或工作空间",
+                "prompt": "A restrained illustrative keyframe of the same fictional adult characters in a stable shared space, draft composition for shot 1; no visible text or logos.",
+                "motion_prompt": "A gentle camera push toward the still composition; closed mouths.",
+                "camera_motion": "hold",
+                "reference_group": "ensemble",
+                "dialogue": [],
+                "continuity": "当前边界事实：窗边的银色反光板斜放在桌面，光线正好落在断电灯罩上。。人物身份沿用固定cast，不能把后续状态提前。",
+                "sfx": "轻微环境底噪",
+                "characters": [
+                  "char_lead",
+                  "char_partner"
+                ],
+                "id": "S01",
+                "seconds": 4
+              },
+              {
+                "dramatic_beat": "主角看见灯罩亮点，搭档站在桌旁，反光板仍在原处。",
+                "action": "主角看见灯罩亮点，搭档站在桌旁，反光板仍在原处。",
+                "location": "同一处可见生活或工作空间",
+                "prompt": "A restrained illustrative keyframe of the same fictional adult characters in a stable shared space, draft composition for shot 2; no visible text or logos.",
+                "motion_prompt": "A gentle camera push toward the still composition; closed mouths.",
+                "camera_motion": "hold",
+                "reference_group": "ensemble",
+                "dialogue": [],
+                "continuity": "当前边界事实：主角看见灯罩亮点，搭档站在桌旁，反光板仍在原处。。人物身份沿用固定cast，不能把后续状态提前。",
+                "sfx": "轻微环境底噪",
+                "characters": [
+                  "char_lead",
+                  "char_partner"
+                ],
+                "id": "S02",
+                "seconds": 5
+              },
+              {
+                "dramatic_beat": "主角的手停在灯座断开的插头旁，眼睛仍看着亮点。",
+                "action": "主角的手停在灯座断开的插头旁，眼睛仍看着亮点。",
+                "location": "同一处可见生活或工作空间",
+                "prompt": "A restrained illustrative keyframe of the same fictional adult characters in a stable shared space, draft composition for shot 3; no visible text or logos.",
+                "motion_prompt": "A gentle camera push toward the still composition; closed mouths.",
+                "camera_motion": "hold",
+                "reference_group": "ensemble",
+                "dialogue": [],
+                "continuity": "当前边界事实：主角的手停在灯座断开的插头旁，眼睛仍看着亮点。。人物身份沿用固定cast，不能把后续状态提前。",
+                "sfx": "轻微环境底噪",
+                "characters": [
+                  "char_lead",
+                  "char_partner"
+                ],
+                "id": "S03",
+                "seconds": 6
+              },
+              {
+                "dramatic_beat": "搭档用一只手扶住桌上的反光板边缘，主角站在灯罩旁。",
+                "action": "搭档用一只手扶住桌上的反光板边缘，主角站在灯罩旁。",
+                "location": "同一处可见生活或工作空间",
+                "prompt": "A restrained illustrative keyframe of the same fictional adult characters in a stable shared space, draft composition for shot 4; no visible text or logos.",
+                "motion_prompt": "A gentle camera push toward the still composition; closed mouths.",
+                "camera_motion": "hold",
+                "reference_group": "ensemble",
+                "dialogue": [],
+                "continuity": "当前边界事实：搭档用一只手扶住桌上的反光板边缘，主角站在灯罩旁。。人物身份沿用固定cast，不能把后续状态提前。",
+                "sfx": "轻微环境底噪",
+                "characters": [
+                  "char_lead",
+                  "char_partner"
+                ],
+                "id": "S04",
+                "seconds": 4
+              },
+              {
+                "dramatic_beat": "反光板已转向墙面，亮点出现在墙上，灯罩表面不再发亮。",
+                "action": "反光板已转向墙面，亮点出现在墙上，灯罩表面不再发亮。",
+                "location": "同一处可见生活或工作空间",
+                "prompt": "A restrained illustrative keyframe of the same fictional adult characters in a stable shared space, draft composition for shot 5; no visible text or logos.",
+                "motion_prompt": "A gentle camera push toward the still composition; closed mouths.",
+                "camera_motion": "hold",
+                "reference_group": "ensemble",
+                "dialogue": [],
+                "continuity": "当前边界事实：反光板已转向墙面，亮点出现在墙上，灯罩表面不再发亮。。人物身份沿用固定cast，不能把后续状态提前。",
+                "sfx": "轻微环境底噪",
+                "characters": [
+                  "char_lead",
+                  "char_partner"
+                ],
+                "id": "S05",
+                "seconds": 5
+              },
+              {
+                "dramatic_beat": "两人一同望向墙上的反光，断开的插头仍在灯座旁，误判得到解释。",
+                "action": "两人一同望向墙上的反光，断开的插头仍在灯座旁，误判得到解释。",
+                "location": "同一处可见生活或工作空间",
+                "prompt": "A restrained illustrative keyframe of the same fictional adult characters in a stable shared space, draft composition for shot 6; no visible text or logos.",
+                "motion_prompt": "A gentle camera push toward the still composition; closed mouths.",
+                "camera_motion": "hold",
+                "reference_group": "ensemble",
+                "dialogue": [],
+                "continuity": "当前边界事实：两人一同望向墙上的反光，断开的插头仍在灯座旁，误判得到解释。。人物身份沿用固定cast，不能把后续状态提前。",
+                "sfx": "轻微环境底噪",
+                "characters": [
+                  "char_lead",
+                  "char_partner"
+                ],
+                "id": "S06",
+                "seconds": 6
+              }
+            ]
+          },
+          "editable_shot_ids": [
+            "S01",
+            "S02",
+            "S03",
+            "S04",
+            "S05",
+            "S06"
+          ],
+          "locked_shot_ids": [],
+          "editable_fields": [
+            "prompt",
+            "motion_prompt",
+            "camera_motion",
+            "reference_group"
+          ],
+          "model_capabilities": {
+            "format": "motion_comic",
+            "continuous_character_action_in_motion_comic": false,
+            "synchronized_lip_motion": false,
+            "dialogue_delivery": "off-screen voice-over; visible mouths stay closed",
+            "camera_motions": [
+              "push_in",
+              "pull_out",
+              "pan_left",
+              "pan_right",
+              "hold"
+            ]
+          },
+          "instruction": "仅修订指定镜头的四个制作字段。这里是合成文本案例，不存在已生成的图像或视频。"
+        }
+      }
+    },
+    {
+      "id": "public-holdout-paper",
+      "split": "holdout",
+      "genre": "fantasy",
+      "negative_control": true,
+      "conflict_case": false,
+      "project": {
+        "id": "5edafffcef5c",
+        "slug": "factory-5edafffcef5c",
+        "title": "纸鸟停下以后",
+        "brief": "两位成年邻居共享一张会轻轻悬浮的纸鸟；魔法是已知日常设定，用一次归还呈现互相尊重。不要追加咒语次数、倒计时或新的神秘组织。",
+        "format": "motion_comic",
+        "creation_mode": "original",
+        "production_profile": {
+          "shot_count": 6,
+          "duration_seconds": 30,
+          "shot_seconds": [
+            4,
+            5,
+            6,
+            4,
+            5,
+            6
+          ],
+          "characters": [
+            {
+              "character_id": "char_lead",
+              "name": "主角",
+              "voice_id": "female"
+            },
+            {
+              "character_id": "char_partner",
+              "name": "搭档",
+              "voice_id": "male"
+            }
+          ],
+          "preset": "compact6",
+          "schema_version": 1
+        }
+      },
+      "inputs": {
+        "screenwriter": {
+          "project": {
+            "id": "5edafffcef5c",
+            "slug": "factory-5edafffcef5c",
+            "title": "纸鸟停下以后",
+            "brief": "两位成年邻居共享一张会轻轻悬浮的纸鸟；魔法是已知日常设定，用一次归还呈现互相尊重。不要追加咒语次数、倒计时或新的神秘组织。",
+            "format": "motion_comic",
+            "creation_mode": "original",
+            "production_profile": {
+              "shot_count": 6,
+              "duration_seconds": 30,
+              "shot_seconds": [
+                4,
+                5,
+                6,
+                4,
+                5,
+                6
+              ],
+              "characters": [
+                {
+                  "character_id": "char_lead",
+                  "name": "主角",
+                  "voice_id": "female"
+                },
+                {
+                  "character_id": "char_partner",
+                  "name": "搭档",
+                  "voice_id": "male"
+                }
+              ],
+              "preset": "compact6",
+              "schema_version": 1
+            }
+          },
+          "selected_proposal": {
+            "title": "纸鸟停下以后",
+            "logline": "两位成年邻居共享一张会轻轻悬浮的纸鸟；魔法是已知日常设定，用一次归还呈现互相尊重。不要追加咒语次数、倒计时或新的神秘组织。",
+            "synopsis": "白纸鸟悬在主角手掌上方，搭档站在窗外的走廊。。主角把手掌移到窗边，纸鸟仍悬在原手掌上方。。搭档伸出张开的手掌，停在窗外，未触碰纸鸟。。纸鸟已经悬在搭档手掌上方，主角双手收在窗内。。搭档将悬着纸鸟的手移回窗边，主角再次张开手掌。。纸鸟回到主角手掌上方，搭档轻轻点头，两人保持各自空间。。",
+            "ending": "纸鸟回到主角手掌上方，搭档轻轻点头，两人保持各自空间。。本集主冲突在此闭合。"
+          },
+          "timeline": [
+            {
+              "id": "S01",
+              "seconds": 4
+            },
+            {
+              "id": "S02",
+              "seconds": 5
+            },
+            {
+              "id": "S03",
+              "seconds": 6
+            },
+            {
+              "id": "S04",
+              "seconds": 4
+            },
+            {
+              "id": "S05",
+              "seconds": 5
+            },
+            {
+              "id": "S06",
+              "seconds": 6
+            }
+          ],
+          "producer_feedback": {
+            "priority_order": [
+              "revision_feedback",
+              "script_feedback",
+              "story_feedback",
+              "selected_proposal"
+            ],
+            "instructions": [],
+            "conflict_rule": "按priority_order解决冲突；较新且具体的反馈覆盖旧反馈或原提案冲突部分，其余意见继续生效。出品人要求删除的支线、人物或道具不得被旧提案、旧稿或旧评审恢复。",
+            "evaluation_target": "依据反馈修订后的完整故事目标评审；原提案只保留未被反馈覆盖的设定，不因遵守删除要求而扣分。"
+          },
+          "only_revise_shot_ids": []
+        },
+        "storyboard_director": {
+          "approved_story": {
+            "title": "纸鸟停下以后",
+            "logline": "两位成年邻居共享一张会轻轻悬浮的纸鸟；魔法是已知日常设定，用一次归还呈现互相尊重。不要追加咒语次数、倒计时或新的神秘组织。",
+            "synopsis": "白纸鸟悬在主角手掌上方，搭档站在窗外的走廊。。主角把手掌移到窗边，纸鸟仍悬在原手掌上方。。搭档伸出张开的手掌，停在窗外，未触碰纸鸟。。纸鸟已经悬在搭档手掌上方，主角双手收在窗内。。搭档将悬着纸鸟的手移回窗边，主角再次张开手掌。。纸鸟回到主角手掌上方，搭档轻轻点头，两人保持各自空间。。",
+            "ending": "纸鸟回到主角手掌上方，搭档轻轻点头，两人保持各自空间。。本集主冲突在此闭合。"
+          },
+          "producer_feedback": {
+            "priority_order": [
+              "revision_feedback",
+              "script_feedback",
+              "story_feedback",
+              "selected_proposal"
+            ],
+            "instructions": [],
+            "conflict_rule": "按priority_order解决冲突；较新且具体的反馈覆盖旧反馈或原提案冲突部分，其余意见继续生效。出品人要求删除的支线、人物或道具不得被旧提案、旧稿或旧评审恢复。",
+            "evaluation_target": "依据反馈修订后的完整故事目标评审；原提案只保留未被反馈覆盖的设定，不因遵守删除要求而扣分。"
+          },
+          "repair_issues": [],
+          "current_episode": {
+            "title": "纸鸟停下以后",
+            "logline": "两位成年邻居共享一张会轻轻悬浮的纸鸟；魔法是已知日常设定，用一次归还呈现互相尊重。不要追加咒语次数、倒计时或新的神秘组织。",
+            "synopsis": "白纸鸟悬在主角手掌上方，搭档站在窗外的走廊。。主角把手掌移到窗边，纸鸟仍悬在原手掌上方。。搭档伸出张开的手掌，停在窗外，未触碰纸鸟。。纸鸟已经悬在搭档手掌上方，主角双手收在窗内。。搭档将悬着纸鸟的手移回窗边，主角再次张开手掌。。纸鸟回到主角手掌上方，搭档轻轻点头，两人保持各自空间。。",
+            "ending": "纸鸟回到主角手掌上方，搭档轻轻点头，两人保持各自空间。。本集主冲突在此闭合。",
+            "story_structure": {
+              "setup": "白纸鸟悬在主角手掌上方，搭档站在窗外的走廊。",
+              "inciting_incident": "主角把手掌移到窗边，纸鸟仍悬在原手掌上方。",
+              "turning_point": "纸鸟已经悬在搭档手掌上方，主角双手收在窗内。",
+              "climax": "搭档将悬着纸鸟的手移回窗边，主角再次张开手掌。",
+              "resolution": "纸鸟回到主角手掌上方，搭档轻轻点头，两人保持各自空间。"
+            },
+            "character_names": {
+              "char_lead": "阿岚",
+              "char_partner": "周河"
+            },
+            "visual_style": "Consistent restrained ink illustration, warm paper texture, soft neutral light, no lettering.",
+            "cast": {
+              "char_lead": "A fictional adult character named 阿岚, age 30, distinct oval face, short dark hair, plain navy outerwear, stable facial proportions. No held prop or narrative action in identity references.",
+              "char_partner": "A fictional adult character named 周河, age 37, distinct oval face, short dark hair, plain ochre outerwear, stable facial proportions. No held prop or narrative action in identity references."
+            },
+            "shots": [
+              {
+                "dramatic_beat": "白纸鸟悬在主角手掌上方，搭档站在窗外的走廊。",
+                "action": "白纸鸟悬在主角手掌上方，搭档站在窗外的走廊。",
+                "location": "同一处可见生活或工作空间",
+                "prompt": "A restrained illustrative keyframe of the same fictional adult characters in a stable shared space, draft composition for shot 1; no visible text or logos.",
+                "motion_prompt": "A gentle camera push toward the still composition; closed mouths.",
+                "camera_motion": "hold",
+                "reference_group": "ensemble",
+                "dialogue": [],
+                "continuity": "当前边界事实：白纸鸟悬在主角手掌上方，搭档站在窗外的走廊。。人物身份沿用固定cast，不能把后续状态提前。",
+                "sfx": "轻微环境底噪",
+                "characters": [
+                  "char_lead",
+                  "char_partner"
+                ],
+                "id": "S01",
+                "seconds": 4
+              },
+              {
+                "dramatic_beat": "主角把手掌移到窗边，纸鸟仍悬在原手掌上方。",
+                "action": "主角把手掌移到窗边，纸鸟仍悬在原手掌上方。",
+                "location": "同一处可见生活或工作空间",
+                "prompt": "A restrained illustrative keyframe of the same fictional adult characters in a stable shared space, draft composition for shot 2; no visible text or logos.",
+                "motion_prompt": "A gentle camera push toward the still composition; closed mouths.",
+                "camera_motion": "hold",
+                "reference_group": "ensemble",
+                "dialogue": [],
+                "continuity": "当前边界事实：主角把手掌移到窗边，纸鸟仍悬在原手掌上方。。人物身份沿用固定cast，不能把后续状态提前。",
+                "sfx": "轻微环境底噪",
+                "characters": [
+                  "char_lead",
+                  "char_partner"
+                ],
+                "id": "S02",
+                "seconds": 5
+              },
+              {
+                "dramatic_beat": "搭档伸出张开的手掌，停在窗外，未触碰纸鸟。",
+                "action": "搭档伸出张开的手掌，停在窗外，未触碰纸鸟。",
+                "location": "同一处可见生活或工作空间",
+                "prompt": "A restrained illustrative keyframe of the same fictional adult characters in a stable shared space, draft composition for shot 3; no visible text or logos.",
+                "motion_prompt": "A gentle camera push toward the still composition; closed mouths.",
+                "camera_motion": "hold",
+                "reference_group": "ensemble",
+                "dialogue": [],
+                "continuity": "当前边界事实：搭档伸出张开的手掌，停在窗外，未触碰纸鸟。。人物身份沿用固定cast，不能把后续状态提前。",
+                "sfx": "轻微环境底噪",
+                "characters": [
+                  "char_lead",
+                  "char_partner"
+                ],
+                "id": "S03",
+                "seconds": 6
+              },
+              {
+                "dramatic_beat": "纸鸟已经悬在搭档手掌上方，主角双手收在窗内。",
+                "action": "纸鸟已经悬在搭档手掌上方，主角双手收在窗内。",
+                "location": "同一处可见生活或工作空间",
+                "prompt": "A restrained illustrative keyframe of the same fictional adult characters in a stable shared space, draft composition for shot 4; no visible text or logos.",
+                "motion_prompt": "A gentle camera push toward the still composition; closed mouths.",
+                "camera_motion": "hold",
+                "reference_group": "ensemble",
+                "dialogue": [],
+                "continuity": "当前边界事实：纸鸟已经悬在搭档手掌上方，主角双手收在窗内。。人物身份沿用固定cast，不能把后续状态提前。",
+                "sfx": "轻微环境底噪",
+                "characters": [
+                  "char_lead",
+                  "char_partner"
+                ],
+                "id": "S04",
+                "seconds": 4
+              },
+              {
+                "dramatic_beat": "搭档将悬着纸鸟的手移回窗边，主角再次张开手掌。",
+                "action": "搭档将悬着纸鸟的手移回窗边，主角再次张开手掌。",
+                "location": "同一处可见生活或工作空间",
+                "prompt": "A restrained illustrative keyframe of the same fictional adult characters in a stable shared space, draft composition for shot 5; no visible text or logos.",
+                "motion_prompt": "A gentle camera push toward the still composition; closed mouths.",
+                "camera_motion": "hold",
+                "reference_group": "ensemble",
+                "dialogue": [],
+                "continuity": "当前边界事实：搭档将悬着纸鸟的手移回窗边，主角再次张开手掌。。人物身份沿用固定cast，不能把后续状态提前。",
+                "sfx": "轻微环境底噪",
+                "characters": [
+                  "char_lead",
+                  "char_partner"
+                ],
+                "id": "S05",
+                "seconds": 5
+              },
+              {
+                "dramatic_beat": "纸鸟回到主角手掌上方，搭档轻轻点头，两人保持各自空间。",
+                "action": "纸鸟回到主角手掌上方，搭档轻轻点头，两人保持各自空间。",
+                "location": "同一处可见生活或工作空间",
+                "prompt": "A restrained illustrative keyframe of the same fictional adult characters in a stable shared space, draft composition for shot 6; no visible text or logos.",
+                "motion_prompt": "A gentle camera push toward the still composition; closed mouths.",
+                "camera_motion": "hold",
+                "reference_group": "ensemble",
+                "dialogue": [],
+                "continuity": "当前边界事实：纸鸟回到主角手掌上方，搭档轻轻点头，两人保持各自空间。。人物身份沿用固定cast，不能把后续状态提前。",
+                "sfx": "轻微环境底噪",
+                "characters": [
+                  "char_lead",
+                  "char_partner"
+                ],
+                "id": "S06",
+                "seconds": 6
+              }
+            ]
+          },
+          "editable_shot_ids": [
+            "S01",
+            "S02",
+            "S03",
+            "S04",
+            "S05",
+            "S06"
+          ],
+          "locked_shot_ids": [],
+          "editable_fields": [
+            "prompt",
+            "motion_prompt",
+            "camera_motion",
+            "reference_group"
+          ],
+          "model_capabilities": {
+            "format": "motion_comic",
+            "continuous_character_action_in_motion_comic": false,
+            "synchronized_lip_motion": false,
+            "dialogue_delivery": "off-screen voice-over; visible mouths stay closed",
+            "camera_motions": [
+              "push_in",
+              "pull_out",
+              "pan_left",
+              "pan_right",
+              "hold"
+            ]
+          },
+          "instruction": "仅修订指定镜头的四个制作字段。这里是合成文本案例，不存在已生成的图像或视频。"
+        }
+      }
+    },
+    {
+      "id": "public-holdout-relay",
+      "split": "holdout",
+      "genre": "sports",
+      "negative_control": false,
+      "conflict_case": true,
+      "project": {
+        "id": "4b8034cd9e5a",
+        "slug": "factory-4b8034cd9e5a",
+        "title": "交接区外的一步",
+        "brief": "三位成年业余接力队员在练习后的场边回顾一次交接。只展示静态关键瞬间与复盘，不能以提示词宣称连续奔跑已经生成。交接棒始终只有一根。",
+        "format": "motion_comic",
+        "creation_mode": "original",
+        "production_profile": {
+          "shot_count": 10,
+          "duration_seconds": 50,
+          "shot_seconds": [
+            4,
+            5,
+            6,
+            4,
+            5,
+            6,
+            4,
+            5,
+            5,
+            6
+          ],
+          "characters": [
+            {
+              "character_id": "char_lead",
+              "name": "主角",
+              "voice_id": "female"
+            },
+            {
+              "character_id": "char_partner",
+              "name": "搭档",
+              "voice_id": "male"
+            },
+            {
+              "character_id": "char_witness",
+              "name": "见证者",
+              "voice_id": "narrator"
+            }
+          ],
+          "preset": "ensemble10",
+          "schema_version": 1
+        },
+        "script_feedback": "保留一根棒和明确持有人；结尾不安排真实比赛或连续奔跑。"
+      },
+      "inputs": {
+        "screenwriter": {
+          "project": {
+            "id": "4b8034cd9e5a",
+            "slug": "factory-4b8034cd9e5a",
+            "title": "交接区外的一步",
+            "brief": "三位成年业余接力队员在练习后的场边回顾一次交接。只展示静态关键瞬间与复盘，不能以提示词宣称连续奔跑已经生成。交接棒始终只有一根。",
+            "format": "motion_comic",
+            "creation_mode": "original",
+            "production_profile": {
+              "shot_count": 10,
+              "duration_seconds": 50,
+              "shot_seconds": [
+                4,
+                5,
+                6,
+                4,
+                5,
+                6,
+                4,
+                5,
+                5,
+                6
+              ],
+              "characters": [
+                {
+                  "character_id": "char_lead",
+                  "name": "主角",
+                  "voice_id": "female"
+                },
+                {
+                  "character_id": "char_partner",
+                  "name": "搭档",
+                  "voice_id": "male"
+                },
+                {
+                  "character_id": "char_witness",
+                  "name": "见证者",
+                  "voice_id": "narrator"
+                }
+              ],
+              "preset": "ensemble10",
+              "schema_version": 1
+            },
+            "script_feedback": "保留一根棒和明确持有人；结尾不安排真实比赛或连续奔跑。"
+          },
+          "selected_proposal": {
+            "title": "交接区外的一步",
+            "logline": "三位成年业余接力队员在练习后的场边回顾一次交接。只展示静态关键瞬间与复盘，不能以提示词宣称连续奔跑已经生成。交接棒始终只有一根。",
+            "synopsis": "主角手握唯一一根接力棒，搭档站在一旁，见证者放下训练锥。。三人站在两只训练锥之间，接力棒仍在主角右手。。搭档伸出左手掌，主角举棒停在两手之间。。接力棒已在搭档左手，主角右手空着，见证者看向两人的手。。搭档举起接力棒示意站位过远，主角站在原训练锥旁。。主角向搭档靠近后的站位已经确定，两人脚边训练锥不动。。搭档把接力棒递回主角，棒已在主角右手，搭档左手空着。。主角握棒停在搭档左掌上方，见证者在一侧确认距离。。棒已在搭档左手，主角右手空着，这次双手距离更短。。三人并排站在训练锥外，棒留在搭档左手，练习复盘结束。。",
+            "ending": "三人并排站在训练锥外，棒留在搭档左手，练习复盘结束。。本集主冲突在此闭合。"
+          },
+          "timeline": [
+            {
+              "id": "S01",
+              "seconds": 4
+            },
+            {
+              "id": "S02",
+              "seconds": 5
+            },
+            {
+              "id": "S03",
+              "seconds": 6
+            },
+            {
+              "id": "S04",
+              "seconds": 4
+            },
+            {
+              "id": "S05",
+              "seconds": 5
+            },
+            {
+              "id": "S06",
+              "seconds": 6
+            },
+            {
+              "id": "S07",
+              "seconds": 4
+            },
+            {
+              "id": "S08",
+              "seconds": 5
+            },
+            {
+              "id": "S09",
+              "seconds": 5
+            },
+            {
+              "id": "S10",
+              "seconds": 6
+            }
+          ],
+          "producer_feedback": {
+            "priority_order": [
+              "revision_feedback",
+              "script_feedback",
+              "story_feedback",
+              "selected_proposal"
+            ],
+            "instructions": [
+              {
+                "source": "script_feedback",
+                "content": "保留一根棒和明确持有人；结尾不安排真实比赛或连续奔跑。"
+              }
+            ],
+            "conflict_rule": "按priority_order解决冲突；较新且具体的反馈覆盖旧反馈或原提案冲突部分，其余意见继续生效。出品人要求删除的支线、人物或道具不得被旧提案、旧稿或旧评审恢复。",
+            "evaluation_target": "依据反馈修订后的完整故事目标评审；原提案只保留未被反馈覆盖的设定，不因遵守删除要求而扣分。"
+          },
+          "only_revise_shot_ids": []
+        },
+        "storyboard_director": {
+          "approved_story": {
+            "title": "交接区外的一步",
+            "logline": "三位成年业余接力队员在练习后的场边回顾一次交接。只展示静态关键瞬间与复盘，不能以提示词宣称连续奔跑已经生成。交接棒始终只有一根。",
+            "synopsis": "主角手握唯一一根接力棒，搭档站在一旁，见证者放下训练锥。。三人站在两只训练锥之间，接力棒仍在主角右手。。搭档伸出左手掌，主角举棒停在两手之间。。接力棒已在搭档左手，主角右手空着，见证者看向两人的手。。搭档举起接力棒示意站位过远，主角站在原训练锥旁。。主角向搭档靠近后的站位已经确定，两人脚边训练锥不动。。搭档把接力棒递回主角，棒已在主角右手，搭档左手空着。。主角握棒停在搭档左掌上方，见证者在一侧确认距离。。棒已在搭档左手，主角右手空着，这次双手距离更短。。三人并排站在训练锥外，棒留在搭档左手，练习复盘结束。。",
+            "ending": "三人并排站在训练锥外，棒留在搭档左手，练习复盘结束。。本集主冲突在此闭合。"
+          },
+          "producer_feedback": {
+            "priority_order": [
+              "revision_feedback",
+              "script_feedback",
+              "story_feedback",
+              "selected_proposal"
+            ],
+            "instructions": [
+              {
+                "source": "script_feedback",
+                "content": "保留一根棒和明确持有人；结尾不安排真实比赛或连续奔跑。"
+              }
+            ],
+            "conflict_rule": "按priority_order解决冲突；较新且具体的反馈覆盖旧反馈或原提案冲突部分，其余意见继续生效。出品人要求删除的支线、人物或道具不得被旧提案、旧稿或旧评审恢复。",
+            "evaluation_target": "依据反馈修订后的完整故事目标评审；原提案只保留未被反馈覆盖的设定，不因遵守删除要求而扣分。"
+          },
+          "repair_issues": [],
+          "current_episode": {
+            "title": "交接区外的一步",
+            "logline": "三位成年业余接力队员在练习后的场边回顾一次交接。只展示静态关键瞬间与复盘，不能以提示词宣称连续奔跑已经生成。交接棒始终只有一根。",
+            "synopsis": "主角手握唯一一根接力棒，搭档站在一旁，见证者放下训练锥。。三人站在两只训练锥之间，接力棒仍在主角右手。。搭档伸出左手掌，主角举棒停在两手之间。。接力棒已在搭档左手，主角右手空着，见证者看向两人的手。。搭档举起接力棒示意站位过远，主角站在原训练锥旁。。主角向搭档靠近后的站位已经确定，两人脚边训练锥不动。。搭档把接力棒递回主角，棒已在主角右手，搭档左手空着。。主角握棒停在搭档左掌上方，见证者在一侧确认距离。。棒已在搭档左手，主角右手空着，这次双手距离更短。。三人并排站在训练锥外，棒留在搭档左手，练习复盘结束。。",
+            "ending": "三人并排站在训练锥外，棒留在搭档左手，练习复盘结束。。本集主冲突在此闭合。",
+            "story_structure": {
+              "setup": "主角手握唯一一根接力棒，搭档站在一旁，见证者放下训练锥。",
+              "inciting_incident": "三人站在两只训练锥之间，接力棒仍在主角右手。",
+              "turning_point": "主角向搭档靠近后的站位已经确定，两人脚边训练锥不动。",
+              "climax": "棒已在搭档左手，主角右手空着，这次双手距离更短。",
+              "resolution": "三人并排站在训练锥外，棒留在搭档左手，练习复盘结束。"
+            },
+            "character_names": {
+              "char_lead": "阿岚",
+              "char_partner": "周河",
+              "char_witness": "林青"
+            },
+            "visual_style": "Consistent restrained ink illustration, warm paper texture, soft neutral light, no lettering.",
+            "cast": {
+              "char_lead": "A fictional adult character named 阿岚, age 30, distinct oval face, short dark hair, plain navy outerwear, stable facial proportions. No held prop or narrative action in identity references.",
+              "char_partner": "A fictional adult character named 周河, age 37, distinct oval face, short dark hair, plain ochre outerwear, stable facial proportions. No held prop or narrative action in identity references.",
+              "char_witness": "A fictional adult character named 林青, age 44, distinct oval face, short dark hair, plain gray outerwear, stable facial proportions. No held prop or narrative action in identity references."
+            },
+            "shots": [
+              {
+                "dramatic_beat": "主角手握唯一一根接力棒，搭档站在一旁，见证者放下训练锥。",
+                "action": "主角手握唯一一根接力棒，搭档站在一旁，见证者放下训练锥。",
+                "location": "同一处可见生活或工作空间",
+                "prompt": "A restrained illustrative keyframe of the same fictional adult characters in a stable shared space, draft composition for shot 1; no visible text or logos.",
+                "motion_prompt": "A gentle camera push toward the still composition; closed mouths.",
+                "camera_motion": "hold",
+                "reference_group": "ensemble",
+                "dialogue": [],
+                "continuity": "当前边界事实：主角手握唯一一根接力棒，搭档站在一旁，见证者放下训练锥。。人物身份沿用固定cast，不能把后续状态提前。",
+                "sfx": "轻微环境底噪",
+                "characters": [
+                  "char_lead",
+                  "char_partner",
+                  "char_witness"
+                ],
+                "id": "S01",
+                "seconds": 4
+              },
+              {
+                "dramatic_beat": "三人站在两只训练锥之间，接力棒仍在主角右手。",
+                "action": "三人站在两只训练锥之间，接力棒仍在主角右手。",
+                "location": "同一处可见生活或工作空间",
+                "prompt": "A restrained illustrative keyframe of the same fictional adult characters in a stable shared space, draft composition for shot 2; no visible text or logos.",
+                "motion_prompt": "A gentle camera push toward the still composition; closed mouths.",
+                "camera_motion": "hold",
+                "reference_group": "ensemble",
+                "dialogue": [],
+                "continuity": "当前边界事实：三人站在两只训练锥之间，接力棒仍在主角右手。。人物身份沿用固定cast，不能把后续状态提前。",
+                "sfx": "轻微环境底噪",
+                "characters": [
+                  "char_lead",
+                  "char_partner",
+                  "char_witness"
+                ],
+                "id": "S02",
+                "seconds": 5
+              },
+              {
+                "dramatic_beat": "搭档伸出左手掌，主角举棒停在两手之间。",
+                "action": "搭档伸出左手掌，主角举棒停在两手之间。",
+                "location": "同一处可见生活或工作空间",
+                "prompt": "A restrained illustrative keyframe of the same fictional adult characters in a stable shared space, draft composition for shot 3; no visible text or logos.",
+                "motion_prompt": "A gentle camera push toward the still composition; closed mouths.",
+                "camera_motion": "hold",
+                "reference_group": "ensemble",
+                "dialogue": [],
+                "continuity": "当前边界事实：搭档伸出左手掌，主角举棒停在两手之间。。人物身份沿用固定cast，不能把后续状态提前。",
+                "sfx": "轻微环境底噪",
+                "characters": [
+                  "char_lead",
+                  "char_partner",
+                  "char_witness"
+                ],
+                "id": "S03",
+                "seconds": 6
+              },
+              {
+                "dramatic_beat": "接力棒已在搭档左手，主角右手空着，见证者看向两人的手。",
+                "action": "接力棒已在搭档左手，主角右手空着，见证者看向两人的手。",
+                "location": "同一处可见生活或工作空间",
+                "prompt": "A restrained illustrative keyframe of the same fictional adult characters in a stable shared space, draft composition for shot 4; no visible text or logos.",
+                "motion_prompt": "A gentle camera push toward the still composition; closed mouths.",
+                "camera_motion": "hold",
+                "reference_group": "ensemble",
+                "dialogue": [],
+                "continuity": "当前边界事实：接力棒已在搭档左手，主角右手空着，见证者看向两人的手。。人物身份沿用固定cast，不能把后续状态提前。",
+                "sfx": "轻微环境底噪",
+                "characters": [
+                  "char_lead",
+                  "char_partner",
+                  "char_witness"
+                ],
+                "id": "S04",
+                "seconds": 4
+              },
+              {
+                "dramatic_beat": "搭档举起接力棒示意站位过远，主角站在原训练锥旁。",
+                "action": "搭档举起接力棒示意站位过远，主角站在原训练锥旁。",
+                "location": "同一处可见生活或工作空间",
+                "prompt": "A restrained illustrative keyframe of the same fictional adult characters in a stable shared space, draft composition for shot 5; no visible text or logos.",
+                "motion_prompt": "A gentle camera push toward the still composition; closed mouths.",
+                "camera_motion": "hold",
+                "reference_group": "ensemble",
+                "dialogue": [],
+                "continuity": "当前边界事实：搭档举起接力棒示意站位过远，主角站在原训练锥旁。。人物身份沿用固定cast，不能把后续状态提前。",
+                "sfx": "轻微环境底噪",
+                "characters": [
+                  "char_lead",
+                  "char_partner",
+                  "char_witness"
+                ],
+                "id": "S05",
+                "seconds": 5
+              },
+              {
+                "dramatic_beat": "主角向搭档靠近后的站位已经确定，两人脚边训练锥不动。",
+                "action": "主角向搭档靠近后的站位已经确定，两人脚边训练锥不动。",
+                "location": "同一处可见生活或工作空间",
+                "prompt": "A restrained illustrative keyframe of the same fictional adult characters in a stable shared space, draft composition for shot 6; no visible text or logos.",
+                "motion_prompt": "A gentle camera push toward the still composition; closed mouths.",
+                "camera_motion": "hold",
+                "reference_group": "ensemble",
+                "dialogue": [],
+                "continuity": "当前边界事实：主角向搭档靠近后的站位已经确定，两人脚边训练锥不动。。人物身份沿用固定cast，不能把后续状态提前。",
+                "sfx": "轻微环境底噪",
+                "characters": [
+                  "char_lead",
+                  "char_partner",
+                  "char_witness"
+                ],
+                "id": "S06",
+                "seconds": 6
+              },
+              {
+                "dramatic_beat": "搭档把接力棒递回主角，棒已在主角右手，搭档左手空着。",
+                "action": "搭档把接力棒递回主角，棒已在主角右手，搭档左手空着。",
+                "location": "同一处可见生活或工作空间",
+                "prompt": "A restrained illustrative keyframe of the same fictional adult characters in a stable shared space, draft composition for shot 7; no visible text or logos.",
+                "motion_prompt": "A gentle camera push toward the still composition; closed mouths.",
+                "camera_motion": "hold",
+                "reference_group": "ensemble",
+                "dialogue": [],
+                "continuity": "当前边界事实：搭档把接力棒递回主角，棒已在主角右手，搭档左手空着。。人物身份沿用固定cast，不能把后续状态提前。",
+                "sfx": "轻微环境底噪",
+                "characters": [
+                  "char_lead",
+                  "char_partner",
+                  "char_witness"
+                ],
+                "id": "S07",
+                "seconds": 4
+              },
+              {
+                "dramatic_beat": "主角握棒停在搭档左掌上方，见证者在一侧确认距离。",
+                "action": "主角握棒停在搭档左掌上方，见证者在一侧确认距离。",
+                "location": "同一处可见生活或工作空间",
+                "prompt": "A restrained illustrative keyframe of the same fictional adult characters in a stable shared space, draft composition for shot 8; no visible text or logos.",
+                "motion_prompt": "A gentle camera push toward the still composition; closed mouths.",
+                "camera_motion": "hold",
+                "reference_group": "ensemble",
+                "dialogue": [],
+                "continuity": "当前边界事实：主角握棒停在搭档左掌上方，见证者在一侧确认距离。。人物身份沿用固定cast，不能把后续状态提前。",
+                "sfx": "轻微环境底噪",
+                "characters": [
+                  "char_lead",
+                  "char_partner",
+                  "char_witness"
+                ],
+                "id": "S08",
+                "seconds": 5
+              },
+              {
+                "dramatic_beat": "棒已在搭档左手，主角右手空着，这次双手距离更短。",
+                "action": "棒已在搭档左手，主角右手空着，这次双手距离更短。",
+                "location": "同一处可见生活或工作空间",
+                "prompt": "A restrained illustrative keyframe of the same fictional adult characters in a stable shared space, draft composition for shot 9; no visible text or logos.",
+                "motion_prompt": "A gentle camera push toward the still composition; closed mouths.",
+                "camera_motion": "hold",
+                "reference_group": "ensemble",
+                "dialogue": [],
+                "continuity": "当前边界事实：棒已在搭档左手，主角右手空着，这次双手距离更短。。人物身份沿用固定cast，不能把后续状态提前。",
+                "sfx": "轻微环境底噪",
+                "characters": [
+                  "char_lead",
+                  "char_partner",
+                  "char_witness"
+                ],
+                "id": "S09",
+                "seconds": 5
+              },
+              {
+                "dramatic_beat": "三人并排站在训练锥外，棒留在搭档左手，练习复盘结束。",
+                "action": "三人并排站在训练锥外，棒留在搭档左手，练习复盘结束。",
+                "location": "同一处可见生活或工作空间",
+                "prompt": "A restrained illustrative keyframe of the same fictional adult characters in a stable shared space, draft composition for shot 10; no visible text or logos.",
+                "motion_prompt": "A gentle camera push toward the still composition; closed mouths.",
+                "camera_motion": "hold",
+                "reference_group": "ensemble",
+                "dialogue": [],
+                "continuity": "当前边界事实：三人并排站在训练锥外，棒留在搭档左手，练习复盘结束。。人物身份沿用固定cast，不能把后续状态提前。",
+                "sfx": "轻微环境底噪",
+                "characters": [
+                  "char_lead",
+                  "char_partner",
+                  "char_witness"
+                ],
+                "id": "S10",
+                "seconds": 6
+              }
+            ]
+          },
+          "editable_shot_ids": [
+            "S01",
+            "S02",
+            "S03",
+            "S04",
+            "S05",
+            "S06",
+            "S07",
+            "S08",
+            "S09",
+            "S10"
+          ],
+          "locked_shot_ids": [],
+          "editable_fields": [
+            "prompt",
+            "motion_prompt",
+            "camera_motion",
+            "reference_group"
+          ],
+          "model_capabilities": {
+            "format": "motion_comic",
+            "continuous_character_action_in_motion_comic": false,
+            "synchronized_lip_motion": false,
+            "dialogue_delivery": "off-screen voice-over; visible mouths stay closed",
+            "camera_motions": [
+              "push_in",
+              "pull_out",
+              "pan_left",
+              "pan_right",
+              "hold"
+            ]
+          },
+          "instruction": "仅修订指定镜头的四个制作字段。这里是合成文本案例，不存在已生成的图像或视频。"
+        }
+      }
+    }
+  ]
+}
