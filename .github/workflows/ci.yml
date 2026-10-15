@@ -27,7 +27,9 @@ jobs:
       - name: Install UI test dependencies
         run: npm ci --ignore-scripts
       - name: Verify producer UI
-        run: node --test tests/test_factory*.mjs
+        run: npm test
+      - name: Typecheck and build production UI
+        run: npm run build
       - name: Build synthetic browser media
         run: python scripts/browser_fixtures.py
       - name: Install browser runtime only
@@ -41,3 +43,9 @@ jobs:
           name: browser-smoke-evidence
           path: runtime/browser-report/
           if-no-files-found: ignore
+      - name: Preserve production UI bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: studio-ui-bundle
+          path: ui/factory/dist/
+          if-no-files-found: error
