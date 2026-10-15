@@ -86,6 +86,7 @@ def llm_identity(config, role):
     identity = {key: lm.get(key) for key in (
         "base_url", "model", "endpoint", "provider", "revision", "api_key_env", "api_key_credential",
         "network_mode", "enabled", "allowed_hosts", "context_validation", "model_aliases",
+        "tls_ca_file_env", "tls_client_cert_env", "tls_client_key_env",
         "image_token_budget", "max_tokens_field", "send_sampling_parameters",
         "max_schema_attempts", "thinking", "model_discovery")}
     identity.update(profile=lm["profile"], vision=lm["vision"],

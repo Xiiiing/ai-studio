@@ -141,6 +141,14 @@ export function normalizeProfile(
       values.context_validation ||
       (provider === "llama_cpp" ? "llama_tokenize" : "conservative_estimate"),
   });
+  try {
+    if (new URL(previous.base_url).origin !== new URL(out.base_url).origin)
+      for (const key of ["tls_ca_file_env", "tls_client_cert_env", "tls_client_key_env"])
+        delete out[key];
+  } catch {
+    for (const key of ["tls_ca_file_env", "tls_client_cert_env", "tls_client_key_env"])
+      delete out[key];
+  }
   if (values.thinking === "true" || values.thinking === "false")
     out.thinking = values.thinking === "true";
   else delete out.thinking;
@@ -322,7 +330,9 @@ export function Models({ notify }: { notify: (v: string) => void }) {
             <code className="endpoint">
               {p.base_url || "服务器托管的生成工作流"}
             </code>
-            {!video && p.api_key_credential ? (
+            {!video && p.tls_client_cert_env ? (
+              <small>双向 TLS · 客户端身份由控制服务器管理</small>
+            ) : !video && p.api_key_credential ? (
               <small>
                 系统凭据：{p.api_key_credential} ·{" "}
                 {credentialMounted ? "已挂载" : "尚未挂载或状态待同步"}
@@ -584,6 +594,9 @@ function ProfileEditor({
     const prev = provider;
     const formData = Object.fromEntries(new FormData(form.current!));
     let values = { ...current, ...formData };
+    if (prev !== next)
+      for (const key of ["tls_ca_file_env", "tls_client_cert_env", "tls_client_key_env"])
+        delete values[key];
     if (video) values = { ...videoDefaults[next] };
     else {
       const defaults = providerDefaults[next] || {};

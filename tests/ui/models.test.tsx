@@ -8,8 +8,19 @@ import {
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { describe, it, expect, vi } from "vitest";
-import { Models } from "../../ui/factory/src/Models";
+import { Models, normalizeProfile } from "../../ui/factory/src/Models";
 import type { RecordData } from "../../ui/factory/src/api";
+
+it("keeps the client TLS identity on its configured authority only", () => {
+  const tls = { tls_ca_file_env: "CA", tls_client_cert_env: "CERT", tls_client_key_env: "KEY" };
+  const previous = { ...tls, provider: "llama_cpp", base_url: "https://172.20.114.10:8790/inference/models/primary/v1" };
+  const values = { ...previous, model: "writer", enabled: "on", allowed_hosts: "172.20.114.10",
+    context_tokens: "32768", request_timeout_seconds: "480" };
+  expect(normalizeProfile(values, previous)).toMatchObject(tls);
+  for (const base_url of ["https://other.example/v1", "https://172.20.114.10:9999/v1", "http://172.20.114.10/v1"])
+    for (const key of Object.keys(tls))
+      expect(normalizeProfile({ ...values, base_url }, previous)[key]).toBeUndefined();
+});
 function inventory() {
   return {
     revision: "config-1",

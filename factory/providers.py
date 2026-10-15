@@ -58,12 +58,15 @@ PROVIDERS = {
 PROFILE_FIELDS = frozenset({
     "provider", "enabled", "network_mode", "allowed_hosts", "base_url", "model",
     "context_tokens", "vision", "api_key_env", "api_key_credential", "response_format", "context_validation",
+    "tls_ca_file_env", "tls_client_cert_env", "tls_client_key_env",
     "model_aliases", "revision", "request_timeout_seconds", "max_schema_attempts",
     "chat_template_kwargs", "temperature_override", "top_p", "system_prompt_mode",
     "image_token_budget", "max_tokens_field", "send_sampling_parameters", "thinking", "model_discovery",
     # Legacy defaults are preserved; role-specific calls still set an explicit budget.
     "max_tokens", "temperature",
 })
+TLS_ENV_FIELDS = ("tls_ca_file_env", "tls_client_cert_env", "tls_client_key_env")
+
 SECRET_FIELDS = frozenset({
     "api_key", "apikey", "authorization", "password", "passwd", "secret",
     "access_token", "refresh_token", "credentials", "headers", "token",
@@ -213,8 +216,54 @@ def _address_allowed(address, mode):
     return ip.is_global and not (ip.is_multicast or ip.is_reserved)
 
 
+def _validate_tls_fields(profile):
+    """TLS profiles store environment names, never certificate/key material or paths."""
+    for field in TLS_ENV_FIELDS:
+        name = profile.get(field)
+        if name not in (None, "") and (not isinstance(name, str) or not ENV_RE.fullmatch(name)):
+            raise ValueError(field + " must be an environment variable name")
+    if bool(profile.get("tls_client_cert_env")) != bool(profile.get("tls_client_key_env")):
+        raise ValueError("TLS client certificate and key environment names must be configured together")
+
+
+def _tls_file_path(profile, field):
+    name = profile.get(field)
+    if not name:
+        return None
+    value = os.environ.get(name)
+    if not value:
+        raise ProviderError("missing_tls_configuration", "A configured TLS file environment variable is not set")
+    try:
+        if not os.path.isabs(value) or "\0" in value:
+            raise ValueError
+        details = os.stat(value)
+        if not stat.S_ISREG(details.st_mode) or not 1 <= details.st_size <= 1024 * 1024:
+            raise ValueError
+    except (OSError, ValueError):
+        raise ProviderError("invalid_tls_configuration", "A configured TLS file is not a bounded local regular file") from None
+    return value
+
+
+def _tls_context(profile=None):
+    """Verify the server and optionally authenticate with this profile's local identity."""
+    policy = profile or {}
+    _validate_tls_fields(policy)
+    ca = _tls_file_path(policy, "tls_ca_file_env")
+    certificate = _tls_file_path(policy, "tls_client_cert_env")
+    key = _tls_file_path(policy, "tls_client_key_env")
+    try:
+        context = ssl.create_default_context(cafile=ca)
+        if certificate:
+            # An encrypted key fails closed instead of prompting an unattended worker.
+            context.load_cert_chain(certfile=certificate, keyfile=key, password=lambda: "")
+        return context
+    except (OSError, ValueError):
+        raise ProviderError("invalid_tls_configuration", "The configured TLS CA or client identity could not be loaded") from None
+
+
 def validate_endpoint(profile):
     """Validate syntax and explicit scope without performing a DNS/network request."""
+    _validate_tls_fields(profile)
     value = _valid_text(profile.get("base_url"), "base_url", 2048)
     try:
         parsed = urlsplit(value)
@@ -223,6 +272,8 @@ def validate_endpoint(profile):
         raise ValueError("Invalid model endpoint URL") from None
     if parsed.scheme not in ("http", "https") or not parsed.hostname:
         raise ValueError("Model endpoint must use HTTP or HTTPS")
+    if any(profile.get(field) for field in TLS_ENV_FIELDS) and parsed.scheme != "https":
+        raise ValueError("TLS client identity and CA configuration require HTTPS")
     if parsed.username or parsed.password or parsed.query or parsed.fragment:
         raise ValueError("Model endpoint must not contain credentials, query, or fragment")
     if (not re.fullmatch(r"/[A-Za-z0-9._~/-]*", parsed.path or "/") or
@@ -268,6 +319,9 @@ def normalize_profile(value, *, legacy=False):
     if set(value) - PROFILE_FIELDS:
         raise ValueError("Unsupported LLM profile fields")
     profile = copy.deepcopy(value)
+    for field in TLS_ENV_FIELDS:
+        if profile.get(field) in (None, ""):
+            profile.pop(field, None)
     provider = profile.get("provider", "llama_cpp")
     if provider not in PROVIDERS:
         raise ValueError("Unsupported model provider")
@@ -455,7 +509,7 @@ def _remaining_time(deadline):
     return remaining
 
 
-def _connection(host, port, secure, addresses, timeout, *, deadline=None, register_socket=None):
+def _connection(host, port, secure, addresses, timeout, *, deadline=None, register_socket=None, profile=None):
     # http.client does not follow redirects and does not read proxy environment variables.
     deadline = time.monotonic() + timeout if deadline is None else deadline
     register_socket = register_socket or (lambda value: None)
@@ -475,7 +529,7 @@ def _connection(host, port, secure, addresses, timeout, *, deadline=None, regist
     cls = DeadlineHTTPSConnection if secure else http.client.HTTPConnection
     options = {"timeout": timeout}
     if secure:
-        options["context"] = ssl.create_default_context()
+        options["context"] = _tls_context(profile)
     connection = cls(host, port, **options)
 
     def create_connection(*args, **kwargs):
@@ -550,7 +604,7 @@ def request_json(base, route, payload=None, timeout=30, api_key_env=None, *, pro
             abort_at_deadline()
             raise TimeoutError("Model request deadline exceeded")
     connection = _connection(host, port, target.scheme == "https", addresses, remaining,
-                             deadline=deadline, register_socket=register_socket)
+                             deadline=deadline, register_socket=register_socket, profile=policy)
     def abort_at_deadline():
         expired.set()
         connection_socket = active_socket.get("value") or connection.sock
@@ -849,6 +903,9 @@ def public_inventory(config=None):
     rows = []
     for name, profile in normalized.items():
         row = {"id": name, **redact_secrets(profile, profile),
+               # Preserve the bearer-auth observation separately from TLS configuration.
+               "transport_auth": "mtls" if profile.get("tls_client_cert_env") else "none",
+               "tls_client_configured": bool(profile.get("tls_client_cert_env") and profile.get("tls_client_key_env")),
                "auth_configured": bool((profile.get("api_key_env") and os.environ.get(profile["api_key_env"]))
                                          or _credential_available(profile)),
                "roles": [role for role, selected in current.get("llm_roles", {}).items() if selected == name]}
