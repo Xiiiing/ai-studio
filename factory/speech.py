@@ -440,12 +440,14 @@ class SpeechMixin:
                 if not terminal.exists() or read_json(terminal).get("status")!="failed":
                     raise
 
-    def _voice(self):
+    def _voice(self, line_ids=None):
         self.emit("voice")
-        lines = [copy.deepcopy(line) for shot in self.shots for line in shot.get("dialogue", [])]
+        all_lines = [copy.deepcopy(line) for shot in self.shots for line in shot.get("dialogue", [])]
+        lines = [line for line in all_lines if line_ids is None or line["id"] in line_ids]
         if not lines:
-            self.assets["audio"] = {"lines": [], "speech": "no_dialogue_in_script"}
-            self.emit()
+            if not all_lines:
+                self.assets["audio"] = {"lines": [], "speech": "no_dialogue_in_script"}
+                self.emit()
             return {}
         voices = {} if self.config.get("audio_connection", {}).get("provider") == "dashscope_tts" else read_json(ROOT / "audio/voices.json")
         voices.update(self.episode.get("voices") or {})
@@ -479,8 +481,10 @@ class SpeechMixin:
         for line in lines:
             team_control.assert_publishable(self.project.get("id"), "speech", line["id"],
                                             input_version=expected[line["id"]]["key"])
-        self.assets["audio"] = {"source_signature": fingerprint([expected[line["id"]]["key"] for line in lines]),
-                                "lines": [records[line["id"]] for line in lines],
+        merged = {**previous, **records} if line_ids is not None else records
+        audio_lines = [merged[line["id"]] for line in all_lines if line["id"] in merged]
+        self.assets["audio"] = {"source_signature": fingerprint([record.get("source_signature") or record.get("sha256") for record in audio_lines]),
+                                "lines": audio_lines,
                                 "model": "Wkp Qwen3-TTS CustomVoice" if self.config.get("gpu_service") else "local Qwen3-TTS CustomVoice", "cache": "verified_per_line_source_v2"}
         if explicit_profile(self.project):
             self.assets["audio"]["production_profile_signature"] = profile_signature(self.project)
@@ -545,11 +549,12 @@ class SpeechMixin:
         write_json(path, artifact)
         self.emit("dialogue_repaired", episode=copy.deepcopy(self.episode), script=copy.deepcopy(self.episode))
 
-    def _fit_dialogue(self, mapping):
+    def _fit_dialogue(self, mapping, shot_ids=None):
         maximum = int(self.config.get("dialogue_repair_attempts", 2))
         if not 0 <= maximum <= 2:
             raise ValueError("dialogue_repair_attempts must be between zero and two")
-        for shot in team_control.ordered(self.project.get("id"), "dialogue", self.shots, key=lambda value: value["id"]):
+        shots = [shot for shot in self.shots if shot_ids is None or shot["id"] in shot_ids]
+        for shot in team_control.ordered(self.project.get("id"), "dialogue", shots, key=lambda value: value["id"]):
             if not shot.get("dialogue"):
                 continue
             while True:
@@ -633,5 +638,8 @@ class SpeechMixin:
                                                        "attempts": repairs}) from exc
                     continue
                 # Only changed source digests miss the line cache; all other WAV files stay identical.
-                mapping = self._voice()
+                if shot_ids is None:
+                    mapping = self._voice()
+                else:
+                    mapping.update(self._voice(line_ids=[line["id"] for line in shot["dialogue"]]))
         return mapping

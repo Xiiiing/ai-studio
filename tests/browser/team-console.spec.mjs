@@ -220,6 +220,16 @@ test("task controls preserve draft, preview lock conflicts, recover baseline and
   const submissions = [],
     quickActions = [],
     instructions = [];
+  const post = {
+    ...task,
+    id: "edit:project",
+    label: "后期交付",
+    kind: "edit",
+    owner: "editor",
+    department: "post",
+    artifacts: [],
+    dependencies: [task.id],
+  };
   const controlledTask = () => ({
     ...task,
     generation,
@@ -300,12 +310,23 @@ test("task controls preserve draft, preview lock conflicts, recover baseline and
         : {
             task: decodeURIComponent(url.pathname).endsWith(image.id)
               ? image
-              : controlledTask(),
+              : decodeURIComponent(url.pathname).endsWith(post.id)
+                ? post
+                : controlledTask(),
             control_revision: control,
           },
     });
   });
   await page.route(`**/api/factory/projects/${id}/interventions**`, (route) => {
+    if (route.request().method() === "GET")
+      return route.fulfill({
+        json: {
+          instructions,
+          total: instructions.length,
+          offset: 0,
+          limit: 20,
+        },
+      });
     const body = route.request().postDataJSON();
     if (route.request().url().endsWith("/preview"))
       return route.fulfill({
@@ -378,7 +399,7 @@ test("task controls preserve draft, preview lock conflicts, recover baseline and
     .check();
   await dialog.getByLabel("完成后的安排", { exact: true }).selectOption("wait");
   await dialog.getByRole("button", { name: "查看影响", exact: true }).click();
-  await expect(dialog.getByLabel("返工影响预览")).toContainText("edit:project");
+  await expect(dialog.getByLabel("返工影响预览")).toContainText("后期交付");
   await page.screenshot({
     path: "runtime/browser-report/team-controls-light-desktop.png",
     fullPage: false,
@@ -424,4 +445,277 @@ test("task controls preserve draft, preview lock conflicts, recover baseline and
     "lock",
     "unlock",
   ]);
+});
+
+test("leader scopes, actionable plans, disabled models and management evidence", async ({
+  page,
+  request,
+}) => {
+  await request.post("/__test/reset");
+  const requests = [],
+    instructions = [];
+  const sound = {
+    ...task,
+    id: "speech:S01:D1",
+    label: "第 1 镜配音",
+    owner: "speech",
+    department: "sound",
+    kind: "speech",
+    artifacts: [],
+    dependencies: [],
+  };
+  const edit = {
+    ...task,
+    id: "edit:project",
+    label: "后期交付",
+    owner: "editor",
+    department: "post",
+    kind: "edit",
+    artifacts: [],
+    dependencies: [task.id, sound.id],
+  };
+  const reportTask = {
+    ...task,
+    id: "management:total",
+    label: "总制片安排回执",
+    owner: "executive_producer",
+    department: "production",
+    kind: "management",
+    model: "模拟管理模型",
+    artifacts: [],
+    inputs: [
+      { label: "结构化安排", value: "限定在已选择的任务内调整优先级。" },
+    ],
+    dependencies: [],
+  };
+  const candidates = [
+    {
+      ...task,
+      locked: false,
+      allowed_owners: ["video_generator"],
+      default_owner: "video_generator",
+    },
+    sound,
+    edit,
+  ];
+  let control = 1;
+  await page.route(`**/api/factory/projects/${id}/team`, (route) =>
+    route.fulfill({
+      json: {
+        schema: 1,
+        enabled: true,
+        control_revision: control,
+        departments: departments.map(([id, label], index) => ({
+          id,
+          label,
+          lead: leads[index][0],
+          responsibility: `${label}负责实际任务与成果交接`,
+          management_available: id !== "sound",
+          management_unavailable_reason:
+            id === "sound" ? "对白编辑尚未配置管理模型" : undefined,
+        })),
+        members: [
+          ...departments.map(([department], index) => ({
+            id: leads[index][0],
+            role: leads[index][0],
+            label: leads[index][1],
+            department,
+            leader: true,
+            leader_available: department !== "sound",
+            leader_unavailable_reason:
+              department === "sound" ? "对白编辑尚未配置管理模型" : undefined,
+            status: "idle",
+            current_tasks: [],
+          })),
+          {
+            id: "video_generator",
+            role: "video_generator",
+            label: "视频制作",
+            department: "visual",
+            status: "completed",
+            current_tasks: [task.id],
+          },
+        ],
+        task_summary: {
+          total: 3,
+          running: 0,
+          waiting: 0,
+          blocked: 0,
+          completed: 3,
+        },
+        events: [],
+        instructions,
+        locks: [],
+        actions: [
+          { id: "intervene", enabled: true },
+          { id: "replan", enabled: true },
+        ],
+      },
+    }),
+  );
+  await page.route(`**/api/factory/projects/${id}/tasks**`, (route) => {
+    const url = new URL(route.request().url());
+    requests.push(url);
+    if (url.pathname.endsWith("/tasks")) {
+      const scoped = url.searchParams.get("department")
+        ? candidates.filter(
+            (candidate) =>
+              candidate.department === url.searchParams.get("department"),
+          )
+        : candidates;
+      return route.fulfill({
+        json: {
+          tasks: scoped,
+          total: scoped.length,
+          control_revision: control,
+        },
+      });
+    }
+    const selected = decodeURIComponent(url.pathname.split("/").at(-1));
+    return route.fulfill({
+      json: {
+        task:
+          selected === reportTask.id
+            ? reportTask
+            : candidates.find((candidate) => candidate.id === selected),
+        control_revision: control,
+      },
+    });
+  });
+  await page.route(`**/api/factory/projects/${id}/interventions**`, (route) => {
+    if (route.request().method() === "GET")
+      return route.fulfill({
+        json: {
+          instructions,
+          total: instructions.length,
+          offset: 0,
+          limit: 20,
+        },
+      });
+    const body = route.request().postDataJSON();
+    if (route.request().url().endsWith("/preview"))
+      return route.fulfill({
+        json: {
+          affected_tasks: body.task_ids,
+          preserved_tasks: body.preserve,
+          conflicts: [],
+          control_revision: control,
+        },
+      });
+    const instruction = {
+      ...body,
+      id: `leader-${instructions.length + 1}`,
+      status: "applied",
+      affected_tasks: body.task_ids,
+      plan: {
+        management_tasks: [reportTask.id],
+        summary:
+          body.target_id === "executive_producer"
+            ? "先完成第 1 镜，再交接后期制作"
+            : "优先完成本部门的第 1 镜",
+        operations: body.task_ids.map((id, index) => ({
+          action: "prioritize",
+          task_id: id,
+          priority: 10 - index,
+        })),
+        delegations:
+          body.target_id === "executive_producer"
+            ? [
+                {
+                  department: "post",
+                  task_ids: [edit.id],
+                  summary: "收到镜头后开始后期交付",
+                },
+              ]
+            : [],
+      },
+    };
+    instructions.unshift(instruction);
+    return route.fulfill({
+      json: {
+        instruction: { ...instruction, status: "queued" },
+        control_revision: ++control,
+      },
+    });
+  });
+  await page.goto(`/#project=${id}`);
+  await page.getByRole("button", { name: "打开团队指挥台" }).click();
+  const disabled = page.getByRole("button", { name: "请声音制作负责人安排" });
+  await expect(disabled).toBeDisabled();
+  await disabled.locator("..").getByText("查看不可用原因").click();
+  await expect(disabled.locator("..")).toContainText(
+    "对白编辑尚未配置管理模型",
+  );
+  await page.getByRole("button", { name: "向总制片下达要求" }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByLabel("处理方式", { exact: true })).toHaveValue(
+    "replan",
+  );
+  await dialog
+    .getByRole("group", { name: "修改范围" })
+    .getByRole("checkbox", { name: /第 1 镜视频/ })
+    .check();
+  await dialog
+    .getByRole("group", { name: "修改范围" })
+    .getByRole("checkbox", { name: /后期交付/ })
+    .check();
+  await dialog
+    .getByLabel("新的制作要求", { exact: true })
+    .fill("优先完成关键镜头，再协调后期交付顺序");
+  await dialog.getByRole("button", { name: "查看影响", exact: true }).click();
+  await expect(dialog.getByLabel("返工影响预览")).toContainText("后期交付");
+  await page.screenshot({
+    path: "runtime/browser-report/team-leadership-light-desktop.png",
+  });
+  await dialog.getByRole("button", { name: "登记指令并执行" }).click();
+  const history = page.getByLabel("已登记的制作指令");
+  await expect(history).toContainText("先完成第 1 镜，再交接后期制作");
+  await expect(history).toContainText("已应用的安排");
+  await expect(history).toContainText("后期交付");
+  await history.screenshot({
+    path: "runtime/browser-report/team-leadership-plan-light-desktop.png",
+  });
+  expect(instructions[0].target_type).toBe("leader");
+  expect(instructions[0].target_id).toBe("executive_producer");
+  expect(instructions[0].task_ids).toEqual([task.id, edit.id]);
+  await page.getByRole("button", { name: "请美术与影像负责人安排" }).click();
+  const scope = dialog.getByRole("group", { name: "修改范围" });
+  await expect(scope.getByRole("checkbox")).toHaveCount(1);
+  await scope.getByRole("checkbox", { name: /第 1 镜视频/ }).check();
+  await dialog
+    .getByLabel("新的制作要求", { exact: true })
+    .fill("请在本部门优先处理这一镜");
+  await page.evaluate(() => (document.documentElement.dataset.theme = "dark"));
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.locator(".sidebar")).toBeHidden();
+  await page.screenshot({
+    path: "runtime/browser-report/team-leadership-dark-mobile.png",
+  });
+  await dialog.getByRole("button", { name: "登记指令并执行" }).click();
+  await expect.poll(() => instructions[0].target_id).toBe("visual_designer");
+  expect(instructions[0].operation).toBe("replan");
+  expect(instructions[0].task_ids).toEqual([task.id]);
+  expect(
+    requests.some(
+      (url) =>
+        url.searchParams.get("department") === "visual" &&
+        url.searchParams.get("limit") === "100",
+    ),
+  ).toBe(true);
+  await history
+    .getByRole("button", {
+      name: /查看管理任务：(?:management:total|总制片安排回执)/,
+    })
+    .first()
+    .click();
+  const detail = page.getByRole("complementary", { name: "制作任务详情" });
+  await expect(
+    detail.getByRole("heading", { name: "总制片安排回执" }),
+  ).toBeVisible();
+  await expect(detail).toContainText("模拟管理模型");
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth + 1,
+    ),
+  ).toBeTruthy();
 });

@@ -389,6 +389,8 @@ def cached_json_call(project, config, role, stage, system, payload, schema,
     from jsonschema import validate, ValidationError
     from factory.llm import json_call
     from factory.config import llm_identity
+    from .team_planning import task_config
+    config = task_config(config, role)
     model_identity = llm_identity(config, role)
     from .profile_creative import adapt_schema, adapt_system
     from .team_control import requirements_payload

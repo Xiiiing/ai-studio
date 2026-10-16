@@ -392,3 +392,87 @@
     justify-content: center;
   }
 }
+.team-leadership-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 18px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 16px;
+}
+.team-leadership-toolbar p {
+  font-size: 13px;
+  margin: 5px 0 0;
+}
+.team-leader-entry {
+  margin-top: 12px;
+}
+.team-leader-entry details {
+  font-size: 12px;
+  margin-top: 8px;
+  color: var(--muted);
+}
+.team-leader-entry summary {
+  cursor: pointer;
+}
+.team-leader-entry details p {
+  margin: 6px 0 0;
+}
+.team-leader-entry .button {
+  max-width: 100%;
+  white-space: normal;
+  text-align: left;
+}
+.team-instructions > h2 {
+  font-size: 16px;
+  margin: 0 0 14px;
+}
+.team-instruction-text {
+  white-space: pre-wrap;
+}
+.team-report-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  align-items: baseline;
+  margin: 10px 0;
+}
+.team-report-links > small {
+  color: var(--muted);
+  width: 100%;
+}
+.team-report-task {
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.team-applied-plan {
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
+  margin-top: 12px;
+}
+.team-applied-plan h3 {
+  font-size: 13px;
+}
+.team-applied-plan ul {
+  padding-left: 18px;
+}
+.team-applied-plan li {
+  padding: 5px 0;
+}
+.team-applied-plan li > * {
+  margin-right: 8px;
+}
+.team-plan-delegation {
+  padding: 10px;
+  background: var(--panel);
+  border-radius: 8px;
+  margin: 8px 0;
+}
+@media (max-width: 540px) {
+  .team-leadership-toolbar {
+    align-items: start;
+    flex-direction: column;
+    gap: 4px;
+  }
+}

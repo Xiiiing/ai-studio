@@ -15,6 +15,7 @@ from contextvars import ContextVar
 from . import store, team_ledger as ledger
 from .scheduler import ProductionPaused
 _APPLYING = ContextVar("team_applying_command", default=None)
+_PLANNING = ContextVar("team_planning_command", default=None)
 
 
 class TeamInterventionPending(ProductionPaused):
@@ -103,6 +104,8 @@ def _selection(db, project, payload):
     operation = payload.get("operation", "revise")
     if operation not in {"retry", "revise", "replan"}:
         raise ValueError("未知介入操作")
+    if operation == "replan" and target_type not in {"leader", "department"}:
+        raise ValueError("任务重排请明确指定部门负责人或总制片；成员指令直接修改所选任务")
     instruction = payload.get("instruction", "")
     if not isinstance(instruction, str) or not 1 <= len(instruction.strip()) <= 4000:
         raise ValueError("请填写 1–4000 字的任务要求")
@@ -121,7 +124,7 @@ def _impact(tasks, roots, operation):
     while changed:
         changed = False
         for ident, task in tasks.items():
-            if ident not in affected and set(task["dependencies"]) & affected:
+            if ident not in affected and set(task.get("impact_dependencies", task["dependencies"])) & affected:
                 affected.add(ident)
                 changed = True
     return sorted(affected)
@@ -174,7 +177,7 @@ def submit(pid, payload):
         affected = _impact(tasks, roots, payload.get("operation", "revise"))
         conflicts = _conflicts(db, pid, affected, preserve)
         data = {**copy.deepcopy(payload), "affected_tasks": affected, "preserved_tasks": preserve,
-                "accepted_generations": {}, "conflicts": conflicts, "reason": "；".join(c["reason"] + " · " + c["task_id"] for c in conflicts),
+                "accepted_generations": ({t: tasks[t]["generation"] for t in roots} if payload.get("operation") == "replan" else {}), "conflicts": conflicts, "reason": "；".join(c["reason"] + " · " + c["task_id"] for c in conflicts),
                 "plan": None}
         data["pause_event_at_submit"] = db.execute("SELECT COALESCE(MAX(id),0) FROM events WHERE project_id=? AND kind='pause'", (pid,)).fetchone()[0]
         if not conflicts and payload.get("operation") != "replan":
@@ -214,7 +217,7 @@ def _draining_remote(db, pid, kind="stage", scope="production"):
         return bool(db.execute("SELECT 1 FROM cloud_tasks WHERE project_id=? AND status NOT IN ('downloaded','failed','rejected')", (pid,)).fetchone())
     candidates = [kind + ":" + str(scope)]
     if kind == "video":
-        candidates.append(str(scope))
+        candidates.extend([str(scope), "image:repair_" + str(scope)])
     if kind == "character":
         candidates.append("image:character_" + str(scope))
     if kind == "speech":
@@ -222,7 +225,7 @@ def _draining_remote(db, pid, kind="stage", scope="production"):
     return bool(db.execute("SELECT 1 FROM cloud_tasks WHERE project_id=? AND shot_id IN (" + ",".join("?" for _ in candidates) + ") AND status NOT IN ('downloaded','failed','rejected')", (pid, *candidates)).fetchone())
 
 
-def admit(pid, kind, scope):
+def admit(pid, kind, scope, *, check_locks=True):
     if not ledger._existing(pid):
         return
     with store.connection() as db:
@@ -232,9 +235,11 @@ def admit(pid, kind, scope):
             return
         if not ledger.enabled(project):
             return
+        if kind == "management" and _PLANNING.get() == pid:
+            return
         if _pending(db, pid) and not _draining_remote(db, pid, kind, scope):
             raise TeamInterventionPending(task_id=kind + ":" + str(scope))
-        if kind in {"character", "image", "video", "speech"} and db.execute("SELECT 1 FROM team_locks WHERE project_id=? AND task_id=?", (pid, kind + ":" + str(scope))).fetchone():
+        if check_locks and kind in {"character", "image", "video", "speech"} and db.execute("SELECT 1 FROM team_locks WHERE project_id=? AND task_id=?", (pid, kind + ":" + str(scope))).fetchone():
             raise TeamInterventionPending("具体成果已锁定，请解锁后再生成新版本", kind + ":" + str(scope))
         rows = list(db.execute("SELECT * FROM team_work_items WHERE project_id=? AND (status='paused' OR hold_after=1)", (pid,)))
         ident = kind + ":" + str(scope)
@@ -275,7 +280,25 @@ def assert_publishable(pid, kind, scope, input_version=None):
 
 
 def after_unit(pid, kind, scope):
-    admit(pid, kind, scope)
+    # Finishing/rechecking an existing locked result is not a new generation.
+    admit(pid, kind, scope, check_locks=False)
+
+
+def effective_priorities(tasks):
+    """A requested deliverable lends its priority to unfinished prerequisites."""
+    result = {ident: value.get("priority", 0) for ident, value in tasks.items()}
+    for _ in range(len(tasks)):
+        changed = False
+        for ident, task in tasks.items():
+            if task.get("status") in {"completed", "reused"}:
+                continue
+            for dep in task.get("dependencies", []):
+                if dep in result and result[dep] < result[ident]:
+                    result[dep] = result[ident]
+                    changed = True
+        if not changed:
+            break
+    return result
 
 
 def ordered(pid, kind, values, key=lambda value: value):
@@ -290,10 +313,73 @@ def ordered(pid, kind, values, key=lambda value: value):
         if not ledger.enabled(project):
             return values
         tasks = _tasks(db, pid)
+    priorities = effective_priorities(tasks)
     def rank(value):
-        task = tasks.get(kind + ":" + str(key(value)), {})
-        return (bool(task.get("paused") or task.get("status") == "paused"), -task.get("priority", 0))
+        ident = kind + ":" + str(key(value))
+        task = tasks.get(ident, {})
+        return (bool(task.get("paused")), -priorities.get(ident, 0))
     return sorted(values, key=rank)
+
+
+def next_ready(pid, candidates):
+    """Choose only among prerequisites the execution adapter actually verified."""
+    values = list(candidates)
+    if not values:
+        return None
+    if not ledger._existing(pid):
+        return values[0]
+    with store.connection() as db:
+        try:
+            project = store._read(db, pid)
+        except KeyError:
+            return values[0]
+        if not ledger.enabled(project):
+            return values[0]
+        if _pending(db, pid):
+            raise TeamInterventionPending()
+        tasks = _tasks(db, pid)
+        if any(t.get("awaiting_ack") for t in tasks.values()):
+            raise TeamInterventionPending("成果已完成，等待出品人确认继续")
+    priorities = effective_priorities(tasks)
+    def blocked(ident, seen=None):
+        seen = set() if seen is None else seen
+        if ident in seen:
+            return False
+        seen.add(ident)
+        task = tasks.get(ident, {})
+        return bool(task.get("paused")) or any(blocked(dep, seen) for dep in task.get("dependencies", []))
+    values = [v for v in values if not blocked(v["id"])]
+    if not values:
+        raise TeamInterventionPending("可执行任务及其前置任务已暂停，等待恢复")
+    return min(values, key=lambda v: -priorities.get(v["id"], 0))
+
+
+def draining_units(pid):
+    if not ledger._existing(pid):
+        return []
+    with store.connection() as db:
+        if not _pending(db, pid):
+            return []
+        targets = [r[0] for r in db.execute("SELECT shot_id FROM cloud_tasks WHERE project_id=? AND status NOT IN ('downloaded','failed','rejected') ORDER BY rowid", (pid,))]
+    units = []
+    for target in targets:
+        if target.startswith("image:character_"):
+            unit = {"kind": "character", "scope": target[len("image:character_"):]}
+        elif target.startswith("image:style_"):
+            continue  # visual-development adapter owns style previews
+        elif target.startswith("image:repair_"):
+            unit = {"kind": "video", "scope": target[len("image:repair_"):]}
+        elif target.startswith("image:"):
+            unit = {"kind": "image", "scope": target[len("image:"):]}
+        elif target.startswith("audio:"):
+            unit = {"kind": "speech", "scope": target[len("audio:"):]}
+        elif re.fullmatch(r"S\d{2,3}", target):
+            unit = {"kind": "video", "scope": target}
+        else:
+            continue
+        if unit not in units:
+            units.append(unit)
+    return units
 
 
 def is_locked(pid, kind, scope):
@@ -521,6 +607,22 @@ def _apply_direct(db, project, command, plan):
         kind, scope = task["kind"], task["scope"]
         requirements = operation.get("requirements", "")
         row = ledger._stored(db, project["id"], task["id"])
+        action = operation["action"]
+        if action in {"prioritize", "pause", "resume", "assign"}:
+            if action == "prioritize":
+                task["priority"] = operation["priority"]
+            elif action == "pause":
+                task.update(paused=True, status="paused")
+            elif action == "resume":
+                task.update(paused=False, status="pending" if task["status"] == "paused" else task["status"])
+            else:
+                task["owner"] = operation["owner"]
+                task["department"] = ledger.ROLE_DEPARTMENT[task["owner"]]
+                project.setdefault("team_assignments", {})[task["id"]] = task["owner"]
+            if requirements:
+                task["requirements"] = requirements
+            ledger._save(db, row, task)
+            continue
         task["requirements"] = requirements
         ledger._save(db, row, task)
         if kind in {"image", "video"}:
@@ -660,7 +762,7 @@ def _apply_direct(db, project, command, plan):
         for ident in roots:
             row = ledger._stored(db, project["id"], ident)
             data = ledger._data(row)
-            data.update(hold_after=True, awaiting_ack=False)
+            data.update(hold_after=True, awaiting_ack=data["status"] in {"completed", "reused"})
             ledger._save(db, row, data)
     store._write(db, project)
 
@@ -722,7 +824,11 @@ def process_pending(pid):
     try:
         if command.get("operation") == "replan" or command.get("target_type") in {"leader", "department"}:
             from .team_planning import plan_instruction
-            plan = plan_instruction(project, command, tasks)
+            planning = _PLANNING.set(pid)
+            try:
+                plan = plan_instruction(project, command, tasks)
+            finally:
+                _PLANNING.reset(planning)
         else:
             plan = _direct_plan(command, tasks)
         with store.connection() as db:
@@ -733,6 +839,20 @@ def process_pending(pid):
                 return None
             if any(ledger._stored(db, pid, ident)["generation"] != gen for ident, gen in command["accepted_generations"].items()):
                 raise ValueError("安排期间任务版本发生变化，请核对后重试")
+            if command.get("operation") == "replan" or command.get("target_type") in {"leader", "department"}:
+                from .team_planning import validate_plan
+                validate_plan(project, command, _tasks(db, pid), plan)
+            # Concrete redo closures are checked together before any mutation.
+            redo = [op["task_id"] for op in plan["operations"] if op["action"] in {"retry", "revise"}]
+            if redo:
+                affected = _impact(_tasks(db, pid), redo, "retry")
+                conflicts = _conflicts(db, pid, affected, command.get("preserved_tasks", []))
+                if conflicts:
+                    raise ValueError("；".join(c["reason"] + " · " + c["task_id"] for c in conflicts))
+                if command.get("operation") == "replan":
+                    _invalidate(db, pid, affected)
+                    command["affected_tasks"] = affected
+                    command["accepted_generations"] = {t: ledger._stored(db, pid, t)["generation"] for t in affected}
             applying = _APPLYING.set(pid)
             try:
                 _apply_direct(db, project, command, plan)
@@ -757,6 +877,8 @@ def process_pending(pid):
 
 
 def task_descriptors(db, project, task):
+    if task["kind"] == "management" or project.get("status") == "cancelled":
+        return []
     if not ledger.enabled(project):
         return []
     locked = bool(db.execute("SELECT 1 FROM team_locks WHERE project_id=? AND task_id=?", (project["id"], task["id"])).fetchone())
