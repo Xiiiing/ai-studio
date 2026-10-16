@@ -15,6 +15,9 @@ def export_spec(config=None, workflow_version=2):
     from .video_providers import resolve_video
     video = resolve_video(config, require_enabled=False)
     remote_video = video["provider"] == "minimax"
+    gpu_service = config.get("production", {}).get("gpu_service")
+    video_location = ("Wkp GPU inference service" if gpu_service else
+                      "external ComfyUI HTTP service" if video["provider"] == "comfyui_external" else "managed local GPU process")
     from .team_blueprint import topology as display_topology, GROUPS
     display_nodes,display_edges=display_topology(workflow_version)
     from .workflow_presentation import presentation
@@ -44,16 +47,16 @@ def export_spec(config=None, workflow_version=2):
              "implementation": "factory.providers + factory.llm"},
             {"id": "comfyui", "label": "图像 / 本地视频",
              "protocol": "ComfyUI HTTP", "mode": "submit / history / artifacts",
-             "location": "managed local GPU process",
+             "location": "Wkp GPU inference service" if gpu_service else "managed local GPU process",
              "implementation": "factory.scheduler + studio.comfy",
-             "models": ["FLUX.2 klein 4B", "Wan2.2 TI2V 5B"],
+             "models": ["FLUX.2 klein 4B", *([] if remote_video else [video["model"]])],
              "receipt_fields": ["prompt_id", "workflow_api.json", "history.json", "sha256"]},
             {"id": "selected_video", "label": "当前视频生成分配",
              "provider": video["provider"], "profile": video["profile"], "model": video["model"],
              "enabled": video["enabled"],
              "protocol": "MiniMax v1 HTTP" if remote_video else "ComfyUI HTTP",
              "mode": "submit / query / file" if remote_video else "submit / history / artifacts",
-             "location": video.get("network_mode", "remote") if remote_video else "managed local GPU process",
+             "location": video.get("network_mode", "remote") if remote_video else video_location,
              "implementation": "factory.minimax_video" if remote_video else "factory.production + studio.comfy",
              "applies_to": ["animation", "live_action"],
              "receipt_fields": ["task_id", "file_id", "sha256"] if remote_video else ["prompt_id", "sha256"]},

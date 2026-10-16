@@ -33,6 +33,8 @@ LAN 入口由独立的 `scripts/wkp_live_gateway.py` 管理，本启动器只管
 | `critic` | `ai-studio-qwen38-23` | 16384 | independent critic、story critic |
 | `vision` | `Qwen3.6-35B-A3B-UD-Q4_K_S` | 32768 | visual critic |
 
+2026-10-16 通过现有 mTLS 入口读取三个服务的 `/v1/models` 与 `/props`：两个 Qwen3.8 服务均声明 `vision: false`，Qwen3.6 声明图片和视频输入。因此保留 Qwen3.6 承担看图审核。它不生成图像或视频；H3 自带的 Qwen3-VL 编码器也是另一项独立依赖。主服务实际单槽上下文为 131072，控制层仍使用较保守的 32768 上限。
+
 文本接口使用 `llama_cpp`、`llama_json_schema` 和 `llama_tokenize`，地址为 `https://172.20.114.10:8790/inference/models/{profile}/v1`。Wkp 代理提供对应的模型、模板和 tokenize 路由。cami 使用既有客户端证书进行 mTLS 认证，不持有或复制 Wkp 模型服务的 Bearer 凭据。
 
 以下变量由 `service.env` 映射到本仓库 `runtime/wkp-live-gateway/` 已存在的本机文件：
@@ -43,7 +45,17 @@ LAN 入口由独立的 `scripts/wkp_live_gateway.py` 管理，本启动器只管
 | `CAMI_WKP_TLS_CERT` | `client-certificate.pem` |
 | `CAMI_WKP_TLS_KEY` | `client-private-key.pem` |
 
-生产任务使用 `production.gpu_service` 的 `https://172.20.114.10:8790/inference` 及同一组本机 TLS 文件。`gpu_cards: [4,5,6,7]` 是 Wkp 的远端 GPU 编号。分辨率及 FastWan 参数沿用公开示例；`local_wan` 表示既有视频配置契约，实际推理由远端 GPU 服务执行。未配置 MiniMax，不生成云费用授权。
+生产任务使用 `production.gpu_service` 的 `https://172.20.114.10:8790/inference` 及同一组本机 TLS 文件。`gpu_cards: [4,5,6,7]` 是 Wkp 的远端 GPU 编号。
+
+新建控制层配置绑定 `video_generator → wkp_h3`：`provider: comfyui_h3`、`model: MiniMax-H3`。沿用 Wkp 原有 ComfyUI 双卡 H3 主模型、Qwen3-VL 编码器、视频 VAE 和 turbo4 LoRA，4 步采样，首帧图生视频，24 fps、`17k+5` 帧数。生成画布默认 352×640，保留原模板 640×352 的像素量并适配竖屏；交付仍按项目规格剪辑。生成音频不进入此图，配音继续走 Qwen3-TTS。此连接不调用 MiniMax 云 API、不产生云费用授权，也不自动回退到 Wan。
+
+**已有安装不会由 `prepare/start` 自动改写。** 2026-10-16 初次核实时，Wkp 入口仅开放 FLUX/Wan 图；随后经用户授权，已发布 H3 支持、切换 cami 并通过独立真实生成及恢复验收，见 [验收记录](WKP_H3_MODEL_AUDIT.md)。其他安装切换时，先部署支持 H3 的推理服务版本，再执行以下只读检查：
+
+```bash
+.venv/bin/python scripts/configure_wkp_h3.py
+```
+
+检查要求远端健康信息明确报告 H3 的模型、工作流版本、依赖和双卡支持，并重新读取三个文本/视觉服务的真实模型名及能力；旧版仅返回 `models.video: true` 不能通过。显式切换时先确认无未完成任务，停止 cami Web 和 worker，再运行 `scripts/configure_wkp_h3.py --apply`。该命令保留其他配置，停用旧 Wan 连接，选择 H3；不会重启服务。之后按已批准的发布流程启动 cami 并进行独立生成验收。未确认的旧任务必须先核对，不重放、不修改原项目数据。详见 [H3 核实与接入记录](WKP_H3_MODEL_AUDIT.md)。
 
 ## 准备与运行
 

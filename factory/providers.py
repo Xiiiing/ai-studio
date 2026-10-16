@@ -701,6 +701,17 @@ def list_models(profile, *, timeout=10):
     return result
 
 
+def input_modalities(profile, catalog):
+    """Return advertised inputs for the configured model; absence stays unknown."""
+    for item in catalog.get("data", []):
+        if model_matches(profile, item.get("id")):
+            architecture = item.get("architecture")
+            modes = architecture.get("input_modalities") if isinstance(architecture, dict) else None
+            if isinstance(modes, list) and all(isinstance(mode, str) for mode in modes):
+                return modes
+    return None
+
+
 def check_model(profile, *, timeout=10):
     if not profile.get("enabled", True):
         raise ProviderError("disabled", "Model profile is disabled")
@@ -711,6 +722,9 @@ def check_model(profile, *, timeout=10):
     result = list_models(profile, timeout=timeout)
     if not any(model_matches(profile, item["id"]) for item in result["data"]):
         raise ProviderError("model_missing", "Configured model or explicit alias is not served")
+    modes = input_modalities(profile, result)
+    if profile.get("vision") and modes is not None and "image" not in modes:
+        raise ProviderError("vision_unsupported", "Configured model does not advertise image input required for visual review")
     return result
 
 
@@ -971,6 +985,10 @@ def probe_profile(profile_id, config=None, timeout=8):
             result["models"] = [item["id"] for item in served["data"]]
             result["model_match"] = any(model_matches(profile, actual) for actual in result["models"])
             if result["model_match"]:
+                modes = input_modalities(profile, served)
+                result.update(input_modalities=modes, vision_verified=None if modes is None else "image" in modes)
+                if profile.get("vision") and modes is not None and "image" not in modes:
+                    raise ProviderError("vision_unsupported", "该服务声明仅支持文本输入，不能承担图片视觉审核")
                 result["status"] = "ready"
             else:
                 result["error"] = {"code": "model_missing", "message": "Configured model or explicit alias is not served"}

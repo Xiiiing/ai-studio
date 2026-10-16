@@ -120,10 +120,23 @@ class GPUClient:
                 raise ProductionNeedsDecision("GPU speech provenance is invalid", "remote_gpu_receipt_invalid")
         return expected
 
+    def require_h3(self):
+        from studio.h3 import MODEL, REVISION
+        observed = self.request("/health")
+        backend = observed.get("video_backends", {}).get("comfyui_h3", {})
+        if (backend.get("model") != MODEL or backend.get("revision") != REVISION or
+                backend.get("installed") is not True or backend.get("gpu_count") != 2 or
+                len(set(observed.get("gpu_cards", []))) < 2):
+            raise ProductionNeedsDecision("Wkp 尚未提供已核实的 ComfyUI / MiniMax H3 双卡链路；请更新推理服务，不能回退到 Wan", "remote_h3_unavailable")
+        return backend
+
     def run(self, workload, destination, budget, control=None, event_callback=None, timeout=7200):
         destination = Path(destination)
         destination.mkdir(parents=True, exist_ok=True)
         submission_path = destination / "submission.json"
+        if (not submission_path.exists() and workload.get("kind") == "comfy" and
+                any(n.get("class_type") == "MiniMaxH3ImageToVideo" for n in workload.get("graph", {}).values())):
+            self.require_h3()
         identity = fingerprint({"workload": workload, "destination": str(destination.resolve()), "service": self.base})
         if submission_path.exists():
             submission = read_json(submission_path)
@@ -343,11 +356,20 @@ class RemoteComfyWorker:
         artifacts = result.get("artifacts", [])
         if not isinstance(artifacts, list) or len(artifacts) != 1:
             raise ProductionNeedsDecision("GPU service did not return exactly one media artifact", "remote_gpu_receipt_invalid")
-        target = self.client.download(answer["id"], artifacts[0], Path(destination) / ("image.png" if kind == "image" else "video.mp4"))
         receipt = result["receipt"]
+        graph_path = Path(destination) / "workflow_api.json"
+        if graph_path.is_file() and any(n.get("class_type") == "MiniMaxH3ImageToVideo" for n in read_json(graph_path).values()):
+            from studio.h3 import MODEL, REVISION
+            if (receipt.get("provider") != "comfyui_h3" or receipt.get("model") != MODEL or
+                    receipt.get("model_revision") != REVISION or receipt.get("graph_sha256") != signature):
+                raise ProductionNeedsDecision("H3 result does not match the submitted model and workflow", "remote_gpu_receipt_invalid")
+        target = self.client.download(answer["id"], artifacts[0], Path(destination) / ("image.png" if kind == "image" else "video.mp4"))
         saved = _result_receipt(target, graph_sha256=signature, prompt_id=receipt.get("prompt_id"),
             gpu_service_job_id=answer["id"], gpu_seconds=receipt["gpu_seconds"], execution_host=receipt.get("execution_host", self.client.execution_host),
             elapsed_seconds=receipt.get("elapsed_seconds"), origin="remote_gpu_inference", provider_receipt=str((Path(destination)/"remote_result.json").relative_to(ROOT)))
+        for key in ("provider", "model", "model_revision"):
+            if key in receipt:
+                saved[key] = receipt[key]
         write_json(Path(destination) / "result.json", saved)
         return target
 

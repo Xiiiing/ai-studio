@@ -8,14 +8,18 @@ from .providers import (ENV_RE, ID_RE, _canonical_host, _number, _reject_secret_
                         _valid_text, redact_secrets, validate_endpoint)
 
 VIDEO_PROVIDERS = {
+    "comfyui_h3": {"label": "ComfyUI / MiniMax H3", "protocol": "comfyui",
+                   "location": "local", "model_example": "MiniMax-H3"},
     "comfyui_wan": {"label": "ComfyUI / Wan", "protocol": "comfyui",
                     "location": "local", "model_example": "Wan2.2-TI2V-5B"},
-    "minimax": {"label": "MiniMax Video", "protocol": "minimax_video",
+    "minimax": {"label": "MiniMax 云端视频 API", "protocol": "minimax_video",
                 "location": "remote", "base_url_example": "https://api.minimax.io/v1",
                 "model_example": "MiniMax-Hailuo-2.3"},
 }
 VIDEO_ROLES = {"video_generator": "视频生成"}
 LOCAL_PROFILE = {"provider": "comfyui_wan", "enabled": True, "model": "Wan2.2-TI2V-5B"}
+H3_PROFILE = {"provider": "comfyui_h3", "enabled": True, "model": "MiniMax-H3",
+              "revision": "wkp-dualgpu-turbo4-v1"}
 _COMMON = {"provider", "enabled", "model", "revision"}
 _REMOTE = {"base_url", "network_mode", "allowed_hosts", "api_key_env", "download_hosts",
            "duration", "resolution", "prompt_optimizer", "request_timeout_seconds",
@@ -42,9 +46,14 @@ def normalize_video_profile(value):
     profile["model"] = _valid_text(profile.get("model"), "video model", 128).strip()
     if "revision" in profile:
         _valid_text(profile["revision"], "video revision", 128)
-    if provider == "comfyui_wan":
-        if profile["model"] != LOCAL_PROFILE["model"]:
-            raise ValueError("The managed ComfyUI adapter currently runs Wan2.2-TI2V-5B")
+    if provider in {"comfyui_wan", "comfyui_h3"}:
+        expected = H3_PROFILE if provider == "comfyui_h3" else LOCAL_PROFILE
+        if profile["model"] != expected["model"]:
+            raise ValueError("The managed ComfyUI adapter requires " + expected["model"])
+        if provider == "comfyui_h3":
+            profile.setdefault("revision", H3_PROFILE["revision"])
+            if profile["revision"] != H3_PROFILE["revision"]:
+                raise ValueError("Unsupported MiniMax H3 workflow revision")
         return profile
     if "pricing" in profile:
         from .cloud_budget import pricing
@@ -121,7 +130,7 @@ def resolve_video(config, *, require_enabled=True):
 def video_presets():
     """Editable defaults shared by the UI and configuration examples."""
     properties=VIDEO_PROVIDERS["minimax"]
-    return {"comfyui_wan":copy.deepcopy(LOCAL_PROFILE),
+    return {"comfyui_h3": copy.deepcopy(H3_PROFILE), "comfyui_wan":copy.deepcopy(LOCAL_PROFILE),
             "minimax":normalize_video_profile({"provider":"minimax","enabled":True,
                 "model":properties["model_example"],"base_url":properties["base_url_example"],
                 "network_mode":"remote","allowed_hosts":["api.minimax.io"],"api_key_env":"MINIMAX_API_KEY"})}

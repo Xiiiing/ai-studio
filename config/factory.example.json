@@ -204,6 +204,12 @@
       "request_timeout_seconds": 60,
       "poll_interval_seconds": 5,
       "max_wait_seconds": 1800
+    },
+    "h3_example": {
+      "provider": "comfyui_h3",
+      "enabled": false,
+      "model": "MiniMax-H3",
+      "revision": "wkp-dualgpu-turbo4-v1"
     }
   },
   "video_roles": {
