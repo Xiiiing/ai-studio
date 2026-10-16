@@ -24,6 +24,27 @@ const split = (v: any) =>
     .split(",")
     .map((x) => x.trim())
     .filter(Boolean);
+const h3Defaults = {
+  preview: {
+    steps: 4,
+    shift_video: 12,
+    shift_audio: 3,
+    sampler: "euler",
+    revision: "wkp-dualgpu-turbo4-v1",
+  },
+  production: {
+    steps: 20,
+    shift_video: 12,
+    shift_audio: 3,
+    sampler: "euler",
+    revision: "wkp-dualgpu-base-v1",
+  },
+};
+function h3Description(profile: RecordData) {
+  return profile.quality === "production"
+    ? `正式质量档 · 基础模型 · ${profile.steps ?? 20} 步 · ${profile.sampler || "euler"}`
+    : "快速预览档 · Turbo LoRA · 4 步";
+}
 export function normalizeProfile(
   values: RecordData,
   previous: RecordData = {},
@@ -39,6 +60,25 @@ export function normalizeProfile(
   delete out.discovered_models;
   delete out.id;
   if (video) {
+    if (provider === "comfyui_h3" && values.quality) {
+      const quality = values.quality as keyof typeof h3Defaults;
+      const defaults = h3Defaults[quality];
+      if (!defaults) throw new Error("请选择有效的 H3 质量档。");
+      // Keeping an unchanged legacy preview profile preserves its cache identity.
+      if (
+        previous.quality ||
+        quality !== "preview" ||
+        previous.provider !== provider
+      ) {
+        Object.assign(out, defaults, {
+          quality,
+          steps: quality === "preview" ? 4 : Number(values.steps),
+          shift_video: quality === "preview" ? 12 : Number(values.shift_video),
+          shift_audio: quality === "preview" ? 3 : Number(values.shift_audio),
+          sampler: quality === "preview" ? "euler" : values.sampler,
+        });
+      }
+    }
     if (provider === "minimax")
       Object.assign(out, {
         network_mode: "remote",
@@ -312,6 +352,9 @@ export function Models({ notify }: { notify: (v: string) => void }) {
             <code className="endpoint">
               {p.base_url || "服务器托管的生成工作流"}
             </code>
+            {video && p.provider === "comfyui_h3" && (
+              <small>{h3Description(p)}</small>
+            )}
             {!video && p.tls_client_cert_env ? (
               <small>双向 TLS · 客户端身份由控制服务器管理</small>
             ) : !video && p.api_key_credential ? (
@@ -416,9 +459,15 @@ export function Models({ notify }: { notify: (v: string) => void }) {
             {!video && meta.requires_vision && (
               <small>视觉审核需要支持图片输入的模型；文本创作模型不能仅通过改名替代视觉服务。</small>
             )}
-            {video && draft.video_profiles?.[String(value)]?.provider === "comfyui_h3" && (
-              <small>使用制作服务器的 ComfyUI / MiniMax H3 双 GPU 工作流，首帧图生视频，4 步采样。</small>
-            )}
+            {video &&
+              draft.video_profiles?.[String(value)]?.provider ===
+                "comfyui_h3" && (
+                <small>
+                  使用制作服务器的 ComfyUI / MiniMax H3 双 GPU
+                  工作流，首帧图生视频；
+                  {h3Description(draft.video_profiles[String(value)])}。
+                </small>
+              )}
           </Field>
         );
       },
@@ -641,12 +690,18 @@ function ProfileEditor({
       profile.provider || (video ? "minimax" : "deepseek"),
     ),
     [current, setCurrent] = useState<RecordData>({
-      ...((video
-        ? videoDefaults[profile.provider || "minimax"]
-        : providerDefaults[profile.provider || "deepseek"]) || {}),
+      ...((profile.provider === "comfyui_h3" && !profile.quality
+        ? {}
+        : video
+          ? videoDefaults[profile.provider || "minimax"]
+          : providerDefaults[profile.provider || "deepseek"]) || {}),
       enabled: true,
       ...profile,
     }),
+    [h3Quality, setH3Quality] = useState<keyof typeof h3Defaults>(
+      profile.quality ||
+        (profile.provider === "comfyui_h3" ? "preview" : "production"),
+    ),
     [error, setError] = useState("");
   const form = useRef<HTMLFormElement>(null),
     cloud = video && provider === "minimax";
@@ -676,6 +731,7 @@ function ProfileEditor({
       enabled: true,
     });
     setProvider(next);
+    setH3Quality(defaults?.quality || "production");
   }
 
   return (
@@ -735,6 +791,84 @@ function ProfileEditor({
           </Field>
         </div>
         {field("model", "模型标识", { required: true })}
+        {video && provider === "comfyui_h3" && (
+          <>
+            <Field label="H3 质量档">
+              <select
+                name="quality"
+                value={h3Quality}
+                onChange={(e) =>
+                  setH3Quality(e.target.value as keyof typeof h3Defaults)
+                }
+              >
+                <option value="production">正式质量 · 基础模型</option>
+                <option value="preview">快速预览 · 4 步 Turbo LoRA</option>
+              </select>
+            </Field>
+            <p>
+              {h3Quality === "production"
+                ? "使用基础模型，不加载预览加速 LoRA。增加采样步数会延长制作时间；人物与动作效果仍需逐镜审核。"
+                : "使用 4 步 Turbo LoRA，适合快速检查镜头与提示词。"}
+            </p>
+            {h3Quality === "production" && (
+              <div key={h3Quality}>
+                <div className="form-row">
+                  {field("steps", "采样步数", {
+                    type: "number",
+                    min: 20,
+                    max: 50,
+                    step: 1,
+                    required: true,
+                    value:
+                      current.quality === "production"
+                        ? (current.steps ?? 20)
+                        : 20,
+                  })}
+                  <Field label="采样器">
+                    <select
+                      name="sampler"
+                      defaultValue={
+                        current.quality === "production"
+                          ? current.sampler || "euler"
+                          : "euler"
+                      }
+                    >
+                      <option value="euler">Euler</option>
+                      <option value="heun">Heun</option>
+                    </select>
+                  </Field>
+                </div>
+                <div className="form-row">
+                  {field("shift_video", "视频采样偏移", {
+                    type: "number",
+                    min: 1,
+                    max: 20,
+                    step: "any",
+                    required: true,
+                    value:
+                      current.quality === "production"
+                        ? (current.shift_video ?? 12)
+                        : 12,
+                  })}
+                  {field("shift_audio", "音频采样偏移", {
+                    type: "number",
+                    min: 1,
+                    max: 10,
+                    step: "any",
+                    required: true,
+                    value:
+                      current.quality === "production"
+                        ? (current.shift_audio ?? 3)
+                        : 3,
+                  })}
+                </div>
+              </div>
+            )}
+            <small>
+              输出尺寸和镜头时长沿用制作配置；此处选择服务已支持的模型工作流和采样参数。连接预检不会生成视频。
+            </small>
+          </>
+        )}
         {(!video || cloud) && (
           <>
             {field("base_url", "接口地址", {
