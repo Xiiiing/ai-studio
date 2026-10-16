@@ -189,6 +189,7 @@ FACTORY_TEST_PYTHON=envs/factory/bin/python npm run test:browser
 ## 文档
 
 - [模型接口与本地运行](docs/MODEL_PROVIDERS.md)
+- [Qwen3.8 视觉与 H3 本地质量配置及验证](docs/WKP_LOCAL_QUALITY.md)
 - [部署、升级和恢复](docs/DEPLOYMENT.md)
 - [API 与工作流配置](docs/API.md)
 - [工作台重构、迁移与验证](docs/STUDIO_UPGRADE_2026-10-15.md)
