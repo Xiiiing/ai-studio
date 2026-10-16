@@ -144,7 +144,7 @@ describe("real server workflow and agent handoffs", () => {
     expect(inspector.getByText("独立审稿")).toBeVisible();
     expect(inspector.getByText("当前稿件")).toBeVisible();
     expect(inspector.getByRole("button", { name: "阅读文件" })).toBeVisible();
-    expect(inspector.getByText("逐镜证据保留")).toBeVisible();
+    expect(await inspector.findByText("逐镜证据保留")).toBeVisible();
     expect(inspector.queryByText("尚未生成")).not.toBeInTheDocument();
   });
   it("separates current step evidence from other steps and unassigned history", () => {
