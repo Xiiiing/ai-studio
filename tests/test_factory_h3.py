@@ -125,7 +125,9 @@ def test_h3_rejects_wrong_model_receipt_before_download(tmp_path, monkeypatch):
         worker._finish(answer, tmp_path, core.fingerprint(graph), "video")
 
 
-def test_h3_production_uses_original_recipe_and_reuses_verified_selection(tmp_path, monkeypatch):
+@pytest.mark.parametrize("profile", [video_providers.H3_PROFILE, video_providers.H3_PRODUCTION_PROFILE,
+                                    {**video_providers.H3_PRODUCTION_PROFILE, "steps": 25, "shift_video": 10, "sampler": "heun"}])
+def test_h3_production_uses_selected_recipe_and_reuses_verified_selection(tmp_path, monkeypatch, profile):
     import factory.production as production
     from factory.audio_editor import FFMPEG
     monkeypatch.setattr(core, "ROOT", tmp_path)
@@ -155,7 +157,7 @@ def test_h3_production_uses_original_recipe_and_reuses_verified_selection(tmp_pa
     project = {"id": "h3fixture01", "format": "animation", "episode": {
         "cast": {"lead": "Fictional adult"}, "shots": [{"id": "S01", "seconds": 3,
             "prompt": "An adult slowly turns.", "motion_prompt": "An adult slowly turns."}]}}
-    cfg = {"video_connection": {"profile": "wkp_h3", **video_providers.H3_PROFILE},
+    cfg = {"video_connection": {"profile": "wkp_h3", **profile},
            "image_width": 160, "image_height": 288, "video_width": 160, "video_height": 288,
            "output_width": 360, "output_height": 640, "semantic_enabled": False, "max_attempts": 1}
     run = _Run(project, cfg, None, None)
@@ -168,10 +170,88 @@ def test_h3_production_uses_original_recipe_and_reuses_verified_selection(tmp_pa
     assert selected["model"] == h3.MODEL and selected["provider"] == "comfyui_h3"
     assert selected["qa"]["technical_passed"]
     attempt = run.shots[0]["attempts"][0]
-    assert attempt["parameters"]["frames"] == 73 and attempt["parameters"]["steps"] == 4
+    assert attempt["parameters"]["frames"] == 73 and attempt["parameters"]["steps"] == h3.recipe(profile)["steps"]
+    assert ("17" in calls[0]) == (h3.recipe(profile)["quality"] == "preview")
+    assert selected["model_revision"] == h3.recipe(profile)["revision"]
     second = _Run(run.project, cfg, None, None)
     assert second._render_targets([target(second)], "diffusion_video")[0]["sha256"] == selected["sha256"]
     assert len(calls) == 1
+
+
+def test_h3_profiles_preserve_history_and_production_is_new_identity():
+    legacy = video_providers.normalize_video_profile(video_providers.H3_PROFILE)
+    assert legacy == video_providers.H3_PROFILE
+    formal = video_providers.normalize_video_profile(video_providers.H3_PRODUCTION_PROFILE)
+    assert formal == video_providers.video_presets()["comfyui_h3"]
+    graph = h3_video("An adult waves.", 42, "frame.png", 768, 1344, 5, profile=formal)
+    gpu_service.validate_graph(graph, {"frame.png"}, "video")
+    assert "17" not in graph
+    assert graph["2"]["inputs"]["model"] == ["1", 0]
+    assert graph["10"]["inputs"]["steps"] == 20
+    changed = h3_video("An adult waves.", 42, "frame.png", 768, 1344, 5, profile={**formal, "steps": 25})
+    gpu_service.validate_graph(changed, {"frame.png"}, "video")
+    assert core.fingerprint(graph) != core.fingerprint(changed)
+    assert "lora" not in h3.dependencies(formal)
+    assert "lora" in h3.dependencies(legacy)
+
+
+def test_h3_base_health_does_not_require_preview_lora(tmp_path, monkeypatch):
+    monkeypatch.setattr(core, "ROOT", tmp_path / "project")
+    monkeypatch.setattr(core, "COMFY", tmp_path / "comfy")
+    monkeypatch.setenv("DRAMA_H3_LORA_DIR", str(tmp_path / "loras"))
+    for path in h3.dependencies({"quality": "production"}).values():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.touch()
+    health = h3.installation()
+    assert health["installed"] is False and health["missing"] == ["lora"]
+    assert health["recipes"]["production"]["installed"] is True
+    assert h3.backend_ready(health, [4, 5], video_providers.H3_PRODUCTION_PROFILE)
+    h3.require_installation({"quality": "production"})
+    with pytest.raises(ValueError, match="lora"):
+        h3.require_installation({"quality": "preview"})
+
+
+@pytest.mark.parametrize("field,value", [("steps", 4), ("steps", 51), ("steps", True),
+    ("shift_video", float("nan")), ("shift_audio", float("inf")), ("shift_video", 0),
+    ("sampler", "custom"), ("quality", "unknown"), ("revision", h3.REVISION)])
+def test_h3_formal_profile_rejects_unbounded_or_mismatched_sampling(field, value):
+    with pytest.raises(ValueError):
+        video_providers.normalize_video_profile({**video_providers.H3_PRODUCTION_PROFILE, field: value})
+
+
+def test_h3_production_readiness_requires_new_recipe_without_breaking_legacy(tmp_path, monkeypatch):
+    client = gpu_client.GPUClient({"base_url": "http://127.0.0.1:8791"})
+    backend = {"model": h3.MODEL, "revision": h3.REVISION, "installed": True, "gpu_count": 2}
+    monkeypatch.setattr(client, "request", lambda *args: {"gpu_cards": [4, 5], "video_backends": {"comfyui_h3": backend}})
+    assert client.require_h3() == backend
+    with pytest.raises(scheduler.ProductionNeedsDecision):
+        client.require_h3(video_providers.H3_PRODUCTION_PROFILE)
+    backend["recipes"] = {"production": {"revision": h3.BASE_REVISION, "installed": True}}
+    assert client.require_h3(video_providers.H3_PRODUCTION_PROFILE) == backend
+
+
+def test_h3_receipt_cannot_claim_different_production_parameters(tmp_path, monkeypatch):
+    worker = gpu_client.RemoteComfyWorker({"base_url": "http://127.0.0.1:8791"}, scheduler.Budget({}), "formal", None)
+    graph = h3_video("An adult waves.", 42, "frame.png", profile=video_providers.H3_PRODUCTION_PROFILE)
+    core.write_json(tmp_path / "workflow_api.json", graph)
+    monkeypatch.setattr(worker.client, "download", lambda *args: pytest.fail("Mismatched production output was downloaded"))
+    receipt = {"provider": "comfyui_h3", "model": h3.MODEL, "model_revision": h3.BASE_REVISION,
+               "graph_sha256": core.fingerprint(graph), "generation_parameters": {**h3.graph_recipe(graph), "steps": 25}}
+    with pytest.raises(scheduler.ProductionNeedsDecision):
+        worker._finish({"result": {"artifacts": [{}], "receipt": receipt}}, tmp_path, core.fingerprint(graph), "video")
+
+
+def test_explicit_model_routes_select_new_vision_and_keep_defaults(monkeypatch):
+    profiles = {"qwen_vision_existing": {"model": "old", "base_url": "http://127.0.0.1:8090/v1"},
+                "qwen38_vision": {"model": "new", "base_url": "http://127.0.0.1:8099/v1"}}
+    calls = []
+    monkeypatch.setattr(providers, "request_json", lambda base, *args, **kwargs: calls.append(base) or {})
+    gpu_service.InferenceEngine({}, profiles).model("vision", "/v1/models", None, "GET")
+    gpu_service.InferenceEngine({}, profiles, {"vision": "qwen38_vision"}).model("vision", "/v1/models", None, "GET")
+    assert calls == ["http://127.0.0.1:8090/v1", "http://127.0.0.1:8099/v1"]
+    for routes in ({"vision": "missing"}, {"other": "qwen38_vision"}, []):
+        with pytest.raises(ValueError):
+            gpu_service.InferenceEngine({}, profiles, routes)
 
 
 @pytest.mark.parametrize("modalities,valid", [(["text"], False), (["text", "image", "video"], True), (None, True)])

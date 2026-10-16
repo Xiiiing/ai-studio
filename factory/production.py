@@ -181,7 +181,7 @@ def capabilities(config=None):
             info[key].update(backend=connection.get("model"),provider=connection["provider"],installed=None,configured=connection.get("enabled",True),validation="requires_successful_generation_receipt")
             if connection["provider"] == "comfyui_h3" and not config.get("gpu_service"):
                 from studio.h3 import installation
-                info[key]["installed"] = installation()["installed"]
+                info[key]["installed"] = installation(connection)["installed"]
     if not any(local.values()): info["scheduler"]["physical_cards"] = []
     return info
 
@@ -646,9 +646,10 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                   "references": [media_receipt(p) for p in target["references"]],
                   "started_at": time.time()}
         if target["kind"] == "video" and self.video_connection["provider"] == "comfyui_h3":
-            from studio.h3 import frame_count, REVISION
-            record.update(provider="comfyui_h3", profile=self.video_connection["profile"], model_revision=REVISION)
-            record["parameters"].update(steps=4, frames=frame_count(target["seconds"]), gpu_count=2)
+            from studio.h3 import frame_count, recipe
+            selected = recipe(self.video_connection)
+            record.update(provider="comfyui_h3", profile=self.video_connection["profile"], model_revision=selected["revision"])
+            record["parameters"].update(selected, frames=frame_count(target["seconds"]), gpu_count=2)
         if explicit_profile(self.project):
             record["production_profile"] = resolve_profile(self.project)
             record["production_profile_signature"] = profile_signature(self.project)
@@ -744,7 +745,7 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                                 builder = h3_video if h3 else wan_video
                                 graph = builder(record["prompt"], record["seed"], names[0],
                                                   *self.video_size, seconds=target["seconds"],
-                                                  prefix=self.slug + "/" + target["key"], **({} if h3 else {"profile": profile}))
+                                                  prefix=self.slug + "/" + target["key"], profile=self.video_connection if h3 else profile)
                             path = worker.execute(graph, target["folder"] / record["take"], target["kind"],
                                                   timeout=self.budget.timeout(1800 if target["kind"] == "image" else 7200, 1))
                             receipt = read_json(path.parent / "result.json")
@@ -799,8 +800,10 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                 if target["kind"] == "video":
                     saved.update(motion_method="generated_video", diffusion_video=True)
                     if self.video_connection["provider"] == "comfyui_h3":
-                        from studio.h3 import MODEL, REVISION
-                        saved.update(provider="comfyui_h3", model=MODEL, model_revision=REVISION)
+                        from studio.h3 import MODEL, recipe
+                        selected = recipe(self.video_connection)
+                        saved.update(provider="comfyui_h3", model=MODEL, model_revision=selected["revision"],
+                                     generation_parameters=selected)
                 if self.creative_contract:
                     saved["creative_contract_signature"] = fingerprint(self.creative_contract)
                     if target.get("style"):

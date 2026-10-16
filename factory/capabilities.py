@@ -66,7 +66,7 @@ def _observe(config):
     info["video"].update(model=video["model"], provider=video["provider"], profile=video["profile"])
     if video["provider"] == "comfyui_h3":
         from studio.h3 import installation
-        installed = installation() if local["video"] else None
+        installed = installation(video) if local["video"] else None
         info["video"].update(available=bool(installed and installed["installed"]),
                              message="ComfyUI / MiniMax H3 双卡图生视频；按实际生成回执验收")
     if not video["enabled"]:
@@ -100,11 +100,9 @@ def _observe(config):
                                   execution_host=host,
                                   message="远端推理服务可达；权重安装与实际生成验收分别记录")
                 if kind == "video" and video["provider"] == "comfyui_h3":
-                    from studio.h3 import MODEL, REVISION
+                    from studio.h3 import backend_ready
                     backend = observed.get("video_backends", {}).get("comfyui_h3", {})
-                    available = (backend.get("installed") is True and backend.get("model") == MODEL and
-                                 backend.get("revision") == REVISION and backend.get("gpu_count") == 2 and
-                                 len(set(observed.get("gpu_cards", []))) >= 2)
+                    available = backend_ready(backend, observed.get("gpu_cards", []), video)
                     info[kind].update(available=available, status="installed" if available else "unavailable",
                         message="Wkp 已提供 H3 双卡工作流；实际生成尚需回执验收" if available else
                                 "Wkp 推理入口尚未提供 H3 工作流；不会回退到 Wan")
