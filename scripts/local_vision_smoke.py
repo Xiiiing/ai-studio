@@ -94,7 +94,7 @@ def main():
                            'context_tokens': context, 'image_token_budget': 1536,
                            'response_format': 'llama_json_schema', 'context_validation': 'conservative_estimate',
                            'request_timeout_seconds': 600, 'chat_template_kwargs': {'enable_thinking': False}}
-                application = {'llm_profiles': {'vision_test': profile},
+                application = {'schema_version': 1, 'llm_profiles': {'vision_test': profile},
                                'llm_roles': {role: 'vision_test' for role in ROLE_LABELS},
                                'quality': {'semantic_enabled': True, 'temporal_samples': 4, 'minimum_score': 60}}
                 project = {'slug': 'isolated-human-quality', 'format': 'live_action',
