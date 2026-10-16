@@ -3243,3 +3243,49 @@ textarea {
     padding: 16px;
   }
 }
+
+/* Project documents share one reader across inputs, outputs and execution records. */
+.document-reader { min-width: 0; margin-top: 12px; border: 1px solid var(--line, #dce2eb); border-radius: 10px; overflow: hidden; background: #fff; }
+.document-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px; background: #f6f8fb; border-bottom: 1px solid #e2e7ef; }
+.document-actions, .document-view-toggle { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.document-view-toggle button { padding: 5px 10px; border: 0; border-radius: 6px; background: transparent; color: #59677c; cursor: pointer; }
+.document-view-toggle button.active { background: #fff; color: #244bb8; box-shadow: 0 1px 4px #22334a16; }
+.document-content { min-width: 0; padding: 18px; }
+.document-raw { margin: 0; padding: 12px; max-width: 100%; overflow-x: auto; background: #f5f7fa; border-radius: 6px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.7 ui-monospace, monospace; color: #334155; }
+.document-markdown { font-size: 14px; line-height: 1.8; color: #293548; overflow-wrap: anywhere; }
+.document-markdown :is(h1,h2,h3,h4,h5) { margin: 16px 0 10px; line-height: 1.5; color: #17283c; }
+.document-markdown > :first-child { margin-top: 0; }
+.document-markdown h1 { font-size: 22px; }
+.document-markdown h2 { font-size: 19px; }
+.document-markdown h3 { font-size: 16px; }
+.document-markdown p { margin: 8px 0; }
+.document-markdown :is(ul,ol) { padding-left: 24px; margin: 8px 0; }
+.document-markdown li { margin: 3px 0; }
+.document-markdown pre { padding: 12px; background: #f5f7fa; border-radius: 6px; overflow-x: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+.document-markdown blockquote { margin: 12px 0; border-left: 3px solid #b6c7e8; padding-left: 14px; color: #59677c; }
+.document-markdown table { display: block; overflow-x: auto; width: 100%; margin: 12px 0; }
+.document-markdown :is(td,th) { min-width: 100px; white-space: normal; padding: 9px 12px; }
+.document-markdown img, .document-media { display: block; max-width: 100%; max-height: 480px; object-fit: contain; }
+.document-json section + section { margin-top: 16px; }
+.document-json h5 { margin: 0 0 8px; font-size: 13px; color: #58677a; }
+#document-expanded { width: min(1100px, 95vw); max-width: 95vw; }
+.document-expanded .document-content { padding: 24px; }
+.material-card { padding: 14px; border: 1px solid #e2e7ef; border-radius: 10px; min-width: 0; background: #fff; }
+.material-card + .material-card { margin-top: 10px; }
+.material-card > header, .execution-record > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.material-card > header > strong { font-size: 13px; }
+.material-source { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin: 7px 0; color: #6a778b; font-size: 11px; }
+.material-source .text-link { font-size: 11px; }
+.material-value { margin-top: 10px; max-height: 260px; overflow: auto; }
+.material-value > .readable { margin: 0; }
+.execution-record { min-width: 0; padding: 16px; margin: 12px 0; border: 1px solid #dce3ee; border-radius: 10px; background: #fff; }
+.execution-record > header strong { font-size: 13px; }
+.execution-record > .muted { margin: 8px 0; font-size: 11px; }
+.execution-record details { padding: 12px 0 0; }
+.execution-record summary { cursor: pointer; font-size: 13px; padding: 4px 0 10px; }
+.execution-record.is-focused { outline: 2px solid #436ee0; outline-offset: 2px; }
+@media (max-width: 600px) {
+  .document-content, .document-expanded .document-content { padding: 12px; }
+  .document-actions { gap: 10px; }
+  .material-card, .execution-record { padding: 12px; }
+}
