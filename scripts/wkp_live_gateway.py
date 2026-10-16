@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""One authenticated cami workbench entry; its control plane also runs on cami."""
+"""One LAN cami workbench entry; its control plane also runs on cami."""
 from __future__ import annotations
 
 import argparse
@@ -100,16 +100,24 @@ def certificate_pair(certificate, key, common_name, extension):
     run("openssl", "x509", "-in", str(certificate), "-checkend", "3600", "-noout")
 
 
-def metadata(host, port):
+def validate_auth_mode(auth_mode):
+    if auth_mode not in ("basic", "none"):
+        raise ValueError("Authentication mode must be basic or none")
+
+
+def metadata(host, port, *, auth_mode="basic"):
+    validate_auth_mode(auth_mode)
     authority = endpoint(host, port)
     return {"host": host, "port": port, "authority": authority, "url": f"https://{authority}/",
-            "upstream": "http://127.0.0.1:8787", "access_file": str(AREA / "ACCESS.txt"),
+            "upstream": "http://127.0.0.1:8787", "auth_mode": auth_mode,
+            "access_file": str(AREA / "ACCESS.txt"),
             "client_certificate": str(AREA / "client-certificate.pem"),
             "server_fingerprint": WKP_FINGERPRINT,
             "client_fingerprint": hashlib.sha256(ssl.PEM_cert_to_DER_cert((AREA / "client-certificate.pem").read_text())).hexdigest()}
 
 
-def prepare(host, port):
+def prepare(host, port, *, auth_mode="basic"):
+    validate_auth_mode(auth_mode)
     endpoint(host, port)
     if any(c.isspace() or c in '%"\\' for c in str(ROOT)):
         raise ValueError("Unsupported systemd installation path")
@@ -126,20 +134,24 @@ def prepare(host, port):
                      "ai-studio-cami-live", "extendedKeyUsage=clientAuth")
     certificate_pair(AREA / f"{host}-certificate.pem", AREA / f"{host}-private-key.pem",
                      host, "subjectAltName=IP:" + host)
-    credentials = read_credentials()
+    credentials = read_credentials() if auth_mode == "basic" else None
     fingerprint = run("openssl", "x509", "-in", str(AREA / f"{host}-certificate.pem"),
                       "-noout", "-fingerprint", "-sha256").stdout.strip()
-    private_write(AREA / "ACCESS.txt", f"真实生产工作台：https://{host}:{port}/\n账号：{credentials['username']}\n密码：{credentials['password']}\n"
+    login = (f"账号：{credentials['username']}\n密码：{credentials['password']}\n"
+             if credentials else "访问方式：内网测试免登录\n")
+    private_write(AREA / "ACCESS.txt", f"工作台：https://{host}:{port}/\n{login}"
                   f"本地入口证书：{fingerprint}\n工作流、项目数据与 worker 位于 cami；Wkp 只提供模型推理 API。\n")
-    result = metadata(host, port)
+    result = metadata(host, port, auth_mode=auth_mode)
     private_write(AREA / "prepared.json", json.dumps(result, indent=2))
     return result
 
 
-def caddyfile(host, port, password_hash):
+def caddyfile(host, port, password_hash=None):
     authority = endpoint(host, port)
     upstream = "127.0.0.1:8787"
     origin_pattern = "^https://" + host.replace(".", "[.]") + f":{port}$"
+    authentication = (f"        basic_auth {{\n            studio {password_hash}\n        }}\n"
+                      if password_hash is not None else "")
     return f"""{{
     admin off
     auto_https off
@@ -166,9 +178,7 @@ https://:{port} {{
         respond @cross_site "Cross-site request rejected" 403
         @same_site header Sec-Fetch-Site same-site
         respond @same_site "Cross-site request rejected" 403
-        basic_auth {{
-            studio {password_hash}
-        }}
+{authentication.rstrip()}
         @workbench path /
         handle @workbench {{
             header Cache-Control no-store
@@ -184,7 +194,7 @@ https://:{port} {{
         handle {{
             reverse_proxy http://{upstream} {{
                 header_up Host {upstream}
-                header_up Origin "{origin_pattern}" "https://{upstream}"
+                header_up Origin "{origin_pattern}" "http://{upstream}"
                 header_up -Authorization
                 transport http {{
                     network_proxy none
@@ -215,9 +225,13 @@ def upstream_health():
         return observed
 
 
-def start(host, port):
+def start(host, port, *, auth_mode="basic"):
+    validate_auth_mode(auth_mode)
     path = unit_path()  # Reject foreign units before preparing or reading private material.
-    prepare(host, port)
+    if auth_mode == "basic":
+        prepare(host, port)
+    else:
+        prepare(host, port, auth_mode=auth_mode)
     upstream_health()  # Never replace a working local service with an unverified upstream.
     if not (ROOT / "ui/factory/dist/index.html").is_file():
         raise RuntimeError("Build the current frontend with npm run build before starting")
@@ -229,8 +243,10 @@ def start(host, port):
     old_config = config.read_text() if config.exists() else None
     was_active = subprocess.run(["systemctl", "--user", "is-active", "--quiet", UNIT]).returncode == 0
     was_enabled = subprocess.run(["systemctl", "--user", "is-enabled", "--quiet", UNIT]).returncode == 0
-    credentials = read_credentials()
-    password_hash = run(caddy, "hash-password", input=credentials["password"] + "\n").stdout.strip()
+    password_hash = None
+    if auth_mode == "basic":
+        credentials = read_credentials()
+        password_hash = run(caddy, "hash-password", input=credentials["password"] + "\n").stdout.strip()
     staged = safe_path(AREA / "Caddyfile.staged")
     private_write(staged, caddyfile(host, port, password_hash))
     try:
@@ -277,7 +293,7 @@ WantedBy=default.target
             run("systemctl", "--user", "enable" if was_enabled else "disable", UNIT)
             run("systemctl", "--user", "restart" if was_active else "stop", UNIT)
         raise
-    result = metadata(host, port)
+    result = metadata(host, port, auth_mode=auth_mode)
     private_write(AREA / "deployed.json", json.dumps(result, indent=2))
     return result
 
@@ -287,11 +303,13 @@ def main():
     parser.add_argument("action", choices=["prepare", "start", "stop", "status"])
     parser.add_argument("--host", default="172.20.12.202")
     parser.add_argument("--port", type=int, default=8789)
+    parser.add_argument("--auth-mode", choices=["basic", "none"], default="basic",
+                        help="Use none for the explicitly enabled LAN test entry")
     args = parser.parse_args()
     if args.action == "prepare":
-        result = prepare(args.host, args.port)
+        result = prepare(args.host, args.port, auth_mode=args.auth_mode)
     elif args.action == "start":
-        result = start(args.host, args.port)
+        result = start(args.host, args.port, auth_mode=args.auth_mode)
     elif args.action == "stop":
         unit_path()
         run("systemctl", "--user", "disable", "--now", UNIT)

@@ -11,6 +11,8 @@ cami 运行 AI Studio 的 Web、工作流 worker、角色编排、项目数据�
 
 LAN 入口由独立的 `scripts/wkp_live_gateway.py` 管理，本启动器只管理 Web 和 worker，不启动旧的 8788 服务。
 
+当前内网测试入口免登录，使用 `.venv/bin/python scripts/wkp_live_gateway.py start --auth-mode none` 启动。唯一浏览器地址仍为 `https://172.20.12.202:8789/`，不改变 Wkp 模型服务的 mTLS 鉴权。详见 [入口配置](WKP_LIVE_GATEWAY.md)。
+
 ## 独立运行目录
 
 `scripts/deploy_cami.py` 使用仓库下的 `runtime/cami-studio/`：
