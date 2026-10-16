@@ -50,6 +50,7 @@ def public(task):
     return {**{key: task[key] for key in ("id", "library_key", "status", "lease", "result", "error", "created", "updated")},
             "operation": data["operation"], "name": data["document"]["name"], "quote": data.get("quote"),
             "authorization": data.get("authorization"), "source": data.get("source"),
+            "style": {k: data["style"][k] for k in ("asset_id", "version")} if data.get("style") else None,
             "model": data.get("image_profile", {}).get("model") or data.get("vision_identity", {}).get("model"),
             "signature": task["signature"]}
 
@@ -144,7 +145,11 @@ def create(payload, config=None):
                         raise ValueError("组合中的人物和场景需要参考图片")
                     data["inputs"].append({"purpose": member.get("role", "scene"), "receipt": value["data"]["images"][0]})
             if payload.get("style"):
+                if not isinstance(payload["style"], dict) or set(payload["style"]) != {"asset_id", "version"}:
+                    raise ValueError("画风需要固定素材编号和版本")
                 style = library.accessible(library.get(db, payload["style"].get("asset_id"), payload["style"].get("version")), project)
+                if key == "global" and style["library_key"] != "global":
+                    raise ValueError("统一库任务不能隐式引用剧内私有画风")
                 if style["kind"] != "style":
                     raise ValueError("请选择画风素材")
                 data["style"] = {"asset_id": style["asset_id"], "version": style["version"], "document": style["data"]["document"]}
@@ -325,7 +330,7 @@ def _cloud_image(task, prompt, refs, folder, step):
     return path, receipt
 
 
-def render_image(task, prompt, refs, folder, step):
+def _render_image(task, prompt, refs, folder, step, budget):
     from .scheduler import Budget, Scheduler
     from studio.graphs import flux_image
     data, profile = task["data"], task["data"]["image_profile"]
@@ -333,7 +338,6 @@ def render_image(task, prompt, refs, folder, step):
     if profile["provider"] == "dashscope_image":
         return _cloud_image(task, prompt, refs, folder, step)
     config = {**data["config"].get("production", {}), "gpu_service": data["config"].get("gpu_service")} if data["config"].get("gpu_service") else data["config"].get("production", {})
-    budget = Budget(config, task["result"].get("production"))
     seed = int(task["signature"][:8], 16)
     if profile["provider"] == "comfyui_external":
         from .external_comfy import ExternalComfy
@@ -388,6 +392,20 @@ def render_image(task, prompt, refs, folder, step):
     return path, receipt
 
 
+def render_image(task, prompt, refs, folder, step):
+    from .scheduler import Budget
+    data = task["data"]
+    config = copy.deepcopy(data["config"].get("production", {}))
+    if data["config"].get("gpu_service"):
+        config["gpu_service"] = data["config"]["gpu_service"]
+    budget = Budget(config, task["result"].get("production"))
+    try:
+        return _render_image(task, prompt, refs, folder, step, budget)
+    finally:
+        task["result"]["production"] = budget.snapshot()
+        _save_result(task, task["result"])
+
+
 def _paused(task):
     try:
         boundary(task)
@@ -398,6 +416,7 @@ def _paused(task):
 
 def run(task):
     result = copy.deepcopy(task["result"])
+    task["result"] = result
     try:
         boundary(task)
         data = task["data"]
@@ -416,15 +435,21 @@ def run(task):
                 prompt = ("Create a single production design reference. Preserve each supplied person's identity and the scene's spatial structure. "
                           "Style-only references guide rendering, not person identity, clothing or scene contents. Apply explicit wardrobe and state changes. "
                           + json.dumps({"document": data["document"], "view": view, "style": data.get("style"), "requirements": data["prompt"], "reference_order": [label for label, _ in references]}, ensure_ascii=False))
-                remaining = [path for _, path in references]
+                remaining = list(references)
                 maximum = data["reference_limit"]
                 stage = 0
                 prior = None
                 while True:
-                    batch = ([prior] if prior else []) + remaining[:maximum - (1 if prior else 0)]
+                    batch = ([("confirmed_composite", prior)] if prior else []) + remaining[:maximum - (1 if prior else 0)]
                     remaining = remaining[len(batch) - (1 if prior else 0):]
                     folder = _folder(task) / ("view_%02d_stage_%02d" % (view_index, stage))
-                    path, receipt = render_image(task, prompt + (" Preserve all identities already present in the first composite reference and add the remaining referenced subjects." if prior else ""), batch, folder, f"{view_index}:{stage}")
+                    stage_prompt = (prompt + " This stage contains only the following ordered input references: " +
+                                    json.dumps([label for label, _ in batch], ensure_ascii=False) +
+                                    ". Depict only the identities represented in this stage; later stages add remaining subjects. " +
+                                    ("Preserve all identities already present in the first composite and add the newly referenced subjects." if prior else ""))
+                    core.write_json(folder / "input.json", {"prompt": stage_prompt, "reference_roles": [label for label, _ in batch],
+                        "references": [core.media_receipt(path) for _, path in batch], "task_signature": task["signature"]})
+                    path, receipt = render_image(task, stage_prompt, [path for _, path in batch], folder, f"{view_index}:{stage}")
                     if task["result"].get("production"):
                         result["production"] = task["result"]["production"]
                     if not remaining: break

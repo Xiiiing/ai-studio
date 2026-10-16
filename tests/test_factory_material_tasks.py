@@ -159,3 +159,53 @@ def test_multistage_composition_keeps_all_references_under_model_limit(project, 
 def test_public_task_never_exposes_private_config_or_provider_response(project):
     task = create(config=configuration(True))
     assert "config" not in task and "api_key_env" not in str(task)
+
+
+def test_backup_restores_material_versions_and_task_owner_without_starting_generation(project, tmp_path):
+    from factory import backup
+    from langgraph.checkpoint.sqlite import SqliteSaver
+    import sqlite3
+    value = material()
+    task = create(operation="describe", value=value)
+    with sqlite3.connect(store.DATA / "checkpoints.sqlite3") as db:
+        SqliteSaver(db).setup()
+    (store.DATA / "worker.lock").touch()
+    destination = tmp_path.parent / ("materials-backup-" + uuid.uuid4().hex)
+    backup.create(core.ROOT, destination, maintenance_confirmed=True, data_dir=store.DATA)
+    assert backup.verify(destination)["verified"] is True
+    with sqlite3.connect(destination / "runtime/factory/studio.sqlite3") as db:
+        assert db.execute("SELECT library_key FROM material_tasks WHERE id=?", (task["id"],)).fetchone()[0] == "global"
+        assert db.execute("SELECT count(*) FROM material_versions WHERE asset_id=?", (value["asset_id"],)).fetchone()[0] == 2
+
+
+def test_saved_paid_response_resumes_download_without_a_second_post(project, monkeypatch):
+    from factory import video_transport
+    import base64
+    calls = []
+    monkeypatch.setattr(cloud_budget, "validate_live_profile", lambda p: None)
+    monkeypatch.setattr(cloud_media, "_request", lambda *args: (calls.append("post"), {"model": "qwen-image-3.0", "id": "saved-request", "data": [{"url": "https://download.example/private-signed-url"}], "usage": {"output_images": 1}})[1])
+    monkeypatch.setattr(video_transport, "download_video", lambda *args: (_ for _ in ()).throw(TimeoutError("download interrupted")))
+    monkeypatch.setattr(tasks, "vision", lambda *args, **kwargs: {"status": "pass"})
+    task = create(config=configuration(True)); authorize(task)
+    tasks.run(tasks.claim())
+    with store.connection() as db: failed = tasks.read(db, task["id"])
+    tasks.control(task["id"], {"action": "resume", "expected_lease": failed["lease"], "signature": failed["signature"]})
+    monkeypatch.setattr(video_transport, "download_video", lambda profile, url, path: path.write_bytes(base64.b64decode(picture())))
+    tasks.run(tasks.claim())
+    with store.connection() as db: finished = tasks.read(db, task["id"])
+    assert finished["status"] == "completed" and calls == ["post"]
+    assert "private-signed-url" not in str(tasks.public(finished))
+
+
+def test_failed_local_generation_keeps_cumulative_resource_accounting(project, monkeypatch):
+    def fail(task, prompt, refs, folder, step, budget):
+        budget.base_gpu += 10
+        raise RuntimeError("fixture local generation failure")
+    monkeypatch.setattr(tasks, "_render_image", fail)
+    task = create(); tasks.run(tasks.claim())
+    with store.connection() as db: failed = tasks.read(db, task["id"])
+    assert failed["result"]["production"]["gpu_seconds"] >= 10
+    tasks.control(task["id"], {"action": "resume", "expected_lease": failed["lease"], "signature": failed["signature"]})
+    tasks.run(tasks.claim())
+    with store.connection() as db: retried = tasks.read(db, task["id"])
+    assert retried["result"]["production"]["gpu_seconds"] >= 20

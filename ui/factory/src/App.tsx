@@ -389,8 +389,8 @@ export default function App() {
           onClose={() => setCreate(false)}
           onCreated={(p) => {
             setCreate(false);
-            setToast("制作项目已建立，AI 团队开始策划。");
-            openProject(p.id);
+            setToast(p.material_setup_requested ? "项目已建立，请先准备并确认素材。" : "制作项目已建立，AI 团队开始策划。");
+            openProject(p.id, p.material_setup_requested ? "materials" : "overview");
           }}
         />
       )}
@@ -1552,6 +1552,7 @@ export function CreateProject({
               payload.duration_seconds = Number(values.duration_seconds);
             if (String(values.series_key || "").trim())
               payload.series_key = String(values.series_key).trim();
+            if (values.prepare_materials) payload.prepare_materials = true;
             const result = await request("/projects", payload);
             await client.invalidateQueries();
             onCreated(result.project || result);
@@ -1596,6 +1597,7 @@ export function CreateProject({
             defaultValue={seed?.brief || ""}
           />
         </Field>
+        <label className="check"><input type="checkbox" name="prepare_materials" />先准备人物、场景与画风，再开始制作</label>
         <div className="form-row">
           <Field label="创作方式">
             <select name="creation_mode">

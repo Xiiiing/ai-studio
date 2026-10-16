@@ -122,11 +122,14 @@ def _upload(value, encoded, label):
         raise ValueError("图片编码无效") from None
     if not 0 < len(content) <= MAX_REFERENCE_BYTES:
         raise ValueError("参考图不能超过8 MiB")
-    with Image.open(io.BytesIO(content)) as image:
-        if image.format not in {"PNG", "JPEG", "WEBP"} or min(image.size) < 64 or max(image.size) > 4096:
-            raise ValueError("仅支持64–4096像素的PNG/JPEG/WebP")
-        extension = {"PNG": ".png", "JPEG": ".jpg", "WEBP": ".webp"}[image.format]
-        image.verify()
+    try:
+        with Image.open(io.BytesIO(content)) as image:
+            if image.format not in {"PNG", "JPEG", "WEBP"} or min(image.size) < 64 or max(image.size) > 4096:
+                raise ValueError("仅支持64–4096像素的PNG/JPEG/WebP")
+            extension = {"PNG": ".png", "JPEG": ".jpg", "WEBP": ".webp"}[image.format]
+            image.verify()
+    except OSError:
+        raise ValueError("图片无法解码，请重新选择PNG/JPEG/WebP文件") from None
     # One independently addressed immutable file per uploaded view.
     file_value = {"asset_id": value["asset_id"] + "_" + uuid.uuid4().hex[:8], "version": value["version"]}
     return {**_immutable_reference(file_value, content, extension), "label": str(label)[:100] or "参考图"}
@@ -143,9 +146,11 @@ def mutate(payload):
     if not isinstance(payload, dict):
         raise ValueError("素材操作须为对象")
     action = payload.get("action")
-    allowed = {"action", "project_id", "asset_id", "expected_version", "kind", "document", "scope", "source", "image_base64", "label", "confirmed", "task_id"}
+    allowed = {"action", "project_id", "asset_id", "expected_version", "kind", "document", "scope", "image_base64", "label", "confirmed", "image_index"}
     if not isinstance(payload, dict) or set(payload) - allowed:
         raise ValueError("素材操作包含未知字段")
+    if payload.get("scope", "global") not in {"global", "project"}:
+        raise ValueError("素材保存位置无效")
     with store.connection() as db:
         db.execute("BEGIN IMMEDIATE")
         project = store._read(db, payload["project_id"]) if payload.get("project_id") else None
@@ -169,7 +174,7 @@ def mutate(payload):
         if value["latest_version"] != integer(payload.get("expected_version"), "expected_version", 1):
             raise ValueError("素材已更新，请刷新版本")
         data = copy.deepcopy(value["data"])
-        if project and value["library_key"] == "global" and action in {"revise", "upload", "archive"}:
+        if project and value["library_key"] == "global" and action in {"revise", "upload", "archive", "set_primary", "remove_image"}:
             raise ValueError("请先复制为剧内造型，避免修改统一库")
         if action == "revise":
             data["document"] = validate_document(payload.get("document"), value["kind"])
@@ -187,6 +192,15 @@ def mutate(payload):
                 raise ValueError("请明确确认正式参考")
             approve_version(db, value)
             return get(db, value["asset_id"], value["version"])
+        if action in {"set_primary", "remove_image"}:
+            index = integer(payload.get("image_index"), "图片索引")
+            if index >= len(data["images"]):
+                raise ValueError("图片索引不存在")
+            image = data["images"].pop(index)
+            if action == "set_primary":
+                data["images"].insert(0, image)
+            data.pop("review", None); data.pop("approval", None)
+            return _append(db, value, data)
         if action == "archive":
             db.execute("UPDATE material_assets SET archived=1 WHERE asset_id=?", (value["asset_id"],))
             return get(db, value["asset_id"])
@@ -200,6 +214,9 @@ def get_head(db, aid):
 def approve_version(db, value):
     from .quality import inspect_image
     data = copy.deepcopy(value["data"])
+    for link in data["document"].get("members", []) + ([data["document"]["scene"]] if data["document"].get("scene") else []):
+        if get(db, link["asset_id"], link["version"])["status"] != "approved":
+            raise ValueError("请先确认组合引用的人物和场景版本")
     if not data["images"]:
         raise ValueError("请先上传或生成参考图")
     technical = [inspect_image(image_path(receipt)) for receipt in data["images"]]
@@ -301,7 +318,7 @@ def mutate_project(pid, payload):
             refs = project.get("material_selection", [])
             if not refs:
                 raise ValueError("请先选择本剧素材")
-            for ref in refs:
+            for ref in sorted(refs, key=lambda ref: ref["kind"] == "composition"):
                 value = accessible(get(db, ref["asset_id"], ref["version"]), project)
                 approve_version(db, value)
             references = [reference(db, project, {k: v for k, v in ref.items() if k in {"asset_id", "version", "role", "shot_ids"}}, True)[0] for ref in refs]
@@ -309,6 +326,23 @@ def mutate_project(pid, payload):
             previous = project.get("material_package", {})
             project["material_package"] = package
             project["material_selection"] = references
+            if not (project.get("script") or project.get("episode")) and project.get("production_profile"):
+                for character in project["production_profile"]["characters"]:
+                    matching = next((ref for ref in references if ref["kind"] == "character" and ref["role"] == character["character_id"]), None)
+                    if matching:
+                        character["name"] = get(db, matching["asset_id"], matching["version"])["data"]["document"]["name"][:30]
+            if project.get("selected_style"):
+                style = next((ref for ref in references if ref["kind"] == "style"), None)
+                if style:
+                    document = get(db, style["asset_id"], style["version"])["data"]["document"]
+                    selected = {"id": "library_" + style["asset_id"] + "_v" + str(style["version"]),
+                                "name": document["name"], "description": document.get("description", ""),
+                                "prompt": document.get("visual_rules") or document.get("description") or document["name"],
+                                "palette": document.get("palette", []), "format": project["format"],
+                                "material_reference": {key: style[key] for key in ("asset_id", "version", "sha256", "kind", "role")}}
+                    project["styles"] = [selected]
+                    project["selected_style"] = selected["id"]
+                    project.pop("style_feedback", None)
             if previous.get("signature") != package["signature"]:
                 rebind(db, project, previous)
             key = library_key(project)
@@ -325,6 +359,21 @@ def inherit_package(db, project):
     row = db.execute("SELECT data FROM material_packages WHERE library_key=? ORDER BY version DESC LIMIT 1", (library_key(project),)).fetchone()
     if row:
         package = json.loads(row[0])
+        from .production_profiles import roles
+        valid_roles = set(roles(project))
+        refs = []
+        for source in package["references"]:
+            if source["kind"] == "character" and source["role"] not in valid_roles:
+                continue
+            if source["kind"] == "composition":
+                document = get(db, source["asset_id"], source["version"])["data"]["document"]
+                if not {member["role"] for member in document.get("members", [])} <= valid_roles:
+                    continue
+            ref = copy.deepcopy(source)
+            ref.pop("shot_ids", None)  # Episode-specific placement must be directed anew.
+            refs.append(ref)
+        if refs != package["references"]:
+            package = {**package, "references": refs, "signature": core.fingerprint(refs), "inherited_from_signature": package["signature"]}
         project["material_package"] = package
         project["material_selection"] = copy.deepcopy(package["references"])
 

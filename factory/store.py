@@ -121,6 +121,8 @@ def _enqueue(db, pid, kind="workflow"):
 
 
 def create(payload):
+    if type(payload.get("prepare_materials", False)) is not bool:
+        raise ValueError("prepare_materials须为布尔值")
     team_mode = payload.get("team_mode", "delegated")
     if not isinstance(team_mode, str) or team_mode not in {"guided", "delegated"}:
         raise ValueError("团队模式应为 guided 或 delegated")
@@ -191,6 +193,8 @@ def create(payload):
         project["production_profile"] = profile
     if contract is not None:
         project["creative_contract"] = contract
+    if payload.get("prepare_materials"):
+        project.update(status="paused", pause_requested=True, material_setup_requested=True)
     from .attention_actions import delegation_status
     project["delegation"] = delegation_status(project)
     import hashlib
@@ -221,8 +225,9 @@ def create(payload):
         inherit_package(db, project)
         db.execute("INSERT INTO projects(id,updated,revision,snapshot) VALUES(?,?,?,?)",
                    (pid, time.time(), 1, encoded(project)))
-        _event(db, pid, "已建立制片项目，开始检索和原创提案。", "created")
-        _enqueue(db, pid)
+        _event(db, pid, "项目已建立，等待准备并确认本剧素材。" if project.get("material_setup_requested") else "已建立制片项目，开始检索和原创提案。", "created")
+        if not project.get("material_setup_requested"):
+            _enqueue(db, pid)
         if request_key:
             db.execute("INSERT INTO idempotency VALUES(?,?,?)", (request_key, pid, request_hash))
     return project
@@ -272,6 +277,9 @@ def update(pid, patch):
         if "episode" in patch and p.get("production_profile"):
             from .profile_references import synchronize
             synchronize(db, p)
+        if "episode" in patch and p.get("material_package"):
+            from .material_library import record_dependencies
+            record_dependencies(db, p)
         gpu_seconds = p.get("production", {}).get("gpu_seconds")
         if isinstance(gpu_seconds, (float, int)) and math.isfinite(gpu_seconds):
             p["budget"]["spent_gpu_minutes"] = round(gpu_seconds / 60, 3)

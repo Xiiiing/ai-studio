@@ -134,3 +134,22 @@ def test_tampered_reference_cannot_be_confirmed(project):
     library.image_path(value["data"]["images"][0]).write_bytes(b"changed")
     with pytest.raises(ValueError, match="校验失败"):
         confirm(project)
+
+
+def test_primary_view_can_change_without_replacing_old_version(project):
+    value = material(approve=True)
+    second = library.mutate({"action": "upload", "asset_id": value["asset_id"], "expected_version": value["version"], "image_base64": picture((256, 256)), "label": "新版主参考"})
+    primary = library.mutate({"action": "set_primary", "asset_id": value["asset_id"], "expected_version": second["version"], "image_index": 1})
+    assert primary["data"]["images"][0]["label"] == "新版主参考"
+    with store.connection() as db:
+        original = library.get(db, value["asset_id"], value["version"])
+        assert original["data"]["images"][0]["label"] == "正面" and original["status"] == "approved"
+
+
+def test_new_episode_inherits_materials_but_directs_its_own_scene_placements(project):
+    scene = material(project, kind="scene", name="站台")
+    select(project, scene, scene["asset_id"], shot_ids=["S01"])
+    first = confirm(project)
+    second = store.create({"brief": "同系列下一集的成年人物故事", "series_key": project["series_key"]})
+    assert first["material_package"]["references"][0]["shot_ids"] == ["S01"]
+    assert "shot_ids" not in second["material_package"]["references"][0]

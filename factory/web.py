@@ -45,8 +45,8 @@ class Handler(LocalMediaHandler):
                     return self.json(value)
             match = re.fullmatch(r"/api/factory/projects/([a-f0-9]{12})/materials", path)
             if match:
-                from .material_library import snapshot
-                return self.json(snapshot(match[1]))
+                from .material_library import snapshot as material_snapshot
+                return self.json(material_snapshot(match[1]))
             if path=="/api/factory/production-profiles":
                 from .production_profiles import catalog
                 return self.json(catalog())
