@@ -194,6 +194,7 @@ FACTORY_TEST_PYTHON=envs/factory/bin/python npm run test:browser
 ## 文档
 
 - [0.0.2 工作台主题与多屏体验](docs/UI_REDESIGN_0_0_2.md)
+- [0.0.3 部署后布局、深色与手机操作修正](docs/UI_DEPLOYED_REFINEMENT.md)
 - [模型接口与本地运行](docs/MODEL_PROVIDERS.md)
 - [部署、升级和恢复](docs/DEPLOYMENT.md)
 - [API 与工作流配置](docs/API.md)

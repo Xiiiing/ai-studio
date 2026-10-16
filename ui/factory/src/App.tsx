@@ -37,6 +37,7 @@ import {
   ownedMedia,
   pendingGate,
   names,
+  activityName,
   text,
   type RecordData,
 } from "./api";
@@ -56,6 +57,7 @@ import { Workflow, Team } from "./Workflow";
 import { DecisionCenter, ActionForm } from "./Decisions";
 import { ReviewAutomation } from "./ReviewAssistance";
 import { Shots, Series, Costs } from "./Assets";
+import { ShotQuality } from "./ShotQuality";
 import {
   CreativeContract,
   creativeChoice,
@@ -87,13 +89,13 @@ export default function App() {
     [create, setCreate] = useState<boolean | RecordData>(false),
     [mobile, setMobile] = useState(false),
     [narrow, setNarrow] = useState(
-      () => window.matchMedia("(max-width: 760px)").matches,
+      () => window.matchMedia("(max-width: 1023px)").matches,
     ),
     [toast, setToast] = useState("");
   const navigationRef = useRef<HTMLElement>(null);
   const navigationTrigger = useRef<HTMLButtonElement>(null);
   useEffect(() => {
-    const media = window.matchMedia("(max-width: 760px)");
+    const media = window.matchMedia("(max-width: 1023px)");
     const update = () => {
       setNarrow(media.matches);
       if (!media.matches) setMobile(false);
@@ -301,9 +303,7 @@ export default function App() {
                 <span className="project-dot" />
                 <span>
                   <strong>{p.title || "未命名制作"}</strong>
-                  <small>
-                    {p.current_activity || names[p.status] || p.status}
-                  </small>
+                  <small>{activityName(p.current_activity || p.status)}</small>
                 </span>
               </button>
             ))}
@@ -588,7 +588,12 @@ function Dashboard({
           </article>
         ))}
       </section>
-      <div className="dashboard-grid">
+      <div
+        className={
+          "dashboard-grid" +
+          (rows(o.recent_deliveries).length ? " has-deliveries" : "")
+        }
+      >
         <Panel
           title="制作中的任务"
           description={
@@ -630,13 +635,17 @@ function Dashboard({
             limit={3}
           />
         </Panel>
-        <Panel title="最近动态">
+        <Panel title="最近动态" className="dashboard-activity">
           <ActivityList
             events={rows(o.activity).slice(0, 5)}
             openProject={openProject}
           />
         </Panel>
-        <Panel title="制作资源" description="已记录用量与服务快照">
+        <Panel
+          title="制作资源"
+          description="已记录用量与服务快照"
+          className="dashboard-resources"
+        >
           <div className="resource-summary">
             <Cpu size={24} />
             <div>
@@ -689,29 +698,29 @@ function Dashboard({
             <p className="muted">实测资源状态尚未返回。</p>
           )}
         </Panel>
+        {rows(o.recent_deliveries).length > 0 && (
+          <Panel title="最近交付" className="dashboard-deliveries">
+            <div className="delivery-grid">
+              {rows(o.recent_deliveries).map((d) => (
+                <article key={d.project_id}>
+                  <span className="delivery-icon">
+                    <FilmIcon />
+                  </span>
+                  <h3>{d.title}</h3>
+                  <p>{date(d.accepted_at)}</p>
+                  <button
+                    className="text-link"
+                    onClick={() => openProject(d.project_id, "delivery")}
+                  >
+                    查看成片
+                    <ArrowUpRight size={15} />
+                  </button>
+                </article>
+              ))}
+            </div>
+          </Panel>
+        )}
       </div>
-      {rows(o.recent_deliveries).length > 0 && (
-        <Panel title="最近交付">
-          <div className="delivery-grid">
-            {rows(o.recent_deliveries).map((d) => (
-              <article key={d.project_id}>
-                <span className="delivery-icon">
-                  <FilmIcon />
-                </span>
-                <h3>{d.title}</h3>
-                <p>{date(d.accepted_at)}</p>
-                <button
-                  className="text-link"
-                  onClick={() => openProject(d.project_id, "delivery")}
-                >
-                  查看成片
-                  <ArrowUpRight size={15} />
-                </button>
-              </article>
-            ))}
-          </div>
-        </Panel>
-      )}
     </>
   );
 }
@@ -750,7 +759,7 @@ function ProjectTable({
                   </span>
                   <span>
                     <strong>{p.title || "未命名制作"}</strong>
-                    <small>{p.current_activity || "等待调度"}</small>
+                    <small>{activityName(p.current_activity)}</small>
                   </span>
                 </button>
               </td>
@@ -1004,31 +1013,40 @@ function ActivityList({
   filterable?: boolean;
 }) {
   const [filter, setFilter] = useState(false),
+    [page, setPage] = useState(0),
     items = events.filter(
       (e) =>
         !filter ||
         ["error", "decision_required", "review_blocked"].includes(e.kind),
-    );
+    ),
+    pages = Math.ceil(items.length / 8),
+    current = Math.min(page, Math.max(0, pages - 1));
   return (
     <>
       {filterable && (
         <div className="segmented activity-filter">
           <button
             className={!filter ? "selected" : ""}
-            onClick={() => setFilter(false)}
+            onClick={() => {
+              setFilter(false);
+              setPage(0);
+            }}
           >
             全部事件
           </button>
           <button
             className={filter ? "selected" : ""}
-            onClick={() => setFilter(true)}
+            onClick={() => {
+              setFilter(true);
+              setPage(0);
+            }}
           >
             问题与待办
           </button>
         </div>
       )}
       <div className="activity-list">
-        {items.map((e, i) => (
+        {items.slice(current * 8, (current + 1) * 8).map((e, i) => (
           <article key={e.project_id + ":" + e.at + ":" + i}>
             <span
               className={
@@ -1050,6 +1068,29 @@ function ActivityList({
         ))}
         {!items.length && <Empty title="暂无运行记录" />}
       </div>
+      {items.length > 8 && (
+        <nav className="pagination" aria-label="事件分页">
+          <span>
+            共 {items.length} 条 · 第 {current + 1} / {pages} 页
+          </span>
+          <div className="button-row">
+            <button
+              className="button small"
+              disabled={current === 0}
+              onClick={() => setPage(current - 1)}
+            >
+              上一页事件
+            </button>
+            <button
+              className="button small"
+              disabled={current + 1 >= pages}
+              onClick={() => setPage(current + 1)}
+            >
+              下一页事件
+            </button>
+          </div>
+        </nav>
+      )}
     </>
   );
 }
@@ -1093,6 +1134,7 @@ function Project({
   const [selectedFlowNode, setSelectedFlowNode] = useState(""),
     [selectedExecution, setSelectedExecution] = useState(""),
     [selectedShot, setSelectedShot] = useState(""),
+    [storyboardPage, setStoryboardPage] = useState(0),
     [preview, setPreview] = useState<RecordData | null>(null),
     [control, setControl] = useState<RecordData | null>(null),
     [busy, setBusy] = useState(false),
@@ -1112,6 +1154,9 @@ function Project({
       </>
     );
   const p = { ...w.project, operator: w.operator },
+    storyboardShots = rows(p.shots),
+    storyboardPages = Math.max(1, Math.ceil(storyboardShots.length / 6)),
+    currentStoryboardPage = Math.min(storyboardPage, storyboardPages - 1),
     graph = w.workflow || {},
     actualFlow = w.flow || flow.data || {},
     attention = w.operator?.attention,
@@ -1223,14 +1268,12 @@ function Project({
         <div className="project-pane">
           {tab === "overview" ? (
             <>
-              <CreativeContract project={p} />
+              <CreativeContract project={p} compact />
               <div className="project-context">
                 <article>
                   <small>当前阶段</small>
                   <strong>
-                    {w.operator?.current_activity ||
-                      names[p.status] ||
-                      p.status}
+                    {activityName(w.operator?.current_activity || p.status)}
                   </strong>
                 </article>
                 <article>
@@ -1296,7 +1339,9 @@ function Project({
                   <ReviewAutomation project={p} />
                   <div className="current-task">
                     <Badge status={p.status} />
-                    <h3>{w.operator?.current_activity || names[p.status]}</h3>
+                    <h3>
+                      {activityName(w.operator?.current_activity || p.status)}
+                    </h3>
                     <p>
                       {attention?.summary ||
                         "团队按工作流继续推进，实际产物与审核结果会持续更新。"}
@@ -1415,82 +1460,125 @@ function Project({
           ) : tab === "shots" ? (
             <Shots project={p} notify={notify} initialShot={selectedShot} />
           ) : tab === "script" ? (
-            <div className="stack">
+            <div className="stack script-workspace">
               <Panel title="剧本与人物设定">
-                <Readable value={p.script} />
+                {p.script ? (
+                  <>
+                    <h3 className="script-title">
+                      {p.script.title || p.title}
+                    </h3>
+                    {p.script.logline && (
+                      <p className="script-logline">{p.script.logline}</p>
+                    )}
+                    <Readable
+                      value={Object.fromEntries(
+                        Object.entries({
+                          ...p.script,
+                          cast: p.script.character_names || p.script.cast,
+                        }).filter(([key]) =>
+                          [
+                            "synopsis",
+                            "ending",
+                            "cast",
+                            "story_structure",
+                          ].includes(key),
+                        ),
+                      )}
+                    />
+                    <details className="script-evidence">
+                      <summary>完整剧本与人物设定</summary>
+                      <div
+                        className="evidence-content"
+                        tabIndex={0}
+                        aria-label="完整剧本原文"
+                      >
+                        <Readable value={p.script} />
+                      </div>
+                    </details>
+                  </>
+                ) : (
+                  <Empty title="剧本尚未生成" />
+                )}
               </Panel>
               <Panel title="逐镜分镜">
                 <div className="shot-story-grid">
-                  {rows(p.shots).map((s) => (
-                    <article className="shot-story-card" key={s.id}>
-                      <button
-                        className="shot-preview"
-                        data-action="preview"
-                        data-shot={s.id}
-                        onClick={() => setPreview(s)}
-                      >
-                        {mediaUrl(s.image_url) ? (
-                          <img src={mediaUrl(s.image_url)} alt={s.id} />
-                        ) : (
-                          <Clapperboard size={32} />
-                        )}
-                        <span>
-                          <Play size={17} />
-                        </span>
-                      </button>
-                      <div>
-                        <div className="row-between">
-                          <h3>
-                            {s.id} · {s.seconds} 秒
-                          </h3>
-                          <Badge status={s.status} />
+                  {storyboardShots
+                    .slice(
+                      currentStoryboardPage * 6,
+                      currentStoryboardPage * 6 + 6,
+                    )
+                    .map((s) => (
+                      <article className="shot-story-card" key={s.id}>
+                        <button
+                          className="shot-preview"
+                          data-action="preview"
+                          data-shot={s.id}
+                          onClick={() => setPreview(s)}
+                        >
+                          {mediaUrl(s.image_url) ? (
+                            <img src={mediaUrl(s.image_url)} alt={s.id} />
+                          ) : (
+                            <Clapperboard size={32} />
+                          )}
+                          <span>
+                            <Play size={17} />
+                          </span>
+                        </button>
+                        <div>
+                          <div className="row-between">
+                            <h3>
+                              {s.id} · {s.seconds} 秒
+                            </h3>
+                            <Badge status={s.status} />
+                          </div>
+                          <p>{s.dramatic_beat || s.action || s.description}</p>
+                          <Readable value={s.dialogue} />
                         </div>
-                        <p>{s.dramatic_beat || s.action || s.description}</p>
-                        <Readable value={s.dialogue} />
-                      </div>
-                    </article>
-                  ))}
+                      </article>
+                    ))}
                 </div>
+                {storyboardPages > 1 && (
+                  <nav className="pagination" aria-label="分镜分页">
+                    <span>
+                      第 {currentStoryboardPage + 1} / {storyboardPages} 页 · 共{" "}
+                      {storyboardShots.length} 镜
+                    </span>
+                    <div className="button-row">
+                      <button
+                        className="button small"
+                        disabled={currentStoryboardPage === 0}
+                        onClick={() =>
+                          setStoryboardPage(currentStoryboardPage - 1)
+                        }
+                      >
+                        上一页分镜
+                      </button>
+                      <button
+                        className="button small"
+                        disabled={currentStoryboardPage + 1 >= storyboardPages}
+                        onClick={() =>
+                          setStoryboardPage(currentStoryboardPage + 1)
+                        }
+                      >
+                        下一页分镜
+                      </button>
+                    </div>
+                  </nav>
+                )}
               </Panel>
             </div>
           ) : tab === "quality" ? (
             <div className="stack">
-              <Panel title="镜头质检与返修">
-                <div className="table-scroll">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>镜头</th>
-                        <th>状态</th>
-                        <th>尝试</th>
-                        <th>审核结果与问题</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {rows(p.shots).map((s) => (
-                        <tr key={s.id}>
-                          <td>{s.id}</td>
-                          <td>
-                            <Badge status={s.status} />
-                          </td>
-                          <td>
-                            {rows(s.attempts).length || s.attempt_count || 0}
-                          </td>
-                          <td>
-                            <Readable value={s.qa || s.quality || s.review} />
-                            <details>
-                              <summary>素材尝试记录</summary>
-                              <Readable value={s.attempts} />
-                            </details>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </Panel>
+              <ShotQuality
+                shots={rows(p.shots)}
+                onShot={(shot) => {
+                  setSelectedShot(shot);
+                  onTab("shots");
+                }}
+              />
               <Panel title="生产事件">
                 <ActivityList
+                  filterable
                   events={rows(p.events)
                     .map((e) => ({ ...e, project_id: id, title: p.title }))
                     .reverse()}

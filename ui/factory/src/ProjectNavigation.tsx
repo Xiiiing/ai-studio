@@ -42,7 +42,9 @@ export function ProjectNavigation({
     };
     document.addEventListener("pointerdown", outside);
     ref.current
-      ?.querySelector<HTMLButtonElement>('[aria-current="page"]')
+      ?.querySelector<HTMLButtonElement>(
+        '.project-navigation-menu [aria-current="page"]',
+      )
       ?.focus();
     return () => document.removeEventListener("pointerdown", outside);
   }, [open]);
@@ -94,6 +96,19 @@ export function ProjectNavigation({
           }
         }}
       >
+        <nav className="project-quick-navigation" aria-label="常用项目页面">
+          {["overview", "decisions", "shots", "delivery"].map((value) => (
+            <button
+              key={value}
+              className={value === tab ? "active" : ""}
+              aria-current={value === tab ? "page" : undefined}
+              data-quick-page={value}
+              onClick={() => onTab(value)}
+            >
+              {projectPages.find(([id]) => id === value)![1]}
+            </button>
+          ))}
+        </nav>
         <button
           ref={trigger}
           className="project-navigation-trigger"

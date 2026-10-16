@@ -1,3 +1,4 @@
+import { openProjectPage } from "./navigation.mjs";
 import { test, expect } from "@playwright/test";
 
 const id = "012345abcdef";
@@ -65,7 +66,7 @@ test("shot preview opens actual media and the final producer decision is actiona
   request,
 }) => {
   await openProject(page);
-  await page.locator('[data-tab="script"]').click();
+  await openProjectPage(page, "script");
   await page.locator('[data-action="preview"][data-shot="S01"]').click();
   await expect(page.locator("#preview-dialog video")).toBeVisible();
   await page.waitForFunction(
@@ -73,7 +74,7 @@ test("shot preview opens actual media and the final producer decision is actiona
   );
   await page.locator('#preview-dialog [data-action="close-dialog"]').click();
   await expect(page.locator("#preview-dialog video")).toHaveCount(0);
-  await page.locator('.tabbar [data-tab="decisions"]').click();
+  await openProjectPage(page, "decisions");
   await page.locator('form[data-form="final"] button[value="approve"]').click();
   await expect(page.locator("#workspace .project-meta")).toContainText(
     "已通过",
@@ -91,7 +92,7 @@ test("playing candidate remains the same connected node across progress refresh"
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await openProject(page);
-  await page.locator('[data-tab="shots"]').click();
+  await openProjectPage(page, "shots");
   await expect(page.locator(".candidate-card video")).toBeVisible();
   await page.locator(".candidate-card video").evaluate(async (video) => {
     window.__playing = video;
@@ -133,7 +134,7 @@ test("failed shot refresh displays the error and does not destroy an active play
   request,
 }) => {
   await openProject(page);
-  await page.locator('[data-tab="shots"]').click();
+  await openProjectPage(page, "shots");
   await page.locator(".candidate-card video").evaluate(async (video) => {
     window.__playing = video;
     video.muted = true;
@@ -167,7 +168,8 @@ test("CAS draft remains old after an external update and retake never calls a pa
   request,
 }) => {
   await openProject(page);
-  await page.locator('[data-tab="shots"]').click();
+  await openProjectPage(page, "shots");
+  await page.getByText("单镜精修", { exact: true }).click();
   const editor = page.locator('form[data-shot-operation="edit"]');
   await editor.locator('[name="prompt"]').fill("A revised station frame");
   await request.post("/__test/progress");
