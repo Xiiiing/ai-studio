@@ -8,15 +8,22 @@ from .providers import (ENV_RE, ID_RE, _canonical_host, _number, _reject_secret_
                         _valid_text, redact_secrets, validate_endpoint)
 
 VIDEO_PROVIDERS = {
+    "comfyui_h3": {"label": "ComfyUI / MiniMax H3", "protocol": "comfyui",
+                   "location": "local", "model_example": "MiniMax-H3"},
     "comfyui_wan": {"label": "ComfyUI / Wan", "protocol": "comfyui",
                     "location": "local", "model_example": "Wan2.2-TI2V-5B"},
-    "minimax": {"label": "MiniMax Video", "protocol": "minimax_video",
+    "minimax": {"label": "MiniMax 云端视频 API", "protocol": "minimax_video",
                 "location": "remote", "base_url_example": "https://api.minimax.io/v1",
                 "model_example": "MiniMax-Hailuo-2.3"},
 }
 VIDEO_ROLES = {"video_generator": "视频生成"}
 LOCAL_PROFILE = {"provider": "comfyui_wan", "enabled": True, "model": "Wan2.2-TI2V-5B"}
+H3_PROFILE = {"provider": "comfyui_h3", "enabled": True, "model": "MiniMax-H3",
+              "revision": "wkp-dualgpu-turbo4-v1"}
+H3_PRODUCTION_PROFILE = {**H3_PROFILE, "revision": "wkp-dualgpu-base-v1", "quality": "production",
+                         "steps": 20, "shift_video": 12.0, "shift_audio": 3.0, "sampler": "euler"}
 _COMMON = {"provider", "enabled", "model", "revision"}
+_H3 = {"quality", "steps", "shift_video", "shift_audio", "sampler"}
 _REMOTE = {"base_url", "network_mode", "allowed_hosts", "api_key_env", "download_hosts",
            "duration", "resolution", "prompt_optimizer", "request_timeout_seconds",
            "poll_interval_seconds", "max_wait_seconds", "max_download_bytes", "pricing"}
@@ -33,7 +40,7 @@ def normalize_video_profile(value):
         return normalize_media(profile, "video")
     if provider not in VIDEO_PROVIDERS:
         raise ValueError("Unsupported video provider")
-    allowed = _COMMON | (_REMOTE if provider == "minimax" else set())
+    allowed = _COMMON | (_REMOTE if provider == "minimax" else _H3 if provider == "comfyui_h3" else set())
     if set(profile) - allowed:
         raise ValueError("Unknown video profile fields: " + ", ".join(sorted(set(profile) - allowed)))
     profile.setdefault("enabled", False if provider == "minimax" else True)
@@ -42,9 +49,18 @@ def normalize_video_profile(value):
     profile["model"] = _valid_text(profile.get("model"), "video model", 128).strip()
     if "revision" in profile:
         _valid_text(profile["revision"], "video revision", 128)
-    if provider == "comfyui_wan":
-        if profile["model"] != LOCAL_PROFILE["model"]:
-            raise ValueError("The managed ComfyUI adapter currently runs Wan2.2-TI2V-5B")
+    if provider in {"comfyui_wan", "comfyui_h3"}:
+        expected = H3_PROFILE if provider == "comfyui_h3" else LOCAL_PROFILE
+        if profile["model"] != expected["model"]:
+            raise ValueError("The managed ComfyUI adapter requires " + expected["model"])
+        if provider == "comfyui_h3":
+            from studio.h3 import recipe
+            selected = recipe(profile)
+            # Historical snapshots retain their exact identity and turbo4 defaults.
+            if set(profile) & _H3 or selected["quality"] == "production":
+                profile.update(selected)
+            else:
+                profile.setdefault("revision", selected["revision"])
         return profile
     if "pricing" in profile:
         from .cloud_budget import pricing
@@ -121,7 +137,7 @@ def resolve_video(config, *, require_enabled=True):
 def video_presets():
     """Editable defaults shared by the UI and configuration examples."""
     properties=VIDEO_PROVIDERS["minimax"]
-    return {"comfyui_wan":copy.deepcopy(LOCAL_PROFILE),
+    return {"comfyui_h3": copy.deepcopy(H3_PRODUCTION_PROFILE), "comfyui_wan":copy.deepcopy(LOCAL_PROFILE),
             "minimax":normalize_video_profile({"provider":"minimax","enabled":True,
                 "model":properties["model_example"],"base_url":properties["base_url_example"],
                 "network_mode":"remote","allowed_hosts":["api.minimax.io"],"api_key_env":"MINIMAX_API_KEY"})}

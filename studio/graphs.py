@@ -68,3 +68,38 @@ def h3_portrait(prompt,seed,prefix="benchmark/h3_portrait"):
         "13":node("VAEDecodeTiled",samples=["12",0],vae=["4",0],tile_size=256,overlap=64,temporal_size=32,temporal_overlap=8),
         "14":node("ImageFromBatch",image=["13",0],batch_index=0,length=1),
         "15":node("SaveImage",images=["14",0],filename_prefix=prefix)}
+
+
+def h3_video(prompt, seed, image, width=352, height=640, seconds=6, prefix="video/shot", profile=None):
+    """Canonical H3 first-frame graph, preserving the original preview recipe."""
+    from .h3 import UNET, CLIP, VAE, LORA, frame_count, recipe
+    selected = recipe(profile)
+    if any(type(v) is not int or not 128 <= v <= 1536 or v % 32 for v in (width, height)) or width * height > 768 * 1344:
+        raise ValueError("MiniMax H3 canvas must align to 32 pixels within 768*1344")
+    if not isinstance(image, str) or not image:
+        raise ValueError("MiniMax H3 video requires an approved first frame")
+    graph = {
+        "1": node("UNETLoader", unet_name=UNET, weight_dtype="default"),
+        "17": node("LoraLoaderModelOnly", model=["1", 0], lora_name=LORA, strength_model=1.0),
+        "2": node("MiniMaxH3SigmaShift", model=["17", 0], shift_video=selected["shift_video"], shift_audio=selected["shift_audio"]),
+        "3": node("PilotCLIPOnSecondaryGPU", clip_name=CLIP),
+        "4": node("PilotVAEOnDevice", vae_name=VAE, placement="secondary_gpu"),
+        "18": node("LoadImage", image=image),
+        "6": node("MiniMaxH3ImageToVideo", clip=["3", 0], vae=["4", 0], prompt=prompt,
+                  width=width, height=height, length=frame_count(seconds), first_frame=["18", 0]),
+        "7": node("BasicGuider", model=["2", 0], conditioning=["6", 0]),
+        "8": node("RandomNoise", noise_seed=seed),
+        "9": node("KSamplerSelect", sampler_name=selected["sampler"]),
+        "10": node("BasicScheduler", model=["2", 0], scheduler="simple", steps=selected["steps"], denoise=1.0),
+        "11": node("SamplerCustomAdvanced", noise=["8", 0], guider=["7", 0], sampler=["9", 0],
+                   sigmas=["10", 0], latent_image=["6", 1]),
+        "12": node("LTXVSeparateAVLatent", av_latent=["11", 1]),
+        "13": node("VAEDecodeTiled", samples=["12", 0], vae=["4", 0], tile_size=256,
+                   overlap=64, temporal_size=32, temporal_overlap=8),
+        "15": node("CreateVideo", images=["13", 0], fps=24.0, bit_depth=8),
+        "16": node("SaveVideo", video=["15", 0], filename_prefix=prefix, format="mp4", codec="auto"),
+    }
+    if selected["quality"] == "production":
+        graph.pop("17")
+        graph["2"]["inputs"]["model"] = ["1", 0]
+    return graph

@@ -297,7 +297,7 @@ def review_media(project, shot, path, references, config=None, *, output_dir=Non
         "approved_sequence":_review_sequence(project),
         "sequence_rule":"approved_sequence是批准剧情时序，只用于检查明显的道具提前出现或持有人矛盾；只要求本镜动作，不要求单帧演完整段事件。",
         "criteria":{"pass":"叙事主体/服装/构图足够匹配，无明显多肢/脸部崩坏或关键剧情错置",
-                    "fail":"仅对清晰可见且影响剧情的严重错误判fail；不能从静态图推断口型或表演连续性"},
+                    "fail":"仅对清晰可见且影响剧情的严重错误判fail；不能从单张静态图推断口型或全过程表演连续性"},
         "evidence_rule":"只用待评镜头样本判断当前人物动作、道具持有人、位置与构图；参考图仅用于身份和衣装对照，参考图中的持物或背景不代表候选帧已经具备。逐项根据本次可见证据判断，不猜测历史评审。",
         "note":"这是抽帧视觉语言模型评审，不是VBench，分数是模型判断，不是客观真值。",
         "project_id":project.get("id"),"production_revision":project.get("production_revision"),
@@ -339,10 +339,17 @@ def review_media(project, shot, path, references, config=None, *, output_dir=Non
                            ("id", "name", "description", "prompt", "palette") if key in approved},
                        contract_rule=("style_alignment独立检查指定媒介和批准画风；不要把身份相似当作画风合格。"
                            "二维动画、三维动画、写实影像不能互相替代。预览阶段只判断画风，不要求静帧已经有动画。"
-                           "有时间点的视频样本须检查批准的主体动作：人物身体/姿态/表情变化填character_motion；"
-                           "纯物体镜中门打开、杯子落下等明确物体起止变化填object_motion。两者均须兑现本镜批准动作，不能用无关背景漂移替代。"
-                           "纯缩放、平移、镜头抖动不是主体动作，填camera_only。"
-                           "motion_alignment的证据须写明实际样本时间和可见变化；无法确定时填uncertain，不得凭文件是视频推断动作合格。"))
+                           "motion_alignment只分类时间样本之间实际可见的运动，不表示本镜批准动作已经兑现。"
+                           "跨时间点可见人物转头、眨眼、眼神或面部表情改变、身体或姿态变化，填character_motion；"
+                           "即使手部或躯干保持静止、相机也同时移动，仍须保留已观察到的人物运动分类。"
+                           "无可见人物运动，但可见门打开、杯子落下等主体物体的起止状态变化，填object_motion。"
+                           "只有全部样本中所有主体姿态和表情均不变，仅发生缩放、平移或镜头抖动，才填camera_only；"
+                           "不能把相机视角变化造成的投影变化冒充人物运动。"
+                           "抽帧本身是静态图片，应比较不同时间点的可见变化，不能据此认定视频无运动。"
+                           "另行检查批准动作及其时序：清晰可见的动作要求或时序不符，须在issues中报code=action、severity=blocking并判fail，"
+                           "不得为了表达动作未兑现而把已观察到的人物运动误标为camera_only，不能用无关背景漂移替代批准动作。"
+                           "motion_alignment的证据须写明实际样本时间和可见变化；无法确定时填uncertain，"
+                           "不能凭文件是视频或少量姿态变化推断批准动作全过程合格。"))
     content=[{"type":"text","text":json.dumps(context,ensure_ascii=False)}]
     review_references = (references or []) if shot.get("material_constraints") else (references or [])[:4]
     for index, reference in enumerate(review_references):

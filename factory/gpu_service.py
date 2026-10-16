@@ -72,6 +72,11 @@ def number(value, low, high):
 def validate_graph(graph, names, output_kind):
     if not isinstance(graph, dict) or not 1 <= len(graph) <= 80:
         raise ValueError("Graph must contain 1..80 known nodes")
+    from studio.h3 import UNET
+    if any(isinstance(n, dict) and (str(n.get("class_type", "")).startswith(("MiniMaxH3", "Pilot")) or
+           isinstance(n.get("inputs"), dict) and n["inputs"].get("unet_name") == UNET) for n in graph.values()):
+        validate_h3_graph(graph, names, output_kind)
+        return
     output = []
     for ident, node in graph.items():
         if not isinstance(ident, str) or not re.fullmatch(r"[0-9]{1,4}", ident):
@@ -138,6 +143,35 @@ def validate_graph(graph, names, output_kind):
                     raise ValueError("Only 24 fps video is supported")
     if output != ["SaveImage" if output_kind == "image" else "SaveVideo"]:
         raise ValueError("Graph must have exactly one matching output")
+
+
+def validate_h3_graph(graph, names, output_kind):
+    """Accept the inspected H3 recipe, never arbitrary H3 nodes or file operations."""
+    from studio.graphs import h3_video
+    from studio.h3 import graph_recipe
+    try:
+        conditioning = graph["6"]["inputs"]
+        prompt, frames = conditioning["prompt"], conditioning["length"]
+        image = graph["18"]["inputs"]["image"]
+        seed = graph["8"]["inputs"]["noise_seed"]
+        prefix = graph["16"]["inputs"]["filename_prefix"]
+        if output_kind != "video" or image not in names:
+            raise ValueError("H3 requires a supplied first frame and video output")
+        if not isinstance(prompt, str) or not 1 <= len(prompt) <= 10000:
+            raise ValueError("H3 prompt must contain 1..10000 characters")
+        if type(frames) is not int or not 39 <= frames <= 362 or frames % 17 != 5:
+            raise ValueError("H3 frame count must use the bounded 17k+5 grid")
+        if type(seed) is not int or not 0 <= seed < 2**64:
+            raise ValueError("H3 seed must be an unsigned 64-bit integer")
+        if not isinstance(prefix, str) or not re.fullmatch(r"[A-Za-z0-9_/-]{1,160}", prefix) or any(p in ("", ".", "..") for p in prefix.split("/")):
+            raise ValueError("Unsafe H3 output prefix")
+        selected = graph_recipe(graph)
+        expected = h3_video(prompt, seed, image, conditioning["width"], conditioning["height"], 1, prefix, profile=selected)
+        expected["6"]["inputs"]["length"] = frames
+        if graph != expected:
+            raise ValueError("H3 graph differs from an approved dual-GPU recipe")
+    except (KeyError, TypeError) as exc:
+        raise ValueError("Invalid H3 graph structure") from exc
 
 
 def validate_speech(payload):
@@ -231,14 +265,23 @@ def validate_request(payload):
 
 
 class InferenceEngine:
-    def __init__(self, production, model_profiles=None):
+    def __init__(self, production, model_profiles=None, model_routes=None):
         self.model_profiles = copy.deepcopy(model_profiles or {})
+        self.model_routes = {"primary": "qwen38_primary", "critic": "qwen38_secondary", "vision": "qwen_vision_existing"}
+        if model_routes is not None:
+            if not isinstance(model_routes, dict) or set(model_routes) - set(self.model_routes):
+                raise ValueError("Model routes must map primary, critic or vision")
+            if any(not isinstance(value, str) or value not in self.model_profiles for value in model_routes.values()):
+                raise ValueError("Model routes must select configured server profiles")
+            self.model_routes.update(model_routes)
         self.production = copy.deepcopy(production)
         self.production.pop("remote_gpu", None)
         self.production.pop("gpu_service", None)
         self.production["gpu_backend"] = "local"
 
     def health(self):
+        from studio.h3 import installation
+        h3 = installation()
         return {"ok": True, "service": "gpu_inference", "workflow_execution": False,
                 "execution_host": socket.gethostname(),
                 "gpu_cards": self.production.get("gpu_cards", list(range(8))),
@@ -247,11 +290,13 @@ class InferenceEngine:
                     "video": (ROOT / "models/diffusion_models/wan2.2_ti2v_5B_fp16.safetensors").is_file(),
                     "audio": (ROOT / "audio/tts.py").is_file() and
                              (ROOT / "models/tts/Qwen3-TTS-12Hz-1.7B-CustomVoice").is_dir()},
+                "video_backends": {"comfyui_h3": h3,
+                    "comfyui_wan": {"model": "Wan2.2-TI2V-5B", "installed": (ROOT / "models/diffusion_models/wan2.2_ti2v_5B_fp16.safetensors").is_file()}},
                 "model_check": "installed_files_only_not_inference"}
 
     def model(self, name, route, payload, method):
         from .providers import request_json, model_matches
-        profiles = {"primary": "qwen38_primary", "critic": "qwen38_secondary", "vision": "qwen_vision_existing"}
+        profiles = self.model_routes
         routes = {("GET", "/v1/models"), ("GET", "/props"),
                   ("POST", "/v1/chat/completions"), ("POST", "/apply-template"), ("POST", "/tokenize")}
         if name not in profiles or (method, route) not in routes:
@@ -341,14 +386,23 @@ class InferenceEngine:
                              "max_gpu_seconds": payload.get("max_gpu_seconds", 7200)})
             self.active_budget = budget
             scheduler = Scheduler(self.production, budget)
-            with scheduler.worker("inference-" + payload["request_id"][:24]) as worker:
+            h3 = any(node.get("class_type") == "MiniMaxH3ImageToVideo" for node in payload["graph"].values())
+            if h3:
+                from studio.h3 import require_installation, graph_recipe
+                require_installation(graph_recipe(payload["graph"]))
+            with scheduler.worker("inference-" + payload["request_id"][:24], **({"h3": True} if h3 else {})) as worker:
                 for value in payload.get("inputs", []):
                     path = within(worker.folder / "input", value["name"])
                     path.write_bytes(base64.b64decode(value["data"], validate=True))
                 path = worker.execute(payload["graph"], folder / "output", payload["output_kind"],
-                                      timeout=budget.timeout(payload.get("timeout_seconds", 7200), 1))
+                                      timeout=budget.timeout(payload.get("timeout_seconds", 7200), 2 if h3 else 1))
                 files.append(path)
             result = {"receipt": {**read_json(path.parent / "result.json"), **budget.snapshot()}}
+            if h3:
+                from studio.h3 import MODEL, graph_recipe
+                selected = graph_recipe(payload["graph"])
+                result["receipt"].update(provider="comfyui_h3", model=MODEL,
+                                         model_revision=selected["revision"], generation_parameters=selected)
         else:
             session, voices = self.speech(payload, folder)
             self.active_budget = session.budget
@@ -560,7 +614,7 @@ def main():
         raise ValueError("GPU service must bind IPv4 loopback on an unprivileged port")
     from .config import load_config
     config = load_config()
-    engine = InferenceEngine(config.get("production", {}), config.get("llm_profiles", {}))
+    engine = InferenceEngine(config.get("production", {}), config.get("llm_profiles", {}), config.get("model_routes"))
     store = InferenceStore(ROOT / "runtime/inference", engine)
     server = ThreadingHTTPServer((args.host, args.port), Handler)
     server.store = store

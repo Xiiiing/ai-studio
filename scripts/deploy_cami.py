@@ -17,8 +17,10 @@ import subprocess
 import tempfile
 import time
 import urllib.request
+import sys
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
 WORKSPACE = ROOT / "runtime/cami-studio"
 TLS_AREA = ROOT / "runtime/wkp-live-gateway"
 UNITS = ("ai-studio-web.service", "ai-studio-worker.service")
@@ -150,7 +152,7 @@ def new_configuration(paths):
     profiles = {}
     models = {"primary": ("qwen3.8-27b-q8-opt-2dflash", 32768, False),
               "critic": ("ai-studio-qwen38-23", 16384, False),
-              "vision": ("Qwen3.6-35B-A3B-UD-Q4_K_S", 32768, True)}
+              "vision": ("ai-studio-qwen38-vision", 16384, True)}
     for name, (model, context, vision) in models.items():
         template = value["llm_profiles"]["critic_local" if name == "critic" else "writer_local"]
         profile = copy.deepcopy(template)
@@ -161,6 +163,9 @@ def new_configuration(paths):
                        response_format="llama_json_schema", context_validation="llama_tokenize",
                        tls_ca_file_env="CAMI_WKP_TLS_CA", tls_client_cert_env="CAMI_WKP_TLS_CERT",
                        tls_client_key_env="CAMI_WKP_TLS_KEY")
+        if vision:
+            # review_media resizes inputs to 512x768; leave room for temporal samples.
+            profile["image_token_budget"] = 1024
         profiles[name] = profile
     value["llm_profiles"] = profiles
     value["llm"] = copy.deepcopy(profiles["primary"])
@@ -172,9 +177,11 @@ def new_configuration(paths):
     value["production"]["gpu_service"] = {"base_url": WKP, "ca_file": str(paths["CAMI_WKP_TLS_CA"]),
                                           "client_cert": str(paths["CAMI_WKP_TLS_CERT"]),
                                           "client_key": str(paths["CAMI_WKP_TLS_KEY"])}
-    # Keep the existing local-Wan contract; the GPU service owns its actual execution.
-    value["video_profiles"] = {"local_wan": copy.deepcopy(value["video_profiles"]["local_wan"])}
-    value["video_roles"] = {"video_generator": "local_wan"}
+    # The original Wkp H3 chain is a ComfyUI graph, not the MiniMax cloud API.
+    from factory.video_providers import H3_PRODUCTION_PROFILE
+    value["video_profiles"] = {"wkp_h3": copy.deepcopy(H3_PRODUCTION_PROFILE)}
+    value["video_roles"] = {"video_generator": "wkp_h3"}
+    value["production"].update(video_profile="h3_production", video_width=768, video_height=1344, h3_reserve_vram_gib=12, h3_int8_scratch_mib=512)
     return value
 
 

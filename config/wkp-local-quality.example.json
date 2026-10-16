@@ -1,0 +1,41 @@
+{
+  "vision_test": {
+    "server": "/root/jialin/Rwork/llama.cpp/build/bin/llama-server",
+    "model": "/root/jialin/Rwork/llama.cpp/build/models/Qwen3.8-27B-Q8_0.gguf",
+    "projector": "/root/jialin/drama_studio/runtime/local-quality-20261016/models/mmproj-Qwen3.8-27B-BF16.gguf",
+    "alias": "ai-studio-qwen38-vision",
+    "context_tokens": 16384,
+    "gpu_cards": [4, 5]
+  },
+  "model_routes": {
+    "primary": "qwen38_primary",
+    "critic": "qwen38_secondary",
+    "vision": "qwen38_vision"
+  },
+  "vision_server_profile": {
+    "provider": "llama_cpp",
+    "enabled": true,
+    "network_mode": "loopback",
+    "base_url": "http://127.0.0.1:8098/v1",
+    "model": "ai-studio-qwen38-vision",
+    "context_tokens": 16384,
+    "vision": true,
+    "image_token_budget": 1024,
+    "response_format": "llama_json_schema",
+    "context_validation": "llama_tokenize"
+  },
+  "video_profile": {
+    "provider": "comfyui_h3",
+    "enabled": true,
+    "model": "MiniMax-H3",
+    "revision": "wkp-dualgpu-base-v1",
+    "quality": "production",
+    "steps": 20,
+    "shift_video": 12.0,
+    "shift_audio": 3.0,
+    "sampler": "euler"
+  },
+  "h3_reserve_vram_gib": 12,
+  "h3_int8_scratch_mib": 512,
+  "production_geometry": {"video_width": 768, "video_height": 1344}
+}

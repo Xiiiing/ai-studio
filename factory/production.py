@@ -17,7 +17,7 @@ from contextlib import nullcontext
 from pathlib import Path
 
 from studio.core import ROOT, fingerprint, media_receipt, read_json, sha256, within, write_json
-from studio.graphs import flux_image, wan_video
+from studio.graphs import flux_image, wan_video, h3_video
 from . import team_control, team_ledger
 from .audio_editor import AudioEditorMixin
 from .speech import SpeechMixin
@@ -181,6 +181,9 @@ def capabilities(config=None):
         connection = config.get(kind + "_connection", {})
         if connection.get("provider", "legacy") not in {"legacy", "comfyui_wan"}:
             info[key].update(backend=connection.get("model"),provider=connection["provider"],installed=None,configured=connection.get("enabled",True),validation="requires_successful_generation_receipt")
+            if connection["provider"] == "comfyui_h3" and not config.get("gpu_service"):
+                from studio.h3 import installation
+                info[key]["installed"] = installation(connection)["installed"]
     if not any(local.values()): info["scheduler"]["physical_cards"] = []
     return info
 
@@ -603,7 +606,8 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                                  **({"connection": media_identity(self.video_connection)} if kind == "video" and self.video_connection.get("provider") in {"comfyui_local", "comfyui_external"} else {}),
                                  "model": ("FLUX.2-klein-4B" if kind == "image" else
                                            video_identity(self.video_connection) if self.video_connection["provider"] == "minimax"
-                                           else "Wan2.2-TI2V-5B"),
+                                           else self.video_connection["model"]),
+                                 **({"connection": media_identity(self.video_connection)} if kind == "video" and self.video_connection["provider"] == "comfyui_h3" else {}),
                                  "seconds": extra.get("seconds"),
                                  "mode": self.mode, "profile": self.config.get("video_profile", "quality"),
                                  **({"asset_references": extra["asset_references"]} if extra.get("asset_references") else {}),
@@ -717,6 +721,11 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                                  "steps": 4 if target["kind"] == "image" else 20},
                   "references": [media_receipt(p) for p in target["references"]],
                   "started_at": time.time()}
+        if target["kind"] == "video" and self.video_connection["provider"] == "comfyui_h3":
+            from studio.h3 import frame_count, recipe
+            selected = recipe(self.video_connection)
+            record.update(provider="comfyui_h3", profile=self.video_connection["profile"], model_revision=selected["revision"])
+            record["parameters"].update(selected, frames=frame_count(target["seconds"]), gpu_count=2)
         if explicit_profile(self.project):
             record["production_profile"] = resolve_profile(self.project)
             record["production_profile_signature"] = profile_signature(self.project)
@@ -777,7 +786,8 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
             generate = [target for target in generate if not self._remote_video(target)]
             if generate:
                 self.boundary(gpu=True)
-                with self.scheduler.worker(self.slug + "_" + phase, self.control) as worker:
+                h3 = self.video_connection["provider"] == "comfyui_h3" and any(t["kind"] == "video" for t in generate)
+                with self.scheduler.worker(self.slug + "_" + phase, self.control, **({"h3": True} if h3 else {})) as worker:
                     for target in generate:
                         self._team_admit_target(target)
                         self.boundary(gpu=True)
@@ -821,13 +831,19 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                                     record["repair_keyframe"] = media_receipt(repair_path, technical_qa=image_qa)
                                     names[0] = worker.copy_input(repair_path)
                                 profile = None
-                                if self.config.get("video_profile") == "fastwan":
+                                if not h3 and self.config.get("video_profile") == "fastwan":
                                     profile = read_json(ROOT / "workflows/fastwan_profile.json")
-                                graph = wan_video(record["prompt"], record["seed"], names[0],
+                                builder = h3_video if h3 else wan_video
+                                graph = builder(record["prompt"], record["seed"], names[0],
                                                   *self.video_size, seconds=target["seconds"],
-                                                  prefix=self.slug + "/" + target["key"], profile=profile)
+                                                  prefix=self.slug + "/" + target["key"], profile=self.video_connection if h3 else profile)
+                            # Native H3 base sampling can exceed the legacy two-hour
+                            # task cap. Keep the service cap and the approved project
+                            # budget; count both leased GPUs when bounding local work.
+                            task_limit = (1800 if target["kind"] == "image" else
+                                          21600 if h3 and self.video_connection.get("quality") == "production" else 7200)
                             path = worker.execute(graph, target["folder"] / record["take"], target["kind"],
-                                                  timeout=self.budget.timeout(1800 if target["kind"] == "image" else 7200, 1))
+                                                  timeout=self.budget.timeout(task_limit, 2 if h3 else 1))
                             receipt = read_json(path.parent / "result.json")
                             record.update(state="generated", output=receipt, elapsed_seconds=round(time.monotonic() - started, 3))
                             ready.append((target, record, receipt))
@@ -857,9 +873,13 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                     if target["kind"] == "image":
                         technical = inspect_image(path, self.image_size)
                     else:
-                        frames = round(target["seconds"] * 24)
-                        while frames % 4 != 1:
-                            frames += 1
+                        if self.video_connection["provider"] == "comfyui_h3":
+                            from studio.h3 import frame_count
+                            frames = frame_count(target["seconds"])
+                        else:
+                            frames = round(target["seconds"] * 24)
+                            while frames % 4 != 1:
+                                frames += 1
                         expected_seconds = target["seconds"] if self._remote_video(target) or uses_bound(self, target) else frames / 24
                         technical = inspect_video(path, expected_seconds, self.video_size)
                     required = self._review_required(target)
@@ -882,6 +902,11 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                                                  "cloud_diffusion_video" if self._remote_video(target) else "local_diffusion_video")}
                     if target["kind"] == "video":
                         saved.update(motion_method="generated_video", diffusion_video=True)
+                        if self.video_connection["provider"] == "comfyui_h3":
+                            from studio.h3 import MODEL, recipe
+                            selected = recipe(self.video_connection)
+                            saved.update(provider="comfyui_h3", model=MODEL, model_revision=selected["revision"],
+                                         generation_parameters=selected)
                     if self.creative_contract:
                         saved["creative_contract_signature"] = fingerprint(self.creative_contract)
                         if target.get("style"):

@@ -197,6 +197,7 @@ LM Studio 使用其已启动的 OpenAI 兼容服务和服务返回的实际模�
 | provider | 实际执行方式 | 配置范围 |
 | --- | --- | --- |
 | `comfyui_wan` | 既有 ComfyUI / Wan2.2-TI2V-5B 工作流 | 保留本机进程、GPU 租约和已有质量检查 |
+| `comfyui_h3` | Wkp 原有 ComfyUI / MiniMax H3 双卡图生视频 | 可配正式档基础模型 20–50 步，或保留 turbo4 预览；首帧输入、`17k+5` 帧数，与 MiniMax 云 API 独立 |
 | `minimax` | MiniMax v1 的 image-to-video 提交、状态查询、文件取回 | 独立配置模型、鉴权、时长、分辨率、轮询和下载限额 |
 
 以下是视频配置部分，可与现有文本配置一起保存。示例保留本地默认，云连接初始禁用：
@@ -247,7 +248,11 @@ LM Studio 使用其已启动的 OpenAI 兼容服务和服务返回的实际模�
 
 `motion_comic` 使用关键帧和剪辑器运镜；设置视频模型不意味着该格式一定调用视频生成服务。云视频提交与轮询不持有本地视频 GPU 租约；若质量修复需要重新生成关键帧，该图像步骤仍可能使用本地 GPU。
 
+H3 的质量档、采样参数、Qwen3.8 视觉组件与当前未部署边界见[本地质量配置及验收](WKP_LOCAL_QUALITY.md)。新连接默认正式档；历史 turbo4 连接保持原参数和缓存身份。
+
 ## 8. MiniMax 任务持久化与恢复
+
+以上 `minimax` 指云端 v1 接口。`comfyui_h3` 使用制作服务器的已有 H3 权重与 ComfyUI 工作流，不需要 MiniMax API 密钥。Wkp 接入、视觉服务核实、既有安装切换和验收边界见 [H3 接入记录](WKP_H3_MODEL_AUDIT.md)。
 
 当前 MiniMax 适配器只使用以下 v1 操作：
 

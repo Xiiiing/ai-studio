@@ -11,6 +11,8 @@ test.beforeEach(async ({ request, page }) => {
 });
 async function models(page) {
   await page.goto("/");
+  if (await page.locator('[data-action="toggle-navigation"]').isVisible())
+    await page.locator('[data-action="toggle-navigation"]').click();
   await page.locator('.main-nav [data-action="models"]').click();
   await expect(page.locator("#workspace h1")).toHaveText("模型与连接");
 }
@@ -120,3 +122,95 @@ test("video API presets provide a model ID and environment name", async ({
     page.locator('#model-dialog input[name="api_key_env"]'),
   ).toHaveValue("MINIMAX_API_KEY");
 });
+
+for (const viewport of [
+  { name: "desktop", width: 1440, height: 1000 },
+  { name: "mobile", width: 390, height: 844 },
+]) {
+  test(`ComfyUI H3 quality parameters save without generation on ${viewport.name}`, async ({
+    page,
+    request,
+  }, testInfo) => {
+    await page.setViewportSize(viewport);
+    await models(page);
+    await page.locator('[data-model-action="video-add"]').click();
+    await page.locator('#model-dialog input[name="id"]').fill("wkp_h3");
+    await page
+      .locator('#model-dialog select[name="provider"]')
+      .selectOption("comfyui_h3");
+    await expect(page.locator('#model-dialog input[name="model"]')).toHaveValue(
+      "MiniMax-H3",
+    );
+    await expect(
+      page.locator('#model-dialog input[name="api_key_env"]'),
+    ).toHaveCount(0);
+    await expect(page.getByLabel("H3 质量档", { exact: true })).toHaveValue(
+      "production",
+    );
+    await expect(page.getByLabel("采样步数", { exact: true })).toHaveValue(
+      "20",
+    );
+    await page.getByLabel("H3 质量档", { exact: true }).selectOption("preview");
+    await expect(page.getByLabel("采样步数", { exact: true })).toHaveCount(0);
+    await expect(
+      page.getByText("使用 4 步 Turbo LoRA，适合快速检查镜头与提示词。"),
+    ).toBeVisible();
+    await page
+      .getByLabel("H3 质量档", { exact: true })
+      .selectOption("production");
+    await page.getByLabel("采样步数", { exact: true }).fill("28");
+    await page.getByLabel("采样器", { exact: true }).selectOption("heun");
+    await page.getByLabel("视频采样偏移", { exact: true }).fill("10.5");
+    await page.getByLabel("音频采样偏移", { exact: true }).fill("2");
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth,
+      ),
+    ).toBeTruthy();
+      await page.locator("#model-dialog").screenshot({
+      path: testInfo.outputPath(`h3-quality-${viewport.name}.png`),
+    });
+      await page.locator('#model-dialog button[type="submit"]').scrollIntoViewIfNeeded();
+      await expect(page.locator('#model-dialog button[type="submit"]')).toBeInViewport();
+      if (viewport.name === "mobile")
+        await page.locator("#model-dialog").screenshot({ path: testInfo.outputPath("h3-quality-mobile-actions.png") });
+    await page.locator('#model-dialog button[type="submit"]').click();
+    await page.locator("#role-video-video_generator").selectOption("wkp_h3");
+    await expect(
+      page.getByText(/ComfyUI \/ MiniMax H3 双 GPU 工作流/),
+    ).toBeVisible();
+    await page.locator('[data-model-action="save"]').click();
+    const calls = await (await request.get("/__test/calls")).json();
+    const saved = calls.find(
+      (c) => c.path === "/api/factory/models" && c.method === "POST",
+    ).body;
+    expect(saved.video_roles.video_generator).toBe("wkp_h3");
+    expect(saved.video_profiles.wkp_h3).toMatchObject({
+      provider: "comfyui_h3",
+      model: "MiniMax-H3",
+      quality: "production",
+      steps: 28,
+      shift_video: 10.5,
+      shift_audio: 2,
+      sampler: "heun",
+      revision: "wkp-dualgpu-base-v1",
+    });
+    expect(saved.video_profiles.wkp_h3).not.toHaveProperty("api_key_env");
+    expect(
+      calls.some(
+        (c) =>
+          c.path.includes("video_generation") ||
+          c.path.includes("/inference/jobs"),
+      ),
+    ).toBeFalsy();
+    await page
+      .locator('[data-model-action="video-edit"][data-profile="wkp_h3"]')
+      .click();
+    await expect(page.getByLabel("采样步数", { exact: true })).toHaveValue(
+      "28",
+    );
+    await expect(page.getByLabel("采样器", { exact: true })).toHaveValue(
+      "heun",
+    );
+  });
+}

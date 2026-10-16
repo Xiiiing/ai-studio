@@ -43,6 +43,8 @@ def storyboard_schema(shot_ids, project=None):
 
 
 def model_capabilities(project, config, episode):
+    from .video_providers import resolve_video
+    video = resolve_video(config, require_enabled=False)
     production = config.get("production", {})
     mode = project.get("format", episode.get("format", "motion_comic"))
     capabilities = {
@@ -50,7 +52,8 @@ def model_capabilities(project, config, episode):
         "image_engine": "FLUX.2 Klein 4B keyframes through the existing ComfyUI workflow",
         "video_engine": ("No diffusion video; generated still plus FFmpeg camera movement"
                          if mode == "motion_comic" else
-                         "Existing Wan2.2 image-to-video workflow; generated shots require quality review"),
+                         video["model"] + " image-to-video; generated shots require quality review"),
+        "video_provider": None if mode == "motion_comic" else video["provider"],
         "video_profile": None if mode == "motion_comic" else production.get("video_profile"),
         "image_size": [production.get("image_width", episode.get("generation", {}).get("width", 736)),
                        production.get("image_height", episode.get("generation", {}).get("height", 1312))],

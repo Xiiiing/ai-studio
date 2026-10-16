@@ -42,6 +42,49 @@ it("keeps the client TLS identity on its configured authority only", () => {
         normalizeProfile({ ...values, base_url }, previous)[key],
       ).toBeUndefined();
 });
+it("serializes H3 quality parameters and preserves an unchanged legacy preview", () => {
+  const legacy = {
+    provider: "comfyui_h3",
+    model: "MiniMax-H3",
+    enabled: true,
+    revision: "wkp-dualgpu-turbo4-v1",
+  };
+  const values = {
+    ...legacy,
+    enabled: "on",
+    quality: "production",
+    steps: "28",
+    shift_video: "10.5",
+    shift_audio: "2",
+    sampler: "heun",
+  };
+  expect(normalizeProfile(values, legacy, true)).toEqual({
+    ...legacy,
+    revision: "wkp-dualgpu-base-v1",
+    quality: "production",
+    steps: 28,
+    shift_video: 10.5,
+    shift_audio: 2,
+    sampler: "heun",
+  });
+  expect(
+    normalizeProfile({ ...values, quality: "preview" }, legacy, true),
+  ).toEqual(legacy);
+  expect(
+    normalizeProfile(
+      { ...values, quality: "preview" },
+      { ...legacy, quality: "production" },
+      true,
+    ),
+  ).toMatchObject({
+    quality: "preview",
+    steps: 4,
+    shift_video: 12,
+    shift_audio: 3,
+    sampler: "euler",
+    revision: "wkp-dualgpu-turbo4-v1",
+  });
+});
 function inventory() {
   return {
     revision: "config-1",
@@ -159,6 +202,141 @@ function setup() {
   };
 }
 describe("实际模型设置页面", () => {
+  it("shows the selected ComfyUI H3 chain and explains the visual-review requirement", async () => {
+    const { update } = setup();
+    await screen.findByText("writer-a");
+    update({
+      video_profiles: {
+        wkp_h3: { provider: "comfyui_h3", model: "MiniMax-H3", enabled: true },
+      },
+      video_roles: { video_generator: "wkp_h3" },
+      video_providers: [{ id: "comfyui_h3", label: "ComfyUI / MiniMax H3" }],
+    });
+    expect(
+      await screen.findByText(/ComfyUI \/ MiniMax H3 双 GPU 工作流/),
+    ).toBeVisible();
+    expect(screen.getByText(/视觉审核需要支持图片输入的模型/)).toBeVisible();
+    expect(screen.queryByText("Wan2.2-TI2V-5B")).not.toBeInTheDocument();
+  });
+  it("edits H3 production parameters and switches back to the fixed preview recipe", async () => {
+    const { update, calls } = setup();
+    await screen.findByText("writer-a");
+    update({
+      video_profiles: {
+        wkp_h3: {
+          provider: "comfyui_h3",
+          model: "MiniMax-H3",
+          enabled: true,
+          quality: "production",
+          steps: 20,
+          shift_video: 12,
+          shift_audio: 3,
+          sampler: "euler",
+          revision: "wkp-dualgpu-base-v1",
+        },
+      },
+      video_roles: { video_generator: "wkp_h3" },
+      video_providers: [{ id: "comfyui_h3", label: "ComfyUI / MiniMax H3" }],
+    });
+    const card = (await screen.findByText("MiniMax-H3")).closest("article")!;
+    await userEvent.click(
+      within(card).getByRole("button", { name: "编辑连接" }),
+    );
+    const dialog = screen.getByRole("dialog");
+    await userEvent.clear(within(dialog).getByLabelText("采样步数"));
+    await userEvent.type(within(dialog).getByLabelText("采样步数"), "28");
+    await userEvent.selectOptions(
+      within(dialog).getByLabelText("采样器"),
+      "heun",
+    );
+    expect(within(dialog).getByText(/不加载预览加速 LoRA/)).toBeVisible();
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "加入待保存修改" }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "保存配置" }));
+    await waitFor(() =>
+      expect(calls.some((c) => c.body?.video_profiles)).toBe(true),
+    );
+    expect(
+      calls.find((c) => c.body?.video_profiles)!.body.video_profiles.wkp_h3,
+    ).toMatchObject({
+      quality: "production",
+      steps: 28,
+      sampler: "heun",
+      revision: "wkp-dualgpu-base-v1",
+    });
+    expect(
+      within(card).getByText("正式质量档 · 基础模型 · 28 步 · heun"),
+    ).toBeVisible();
+    await userEvent.click(
+      within(card).getByRole("button", { name: "编辑连接" }),
+    );
+    const reopened = screen.getByRole("dialog");
+    await userEvent.selectOptions(
+      within(reopened).getByLabelText("H3 质量档"),
+      "preview",
+    );
+    expect(
+      within(reopened).queryByLabelText("采样步数"),
+    ).not.toBeInTheDocument();
+    await userEvent.click(
+      within(reopened).getByRole("button", { name: "加入待保存修改" }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "保存配置" }));
+    await waitFor(() =>
+      expect(calls.filter((c) => c.body?.video_profiles)).toHaveLength(2),
+    );
+    expect(
+      calls.filter((c) => c.body?.video_profiles)[1].body.video_profiles.wkp_h3,
+    ).toMatchObject({
+      quality: "preview",
+      steps: 4,
+      sampler: "euler",
+      revision: "wkp-dualgpu-turbo4-v1",
+    });
+  });
+  it("does not apply the new production preset while editing a legacy H3 connection", async () => {
+    const { update, calls } = setup();
+    await screen.findByText("writer-a");
+    const legacy = {
+      provider: "comfyui_h3",
+      model: "MiniMax-H3",
+      enabled: true,
+      revision: "wkp-dualgpu-turbo4-v1",
+    };
+    update({
+      video_profiles: { wkp_h3: legacy },
+      video_roles: { video_generator: "wkp_h3" },
+      video_providers: [{ id: "comfyui_h3", label: "ComfyUI / MiniMax H3" }],
+      video_presets: {
+        comfyui_h3: {
+          ...legacy,
+          quality: "production",
+          revision: "wkp-dualgpu-base-v1",
+          steps: 20,
+          shift_video: 12,
+          shift_audio: 3,
+          sampler: "euler",
+        },
+      },
+    });
+    const card = (await screen.findByText("MiniMax-H3")).closest("article")!;
+    await userEvent.click(
+      within(card).getByRole("button", { name: "编辑连接" }),
+    );
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByLabelText("H3 质量档")).toHaveValue("preview");
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "加入待保存修改" }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "保存配置" }));
+    await waitFor(() =>
+      expect(calls.some((c) => c.body?.video_profiles)).toBe(true),
+    );
+    expect(
+      calls.find((c) => c.body?.video_profiles)!.body.video_profiles.wkp_h3,
+    ).toEqual(legacy);
+  });
   it("不同应用的 QueryClient 不共享草稿", async () => {
     const { view } = setup();
     await screen.findByText("writer-a");
