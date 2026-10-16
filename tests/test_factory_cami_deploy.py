@@ -128,8 +128,8 @@ def test_prepare_builds_empty_isolated_control_plane_without_migrating_any_old_d
     source = json.loads(EXAMPLE.read_text())
     for key in ("image_width", "image_height", "output_width", "output_height"):
         assert current["production"][key] == source["production"][key]
-    assert current["production"]["video_profile"] == "h3_turbo4"
-    assert (current["production"]["video_width"], current["production"]["video_height"]) == (352, 640)
+    assert current["production"]["video_profile"] == "h3_production"
+    assert (current["production"]["video_width"], current["production"]["video_height"]) == (768, 1344)
     assert set(current["video_profiles"]) == {"wkp_h3"}
     assert current["video_roles"] == {"video_generator": "wkp_h3"}
     assert current["video_profiles"]["wkp_h3"]["provider"] == "comfyui_h3"
@@ -138,7 +138,7 @@ def test_prepare_builds_empty_isolated_control_plane_without_migrating_any_old_d
     assert current["llm_roles"]["visual_critic"] == "vision"
     for name, model, tokens in (("primary", "qwen3.8-27b-q8-opt-2dflash", 32768),
                                ("critic", "ai-studio-qwen38-23", 16384),
-                               ("vision", "Qwen3.6-35B-A3B-UD-Q4_K_S", 32768)):
+                               ("vision", "ai-studio-qwen38-vision", 16384)):
         profile = current["llm_profiles"][name]
         assert profile["base_url"] == deploy.WKP + "/models/" + name + "/v1"
         assert profile["model"] == model and profile["context_tokens"] == tokens

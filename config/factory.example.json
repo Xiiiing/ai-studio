@@ -209,7 +209,12 @@
       "provider": "comfyui_h3",
       "enabled": false,
       "model": "MiniMax-H3",
-      "revision": "wkp-dualgpu-turbo4-v1"
+      "revision": "wkp-dualgpu-base-v1",
+      "quality": "production",
+      "steps": 20,
+      "shift_video": 12.0,
+      "shift_audio": 3.0,
+      "sampler": "euler"
     }
   },
   "video_roles": {

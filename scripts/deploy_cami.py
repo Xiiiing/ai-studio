@@ -152,7 +152,7 @@ def new_configuration(paths):
     profiles = {}
     models = {"primary": ("qwen3.8-27b-q8-opt-2dflash", 32768, False),
               "critic": ("ai-studio-qwen38-23", 16384, False),
-              "vision": ("Qwen3.6-35B-A3B-UD-Q4_K_S", 32768, True)}
+              "vision": ("ai-studio-qwen38-vision", 16384, True)}
     for name, (model, context, vision) in models.items():
         template = value["llm_profiles"]["critic_local" if name == "critic" else "writer_local"]
         profile = copy.deepcopy(template)
@@ -175,10 +175,10 @@ def new_configuration(paths):
                                           "client_cert": str(paths["CAMI_WKP_TLS_CERT"]),
                                           "client_key": str(paths["CAMI_WKP_TLS_KEY"])}
     # The original Wkp H3 chain is a ComfyUI graph, not the MiniMax cloud API.
-    from factory.video_providers import H3_PROFILE
-    value["video_profiles"] = {"wkp_h3": copy.deepcopy(H3_PROFILE)}
+    from factory.video_providers import H3_PRODUCTION_PROFILE
+    value["video_profiles"] = {"wkp_h3": copy.deepcopy(H3_PRODUCTION_PROFILE)}
     value["video_roles"] = {"video_generator": "wkp_h3"}
-    value["production"].update(video_profile="h3_turbo4", video_width=352, video_height=640)
+    value["production"].update(video_profile="h3_production", video_width=768, video_height=1344, h3_reserve_vram_gib=12)
     return value
 
 
