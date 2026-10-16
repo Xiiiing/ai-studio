@@ -24,10 +24,13 @@ export function MaterialLibrary({ project, notify }: { project?: RecordData; not
   const [editing, setEditing] = useState<RecordData | null>(null);
   const [failure, setFailure] = useState("");
   const [busy, setBusy] = useState(false);
+  const [generation, setGeneration] = useState("");
   const query = useQuery({ queryKey: ["materials", project?.id, search, kind, offset],
     queryFn: () => request("/library?" + new URLSearchParams({ ...(project ? { project_id: project.id } : {}), q: search, kind, offset: String(offset) })) });
   const selected = useQuery({ queryKey: ["material-selection", project?.id], enabled: !!project,
     queryFn: () => request("/projects/" + project!.id + "/materials") });
+  const tasks = useQuery({ queryKey: ["material-tasks", project?.id], refetchInterval: 5000,
+    queryFn: () => request("/library/tasks" + (project ? "?project_id=" + project.id : "")) });
   async function run(work: () => Promise<unknown>, message: string) {
     setBusy(true); setFailure("");
     try { await work(); notify(message); await client.invalidateQueries(); }
@@ -39,6 +42,13 @@ export function MaterialLibrary({ project, notify }: { project?: RecordData; not
     refs.push({ asset_id: asset.asset_id, version: asset.version, role, ...(shotIds.length ? { shot_ids: shotIds } : {}) });
     await request("/projects/" + project!.id + "/materials", { action: "select", expected_revision: selected.data!.revision, references: refs.map(({ asset_id, version, role, shot_ids }) => ({ asset_id, version, role, ...(shot_ids ? { shot_ids } : {}) })) });
   }
+  function startAI(operation: string, asset?: RecordData) {
+    const style = rows(selected.data?.selected).find(row => row.binding.kind === "style")?.binding;
+    return run(() => request("/library/tasks", { request_id: crypto.randomUUID(), project_id: project?.id,
+      scope: project ? "project" : "global", operation, ...(asset ? { asset_id: asset.asset_id, version: asset.version } : { kind: kind || "character", document: { name: generation.slice(0, 100), description: generation } }),
+      ...(style && operation !== "describe" ? { style: { asset_id: style.asset_id, version: style.version } } : {}),
+      ...(operation === "views" ? { views: ["正面全身", "侧面全身", "背面全身"] } : {}), prompt: generation }), "AI 素材任务已建立，候选与费用状态在下方显示。");
+  }
   return <div className="stack">
     <Heading eyebrow="MATERIAL LIBRARY" title={project ? "本剧素材与定稿" : "统一素材库"}
       description={project ? "选用人物、场景和共同画风，集中确认后用于后续镜头制作。剧内修改保留独立版本。" : "保存可跨剧复用的人物、场景、画风与同框参考。"} />
@@ -48,7 +58,11 @@ export function MaterialLibrary({ project, notify }: { project?: RecordData; not
       <Field label="素材分类"><select value={kind} onChange={e => { setKind(e.target.value); setOffset(0); }}><option value="">全部分类</option>{Object.entries(materialKinds).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></Field>
       <button className="button primary" onClick={() => setEditing({ kind: kind || "character", data: { document: { name: "", description: "" } } })}>新建素材</button>
     </div>
-    {editing && <MaterialEditor key={editing.asset_id || "new"} asset={editing} project={project} busy={busy} onCancel={() => setEditing(null)}
+    <Panel title="AI 素材制作" description="输入人物或场景设定可从零生成；也可对已有素材识图建档、转换画风和补视图。候选经确认后采用。">
+      <Field label="AI制作要求"><textarea maxLength={4000} value={generation} onChange={e => setGeneration(e.target.value)} placeholder="例如：成年短发女性，圆脸，灰色外套，柔和水彩画风。" /></Field>
+      <button className="button" disabled={busy || !generation.trim()} onClick={() => startAI("generate")}>按文字生成{materialKinds[kind || "character"]}</button>
+    </Panel>
+    {editing && <MaterialEditor key={editing.asset_id || "new"} asset={editing} project={project} candidates={rows(query.data?.assets)} busy={busy} onCancel={() => setEditing(null)} onKind={kind => setEditing(old => old ? { ...old, kind } : old)}
       save={(document, uploads, scope) => run(async () => {
         let response = await request("/library", { action: editing.asset_id ? "revise" : "create", asset_id: editing.asset_id, expected_version: editing.version, kind: editing.kind,
           project_id: project?.id, document, scope });
@@ -75,16 +89,29 @@ export function MaterialLibrary({ project, notify }: { project?: RecordData; not
             setEditing(response.asset);
           }, "已建立剧内副本，可独立修改。");
           else setEditing(asset);
-        }} run={run} select={select} />)}
+        }} run={run} select={select} startAI={operation => startAI(operation, asset)} />)}
     </div>}
+    <Panel title="AI 素材任务">
+      <ErrorNotice error={tasks.error} />
+      {!rows(tasks.data?.tasks).length && <p>尚无素材制作任务。</p>}
+      {rows(tasks.data?.tasks).map(task => <MaterialTask key={task.id} task={task} project={project} busy={busy} run={run}
+        applyDraft={() => run(async () => {
+          const asset = await request("/library/assets/" + task.source.asset_id + "?" + new URLSearchParams({ version: String(task.source.version), ...(project ? { project_id: project.id } : {}) }));
+          if (project && asset.library_key === "global") {
+            const copy = await request("/library", { action: "clone", project_id: project.id, asset_id: asset.asset_id, expected_version: asset.version, scope: "project" });
+            setEditing({ ...copy.asset, data: { ...copy.asset.data, document: task.result.document } });
+          } else setEditing({ ...asset, data: { ...asset.data, document: task.result.document } });
+        }, "已带入识图草稿，请检查并保存。")} />)}
+    </Panel>
     <div className="form-row"><button className="button" disabled={!offset} onClick={() => setOffset(Math.max(0, offset - 50))}>上一页</button><button className="button" disabled={!query.data?.has_more} onClick={() => setOffset(offset + 50)}>下一页</button></div>
   </div>;
 }
 
-function MaterialCard({ asset, project, selected, busy, edit, run, select }: {
+function MaterialCard({ asset, project, selected, busy, edit, run, select, startAI }: {
   asset: RecordData; project?: RecordData; selected?: RecordData; busy: boolean; edit: () => void;
   run: (work: () => Promise<unknown>, message: string) => Promise<void>;
   select: (asset: RecordData, role: string, shots: string[]) => Promise<void>;
+  startAI: (operation: string) => Promise<void>;
 }) {
   const roles = project?.production_profile?.characters || [{ character_id: "female", name: "角色一" }, { character_id: "male", name: "角色二" }];
   const [role, setRole] = useState(asset.kind === "character" ? roles[0].character_id : asset.asset_id);
@@ -93,11 +120,18 @@ function MaterialCard({ asset, project, selected, busy, edit, run, select }: {
   return <Panel title={document.name + " · v" + asset.version} description={materialKinds[asset.kind] + " · " + (asset.library_key === "global" ? "统一库" : "剧内库") + " · " + (asset.status === "approved" ? "已确认" : "候选")}>
     <div className="material-views">{rows(asset.data.images).map(image => <figure key={image.path}><img src={mediaUrl("/media/" + image.path)} alt={document.name + " · " + image.label} /><figcaption>{image.label}</figcaption></figure>)}</div>
     <p>{document.description}</p><p>{document.identity_constraints || document.visual_rules}</p>
+    {asset.data.review && <p>视觉审核：{asset.data.review.status} · {asset.data.review.summary || asset.data.review.detail}</p>}
     <div className="form-row">
       <button className="button" disabled={busy} onClick={edit}>编辑 / 添加图片</button>
       {asset.status !== "approved" && <button className="button" disabled={busy || !rows(asset.data.images).length} onClick={() => run(() => request("/library", { action: "approve", project_id: project?.id, asset_id: asset.asset_id, expected_version: asset.version, confirmed: true }), "此版本已确认。")}>确认参考</button>}
       {project && <button className="button" disabled={busy} onClick={() => run(() => request("/library", { action: "clone", project_id: project.id, asset_id: asset.asset_id, expected_version: asset.version,
         scope: asset.library_key === "global" ? "project" : "global" }), "已保存独立副本，来源与原素材保持可追溯。")}>{asset.library_key === "global" ? "复制为剧内造型" : "保存到统一库"}</button>}
+    </div>
+    <div className="form-row">
+      <button className="button" disabled={busy || !rows(asset.data.images).length} onClick={() => startAI("describe")}>AI 识图建档</button>
+      {project && asset.kind !== "style" && <button className="button" disabled={busy} onClick={() => startAI("restyle")}>按本剧画风转换</button>}
+      {asset.kind === "character" && <button className="button" disabled={busy || !rows(asset.data.images).length} onClick={() => startAI("views")}>补充三视图</button>}
+      {asset.kind === "composition" && <button className="button" disabled={busy} onClick={() => startAI("compose")}>生成同框候选</button>}
     </div>
     {project && selected && <div className="stack">
       {asset.kind === "character" && <Field label={document.name + "对应角色"}><select value={role} onChange={e => setRole(e.target.value)}>{roles.map((r: RecordData) => <option key={r.character_id} value={r.character_id}>{r.name}（{r.character_id}）</option>)}</select></Field>}
@@ -108,21 +142,77 @@ function MaterialCard({ asset, project, selected, busy, edit, run, select }: {
   </Panel>;
 }
 
-function MaterialEditor({ asset, project, busy, save, onCancel }: { asset: RecordData; project?: RecordData; busy: boolean;
-  save: (document: RecordData, uploads: File[], scope: string) => Promise<void>; onCancel: () => void }) {
+function MaterialEditor({ asset, project, candidates, busy, save, onCancel, onKind }: { asset: RecordData; project?: RecordData; candidates: RecordData[]; busy: boolean;
+  save: (document: RecordData, uploads: File[], scope: string) => Promise<void>; onCancel: () => void; onKind: (kind: string) => void }) {
   const [document, setDocument] = useState<RecordData>(asset.data.document);
   const [files, setFiles] = useState<File[]>([]);
   const [scope, setScope] = useState(project ? "project" : "global");
   const edit = (field: string, value: string) => setDocument(old => ({ ...old, [field]: value }));
   return <Panel title={asset.asset_id ? "追加素材版本" : "新建" + materialKinds[asset.kind]}>
     <form className="stack" onSubmit={e => { e.preventDefault(); save(document, files, scope); }}>
+      {!asset.asset_id && <Field label="新素材类型"><select value={asset.kind} onChange={e => onKind(e.target.value)}>{Object.entries(materialKinds).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></Field>}
       <Field label="素材名称"><input required maxLength={100} value={document.name} onChange={e => edit("name", e.target.value)} /></Field>
       <Field label="素材说明"><textarea maxLength={4000} value={document.description || ""} onChange={e => edit("description", e.target.value)} /></Field>
       {asset.kind === "character" && <><Field label="不变的身份与外观"><textarea maxLength={4000} value={document.identity_constraints || ""} onChange={e => edit("identity_constraints", e.target.value)} /></Field><Field label="默认服装"><input value={document.default_wardrobe || ""} onChange={e => edit("default_wardrobe", e.target.value)} /></Field></>}
       {asset.kind === "style" && <Field label="共同画风规则"><textarea maxLength={4000} value={document.visual_rules || ""} onChange={e => edit("visual_rules", e.target.value)} /></Field>}
+      {asset.kind === "composition" && <CompositionEditor document={document} setDocument={setDocument} candidates={candidates} project={project} image={rows(asset.data.images)[0]} />}
       <Field label="添加参考图片"><input type="file" multiple accept="image/png,image/jpeg,image/webp" onChange={e => setFiles(Array.from(e.target.files || []))} /><small>PNG/JPEG/WebP，单张不超过8 MiB，64–4096像素。</small></Field>
       {!asset.asset_id && project && <Field label="保存位置"><select value={scope} onChange={e => setScope(e.target.value)}><option value="project">本剧素材库</option><option value="global">统一素材库</option></select></Field>}
       <div className="form-row"><button className="button primary" type="submit" disabled={busy}>保存素材</button><button className="button" type="button" disabled={busy} onClick={onCancel}>取消</button></div>
     </form>
   </Panel>;
+}
+
+function MaterialTask({ task, project, busy, run, applyDraft }: { task: RecordData; project?: RecordData; busy: boolean;
+  run: (work: () => Promise<unknown>, message: string) => Promise<void>; applyDraft: () => Promise<void> }) {
+  const [unpriced, setUnpriced] = useState(false);
+  const states: Record<string, string> = { queued: "排队中", running: "制作中", waiting_authorization: "等待费用授权", completed: "候选已完成", failed: "失败", needs_attention: "需要核对", paused: "已暂停", pause_requested: "正在暂停" };
+  const control = (action: string) => run(() => request("/library/tasks/" + task.id, { action, project_id: project?.id, expected_lease: task.lease, signature: task.signature, confirmed: true, allow_unpriced: unpriced }), "任务操作已记录。");
+  return <article className="material-task stack">
+    <strong>{task.name} · {states[task.status] || task.status}</strong>
+    <small>{task.model} · {task.id}</small>
+    <ErrorNotice error={task.error} />
+    {task.result.review && <p>视觉审核：{task.result.review.status} · {task.result.review.summary}</p>}
+    {task.status === "waiting_authorization" && <>
+      <p>本批最多提交 {task.quote.submissions} 次；{task.quote.estimated_total_micros === null ? "供应商价格未知" : "估算 " + (task.quote.estimated_total_micros / 1000000).toFixed(2) + " " + task.quote.currency}。估算不代表供应商账单上限。</p>
+      {task.quote.estimated_total_micros === null && <label><input type="checkbox" checked={unpriced} onChange={e => setUnpriced(e.target.checked)} />我接受本批价格未知，按限定次数提交</label>}
+      <button className="button" disabled={busy || task.quote.estimated_total_micros === null && !unpriced} onClick={() => control("authorize")}>授权此批素材生成</button>
+    </>}
+    {task.result.document && <><p>{task.result.document.description}</p><button className="button" disabled={busy} onClick={applyDraft}>采用识图草稿并编辑</button></>}
+    {task.result.asset_id && <p>候选已保存到素材库，确认并选入本剧后使用。</p>}
+    {["queued", "running"].includes(task.status) && <button className="button" disabled={busy} onClick={() => control("pause")}>暂停素材任务</button>}
+    {["paused", "failed", "needs_attention"].includes(task.status) && <button className="button" disabled={busy} onClick={() => control("resume")}>恢复原任务</button>}
+  </article>;
+}
+
+function CompositionEditor({ document, setDocument, candidates, project, image }: { document: RecordData; setDocument: (value: RecordData) => void; candidates: RecordData[]; project?: RecordData; image?: RecordData }) {
+  const [active, setActive] = useState(0);
+  const [start, setStart] = useState<number[] | null>(null);
+  const members = rows(document.members);
+  const characters = candidates.filter(asset => asset.kind === "character");
+  const scenes = candidates.filter(asset => asset.kind === "scene");
+  const roles = project?.production_profile?.characters || [{ character_id: "female", name: "角色一" }, { character_id: "male", name: "角色二" }];
+  const updateMember = (index: number, patch: RecordData) => setDocument({ ...document, members: members.map((member, i) => i === index ? { ...member, ...patch } : member) });
+  const point = (event: React.PointerEvent<SVGSVGElement>) => { const box = event.currentTarget.getBoundingClientRect(); return [Math.max(0, Math.min(1, (event.clientX - box.left) / box.width)), Math.max(0, Math.min(1, (event.clientY - box.top) / box.height))]; };
+  return <div className="stack">
+    <p>关联同框人物和稳定角色；上传同框图片后，可再次编辑并拖动框选人物区域。</p>
+    {members.map((member, index) => <div key={index} className="form-row">
+      <Field label={"同框人物" + (index + 1)}><select value={member.asset_id + ":" + member.version} onChange={e => { const [asset_id, version] = e.target.value.split(":"); updateMember(index, { asset_id, version: Number(version) }); }}>
+        {!characters.some(asset => asset.asset_id === member.asset_id && asset.version === member.version) && <option value={member.asset_id + ":" + member.version}>{member.asset_id} · v{member.version}</option>}
+        {characters.map(asset => <option key={asset.asset_id} value={asset.asset_id + ":" + asset.version}>{asset.data.document.name} · v{asset.version}</option>)}
+      </select></Field>
+      <Field label={"对应角色" + (index + 1)}><input list="composition-role-options" value={member.role} onChange={e => updateMember(index, { role: e.target.value })} /></Field>
+      <button type="button" className="button" onClick={() => setActive(index)}>框选此人物</button>
+      <button type="button" className="button" onClick={() => setDocument({ ...document, members: members.filter((_, i) => i !== index) })}>移除</button>
+    </div>)}
+    <datalist id="composition-role-options">{roles.map((role: RecordData) => <option key={role.character_id} value={role.character_id}>{role.name}</option>)}</datalist>
+    <button type="button" className="button" disabled={members.length >= 4 || !characters.length} onClick={() => setDocument({ ...document, members: [...members, { asset_id: characters[0].asset_id, version: characters[0].version, role: roles[members.length]?.character_id || "character_" + (members.length + 1) }] })}>添加同框人物</button>
+    <Field label="组合中的场景"><select value={document.scene ? document.scene.asset_id + ":" + document.scene.version : ""} onChange={e => { const next = { ...document }; if (!e.target.value) delete next.scene; else { const [asset_id, version] = e.target.value.split(":"); next.scene = { asset_id, version: Number(version) }; } setDocument(next); }}><option value="">未指定</option>{scenes.map(asset => <option key={asset.asset_id} value={asset.asset_id + ":" + asset.version}>{asset.data.document.name}</option>)}</select></Field>
+    {image && <div className="material-region">
+      <img src={mediaUrl("/media/" + image.path)} alt="同框人物区域标注" />
+      <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-label="拖动框选同框人物" onPointerDown={e => { e.currentTarget.setPointerCapture(e.pointerId); setStart(point(e)); }} onPointerUp={e => { if (!start || !members[active]) return; const end = point(e); if (Math.abs(end[0] - start[0]) > .01 && Math.abs(end[1] - start[1]) > .01) updateMember(active, { box: [Math.min(start[0], end[0]), Math.min(start[1], end[1]), Math.max(start[0], end[0]), Math.max(start[1], end[1])] }); setStart(null); }}>
+        {members.map((member, index) => member.box && <g key={index}><rect x={member.box[0] * 100} y={member.box[1] * 100} width={(member.box[2] - member.box[0]) * 100} height={(member.box[3] - member.box[1]) * 100} fill="transparent" stroke={index === active ? "#e66c32" : "#398375"} strokeWidth=".7" /><text x={member.box[0] * 100 + 1} y={member.box[1] * 100 + 4} fill="#e66c32" fontSize="3">{member.role}</text></g>)}
+      </svg>
+    </div>}
+  </div>;
 }

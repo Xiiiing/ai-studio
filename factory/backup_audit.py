@@ -93,9 +93,20 @@ def inspect(root, readers, media):
         if name.endswith(".json"):
             references += receipt_references(files.read_json(root, name), catalog, base=str(Path(name).parent))
     tasks = [dict(row) for row in rows(db, "SELECT intent_id,project_id,shot_id,task_id,file_id,status,request_signature,currency FROM cloud_tasks WHERE status NOT IN ('downloaded','failed','cancelled') ORDER BY intent_id")]
+    material_jobs = 0
+    if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='material_tasks'").fetchone():
+        for row in rows(db, "SELECT data,result FROM material_tasks"):
+            references += receipt_references(files.decode_json(row["data"]), catalog)
+            references += receipt_references(files.decode_json(row["result"]), catalog)
+        for row in rows(db, "SELECT intent_id,task_id,status,request_signature,currency,receipt FROM material_submissions"):
+            if row["receipt"]:
+                references += receipt_references(files.decode_json(row["receipt"]), catalog)
+            if row["status"] not in {"downloaded", "failed", "rejected"}:
+                tasks.append({"intent_id": row["intent_id"], "material_task_id": row["task_id"], "status": row["status"], "request_signature": row["request_signature"], "currency": row["currency"]})
+        material_jobs = db.execute("SELECT count(*) FROM material_tasks WHERE status IN ('queued','running','pause_requested')").fetchone()[0]
     return {"projects": projects, "schemas": schemas, "checkpoint_threads": sorted(threads),
             "unresolved_cloud_tasks": tasks, "checked_references": references,
-            "queued_or_running_jobs": db.execute("SELECT count(*) FROM jobs WHERE status IN ('queued','running')").fetchone()[0],
+            "queued_or_running_jobs": db.execute("SELECT count(*) FROM jobs WHERE status IN ('queued','running')").fetchone()[0] + material_jobs,
             "checkpoint_payloads": "opaque_bytes_preserved_never_deserialized",
             "cross_database_audit": "thread/project, relational foreign keys and fixed asset references; not semantic replay"}
 

@@ -25,6 +25,12 @@ class Handler(LocalMediaHandler):
     def do_GET(self):
         path=unquote(urlsplit(self.path).path)
         try:
+            if path == "/api/factory/library/tasks":
+                from .material_tasks import tasks
+                query = parse_qs(urlsplit(self.path).query)
+                if set(query) - {"project_id"} or any(len(v) != 1 for v in query.values()):
+                    raise ValueError("素材任务查询参数无效")
+                return self.json(tasks(query.get("project_id", [None])[0]))
             if path == "/api/factory/library" or re.fullmatch(r"/api/factory/library/assets/[A-Za-z][A-Za-z0-9_-]{0,63}", path):
                 from . import material_library as materials
                 query = parse_qs(urlsplit(self.path).query, keep_blank_values=True)
@@ -134,6 +140,13 @@ class Handler(LocalMediaHandler):
             return super().do_POST()
         try:
             payload=self.read_json_body()
+            if route == "/api/factory/library/tasks":
+                from .material_tasks import create
+                return self.json({"task": create(payload)}, 202)
+            match = re.fullmatch(r"/api/factory/library/tasks/(mt_[a-f0-9]{32})", route)
+            if match:
+                from .material_tasks import control
+                return self.json({"task": control(match[1], payload)}, 202)
             if route == "/api/factory/library":
                 from .material_library import mutate
                 return self.json({"asset": mutate(payload)}, 201)

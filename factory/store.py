@@ -75,6 +75,8 @@ def initialize():
         initialize_series(db)
         from .material_library import initialize as initialize_materials
         initialize_materials(db)
+        from .material_tasks import initialize as initialize_material_tasks
+        initialize_material_tasks(db)
         from .remote_tasks import migrate as migrate_remote_tasks
         migrate_remote_tasks(db)
 
