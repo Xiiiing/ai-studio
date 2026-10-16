@@ -107,20 +107,32 @@ def main():
         raise RuntimeError("已有制片执行器正在运行")
     store.initialize()
     recovered=store.recover_jobs()
+    from . import material_tasks
+    material_tasks.recover()
     print(json.dumps({"event":"worker_ready","recovered_jobs":recovered,"pid":os.getpid()}),flush=True)
     signal.signal(signal.SIGTERM,lambda *_:_stop.set())
     signal.signal(signal.SIGINT,lambda *_:_stop.set())
     threading.Thread(target=heartbeat,daemon=True).start()
     try:
+        material_turn = True
         while not _stop.is_set():
+            material_job = material_tasks.claim() if material_turn else None
+            if material_job:
+                _current = material_job["id"]
+                material_tasks.run(material_job)
+                _current = None
+                material_turn = False
+                continue
             job=store.claim_job()
             if not job:
+                material_turn = True
                 _stop.wait(1)
                 continue
             _current=job["project_id"]
             print(json.dumps({"event":"job_started","job_id":job["id"],"project":_current}),flush=True)
             handle(job)
             _current=None
+            material_turn = True
     finally:
         write_json(DATA/"worker.json",{"pid":os.getpid(),"heartbeat":time.time(),"status":"stopped"})
         fcntl.flock(guard,fcntl.LOCK_UN)

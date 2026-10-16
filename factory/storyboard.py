@@ -23,6 +23,14 @@ DIRECTOR_SYSTEM = load_prompt("storyboard_director")
 def storyboard_schema(shot_ids, project=None):
     source = episode_schema(project=project)["properties"]["shots"]["items"]["properties"]
     fields = object_schema({key: copy.deepcopy(source[key]) for key in DIRECTOR_FIELDS})
+    if project and project.get("material_package"):
+        from .material_library import context
+        materials = context(project)
+        for field, kind in (("scene_id", "scene"), ("composition_id", "composition")):
+            choices = [item["role"] for item in materials if item["kind"] == kind]
+            if choices:
+                fields["properties"][field] = {"type": "string", "enum": ["", *choices]}
+                fields["required"].append(field)
     problem = object_schema({"reason": text_schema(8, 500),
                              "suggestion": text_schema(8, 500)})
     # Required object keys make missing, extra and out-of-scope IDs invalid
@@ -76,7 +84,7 @@ def _episode_context(episode):
     value.update({key: copy.deepcopy(episode[key]) for key in (
         "format", "total_seconds", "fps", "width", "height", "production_profile", "characters", "creative_contract") if key in episode})
     shot_keys = tuple(episode_schema()["properties"]["shots"]["items"]["properties"]) + (
-        "id", "seconds", "lip_sync", "delivery_method", "render_style_prompt", "characters", "character_states")
+        "id", "seconds", "lip_sync", "delivery_method", "render_style_prompt", "characters", "character_states", "scene_id", "composition_id")
     value["shots"] = [{key: copy.deepcopy(shot[key]) for key in shot_keys if key in shot}
                       for shot in episode["shots"]]
     return value
@@ -117,6 +125,11 @@ def direct_storyboard(project, config, episode, checkpoint=None, *,
         "model_capabilities": model_capabilities(project, config, episode),
         "instruction": "只编排指定镜头的四个制作字段；完整剧情与未指定镜头保持原样。",
     }
+    if project.get("material_package"):
+        from .material_library import context
+        payload["confirmed_materials"] = context(project)
+        payload["editable_fields"] += ["scene_id", "composition_id"]
+        payload["material_instruction"] = "保持人物身份与已批准剧情，scene_id/composition_id仅从定稿素材的role中选取；不适用填空串。人物参考按实际出镜角色，包括无对白人物。"
     if previous_attempt is not None:
         payload["previous_attempt"] = _episode_context(previous_attempt)
     stage = "storyboard-direction-%d" % round_index
@@ -144,6 +157,9 @@ def direct_storyboard(project, config, episode, checkpoint=None, *,
             })
             continue
         shot.update({key: copy.deepcopy(raw["shots"][sid][key]) for key in DIRECTOR_FIELDS})
+        for key in ("scene_id", "composition_id"):
+            if key in raw["shots"][sid]:
+                shot[key] = raw["shots"][sid][key]
         suffix = " No visible text, captions, logos, or watermarks."
         if payload["model_capabilities"]["format"] == "motion_comic":
             suffix += " Single illustrated keyframe; every visible person\'s mouth is closed."
@@ -165,7 +181,7 @@ def direct_storyboard(project, config, episode, checkpoint=None, *,
         "role": "storyboard_director", "round": round_index, "model_identity": identity,
         "source_signature": signature, "input_episode_signature": fingerprint(episode),
         "output_episode_signature": fingerprint(directed),
-        "editable_fields": list(DIRECTOR_FIELDS), "requested_shot_ids": selected,
+        "editable_fields": list(payload["editable_fields"]), "requested_shot_ids": selected,
         "applied_shot_ids": applied, "blocked_shot_ids": list(raw["blocked_shots"]),
         "issues": copy.deepcopy(issues),
         "status": "feasibility_blocked" if issues else "directed_pending_review",

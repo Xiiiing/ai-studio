@@ -377,6 +377,9 @@ def project_context(project):
         context["creative_contract"] = resolve_contract(project)
     if project.get("series_bible"):
         context["series_bible"] = copy.deepcopy(project["series_bible"])
+    if project.get("material_package"):
+        from .material_library import context as material_context
+        context["confirmed_materials"] = material_context(project)
     return context
 
 

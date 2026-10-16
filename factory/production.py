@@ -23,6 +23,7 @@ from .media_profiles import identity as media_identity
 from .bound_media import uses_bound
 from .video_production import VideoProductionMixin
 from .series_production import SeriesProductionMixin
+from .material_production import MaterialProductionMixin
 from .shot_workbench import plan_signature, pinned_selection
 from .production_profiles import explicit as explicit_profile, resolve as resolve_profile, profile_signature, validate_episode
 from .video_providers import LOCAL_PROFILE, normalize_video_profile
@@ -191,7 +192,7 @@ class ProductionEngine:
         return generate_project(project, self.config, checkpoint, control, semantic_evaluator, dialogue_rewriter)
 
 
-class _Run(SeriesProductionMixin, VideoProductionMixin, SpeechMixin, AudioEditorMixin):
+class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin, SpeechMixin, AudioEditorMixin):
     receipt_path = staticmethod(_receipt_path)
     media_url = staticmethod(media_url)
 
@@ -553,6 +554,8 @@ class _Run(SeriesProductionMixin, VideoProductionMixin, SpeechMixin, AudioEditor
                                 ("id", "name", "description", "prompt", "palette")
                                 if self.selected_style and key in self.selected_style},
                             visual_direction=shot.get("visual_direction"))
+        if shot.get("material_constraints"):
+            expected["material_constraints"] = shot["material_constraints"]
         review_signature = fingerprint({"source_signature": signature, "policy": self.review_policy,
                                         "expected": expected, "cast": self.cast, "format": self.mode})
         return {"key": key, "folder": folder, "prompt": prompt, "references": refs,
@@ -708,8 +711,10 @@ class _Run(SeriesProductionMixin, VideoProductionMixin, SpeechMixin, AudioEditor
                                     # A diagnosed identity/composition failure gets a genuinely new
                                     # first frame, rather than merely a differently worded video prompt.
                                     shot_refs = list(target["references"])
-                                    shot_refs += [_receipt_path(value) for value in self.assets.get("characters", {}).values()]
-                                    repair_names = [worker.copy_input(p) for p in shot_refs[:4]]
+                                    if not any(ref.get("library_key") for ref in target.get("asset_references", [])):
+                                        shot_refs += [_receipt_path(value) for value in self.assets.get("characters", {}).values()]
+                                    material = any(ref.get("library_key") for ref in target.get("asset_references", []))
+                                    repair_names = [worker.copy_input(p) for p in (shot_refs if material else shot_refs[:4])]
                                     keyframe_prompt = ((record["repair"].get("prompt_prefix") or
                                                         record["repair"].get("prompt_suffix", "")) + "\n" +
                                                        self.style_prompt + " " + target["shot"]["prompt"] +
@@ -827,6 +832,10 @@ class _Run(SeriesProductionMixin, VideoProductionMixin, SpeechMixin, AudioEditor
         return [target["selected"] for target in targets]
 
     def previews(self):
+        from .material_production import preview as material_preview
+        prepared = material_preview(self)
+        if prepared is not None:
+            return prepared
         if self.creative_contract and (not self.semantic_enabled or self.evaluator is None):
             raise ProductionNeedsDecision("视觉候选必须先审核是否符合指定画风，请连接并启用画面质检。",
                                           "semantic_unavailable")
@@ -858,6 +867,8 @@ class _Run(SeriesProductionMixin, VideoProductionMixin, SpeechMixin, AudioEditor
         """Resolve the selected, project-owned preview before any character generation."""
         if self.selected_style is None:
             return None, None
+        if self._material_preview_reference():
+            return None, None  # A style image must never become a character identity reference.
         style = self.selected_style
         role = resolve_profile(self.project)["characters"][0]["character_id"] if explicit_profile(self.project) else "female" if "female" in self.cast else next(iter(self.cast))
         details = {"style_id": style.get("id"), "role": role}
@@ -892,7 +903,7 @@ class _Run(SeriesProductionMixin, VideoProductionMixin, SpeechMixin, AudioEditor
         targets = []
         for role, description in self.cast.items():
             references = [preview] if role == preview_role else []
-            approved = self._series_character(role)
+            approved = self._material_character(role) or self._series_character(role)
             if approved:
                 self.assets["characters"][role] = approved
                 continue
@@ -922,9 +933,15 @@ class _Run(SeriesProductionMixin, VideoProductionMixin, SpeechMixin, AudioEditor
                 references, series_prompt, asset_references = self._series_shot_inputs(shot, roles, references)
                 if series_prompt:
                     identity = series_prompt
+                references, material_prompt, material_references = self._material_shot_inputs(shot, roles, references)
+                if material_prompt:
+                    identity += material_prompt
+                    asset_references += material_references
                 for ref in shot.get("reference_shots", []):
                     references.append(_receipt_path(lookup[ref]["image"]))
                     identity += "The additional image establishes the exact set, props and lighting continuity. "
+                if material_references:
+                    self._check_material_reference_limit(references)
                 shot_style = shot.get("render_style_prompt", self.style_prompt)
                 if not isinstance(shot_style, str) or not shot_style.strip():
                     raise ValueError("render_style_prompt must be a non-empty string")

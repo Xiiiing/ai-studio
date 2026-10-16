@@ -1,5 +1,6 @@
 """Bounded, read-only shot/candidate projections and immutable producer choices."""
 from __future__ import annotations
+from .material_library import shot_references as material_references
 
 import copy
 import json
@@ -32,6 +33,7 @@ def plan_signature(project, shot, stage):
         fields += ("motion_prompt", "camera_motion", "seconds", "lip_sync")
     return core.fingerprint({"shot": {k: shot.get(k) for k in fields},
                              "series": project.get("series_references", {}).get(shot["id"], []),
+                             **({"materials": material_references(project, shot)} if project.get("material_package") else {}),
                              "style": project.get("selected_style"),
                              **({"creative_contract": project["creative_contract"]} if "creative_contract" in project else {}),
                              "render_revision": shot.get("render_revisions", {}).get(stage, 0)})
@@ -137,7 +139,7 @@ def snapshot(pid):
                     errors.append({"shot_id": sid, "stage": stage, "take": take.name, "error": str(exc)[:300]})
         rows.append({**copy.deepcopy(shot), "status": runtime.get(sid, {}).get("status", "planned"),
                      "shot_revision": shot.get("shot_revision", 1), "candidates": versions,
-                     "asset_references": project.get("series_references", {}).get(sid, []),
+                     "asset_references": project.get("series_references", {}).get(sid, []) + material_references(project, shot),
                      "truncated": count > len(versions),
                      "selections": project.get("shot_selections", {}).get(sid, {})})
     return {"project_id": pid, "revision": project["revision"], "production_revision": project.get("production_revision", 1),

@@ -152,7 +152,7 @@ def visual_development(state):
     p=_project(state)
     if p.get("style_previews_generation") != p.get("style_generation",p["script_generation"]):
         store.update(p["id"],{"status":"visual_development","stage":"style_previews","progress":40,
-                             "message":"美术正在生成三套真实视觉预览，完成后交给出品人选择。"})
+                             "message":"美术正在准备并审核视觉预览，已定稿的素材画风直接复用。"})
         config=load_config()
         from .creative_contract import resolve as resolve_contract
         review_options=({"semantic_evaluator":lambda proj,shot,path,refs:review_media(proj,shot,path,refs,config)}
@@ -172,9 +172,16 @@ def style_decision(state):
     p=_project(state)
     options=[{"id":v["id"],"label":v.get("name",v["id"])} for v in p["styles"]]
     version=p.get("style_generation",p["script_generation"])
-    gate=store.gate(p["id"],"style",options,"三套视觉预览已完成，请选择人物与画风。",version)
+    title = "采用已集中确认的素材画风。" if len(p["styles"]) == 1 and p["styles"][0].get("material_reference") else "三套视觉预览已完成，请选择人物与画风。"
+    gate=store.gate(p["id"],"style",options,title,version)
     from .supervision import supervise_gate
     answer=store.answer_for(p["id"],gate["id"])
+    if answer is None and len(p["styles"]) == 1 and p["styles"][0].get("material_reference"):
+        from .material_production import styles as material_styles
+        confirmed = material_styles(p)
+        if confirmed and confirmed[0]["id"] == p["styles"][0]["id"]:
+            store.decide(p["id"], {"type": "style", "choice": confirmed[0]["id"], "decision_id": gate["id"]}, actor="producer_material_confirmation")
+            answer = store.answer_for(p["id"], gate["id"])
     if answer is None:
         answer=supervise_gate(p["id"],gate)
     if answer is None and p.get("team_mode") == "delegated":
@@ -511,7 +518,7 @@ def visual_design(state):
     generation=p.get('style_generation',p['script_generation'])
     if p.get('visual_design_complete_generation') != generation:
         store.update(p['id'],{'status':'visual_development','stage':'visual_design','progress':39,
-                              'message':'美术指导根据剧本和视觉反馈设计三套方向。'})
+                              'message':'美术指导根据本剧定稿与剧本准备视觉方向。'})
         _apply(p['id'],design_visuals(p,load_config(),_checkpoint(p['id'])))
     return {'route':'continue','style_generation':generation}
 

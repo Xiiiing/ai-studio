@@ -22,9 +22,10 @@ def render(engine, target, record, phase):
     if not profile.get('enabled', True): raise ProductionNeedsDecision('制作连接已停用', 'media_disabled')
     if record.get('repair', {}).get('regenerate_keyframe'):
         # Reuse the configured image pipeline, including its reference semantics.
-        refs = list(target['references']) + [engine.receipt_path(v) for v in engine.assets.get('characters', {}).values()]
+        material = any(ref.get('library_key') for ref in target.get('asset_references', []))
+        refs = list(target['references']) + ([] if material else [engine.receipt_path(v) for v in engine.assets.get('characters', {}).values()])
         replacement = engine._target('repair_' + target['key'], target['folder'] / record['take'] / 'repair_keyframe',
-                                     record['repair'].get('prompt_prefix', '') + '\n' + engine.style_prompt + ' ' + target['shot']['prompt'], refs[:4])
+                                     record['repair'].get('prompt_prefix', '') + '\n' + engine.style_prompt + ' ' + target['shot']['prompt'], refs if material else refs[:4])
         engine._render_targets([replacement], 'keyframe_repair')
         path = engine.receipt_path(replacement['selected']) if replacement.get('selected') else None
         # _attach stores the selected receipt in the target's selection manifest.
