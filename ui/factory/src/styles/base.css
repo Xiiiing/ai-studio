@@ -6,7 +6,7 @@ body {
   margin: 0;
   background: var(--canvas);
   color: var(--ink);
-  line-height: 1.65;
+  line-height: 1.55;
   font-size: 14px;
 }
 button,
@@ -49,13 +49,13 @@ p {
 h1 {
   line-height: 1.35;
   font-weight: 650;
-  font-size: clamp(25px, 2vw, 32px);
-  letter-spacing: -0.035em;
+  font-size: clamp(24px, 1.8vw, 28px);
+  letter-spacing: -0.025em;
 }
 h2 {
   font-weight: 650;
   line-height: 1.4;
-  font-size: 18px;
+  font-size: 16px;
 }
 h3 {
   font-weight: 600;
@@ -119,7 +119,7 @@ pre {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  padding: 24px 16px 18px;
+  padding: 20px 16px 16px;
   background: var(--panel);
   overflow-y: auto;
   height: 100dvh;
@@ -129,15 +129,16 @@ pre {
   align-items: center;
   text-decoration: none;
   font-weight: 650;
-  font-size: 22px;
-  padding: 0 8px 24px;
-  letter-spacing: 0.04em;
-  gap: 10px;
+  font-size: 21px;
+  padding: 0 4px 20px;
+  letter-spacing: 0.02em;
+  gap: 8px;
 }
 .brand small {
   display: block;
   font-size: 12px;
-  letter-spacing: 0.025em;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
   font-weight: 450;
   color: var(--muted);
   overflow-wrap: anywhere;
@@ -145,8 +146,8 @@ pre {
 .brand-mark {
   display: grid;
   place-items: center;
-  width: 37px;
-  height: 37px;
+  width: 32px;
+  height: 32px;
   border-radius: 10px;
   background: linear-gradient(135deg, var(--accent), var(--accent-end));
   color: var(--on-accent);
@@ -208,7 +209,7 @@ pre {
 }
 .sidebar-label {
   letter-spacing: 0.05em;
-  padding: 24px 10px 9px;
+  padding: 20px 10px 8px;
   color: var(--muted);
   font-size: 12px;
   font-weight: 600;
@@ -228,8 +229,8 @@ pre {
   width: 100%;
   white-space: nowrap;
   font-size: 14px;
-  min-height: 42px;
-  padding: 10px 12px;
+  min-height: 40px;
+  padding: 9px 12px;
   color: var(--muted);
 }
 .nav-item.active {
@@ -264,7 +265,7 @@ pre {
   gap: 10px;
   background: transparent;
   border: 0;
-  padding: 11px 12px;
+  padding: 8px 12px;
   border-radius: 6px;
 }
 .project-item:hover,
@@ -337,9 +338,9 @@ pre {
   justify-content: space-between;
   align-items: center;
   border-bottom: 1px solid var(--line);
-  min-height: 68px;
+  min-height: 60px;
   height: auto;
-  padding: 14px 32px;
+  padding: 10px 28px;
   gap: 16px;
   background: var(--panel);
 }
@@ -386,7 +387,7 @@ pre {
 .sync-state i {
   width: 5px;
   height: 5px;
-  background: var(--success-soft);
+  background: var(--success);
   border-radius: 50%;
 }
 .producer-avatar {
@@ -401,7 +402,7 @@ pre {
 }
 #workspace {
   min-height: calc(100vh - 110px);
-  padding: 30px 32px 40px;
+  padding: 26px 28px 36px;
   max-width: 1800px;
   width: 100%;
   margin-inline: auto;
@@ -421,8 +422,8 @@ pre {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  margin-bottom: 24px;
-  gap: 24px;
+  margin-bottom: 20px;
+  gap: 20px;
 }
 .eyebrow {
   font-weight: 650;
@@ -432,7 +433,7 @@ pre {
   color: var(--accent-text);
 }
 .page-heading p {
-  margin: 9px 0 0;
+  margin: 7px 0 0;
   font-size: 14px;
   color: var(--muted);
   max-width: 800px;
@@ -464,8 +465,8 @@ pre {
 .panel {
   border-radius: var(--radius);
   min-width: 0;
-  padding: 22px;
-  margin-bottom: 20px;
+  padding: 20px;
+  margin-bottom: 16px;
   box-shadow: var(--shadow-sm);
   background: var(--panel);
   border: 1px solid var(--line);
@@ -475,7 +476,7 @@ pre {
   justify-content: space-between;
   align-items: flex-start;
   gap: 16px;
-  margin-bottom: 18px;
+  margin-bottom: 16px;
   flex-wrap: wrap;
 }
 .panel-head p {
@@ -1587,7 +1588,7 @@ textarea {
 input::placeholder,
 textarea::placeholder {
   color: var(--muted);
-  opacity: 0.85;
+  opacity: 1;
 }
 textarea {
   resize: vertical;
@@ -2200,7 +2201,14 @@ dialog::backdrop {
 }
 :root {
   font-family:
-    Inter, "Noto Sans CJK SC", "PingFang SC", "Microsoft YaHei", system-ui,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    "Noto Sans",
+    "PingFang SC",
+    "Microsoft YaHei",
+    "Noto Sans CJK SC",
     sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -2236,6 +2244,7 @@ summary {
   gap: 8px;
 }
 .theme-control {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 7px;
@@ -2248,7 +2257,38 @@ summary {
   min-height: 34px;
   padding: 6px 25px 6px 9px;
   border-radius: 7px;
-  background: var(--surface);
+  background-color: var(--surface);
+}
+/* Keep native keyboard selection while drawing the closed control consistently. */
+.topbar .theme-control select {
+  appearance: none;
+  -webkit-appearance: none;
+  color: var(--ink);
+  background-color: var(--surface);
+  padding-inline-end: 27px;
+  cursor: pointer;
+}
+.theme-control::after {
+  content: "";
+  position: absolute;
+  right: 11px;
+  top: calc(50% - 4px);
+  width: 6px;
+  height: 6px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg);
+  pointer-events: none;
+}
+select,
+input,
+textarea {
+  color-scheme: inherit;
+}
+select option,
+select optgroup {
+  color: var(--ink);
+  background-color: var(--panel);
 }
 .navigation-close,
 .navigation-backdrop {
