@@ -465,14 +465,32 @@
     margin-left: 40px;
     margin-top: 2px;
   }
-  .tabbar {
+  /* Temporary compact navigation until the grouped project menu is mounted. */
+  .tabbar:not(.project-navigation) {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     margin: 0 0 20px;
-    padding: 0;
-    gap: 18px;
+    padding: 6px;
+    gap: 4px;
+    overflow: visible;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 10px;
   }
-  .tabbar button {
+  .tabbar:not(.project-navigation) button {
+    justify-content: center;
+    min-width: 0;
+    padding: 8px 4px;
     font-size: 12px;
-    padding: 12px 0;
+    line-height: 1.5;
+    white-space: normal;
+    text-align: center;
+    border: 0;
+    border-radius: 7px;
+  }
+  .tabbar:not(.project-navigation) button.active {
+    background: var(--accent-soft);
+    color: var(--accent-text);
   }
   .project-context {
     gap: 12px;
@@ -839,7 +857,8 @@
     padding: 12px;
   }
   .workflow-map-grid {
-    padding: 24px 14px 72px;
+    /* Return-edge lanes occupy x = 8px and 18px outside the node cards. */
+    padding: 24px 24px 72px;
     gap: 44px 18px;
   }
   .workflow-map-node.workflow-stage-card {
@@ -932,6 +951,15 @@
   .project-navigation-menu {
     padding: 12px;
     gap: 8px;
+  }
+  .workflow-map-node-top {
+    flex-wrap: wrap;
+  }
+  .workflow-map-node.workflow-stage-card {
+    padding: 10px;
+  }
+  .workflow-map-node .workflow-stage-copy > strong {
+    font-size: 13px;
   }
 }
 @media (prefers-reduced-motion: reduce) {
