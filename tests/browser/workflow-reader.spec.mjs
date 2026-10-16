@@ -1,3 +1,4 @@
+import { openWorkflow } from "./navigation.mjs";
 import { test, expect } from "@playwright/test";
 const id = "012345abcdef";
 test.beforeEach(async ({ page, request }) => {
@@ -17,6 +18,7 @@ for (const width of [1440, 1024, 390]) {
     const errors = [];
     page.on("pageerror", (e) => errors.push(e.message));
     await page.goto(`/#project=${id}&tab=overview`);
+    await openWorkflow(page);
     const inspector = page.getByRole("complementary", { name: "节点详情" });
     await expect(page.locator("[data-stage]")).toHaveCount(5);
     for (const card of await page
@@ -211,6 +213,7 @@ test("missing files retry and oversized Markdown remains downloadable", async ({
   page,
 }) => {
   await page.goto(`/#project=${id}&tab=overview`);
+  await openWorkflow(page);
   await page.locator('[data-stage="script"]').click();
   await page.locator('[data-flow-node="screenplay"]').click();
   const missing = page
@@ -248,6 +251,7 @@ test("workflow and document controls work with keyboard navigation", async ({
   page,
 }) => {
   await page.goto(`/#project=${id}&tab=overview`);
+  await openWorkflow(page);
   await page.locator('[data-stage="script"]').focus();
   await page.keyboard.press("Enter");
   await page.locator('[data-flow-node="screenplay"]').focus();
@@ -274,6 +278,7 @@ test("data flows animate during execution, stop on pause and human gates, and re
 }) => {
   await request.post("/__test/scenario", { data: { kind: "repairing" } });
   await page.goto(`/#project=${id}&tab=overview`);
+  await openWorkflow(page);
   const edge = page.locator('[data-flow-edge="script:visual:forward"]');
   await expect(edge).toHaveAttribute("data-flow-state", "running");
   const packet = edge.locator("circle");
@@ -334,6 +339,7 @@ test("narrow screens jump directly to details and can return to the flow", async
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`/#project=${id}&tab=overview`);
+  await openWorkflow(page);
   await page.locator('[data-stage="script"]').click();
   const inspector = page.locator(".workflow-inspector");
   await expect

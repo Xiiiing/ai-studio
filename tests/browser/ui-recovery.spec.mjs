@@ -1,3 +1,4 @@
+import { openWorkflow } from "./navigation.mjs";
 import { test, expect } from "@playwright/test";
 
 const projectId = "012345abcdef";
@@ -80,6 +81,7 @@ test("mobile workflow keyboard selection transfers focus to details and returns 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto(`/#project=${projectId}&tab=overview`);
+  await openWorkflow(page);
   const stage = page.locator('[data-stage="script"]');
   await expect(stage).toBeVisible();
   await stage.focus();
@@ -215,7 +217,9 @@ test("composition dragging previews the region, saves normalized coordinates, an
     ),
   ).toEqual(savedBox);
   for (const input of inputs)
-    expect(await input.evaluate((element) => element.validity.valid)).toBe(true);
+    expect(await input.evaluate((element) => element.validity.valid)).toBe(
+      true,
+    );
   await editor.getByRole("button", { name: "保存素材", exact: true }).click();
   await expect.poll(() => posts.length).toBe(1);
   expect(posts[0].document.members[0].box).toEqual(savedBox);

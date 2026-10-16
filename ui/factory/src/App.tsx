@@ -24,6 +24,10 @@ import {
 } from "lucide-react";
 import { ThemeControl } from "./Theme";
 import { ProjectNavigation } from "./ProjectNavigation";
+import {
+  ProjectResultActions,
+  currentResultPage,
+} from "./ProjectResultActions";
 import { useUnsavedShotGuard } from "./SessionDraft";
 import { Models, MaterialLibrary } from "./LazyViews";
 import {
@@ -1134,6 +1138,8 @@ function Project({
   });
   const [selectedFlowNode, setSelectedFlowNode] = useState(""),
     [selectedExecution, setSelectedExecution] = useState(""),
+    [workflowOpen, setWorkflowOpen] = useState(false),
+    [workflowSeen, setWorkflowSeen] = useState(false),
     [selectedShot, setSelectedShot] = useState(""),
     [storyboardPage, setStoryboardPage] = useState(0),
     [preview, setPreview] = useState<RecordData | null>(null),
@@ -1208,31 +1214,47 @@ function Project({
           </div>
         </div>
         <div className="heading-actions">
-          <button className="button small" onClick={() => onRemake(p)}>
-            按新规格重制
-          </button>
-          {active.map((a) => (
-            <button
-              className={
-                "button small " + (a.id === "take_control" ? "primary" : "")
+          <ProjectResultActions project={p} onOpen={onTab} />
+          <details
+            className="project-actions-menu"
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                event.currentTarget.open = false;
+                event.currentTarget.querySelector("summary")?.focus();
               }
-              key={a.id}
-              disabled={busy || a.enabled === false}
-              title={a.disabled_reason || a.impact}
-              onClick={() =>
-                rows(a.inputs).length ? setControl(a) : action({ action: a.id })
-              }
-            >
-              {a.id === "take_control" ? (
-                <Hand size={14} />
-              ) : a.id === "pause" ? (
-                <Pause size={14} />
-              ) : (
-                <Bot size={14} />
-              )}{" "}
-              {a.label}
-            </button>
-          ))}
+            }}
+          >
+            <summary>项目操作</summary>
+            <div className="project-actions-list">
+              <button className="button small" onClick={() => onRemake(p)}>
+                按新规格重制
+              </button>
+              {active.map((a) => (
+                <button
+                  className={
+                    "button small " + (a.id === "take_control" ? "primary" : "")
+                  }
+                  key={a.id}
+                  disabled={busy || a.enabled === false}
+                  title={a.disabled_reason || a.impact}
+                  onClick={() =>
+                    rows(a.inputs).length
+                      ? setControl(a)
+                      : action({ action: a.id })
+                  }
+                >
+                  {a.id === "take_control" ? (
+                    <Hand size={14} />
+                  ) : a.id === "pause" ? (
+                    <Pause size={14} />
+                  ) : (
+                    <Bot size={14} />
+                  )}{" "}
+                  {a.label}
+                </button>
+              ))}
+            </div>
+          </details>
         </div>
       </header>
       {w.operator?.delegation?.reason && (
@@ -1242,7 +1264,7 @@ function Project({
         </div>
       )}
       <ErrorNotice error={error || workspace.error} />
-      {attention?.blocking && tab !== "decisions" && (
+      {attention?.blocking && tab !== "decisions" && tab !== "overview" && (
         <div className="project-attention-banner">
           <span className="attention-icon">
             <Inbox size={20} />
@@ -1269,8 +1291,6 @@ function Project({
         <div className="project-pane">
           {tab === "overview" ? (
             <>
-              <CreativeContract project={p} compact />
-              <TeamOverview projectId={id} onOpen={() => onTab("team")} />
               <div className="project-context">
                 <article>
                   <small>当前阶段</small>
@@ -1296,39 +1316,13 @@ function Project({
                   </strong>
                 </article>
               </div>
-              <Workflow
-                key={id}
-                graph={graph}
-                flow={actualFlow}
-                attention={attention}
-                selectedNode={selectedFlowNode}
-                onSelectNode={(node) => {
-                  setSelectedFlowNode(node);
-                  setSelectedExecution("");
-                }}
-                selectedExecution={selectedExecution}
-                onOpen={onTab}
-                onDecision={() => onTab("decisions")}
-                onShot={(shot) => {
-                  setSelectedShot(shot);
-                  onTab("shots");
-                }}
-              />
               <div className="project-focus">
                 <Panel
                   title="当前创作产物"
                   action={
                     <button
                       className="text-link"
-                      onClick={() =>
-                        onTab(
-                          p.delivery?.video_url
-                            ? "delivery"
-                            : p.styles?.length
-                              ? "decisions"
-                              : "script",
-                        )
-                      }
+                      onClick={() => onTab(currentResultPage(p))}
                     >
                       打开详情
                       <ArrowUpRight size={14} />
@@ -1342,7 +1336,8 @@ function Project({
                   <div className="current-task">
                     <Badge status={p.status} />
                     <h3>
-                      {activityName(w.operator?.current_activity || p.status)}
+                      {attention?.title ||
+                        activityName(w.operator?.current_activity || p.status)}
                     </h3>
                     <p>
                       {attention?.summary ||
@@ -1376,6 +1371,69 @@ function Project({
                   </div>
                 </Panel>
               </div>
+              <nav className="project-output-links" aria-label="查看项目成果">
+                <button onClick={() => onTab("script")}>
+                  <span>剧本与分镜</span>
+                  <small>{p.script ? "查看正文" : "尚未生成"}</small>
+                  <ArrowUpRight size={16} />
+                </button>
+                <button onClick={() => onTab("materials")}>
+                  <span>素材与定稿</span>
+                  <small>查看角色与场景</small>
+                  <ArrowUpRight size={16} />
+                </button>
+                <button onClick={() => onTab("shots")}>
+                  <span>镜头作品</span>
+                  <small>{rows(p.shots).length} 个计划镜头</small>
+                  <ArrowUpRight size={16} />
+                </button>
+                <button onClick={() => onTab("delivery")}>
+                  <span>成片交付</span>
+                  <small>
+                    {ownedMedia(id, p.delivery?.video_url)
+                      ? "查看完整成片"
+                      : "尚未生成"}
+                  </small>
+                  <ArrowUpRight size={16} />
+                </button>
+              </nav>
+              <details
+                className="project-process"
+                open={workflowOpen}
+                onToggle={(event) => {
+                  setWorkflowOpen(event.currentTarget.open);
+                  if (event.currentTarget.open) setWorkflowSeen(true);
+                }}
+              >
+                <summary>
+                  完整制作流程<span>查看各阶段、输入输出与执行记录</span>
+                </summary>
+                {(workflowOpen || workflowSeen) && (
+                  <Workflow
+                    key={id}
+                    graph={graph}
+                    flow={actualFlow}
+                    attention={attention}
+                    selectedNode={selectedFlowNode}
+                    onSelectNode={(node) => {
+                      setSelectedFlowNode(node);
+                      setSelectedExecution("");
+                    }}
+                    selectedExecution={selectedExecution}
+                    onOpen={onTab}
+                    onDecision={() => onTab("decisions")}
+                    onShot={(shot) => {
+                      setSelectedShot(shot);
+                      onTab("shots");
+                    }}
+                  />
+                )}
+              </details>
+              <details className="project-background">
+                <summary>制作规格与团队概况</summary>
+                <CreativeContract project={p} compact />
+                <TeamOverview projectId={id} onOpen={() => onTab("team")} />
+              </details>
               <div className="project-bottom-grid">
                 <Panel title="创作任务与当前故事">
                   <p className="brief-text">{p.brief}</p>
@@ -1450,6 +1508,7 @@ function Project({
                 <Team
                   flow={actualFlow}
                   onInspect={(step, execution) => {
+                    setWorkflowOpen(true);
                     setSelectedFlowNode(step);
                     setSelectedExecution(execution || "");
                     onTab("overview");
@@ -1605,7 +1664,6 @@ function Project({
                   : "当前制作版本，完成终审后正式交付。"
               }
             >
-              <CreativeContract project={p} />
               {ownedMedia(p.id, p.delivery?.video_url) ? (
                 <div className="delivery-layout">
                   <video
@@ -1651,6 +1709,10 @@ function Project({
                   镜头、配音、字幕与剪辑完成后，成片将显示在这里。
                 </Empty>
               )}
+              <details className="project-background delivery-specification">
+                <summary>制作规格与回执依据</summary>
+                <CreativeContract project={p} />
+              </details>
             </Panel>
           )}
         </div>
@@ -2081,6 +2143,36 @@ function CurrentOutput({ project: p }: { project: RecordData }) {
         </div>
       </div>
     );
+  const shot = rows(p.shots).find(
+    (item) =>
+      ownedMedia(p.id, item.video_url || item.video?.path) ||
+      ownedMedia(p.id, item.image_url),
+  );
+  if (shot) {
+    const previewVideo = ownedMedia(p.id, shot.video_url || shot.video?.path);
+    return (
+      <div className="current-output-video">
+        {previewVideo ? (
+          <video src={previewVideo} controls playsInline preload="metadata" />
+        ) : (
+          <img
+            src={ownedMedia(p.id, shot.image_url)}
+            alt={`${shot.id} 镜头画面`}
+          />
+        )}
+        <div>
+          <small>当前已生成作品</small>
+          <h3>{shot.id} · 镜头预览</h3>
+          <p>
+            {shot.dramatic_beat ||
+              shot.description ||
+              "打开详情查看候选与制作记录。"}
+          </p>
+          <Badge status={shot.status} />
+        </div>
+      </div>
+    );
+  }
   if (rows(p.styles).length)
     return (
       <div className="current-visuals">
