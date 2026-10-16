@@ -818,7 +818,7 @@ def process_pending(pid):
         if not command.get("accepted_generations") and command.get("operation") != "replan":
             _invalidate(db, pid, command["affected_tasks"])
             command["accepted_generations"] = {t: ledger._stored(db, pid, t)["generation"] for t in command["affected_tasks"]}
-        db.execute("UPDATE team_instructions SET status='planning' WHERE id=?", (command["id"],))
+        db.execute("UPDATE team_instructions SET status='planning',data=? WHERE id=?", (store.encoded(command), command["id"]))
         tasks = _tasks(db, pid)
     # Planning has no open SQLite writer transaction and cannot publish changes.
     try:

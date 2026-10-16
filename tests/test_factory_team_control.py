@@ -647,3 +647,32 @@ def test_same_text_cloud_retake_changes_source_and_intent_only_when_explicit(pro
     assert initial == intent(zero, 0) and retake == intent(again, 1)
     assert initial["intent_id"] != retake["intent_id"] and initial["request_signature"] != retake["request_signature"]
     assert body["input"] == {"text": line["text"], "voice": "Cherry", "language_type": "Chinese"}
+
+
+def test_conflicting_instruction_resume_persists_generation_before_planning_crash(project, monkeypatch):
+    from factory import team_control
+
+    pid = project["id"]
+    receipt = fixture_candidate(project, "take_001")
+    token = team_ledger.begin_unit(pid, "image", "S01", input_version="locked-original")
+    team_ledger.finish_unit(token, artifact=receipt)
+    team_control.task_action(pid, "image:S01", action(project, "image:S01", "lock"))
+    saved = team_control.submit(pid, intervention(project, task_id="image:S01", operation="retry"))
+    assert saved["instruction"]["status"] == "needs_decision"
+    team_control.process_pending(pid)
+    team_control.task_action(pid, "image:S01", action(project, "image:S01", "unlock"))
+    real_plan = team_control._direct_plan
+
+    def crash(*args):
+        raise SystemExit("synthetic process interruption after persisted planning claim")
+
+    monkeypatch.setattr(team_control, "_direct_plan", crash)
+    with pytest.raises(SystemExit):
+        team_control.process_pending(pid)
+    version = task(pid, "image:S01")["generation"]
+    pending = team_control.instructions(pid)["instructions"][0]
+    assert pending["status"] == "planning"
+    assert pending["accepted_generations"]["image:S01"] == version
+    monkeypatch.setattr(team_control, "_direct_plan", real_plan)
+    assert team_control.process_pending(pid)["status"] == "applied"
+    assert task(pid, "image:S01")["generation"] == version
