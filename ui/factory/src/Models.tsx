@@ -334,6 +334,9 @@ export function Models({ notify }: { notify: (v: string) => void }) {
                 {result.message ||
                   result.error?.message ||
                   "已完成配置检测；未运行生成任务"}
+                {result.input_modalities && (
+                  <span> · 服务声明的输入：{result.input_modalities.join("、")}（未验证生成）</span>
+                )}
               </div>
             )}
             <div className="button-row">
@@ -410,6 +413,12 @@ export function Models({ notify }: { notify: (v: string) => void }) {
                 </option>
               ))}
             </select>
+            {!video && meta.requires_vision && (
+              <small>视觉审核需要支持图片输入的模型；文本创作模型不能仅通过改名替代视觉服务。</small>
+            )}
+            {video && draft.video_profiles?.[String(value)]?.provider === "comfyui_h3" && (
+              <small>使用制作服务器的 ComfyUI / MiniMax H3 双 GPU 工作流，首帧图生视频，4 步采样。</small>
+            )}
           </Field>
         );
       },

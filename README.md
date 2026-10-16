@@ -13,7 +13,7 @@
 - **模型通过接口调用。** 同一角色可配置 llama.cpp、Ollama 原生或兼容接口、vLLM、LM Studio、DeepSeek、百炼或其他 OpenAI-compatible 服务；部署位置与协议分开配置。
 - **角色和模型分开。** 编剧、独立审稿、分镜导演、视觉质检有各自绑定；多个角色共用模型时也会明确显示。
 - **团队工作数据流可查看。** 每个项目展示当前角色分配、任务状态、输入输出、上下游交接，以及当次实际模型的执行回执。总控沿现有工作流分工，用户可调整角色绑定。
-- **视频引擎可选择。** `video_generator` 可以绑定本地 ComfyUI / Wan 或 MiniMax 视频接口；云端任务按 ID 持久化并恢复查询、下载，再进入现有逐镜质检和剪辑。
+- **视频引擎可选择。** `video_generator` 可以绑定 ComfyUI / MiniMax H3、已有 Wan 或 MiniMax 云端视频接口；cami 新配置使用 Wkp 原有 H3 双卡链路。云端任务按 ID 持久化并恢复查询、下载，再进入现有逐镜质检和剪辑。
 - **配置可查看、测试、导出和保存。** 文本连接可以探测模型列表；显式跳过发现和视频连接只做配置预检，不生成内容。配置用版本校验保存；已开始的执行批次持有自己的快照。
 - **工作流可中断和恢复。** LangGraph + SQLite 保存状态；后台 worker 执行长任务，关闭页面不丢失任务。
 - **制作按镜头追踪。** 保存参考图、提示词、模型身份、参数、生成任务 ID、质检和修复回执，复用仍有效的素材。
@@ -26,7 +26,7 @@
 | --- | --- | --- |
 | 策划、编剧、审稿、导演、视觉理解 | OpenAI-compatible Chat Completions 或 Ollama 原生 `/api/chat` | 本机、LAN 或远程模型服务，按角色配置 |
 | 图像 | ComfyUI HTTP，提交 `/prompt` 后按 `prompt_id` 查询历史 | 本机受 GPU 租约管理的 ComfyUI 进程 |
-| 扩散视频 | 本地 ComfyUI / Wan，或 MiniMax `video_generation` → 查询任务 → 获取文件 | 本地 GPU，或显式选择的远程 HTTPS 视频服务 |
+| 扩散视频 | ComfyUI / MiniMax H3 或已有 Wan，或 MiniMax 云端 `video_generation` → 查询任务 → 获取文件 | 制作服务器 GPU，或显式选择的远程 HTTPS 视频服务 |
 | 角色配音 | 受控本地进程，结构化输入、WAV 和回执 | 独立 Qwen3-TTS Python 环境 |
 | 剪辑、混音、字幕、媒体检查 | 本地 FFmpeg / PyAV | 本机 CPU |
 
