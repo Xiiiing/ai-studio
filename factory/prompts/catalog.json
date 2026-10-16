@@ -556,6 +556,56 @@
       "output_schema_refs": [
         "factory.team_planning:DEPARTMENT_PLAN_SCHEMA"
       ]
+    },
+    {
+      "role": "storyboard_director",
+      "version": "3.0.0",
+      "responsibility": "将批准镜头编译为 H3 单镜英文动作与摄影视听提示词；不改剧情、不生成媒体、不判定质量。",
+      "path": "storyboard_director/3.0.0.txt",
+      "sha256": "3128b622e59b03ef0a2426fd50c3fedb2d9637c482a8b6679710f119ed9572ac",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "approved_shot": {},
+          "first_frame_references": {},
+          "approved_style": {},
+          "seconds": {},
+          "attempt": {},
+          "repair": {},
+          "previous_prompt_untrusted": {},
+          "constraints": {},
+          "producer_task_requirements": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "stage": {
+                "type": "string"
+              },
+              "requirements": {
+                "type": "string",
+                "maxLength": 4000
+              },
+              "revision": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "rule": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "stage",
+              "requirements",
+              "revision",
+              "rule"
+            ]
+          }
+        }
+      },
+      "output_schema_refs": [
+        "factory.h3_prompting:PROMPT_SCHEMA"
+      ]
     }
   ]
 }

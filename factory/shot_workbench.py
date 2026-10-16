@@ -31,6 +31,7 @@ def plan_signature(project, shot, stage):
     fields = ("prompt", "cast", "characters", "reference_group", "reference_shots", "character_states", "render_style_prompt")
     if stage == "video":
         fields += ("motion_prompt", "camera_motion", "seconds", "lip_sync")
+        fields += tuple(key for key in ("action", "continuity") if key in shot)
     return core.fingerprint({"shot": {k: shot.get(k) for k in fields},
                              "series": project.get("series_references", {}).get(shot["id"], []),
                              **({"materials": material_references(project, shot)} if project.get("material_package") else {}),
@@ -96,6 +97,7 @@ def candidate(project, shot_id, stage, take, *, verify=False):
             "status": attempt.get("state", "generated" if result else "planned"),
             "prompt": attempt.get("prompt"), "model": attempt.get("model"),
             "provider": attempt.get("provider"), "parameters": attempt.get("parameters", {}),
+            **({"h3_prompt": copy.deepcopy(attempt["h3_prompt"])} if attempt.get("h3_prompt") else {}),
             "qa": qa, "error": attempt.get("error"), "selectable": eligible,
             "plan_current": compatible, "plan_signature": current_plan,
             "source_signature": result.get("source_signature") or attempt.get("source_signature"),

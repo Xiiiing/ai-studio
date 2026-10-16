@@ -188,6 +188,7 @@ def _receipt_subtasks(project, patch):
 
 
 PHASE_TASKS = {
+    "h3_prompt_preparation": ("h3_prompt", "storyboard_director", "visual_critic"),
     "voice": ("speech", "speech", "dialogue_editor"),
     "voice_rendering": ("speech", "speech", "dialogue_editor"),
     "voice_review": ("speech", "speech", "dialogue_editor"),

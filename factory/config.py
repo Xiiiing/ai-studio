@@ -164,6 +164,15 @@ def production_config(project, config):
     from .video_providers import resolve_video
     result = copy.deepcopy(config.get("production", {}))
     result["video_connection"] = resolve_video(config)
+    if result["video_connection"]["provider"] == "comfyui_h3":
+        result["h3_prompting"] = result.get("h3_prompting", "automatic")
+        if result["h3_prompting"] not in {"automatic", "manual"}:
+            raise ValueError("h3_prompting must be automatic or manual")
+        if result["h3_prompting"] == "automatic":
+            # Keep the batch's configured director route in memory, never in
+            # media receipts. Provider credentials remain environment references.
+            result["h3_prompt_config"] = {key: copy.deepcopy(config[key]) for key in
+                ("schema_version", "llm", "llm_profiles", "llm_roles", "setup_incomplete") if key in config}
     from .media_profiles import resolve
     result["image_connection"] = resolve(config, "image")
     result["audio_connection"] = resolve(config, "audio")

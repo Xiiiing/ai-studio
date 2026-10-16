@@ -210,6 +210,10 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
         connection = self.config.get("video_connection", {"profile": "local_wan", **LOCAL_PROFILE})
         self.video_connection = {"profile": connection.get("profile", "local_wan"),
                                  **normalize_video_profile({k: v for k, v in connection.items() if k != "profile"})}
+        prompting = self.config.get("h3_prompting", "manual")
+        if prompting not in {"automatic", "manual"}:
+            raise ValueError("h3_prompting must be automatic or manual")
+        self.h3_automatic = self.video_connection["provider"] == "comfyui_h3" and prompting == "automatic"
         self.checkpoint = checkpoint or (lambda patch: None)
         self.control, self.evaluator = control, evaluator
         self.dialogue_rewriter = dialogue_rewriter
@@ -615,6 +619,15 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                                     if (extra.get("shot") or {}).get("render_revisions", {}).get(kind) else {}),
                                  **({"production_profile": profile_signature(self.project)} if explicit_profile(self.project) else {})})
         shot = extra.get("shot") or extra.get("review_context") or {}
+        if kind == "video" and self.h3_automatic:
+            from .h3_prompting import identity
+            signature = fingerprint({"source": signature,
+                "h3_prompt_compiler": identity(self.config.get("h3_prompt_config", {})),
+                "approved_shot": {key: shot.get(key) for key in (
+                    "action", "continuity", "characters", "character_states", "cast", "lip_sync",
+                    "camera_motion", "motion_prompt", "prompt", "material_constraints")},
+                "style": self.style_prompt, "cast": self.cast,
+                "first_frame_review": shot.get("image", {}).get("qa")})
         expected = {key: shot.get(key) for key in (
             "id", "seconds", "prompt", "motion_prompt", "dialogue", "reference_group",
             "reference_shots", "continuity", "camera_motion", "action", "cast", "characters")}
@@ -642,6 +655,12 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
         for record in reversed(self._attempts(target)):
             folder = target["folder"] / record["take"]
             result = folder / "result.json"
+            if (self.h3_automatic and target["kind"] == "video" and
+                    (record.get("state") == "prompt_preparing" or
+                     record.get("state") == "rendering" and record.get("h3_prompt") and
+                     not (folder / "submission.json").exists() and not result.exists())):
+                target["resume_attempt"] = record
+                return None
             if record.get("state") in ("generated", "reviewing", "semantic_pending", "passed", "rendering") and result.exists():
                 media = read_json(result)
                 _receipt_path(media)
@@ -686,7 +705,7 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
 
     def _new_attempt(self, target):
         self._team_admit_target(target)
-        previous = self._attempts(target)
+        previous = [record for record in self._attempts(target) if record.get("state") != "prompt_preparing"]
         if len(previous) >= self.max_attempts:
             if target.get("shot") is not None:
                 target["shot"]["status"] = "failed"
@@ -699,7 +718,6 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                    if p.is_dir() and p.name[5:].isdigit()]
         take = f"take_{max(indexes, default=0) + 1:03d}"
         folder = target["folder"] / take
-        folder.mkdir(parents=True, exist_ok=False)
         number = len(previous) + 1
         repair = _grounded_repair_plan(
             previous[-1].get("qa", {"issues": [{"code": "generation", "detail": previous[-1].get("error", "")}]}),
@@ -741,9 +759,46 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                           parameters={"duration": self.video_connection["duration"],
                                       "resolution": self.video_connection["resolution"],
                                       "timeline_seconds": target.get("seconds"), "timeline_fps": 24})
+        preparation_folder = False
+        if self.h3_automatic and target["kind"] == "video":
+            record["state"] = "prompt_preparing"
+            if repair.get("regenerate_keyframe"):
+                # A replacement first frame must exist before its prompt is
+                # compiled. Keep this preparation resumable and uncounted.
+                folder.mkdir(parents=True, exist_ok=False)
+                preparation_folder = True
+                self._save_attempt(target, record)
+            self._finish_h3_prompt(target, record)
+        if not preparation_folder:
+            folder.mkdir(parents=True, exist_ok=False)
         self._team_begin_target(target, record)
         self._save_attempt(target, record)
         return record
+
+    def _finish_h3_prompt(self, target, record):
+        """Prepare text and any replacement frame before leasing H3 GPUs."""
+        from .h3_prompting import compile_prompt
+        self._guard_remote_submissions(target)
+        self._team_admit_target(target)
+        self.boundary()
+        frame = self._remote_first_frame(target, record)
+        references = [media_receipt(frame), *[media_receipt(p) for p in target["references"][1:]]]
+        approved_frame = (target.get("shot") or {}).get("image", {})
+        if approved_frame.get("sha256") == references[0]["sha256"] and approved_frame.get("qa"):
+            references[0]["qa"] = copy.deepcopy(approved_frame["qa"])
+        previous = [p for p in self._attempts(target) if p["take"] != record["take"] and p.get("state") != "prompt_preparing"]
+        request_key = fingerprint({"source": target["signature"], "attempt": record["attempt"],
+                                   "reference": references, "repair": record.get("repair")})[:24]
+        self.emit("h3_prompt_preparation")
+        compiled = compile_prompt(self.project, {**copy.deepcopy(target.get("shot") or {}), "cast": self.cast},
+            config=self.config.get("h3_prompt_config", {}), references=references,
+            style=self.style_prompt, seconds=target["seconds"], repair=record.get("repair"),
+            previous_prompt=previous[-1].get("prompt") if previous else None,
+            output_dir=target["folder"] / "prompting" / request_key, attempt=record["attempt"])
+        self.boundary()
+        self._team_admit_target(target)
+        record.update(prompt=compiled["prompt"], h3_prompt=compiled["receipt"],
+                      references=references, state="rendering")
 
     def _render_targets(self, targets, phase):
         if targets and self._team_target(targets[0]):
@@ -787,6 +842,17 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
             if generate:
                 self.boundary(gpu=True)
                 h3 = self.video_connection["provider"] == "comfyui_h3" and any(t["kind"] == "video" for t in generate)
+                if h3 and self.h3_automatic:
+                    for target in generate:
+                        if target["kind"] != "video":
+                            continue
+                        record = target.get("resume_attempt")
+                        if record is None:
+                            target["resume_attempt"] = self._new_attempt(target)
+                        elif record.get("state") == "prompt_preparing":
+                            self._finish_h3_prompt(target, record)
+                            self._team_begin_target(target, record)
+                            self._save_attempt(target, record)
                 with self.scheduler.worker(self.slug + "_" + phase, self.control, **({"h3": True} if h3 else {})) as worker:
                     for target in generate:
                         self._team_admit_target(target)
@@ -804,7 +870,9 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                                 graph = flux_image(record["prompt"], record["seed"], *self.image_size,
                                                    references=names, prefix=self.slug + "/" + target["key"])
                             else:
-                                if record.get("repair", {}).get("regenerate_keyframe"):
+                                if self.h3_automatic and record.get("repair_keyframe"):
+                                    names[0] = worker.copy_input(_receipt_path(record["repair_keyframe"]))
+                                elif record.get("repair", {}).get("regenerate_keyframe"):
                                     if team_control.is_locked(self.ident, "image", target["shot"]["id"]):
                                         raise ProductionNeedsDecision(
                                             "视频返修需要更换已锁定首帧，请先解锁或调整返修要求", "team_locked_keyframe",
@@ -902,6 +970,8 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                                                  "cloud_diffusion_video" if self._remote_video(target) else "local_diffusion_video")}
                     if target["kind"] == "video":
                         saved.update(motion_method="generated_video", diffusion_video=True)
+                        if record.get("h3_prompt"):
+                            saved["h3_prompt"] = copy.deepcopy(record["h3_prompt"])
                         if self.video_connection["provider"] == "comfyui_h3":
                             from studio.h3 import MODEL, recipe
                             selected = recipe(self.video_connection)
