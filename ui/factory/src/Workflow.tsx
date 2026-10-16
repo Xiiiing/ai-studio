@@ -151,6 +151,9 @@ export function Workflow({
   selectedExecution?: string;
 }) {
   const [selection, setSelection] = useState("");
+  const [inspectorOpen, setInspectorOpen] = useState(
+    !!selectedNode || !!selectedExecution,
+  );
   const mapRef = useRef<HTMLDivElement>(null);
   const inspectorRef = useRef<HTMLElement>(null);
   const stages = useMemo(() => workflowNodes(graph, flow), [graph, flow]);
@@ -162,14 +165,18 @@ export function Workflow({
     stages[0];
   const group = groups.find((g) => g.node_ids.includes(selected?.id));
   const select = (id: string) => {
+    if (id !== selected?.id && inspectorRef.current)
+      inspectorRef.current.scrollTop = 0;
     setSelection(id);
     onSelectNode?.(id);
   };
   useEffect(() => {
-    if (selectedExecution)
+    if (selectedExecution) {
+      setInspectorOpen(true);
       Array.from(document.querySelectorAll<HTMLElement>("[data-execution]"))
         .find((el) => el.dataset.execution === selectedExecution)
         ?.scrollIntoView({ block: "center" });
+    }
   }, [selectedExecution, selected?.id]);
   if (!selected)
     return (
@@ -240,7 +247,12 @@ export function Workflow({
     graph.production_tasks || flow?.production_tasks,
   );
   return (
-    <section className="workflow-workspace" aria-label="制作工作流">
+    <section
+      className={
+        "workflow-workspace " + (inspectorOpen ? "inspector-open" : "")
+      }
+      aria-label="制作工作流"
+    >
       <header className="workflow-heading">
         <div>
           <strong>制作工作流</strong>
@@ -266,6 +278,7 @@ export function Workflow({
             selectedGroup={group?.id}
             selectedStep={selected.id}
             onSelect={(id) => {
+              setInspectorOpen(true);
               const selectedGroup = groups.find((g) => g.id === id);
               select(
                 selectedGroup
@@ -277,30 +290,43 @@ export function Workflow({
                   : id,
               );
               if (window.matchMedia("(max-width: 1200px)").matches)
-                requestAnimationFrame(() =>
+                requestAnimationFrame(() => {
+                  inspectorRef.current?.focus({ preventScroll: true });
                   inspectorRef.current?.scrollIntoView({
                     block: "start",
-                    behavior: "smooth",
-                  }),
-                );
+                    behavior: window.matchMedia(
+                      "(prefers-reduced-motion: reduce)",
+                    ).matches
+                      ? "instant"
+                      : "smooth",
+                  });
+                });
             }}
           />
         </div>
         <aside
           ref={inspectorRef}
+          tabIndex={-1}
           className="workflow-inspector"
           aria-label="节点详情"
         >
           <button
             className="text-link workflow-back-to-map"
             onClick={() => {
-              mapRef.current?.scrollIntoView({
-                block: "start",
-                behavior: "smooth",
+              setInspectorOpen(false);
+              requestAnimationFrame(() => {
+                mapRef.current?.scrollIntoView({
+                  block: "start",
+                  behavior: window.matchMedia(
+                    "(prefers-reduced-motion: reduce)",
+                  ).matches
+                    ? "instant"
+                    : "smooth",
+                });
+                mapRef.current
+                  ?.querySelector<HTMLButtonElement>('[aria-pressed="true"]')
+                  ?.focus({ preventScroll: true });
               });
-              mapRef.current
-                ?.querySelector<HTMLButtonElement>('[aria-pressed="true"]')
-                ?.focus({ preventScroll: true });
             }}
           >
             <ArrowUp size={14} />

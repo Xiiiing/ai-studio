@@ -273,7 +273,13 @@ export function Models({ notify }: { notify: (v: string) => void }) {
       <>
         <Heading eyebrow="CONNECTIONS" title="模型与连接" />
         <ErrorNotice error={query.error} />
-        <Loading />
+        {query.error ? (
+          <button className="button" onClick={() => query.refetch()}>
+            重新读取模型配置
+          </button>
+        ) : (
+          <Loading />
+        )}
       </>
     );
   const profileCards = (video: boolean) =>

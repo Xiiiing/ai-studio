@@ -528,3 +528,16 @@
 .region-saved {
   color: var(--success);
 }
+.material-library-toolbar {
+  grid-template-columns: minmax(0, 1.5fr) minmax(180px, 1fr) auto;
+  align-items: end;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+.material-library-toolbar > .field {
+  margin: 0;
+}
+.material-library-toolbar > .button {
+  align-self: end;
+  min-height: 40px;
+}

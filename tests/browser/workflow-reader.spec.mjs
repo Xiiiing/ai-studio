@@ -27,6 +27,11 @@ for (const width of [1440, 1024, 390]) {
       ).toBeLessThan(40);
     }
     await expect(page.locator(".workflow-flow-line")).toHaveCount(7);
+    await page
+      .locator(".workflow-stages")
+      .screenshot({
+        path: `runtime/browser-report/workflow-stages-${width}.png`,
+      });
     const routing = await page.locator(".workflow-map").evaluate((map) => {
       const bounds = map.getBoundingClientRect();
       const boxes = [...map.querySelectorAll("[data-map-node]")].map((n) =>
@@ -75,6 +80,11 @@ for (const width of [1440, 1024, 390]) {
       "production",
       "delivery",
     ]) {
+      if (
+        width <= 1200 &&
+        (await page.locator(".workflow-workspace.inspector-open").count())
+      )
+        await page.getByRole("button", { name: "返回流程图" }).click();
       await page.locator(`[data-stage="${stage}"]`).click();
       await expect(page.locator(`[data-stage="${stage}"]`)).toHaveAttribute(
         "aria-pressed",
@@ -93,6 +103,8 @@ for (const width of [1440, 1024, 390]) {
         );
       }
     }
+    if (width <= 1200)
+      await page.getByRole("button", { name: "返回流程图" }).click();
     await page.locator('[data-stage="script"]').click();
     await page.locator('[data-flow-node="screenplay"]').click();
     const inputs = inspector.getByRole("region", { name: "输入材料" });
@@ -126,9 +138,6 @@ for (const width of [1440, 1024, 390]) {
     await page
       .locator(".workflow-workspace")
       .screenshot({ path: `runtime/browser-report/workflow-${width}.png` });
-    await page.locator(".workflow-stages").screenshot({
-      path: `runtime/browser-report/workflow-stages-${width}.png`,
-    });
     await page
       .locator(".workflow-workspace")
       .evaluate((el) => el.scrollIntoView({ block: "start" }));
@@ -146,6 +155,8 @@ for (const width of [1440, 1024, 390]) {
       .getByRole("dialog")
       .getByRole("button", { name: "关闭", exact: true })
       .click();
+    if (width <= 1200)
+      await page.getByRole("button", { name: "返回流程图" }).click();
     await page.getByRole("button", { name: /定向返修/ }).click();
     await expect(inspector).toContainText("返修后接续");
     await inspector

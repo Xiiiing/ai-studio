@@ -112,6 +112,15 @@
   .workflow-workspace.inspector-open .workflow-map-container {
     display: none;
   }
+  .workflow-inspector {
+    position: static;
+    max-height: none;
+    overflow: visible;
+    scrollbar-gutter: auto;
+  }
+  .workflow-workspace:not(.inspector-open) .workflow-inspector {
+    display: none;
+  }
 }
 @media (max-width: 1100px) {
   .workflow-inspector {
@@ -273,9 +282,13 @@
   }
   .topbar-right {
     gap: 8px;
+    flex: none;
   }
   .breadcrumb {
     font-size: 12px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .sync-state {
     font-size: 12px;
@@ -835,6 +848,44 @@
   }
   .region-coordinates {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .topbar-context {
+    flex: 1;
+    min-width: 0;
+  }
+  .material-library-toolbar {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 14px;
+    margin-bottom: 20px;
+  }
+  .material-library-toolbar > .field {
+    margin: 0;
+  }
+  .material-library-toolbar > .button {
+    min-height: 44px;
+  }
+  .panel-head p,
+  .page-heading p,
+  .empty-state p,
+  .attention-row p,
+  .activity-list p,
+  .running-tasks p,
+  .candidate-body > p,
+  .shot-story-card p,
+  .model-card > p,
+  .decision-section > .panel-head p,
+  .creative-contract p,
+  .creative-create-summary p,
+  .creative-remake-note,
+  .selected-story p,
+  .delivery-layout p,
+  .final-review-layout > form > p,
+  .workflow-description {
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  .document-markdown :is(td, th) {
+    font-size: 14px;
   }
 }
 @media (max-width: 700px) {
