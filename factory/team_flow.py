@@ -398,7 +398,13 @@ def build_flow(project, config=None):
     def item(role, side, label, value=None, artifact=None):
         row = {"label": label}
         if isinstance(value, (str, int, float, bool)):
-            row["value"] = _text(value) if isinstance(value, str) else value
+            row["value"] = _text(value, 65536) if isinstance(value, str) else value
+            if isinstance(value, str) and len(value) > 65536:
+                row["truncated"] = True
+        elif isinstance(value, (dict, list)) and len(json.dumps(value, ensure_ascii=False).encode("utf-8")) <= 65536:
+            row["value"] = value
+        elif isinstance(value, (dict, list)):
+            row["truncated"] = True
         url = _artifact_url(root, artifact)
         if url:
             row["artifact_url"] = url
@@ -414,37 +420,40 @@ def build_flow(project, config=None):
     item("orchestrator", "outputs", "运行状态", project.get("status"))
     item("researcher", "inputs", "创作方向", project.get("brief"))
     item("researcher", "inputs", "提供的来源", len(_rows(project.get("submitted_sources"), 24)))
-    item("researcher", "outputs", "研究状态", research.get("status"), artifacts.get("research"))
-    item("researcher", "outputs", "研究来源", research.get("source_count"), artifacts.get("sources"))
-    item("creator", "inputs", "题材研究", research.get("status"), artifacts.get("research"))
+    item("researcher", "outputs", "研究状态", research or None, artifacts.get("research"))
+    item("researcher", "outputs", "研究来源", research.get("sources") or research.get("source_count"), artifacts.get("sources"))
+    item("creator", "inputs", "题材研究", research or None, artifacts.get("research"))
     item("creator", "inputs", "创作方向", project.get("brief"))
     for value in proposals:
-        item("creator", "outputs", str(value.get("id", "提案")), value.get("title"), artifacts.get("proposals"))
+        item("creator", "outputs", str(value.get("id", "提案")), value, artifacts.get("proposals"))
     for role in ("story_editor", "screenwriter"):
-        item(role, "inputs", "已选故事", proposal.get("title") or selected_id)
+        item(role, "inputs", "已选故事", proposal or selected_id)
         item(role, "inputs", "出品人修改意见", project.get("script_feedback") or project.get("story_feedback"))
-    item("story_editor", "outputs", "已存故事目标", resolved.get("logline"), artifacts.get("resolved_story_brief"))
-    item("story_critic", "inputs", "故事目标", resolved.get("logline"), artifacts.get("resolved_story_brief"))
+    item("story_editor", "outputs", "已存故事目标", resolved or None, artifacts.get("resolved_story_brief"))
+    item("story_critic", "inputs", "故事目标", resolved or None, artifacts.get("resolved_story_brief"))
     resolution_review = _object(resolved.get("resolution_review"))
     if "passed" in resolution_review:
         item("story_critic", "outputs", "故事目标评审",
              "通过" if resolution_review["passed"] is True else "未通过",
              artifacts.get("resolved_story_review") or "production/" + root.name + "/planning/resolved-story-review.json")
-    item("screenwriter", "outputs", "剧本", script.get("title"), artifacts.get("script"))
+    item("screenwriter", "inputs", "故事目标", resolved or None, artifacts.get("resolved_story_brief"))
+    item("screenwriter", "outputs", "剧本草稿", project.get("screenplay_draft"), artifacts.get("screenplay_draft"))
+    item("screenwriter", "outputs", "剧本", script or None, artifacts.get("script"))
     item("screenwriter", "outputs", "镜头数", len(_rows(script.get("shots"))), artifacts.get("episode"))
-    item("storyboard_director", "inputs", "剧本", script.get("title"), artifacts.get("script"))
+    item("storyboard_director", "inputs", "剧本草稿", project.get("screenplay_draft"), artifacts.get("screenplay_draft"))
+    item("storyboard_director", "inputs", "剧本", script or None, artifacts.get("script"))
     item("storyboard_director", "outputs", "分镜表", artifact=artifacts.get("storyboard"))
-    item("storyboard_director", "outputs", "导演回执", artifact=artifacts.get("storyboard_direction"))
-    item("independent_critic", "inputs", "故事方案", len(proposals), artifacts.get("proposals"))
-    item("independent_critic", "inputs", "已存剧本", script.get("title"), artifacts.get("script"))
+    item("storyboard_director", "outputs", "导演回执", project.get("storyboard_receipt"), artifact=artifacts.get("storyboard_direction"))
+    item("independent_critic", "inputs", "故事方案", proposals or None, artifacts.get("proposals"))
+    item("independent_critic", "inputs", "已存剧本", script or None, artifacts.get("script"))
     for key, label in (("creation_review", "提案评审"), ("script_review", "剧本评审")):
         review = _object(project.get(key))
         if "passed" in review:
-            item("independent_critic", "outputs", label, "通过" if review["passed"] is True else "未通过",
+            item("independent_critic", "outputs", label, review,
                  artifacts.get(key))
-    item("visual_designer", "inputs", "剧本", script.get("title"), artifacts.get("script"))
+    item("visual_designer", "inputs", "剧本", script or None, artifacts.get("script"))
     for value in styles:
-        item("visual_designer", "outputs", "视觉方案", value.get("name"), artifacts.get("styles"))
+        item("visual_designer", "outputs", "视觉方案", value, artifacts.get("styles"))
         item("image_generator", "inputs", "视觉方案", value.get("name"))
         item("image_generator", "outputs", "视觉预览", value.get("name"),
              value.get("preview_url") or _object(value.get("preview")).get("path"))
@@ -513,7 +522,7 @@ def build_flow(project, config=None):
     item("producer", "inputs", "交付成片", artifact=delivery.get("video_url"))
     gate = _object(project.get("needs_decision"))
     item("producer", "inputs", "待确认事项", gate.get("message"))
-    item("producer", "outputs", "已选故事", proposal.get("title") or selected_id)
+    item("producer", "outputs", "已选故事", proposal or selected_id)
     item("producer", "outputs", "已选视觉", project.get("selected_style"))
 
     for role, execution in _call_executions(root, evidence):
@@ -612,10 +621,13 @@ def build_flow(project, config=None):
     task_board = task_snapshot(project)
     current_runs = {row["id"]: _object(row.get("record")).get("run_id")
                     for row in task_board["tasks"] if row["current"]}
+    current_runs.update({record["kind"] + "_decision": record.get("run_id")
+                         for record in supervision["records"] if record["current_gate_version"]})
+    valid_stages = {row["id"] for row in task_board["tasks"]} | {"story_decision", "style_decision", "final_decision"}
     for node in nodes.values():
         for execution in node["executions"]:
             context = execution["execution_context"]
-            if context["project_id"] == project["id"] and context["stage"] and context["run_id"]:
+            if context["project_id"] == project["id"] and context["stage"] in valid_stages and context["run_id"]:
                 execution["stage"] = context["stage"]
                 execution["run_id"] = context["run_id"]
                 if current_runs.get(context["stage"]) == context["run_id"]:

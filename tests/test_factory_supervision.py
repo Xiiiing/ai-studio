@@ -82,12 +82,19 @@ def test_authorized_story_choice_is_auditable_and_budget_unchanged(env, monkeypa
     p = project()
     gate = story_gate(p)
     store.update(p["id"], {"story_feedback": "保留双方主动解决误会"})
-    monkeypatch.setattr(sv, "cached_json_call", lambda *a, **k: proposal())
+    from factory.execution_context import current_execution
+    contexts = []
+    def respond(*args, **kwargs):
+        contexts.append(dict(current_execution.get()))
+        return proposal()
+    monkeypatch.setattr(sv, "cached_json_call", respond)
     answer = sv.supervise_gate(p["id"], gate)
     assert answer["choice"] == "B" and answer["actor"] == sv.ROLE
     assert answer["feedback"] == "保留双方主动解决误会"
     saved = store.get(p["id"])
     record = saved["supervision"]["story"]
+    assert contexts == [{"project_id": p["id"], "stage": "story_decision", "run_id": record["run_id"]}]
+    assert current_execution.get() is None
     assert record["status"] == "selected" and record["basis"] == sv.BASIS
     assert record["requested_model"] == "manager-fixture" and record["model_source"] == "request"
     assert saved["budget"] == p["budget"] and not saved.get("accepted_by")

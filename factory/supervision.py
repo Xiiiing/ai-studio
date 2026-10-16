@@ -243,6 +243,9 @@ def supervise_gate(pid, gate, config=None):
         return None
     project, payload, _, _ = claim
     proposal, error_type = None, None
+    from .execution_context import current_execution
+    context_token = current_execution.set({"project_id": pid, "stage": gate["type"] + "_decision",
+                                            "run_id": claim[2]["run_id"]})
     try:
         proposal = cached_json_call(project, config, ROLE, "supervisor_" + gate["type"], load_prompt(ROLE),
                                     payload, DECISION_SCHEMA, max_tokens=2048, temperature=0.2)
@@ -251,6 +254,8 @@ def supervise_gate(pid, gate, config=None):
         validate(proposal, DECISION_SCHEMA)
     except Exception as exc:
         proposal, error_type = None, type(exc).__name__[:100]
+    finally:
+        current_execution.reset(context_token)
     return _settle(pid, gate, claim, proposal, error_type)
 
 

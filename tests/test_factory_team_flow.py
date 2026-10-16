@@ -310,3 +310,19 @@ def test_saved_call_files_and_current_identity_do_not_infer_old_history(context)
     assert old['scope'] == 'project_history' and 'stage' not in old
     project['script_generation'] = 2
     assert role(team_flow.build_flow(project, config), 'screenwriter')['executions'][0]['scope'] == 'project_history'
+
+
+def test_producer_calls_use_the_saved_gate_run_and_reject_foreign_identity(context):
+    root, project, config = context
+    project['supervision'] = {'story': {'kind':'story', 'gate_id':f'{PID}:story:1',
+        'run_id':'producer-run', 'status':'selected'}}
+    for name, context_pid, stage in [('current',PID,'story_decision'),
+                                    ('foreign','abcdef012345','story_decision'),
+                                    ('unknown',PID,'invented-step')]:
+        call(root, name, {'role':'executive_producer', 'status':'succeeded',
+            'execution_context':{'project_id':context_pid,'stage':stage,'run_id':'producer-run'}})
+    records = role(team_flow.build_flow(project, config), 'executive_producer')['executions']
+    by_id = {e['id'].split(':')[-1]:e for e in records}
+    assert by_id['current']['scope'] == 'current_run'
+    assert by_id['current']['stage'] == 'story_decision'
+    assert all(by_id[k]['scope'] == 'project_history' and 'stage' not in by_id[k] for k in ('foreign','unknown'))

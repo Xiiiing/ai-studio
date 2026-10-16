@@ -19,6 +19,7 @@ SOURCES = {
 def step_materials(project, root, artifact_url):
     from .team_blueprint import topology
     nodes, _ = topology(project.get("workflow_version", 1))
+    ids = {n["id"] for n in nodes}
     artifacts = project.get("planning_artifacts") or {}
     proposals, styles = project.get("proposals") or [], project.get("styles") or []
     selected_story, selected_style = project.get("selected_story"), project.get("selected_style")
@@ -47,8 +48,11 @@ def step_materials(project, root, artifact_url):
         if key in ("delivery", "accepted_delivery"):
             recorded = (project.get("delivery") or {}).get("manifest_url")
         url = artifact_url(root, recorded)
+        source = SOURCES.get(key)
+        if source not in ids:
+            source = "screenplay" if source in ("story_resolution", "storyboard", "script_review") else source
         row = {"key": key, "label": LABELS.get(key, key), "source": "current_project_snapshot",
-               "source_label": "当前项目材料", "source_node": SOURCES.get(key),
+               "source_label": "当前项目材料", "source_node": source,
                "state": "available" if value is not None or url else "not_recorded" if side == "inputs" else "not_generated"}
         if value is not None:
             # Full documents remain available through their files; keep the polling snapshot bounded.
