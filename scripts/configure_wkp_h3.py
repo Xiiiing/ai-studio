@@ -60,7 +60,7 @@ def verified_configuration(current, client, *, quality="preview", vision_model=N
                                  video_width=768 if quality == "production" else 352,
                                  video_height=1344 if quality == "production" else 640)
     if quality == "production":
-        updated["production"]["h3_reserve_vram_gib"] = 12
+        updated["production"].update(h3_reserve_vram_gib=12, h3_int8_scratch_mib=512)
     if updated.get("llm_roles", {}).get("screenwriter") == "primary":
         updated["llm"] = copy.deepcopy(updated["llm_profiles"]["primary"])
     return updated

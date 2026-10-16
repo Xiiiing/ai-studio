@@ -65,7 +65,7 @@ Qwen3.8 已在隔离双 GPU 进程中加载匹配组件。实际模型别名 `ai
 
 项目内 `nodes/pilot_device_loaders/int8_memory.py` 仅由 H3 自有子进程启用，通过 Comfy Kitchen 的公开后端注册 API 替换该进程的 eager INT8 调用。保留完整形状的激活函数和 ConvRot 旋转，再分块调用原生量化、整数累加、缩放和 bias，预分配输出，避免完整 INT32 中间结果与多个整幅输出同时驻留。共享安装和其他任务不变。最初将 ConvRot 一并分块时，GPU 数值对比发现不同舍入，已修复；修复后原生 CPU/GPU 的 12 组 FP16/BF16/FP32、ConvRot 开关、标量/逐通道缩放组合均逐位相等，最大差值为 0。该样本数值验证不等于所有可能张量的数学证明。
 
-可配置服务器端 `production.h3_reserve_vram_gib`，范围 8–20 GiB、兼容默认 8；新正式配置建议 12。客户端不覆盖服务器的显存设置。预留显存本身未解决上述 OOM，正式档还需要配套的进程内 INT8 适配。
+可配置服务器端 `production.h3_reserve_vram_gib`，范围 8–20 GiB、兼容默认 8；新正式配置建议 12。客户端不覆盖服务器的显存设置。预留显存本身未解决上述 OOM，正式档还需要配套的进程内 INT8 适配。`production.h3_int8_scratch_mib` 可设整数 64–512，兼容默认 64，新正式示例为 512；只影响分块临时内存与性能，不改变采样参数。GPU 小规模热运行基准中，64/256/512 MiB 分别为 54.8/31.2/24.4 ms，三个结果逐位相等；不能将单算子的加速比例当作完整视频的加速比例。
 
 真实测试入口：
 
@@ -74,7 +74,8 @@ python scripts/h3_quality_smoke.py \
   --config config/wkp-local-quality.example.json \
   --image /path/to/independent-human-reference.png \
   --output /path/to/isolated-checkout/runtime/human-production \
-  --gpu-cards 5 6 7
+  --gpu-cards 5 6 7 \
+  --max-wall-seconds 14400 --max-gpu-seconds 28800
 ```
 
-只选择空闲且可取得共享租约的两张 GPU；默认墙钟 4200 秒、累计 GPU 8400 秒，输出必须在当前隔离 checkout 的 `runtime` 下。保留图、提交 ID、产物哈希和完整技术检查，未知提交不自动重发。实际双卡和退出后的用量记录在 `validation.json`。
+只选择空闲且可取得共享租约的两张 GPU；命令中明确授权隔离测试上限为墙钟 14400 秒、累计 GPU 28800 秒（脚本兼容默认仍为 4200/8400 秒），输出必须在当前隔离 checkout 的 `runtime` 下。保留图、提交 ID、产物哈希和完整技术检查，未知提交不自动重发。实际双卡和退出后的用量记录在 `validation.json`。

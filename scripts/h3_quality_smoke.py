@@ -49,7 +49,8 @@ def main():
     prompt = args.prompt_file.read_text() if args.prompt_file else HUMAN_PROMPT
     budget = Budget({'max_wall_seconds': args.max_wall_seconds, 'max_gpu_seconds': args.max_gpu_seconds})
     scheduler = Scheduler({'gpu_cards': args.gpu_cards, 'gpu_wait_seconds': 60,
-                           'h3_reserve_vram_gib': config.get('h3_reserve_vram_gib', 12)}, budget)
+                           'h3_reserve_vram_gib': config.get('h3_reserve_vram_gib', 12),
+                           'h3_int8_scratch_mib': config.get('h3_int8_scratch_mib', 512)}, budget)
     started = time.monotonic()
     # A unique tag keeps independent test output, process logs and submission state together.
     tag = 'quality-' + output.name
