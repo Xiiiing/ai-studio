@@ -21,6 +21,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--config', type=Path, required=True)
     parser.add_argument('--image', type=Path, action='append', required=True)
+    parser.add_argument('--media', type=Path, help='Also exercise the application visual_critic on this image/video')
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
     config = json.loads(args.config.read_text())
@@ -85,6 +86,27 @@ def main():
             receipt = {**identity, 'actual_model': alias, 'modalities': props['modalities'], 'review': review,
                        'usage': answer.get('usage'), 'elapsed_seconds': round(time.monotonic() - started, 3),
                        'gpu_cards': cards, 'context_tokens': context, 'production_services_changed': False}
+            if args.media:
+                from factory.llm import review_media
+                from factory.config import ROLE_LABELS
+                profile = {'provider': 'llama_cpp', 'enabled': True, 'network_mode': 'loopback',
+                           'base_url': base + '/v1', 'model': alias, 'vision': True,
+                           'context_tokens': context, 'image_token_budget': 1536,
+                           'response_format': 'llama_json_schema', 'context_validation': 'conservative_estimate',
+                           'request_timeout_seconds': 600, 'chat_template_kwargs': {'enable_thinking': False}}
+                application = {'llm_profiles': {'vision_test': profile},
+                               'llm_roles': {role: 'vision_test' for role in ROLE_LABELS},
+                               'quality': {'semantic_enabled': True, 'temporal_samples': 4, 'minimum_score': 60}}
+                project = {'slug': 'isolated-human-quality', 'format': 'live_action',
+                           'creative_contract': {'schema_version': 1, 'visual_style': 'photorealistic',
+                                                 'story_mode': 'standalone', 'pacing': 'short_drama', 'motion': 'generated_video'}}
+                shot = {'id': 'S01', 'seconds': 5,
+                        'prompt': '写实成年男子，深蓝衬衫，在窗边咖啡桌前双手围着白杯，保持人物身份和衣服。',
+                        'action': '自然眨眼，从看窗外缓慢转向相机，露出轻微笑容；手和杯子留在桌上。',
+                        'camera_motion': '固定机位，连续单镜头'}
+                receipt['application_review'] = review_media(project, shot, args.media, args.image, config=application,
+                                                            output_dir=args.output / 'application')
+                receipt['elapsed_seconds'] = round(time.monotonic() - started, 3)
             (args.output / 'review.json').write_text(json.dumps(receipt, ensure_ascii=False, indent=2) + '\n')
             print(json.dumps(receipt, ensure_ascii=False))
         finally:

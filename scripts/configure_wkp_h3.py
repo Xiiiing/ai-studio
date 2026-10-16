@@ -39,6 +39,8 @@ def verified_configuration(current, client, *, quality="preview", vision_model=N
             raise ValueError("Wkp did not report model modalities/context for " + name)
         if name == "vision" and not image_input:
             raise ValueError("Wkp vision service cannot accept images")
+        if name == "vision" and vision_model == "ai-studio-qwen38-vision":
+            profile["image_token_budget"] = 1536
         profile.update(model=catalog[0]["id"], vision=image_input,
                        context_tokens=min(profile.get("context_tokens", context), context))
     if updated.get("llm_roles", {}).get("visual_critic") != "vision":

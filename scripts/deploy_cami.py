@@ -163,6 +163,9 @@ def new_configuration(paths):
                        response_format="llama_json_schema", context_validation="llama_tokenize",
                        tls_ca_file_env="CAMI_WKP_TLS_CA", tls_client_cert_env="CAMI_WKP_TLS_CERT",
                        tls_client_key_env="CAMI_WKP_TLS_KEY")
+        if vision:
+            # review_media resizes inputs to 512x768; leave room for temporal samples.
+            profile["image_token_budget"] = 1536
         profiles[name] = profile
     value["llm_profiles"] = profiles
     value["llm"] = copy.deepcopy(profiles["primary"])

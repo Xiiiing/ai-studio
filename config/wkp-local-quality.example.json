@@ -20,6 +20,7 @@
     "model": "ai-studio-qwen38-vision",
     "context_tokens": 16384,
     "vision": true,
+    "image_token_budget": 1536,
     "response_format": "llama_json_schema",
     "context_validation": "llama_tokenize"
   },
