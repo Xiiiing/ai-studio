@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   LayoutDashboard,
@@ -20,7 +20,9 @@ import {
   Play,
   Pause,
   Hand,
+  X,
 } from "lucide-react";
+import { ThemeControl } from "./Theme";
 import {
   request,
   keys,
@@ -82,7 +84,38 @@ export default function App() {
     [route, setRoute] = useState(readRoute),
     [create, setCreate] = useState<boolean | RecordData>(false),
     [mobile, setMobile] = useState(false),
+    [narrow, setNarrow] = useState(
+      () => window.matchMedia("(max-width: 760px)").matches,
+    ),
     [toast, setToast] = useState("");
+  const navigationRef = useRef<HTMLElement>(null);
+  const navigationTrigger = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 760px)");
+    const update = () => {
+      setNarrow(media.matches);
+      if (!media.matches) setMobile(false);
+    };
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
+  useEffect(() => {
+    if (!mobile || !narrow) return;
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    let focusFrame = requestAnimationFrame(() => {
+      focusFrame = requestAnimationFrame(() =>
+        navigationRef.current
+          ?.querySelector<HTMLButtonElement>(".navigation-close")
+          ?.focus(),
+      );
+    });
+    return () => {
+      cancelAnimationFrame(focusFrame);
+      document.body.style.overflow = overflow;
+      navigationTrigger.current?.focus({ preventScroll: true });
+    };
+  }, [mobile, narrow]);
   const overview = useQuery({
       queryKey: keys.overview,
       queryFn: () => request("/console"),
@@ -104,7 +137,10 @@ export default function App() {
       staleTime: 60000,
     });
   useEffect(() => {
-    const listener = () => setRoute(readRoute());
+    const listener = () => {
+      setRoute(readRoute());
+      setMobile(false);
+    };
     window.addEventListener("hashchange", listener);
     return () => window.removeEventListener("hashchange", listener);
   }, []);
@@ -133,23 +169,85 @@ export default function App() {
     navigate("dashboard", id, tab);
   return (
     <>
-      <a className="skip-link" href="#workspace">
+      <a
+        className="skip-link"
+        href="#workspace"
+        onClick={(event) => {
+          event.preventDefault();
+          document.getElementById("workspace")?.focus({ preventScroll: true });
+          document
+            .getElementById("workspace")
+            ?.scrollIntoView({ block: "start" });
+        }}
+      >
         跳至工作区
       </a>
       <div className={"app-shell " + (mobile ? "navigation-open" : "")}>
-        <aside className="sidebar" aria-label="工作室导航">
-          <a className="brand" href="#" onClick={() => navigate("dashboard")}>
-            <span className="brand-mark">
-              <Clapperboard size={22} />
-            </span>
-            <span>
-              映序<small>AI PRODUCTION STUDIO</small>
-            </span>
-          </a>
+        {mobile && narrow && (
+          <button
+            className="navigation-backdrop"
+            aria-label="关闭导航遮罩"
+            onClick={() => setMobile(false)}
+            tabIndex={-1}
+          />
+        )}
+        <aside
+          ref={navigationRef}
+          id="studio-navigation"
+          className="sidebar"
+          aria-label="工作室导航"
+          inert={narrow && !mobile ? true : undefined}
+          aria-hidden={narrow && !mobile ? true : undefined}
+          onKeyDown={(event) => {
+            if (!mobile || !narrow) return;
+            if (event.key === "Escape") {
+              event.preventDefault();
+              setMobile(false);
+            }
+            if (event.key === "Tab") {
+              const items = Array.from(
+                navigationRef.current?.querySelectorAll<HTMLElement>(
+                  "a[href],button:not(:disabled),select",
+                ) || [],
+              ).filter((el) => el.getClientRects().length > 0);
+              const first = items[0],
+                last = items[items.length - 1];
+              if (event.shiftKey && document.activeElement === first) {
+                event.preventDefault();
+                last?.focus();
+              }
+              if (!event.shiftKey && document.activeElement === last) {
+                event.preventDefault();
+                first?.focus();
+              }
+            }
+          }}
+        >
+          <div className="sidebar-header">
+            <a className="brand" href="#" onClick={() => navigate("dashboard")}>
+              <span className="brand-mark">
+                <Clapperboard size={22} />
+              </span>
+              <span>
+                映序<small>AI PRODUCTION STUDIO</small>
+              </span>
+            </a>
+            <button
+              type="button"
+              className="icon-button navigation-close"
+              aria-label="关闭导航"
+              onClick={() => setMobile(false)}
+            >
+              <X size={20} />
+            </button>
+          </div>
           <button
             className="button primary new-project"
             data-action="new-project"
-            onClick={() => setCreate(true)}
+            onClick={() => {
+              setMobile(false);
+              setCreate(true);
+            }}
           >
             <Plus size={16} />
             新建制作
@@ -221,13 +319,16 @@ export default function App() {
             </div>
           </div>
         </aside>
-        <div className="main-shell">
+        <div className="main-shell" inert={mobile && narrow ? true : undefined}>
           <header className="topbar">
             <div className="topbar-context">
               <button
+                ref={navigationTrigger}
                 className="icon-button mobile-navigation"
                 data-action="toggle-navigation"
-                aria-label="展开导航"
+                aria-label={mobile ? "关闭导航" : "展开导航"}
+                aria-expanded={mobile}
+                aria-controls="studio-navigation"
                 onClick={() => setMobile(!mobile)}
               >
                 <Menu size={20} />
@@ -240,6 +341,7 @@ export default function App() {
               </span>
             </div>
             <div className="topbar-right">
+              <ThemeControl />
               <span
                 className={
                   "sync-state " + (overview.isError ? "error-text" : "")
@@ -388,8 +490,15 @@ export default function App() {
           onClose={() => setCreate(false)}
           onCreated={(p) => {
             setCreate(false);
-            setToast(p.material_setup_requested ? "项目已建立，请先准备并确认素材。" : "制作项目已建立，AI 团队开始策划。");
-            openProject(p.id, p.material_setup_requested ? "materials" : "overview");
+            setToast(
+              p.material_setup_requested
+                ? "项目已建立，请先准备并确认素材。"
+                : "制作项目已建立，AI 团队开始策划。",
+            );
+            openProject(
+              p.id,
+              p.material_setup_requested ? "materials" : "overview",
+            );
           }}
         />
       )}
@@ -1577,7 +1686,10 @@ export function CreateProject({
             defaultValue={seed?.brief || ""}
           />
         </Field>
-        <label className="check"><input type="checkbox" name="prepare_materials" />先准备人物、场景与画风，再开始制作</label>
+        <label className="check">
+          <input type="checkbox" name="prepare_materials" />
+          先准备人物、场景与画风，再开始制作
+        </label>
         <div className="form-row">
           <Field label="创作方式">
             <select name="creation_mode">
