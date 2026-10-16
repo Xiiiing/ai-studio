@@ -137,7 +137,7 @@ def begin(pid, stage):
             store._event(db, pid, "恢复前的任务未记录完成", "team_task", _public(interrupted))
         signature = _signature(project, stage)
         row = {"run_id": uuid.uuid4().hex, "task_id": stage + ":" + signature,
-               "stage": stage, "owner": definition(stage,project)["owner"], "reviewer": definition(stage,project)["reviewer"],
+               "stage": stage, "owner": project.get("team_assignments", {}).get("stage:" + stage, definition(stage,project)["owner"]), "reviewer": definition(stage,project)["reviewer"],
                "status": "running", "attempt": attempt + 1, "input_signature": signature,
                "started_at": store.now(), "finished_at": None, "error_type": None,
                "model": None, "completion_semantics": COMPLETION}

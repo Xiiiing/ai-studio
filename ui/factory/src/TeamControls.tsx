@@ -10,7 +10,7 @@ import {
   useQueryClient,
   type QueryClient,
 } from "@tanstack/react-query";
-import { request, rows, type RecordData } from "./api";
+import { date, request, roleName, rows, type RecordData } from "./api";
 import { Badge, ErrorNotice, Field, Loading, Modal } from "./ui";
 
 export type InterventionTarget = {
@@ -18,6 +18,7 @@ export type InterventionTarget = {
   id: string;
   label: string;
   task?: RecordData;
+  department?: string;
 };
 type Draft = {
   instruction: string;
@@ -62,6 +63,47 @@ export function useInterventionTarget(projectId: string) {
     ["team-active-draft", projectId],
     null,
   );
+}
+function useTaskLabels(projectId: string, taskIds: string[]) {
+  const client = useQueryClient();
+  const ids = [...new Set(taskIds)].filter(Boolean).sort().slice(0, 100);
+  return useQuery({
+    queryKey: ["team-task-labels", projectId, ...ids],
+    enabled: ids.length > 0,
+    retry: false,
+    staleTime: 15000,
+    queryFn: async () => {
+      const known = client
+        .getQueryCache()
+        .getAll()
+        .filter(
+          (query) =>
+            query.queryKey[0] === "team-tasks" &&
+            query.queryKey[1] === projectId,
+        )
+        .flatMap((query) =>
+          rows((query.state.data as RecordData | undefined)?.tasks),
+        );
+      const results = await Promise.allSettled(
+        ids.map(async (id) => {
+          const cached =
+            client.getQueryData<RecordData>(["team-task", projectId, id])
+              ?.task || known.find((task) => task.id === id);
+          return (
+            cached ||
+            (
+              await request(
+                `/projects/${projectId}/tasks/${encodeURIComponent(id)}`,
+              )
+            ).task
+          );
+        }),
+      );
+      return results
+        .filter((result) => result.status === "fulfilled" && result.value)
+        .map((result) => (result as PromiseFulfilledResult<RecordData>).value);
+    },
+  });
 }
 function revision(client: QueryClient, projectId: string, fallback = 0) {
   return client
@@ -270,9 +312,36 @@ export function InterventionComposer({
   onRegistered: (message: string) => void;
 }) {
   const client = useQueryClient();
+  const managed = target.type === "leader" || target.type === "department";
+  const manager = rows(team.members).find((member) => member.id === target.id);
+  const managedDepartment = rows(team.departments).find(
+    (item) =>
+      item.id === target.department ||
+      item.id === target.id ||
+      item.lead === target.id,
+  );
+  const capability = rows(team.actions).find(
+    (action) => action.id === (managed ? "replan" : "intervene"),
+  );
+  const targetAvailable =
+    team.enabled &&
+    (managed
+      ? manager?.leader_available !== false &&
+        (target.id === "executive_producer"
+          ? capability?.enabled !== false
+          : managedDepartment?.management_available !== false)
+      : capability?.enabled !== false);
+  const unavailableReason =
+    manager?.leader_unavailable_reason ||
+    managedDepartment?.management_unavailable_reason ||
+    capability?.disabled_reason ||
+    "当前暂不具备接收指令的条件，请同步团队状态后重试。";
   const initial: Draft = {
     instruction: "",
-    operation: "revise",
+    operation:
+      target.type === "leader" || target.type === "department"
+        ? "replan"
+        : "revise",
     taskIds: target.task ? [target.task.id] : [],
     generations: target.task
       ? { [target.task.id]: target.task.generation }
@@ -306,6 +375,8 @@ export function InterventionComposer({
       });
       if (target.type === "member") params.set("owner", target.id);
       if (target.type === "department") params.set("department", target.id);
+      if (target.type === "leader" && target.department)
+        params.set("department", target.department);
       if (target.type === "task" && target.task?.shot_id)
         params.set("shot_id", target.task.shot_id);
       return request(`/projects/${projectId}/tasks?${params}`);
@@ -326,8 +397,13 @@ export function InterventionComposer({
       const data = query.state.data as RecordData | undefined;
       return data?.task ? [data.task] : rows(data?.tasks);
     });
+  const previewLabels = useTaskLabels(projectId, [
+    ...(preview?.affected_tasks || []),
+    ...draft.preserve,
+  ]);
   const taskName = (id: string) =>
     candidates.find((task) => task.id === id)?.label ||
+    rows(previewLabels.data).find((task) => task.id === id)?.label ||
     cachedTasks.find((task) => task.id === id)?.label ||
     id;
   const stale = draft.taskIds.some((id) => {
@@ -394,7 +470,13 @@ export function InterventionComposer({
   }
   async function submit(event: React.FormEvent) {
     event.preventDefault();
-    if (running.current || !draft.instruction.trim() || !draft.taskIds.length)
+    if (
+      running.current ||
+      !targetAvailable ||
+      stale ||
+      !draft.instruction.trim() ||
+      !draft.taskIds.length
+    )
       return;
     running.current = true;
     setBusy(true);
@@ -488,6 +570,7 @@ export function InterventionComposer({
       onClose={onClose}
     >
       <form className="team-intervention-form" onSubmit={submit}>
+        {!targetAvailable && <div className="notice">{unavailableReason}</div>}
         <p className="muted">
           指令立即登记并停止受影响的后续派发；当前调用收尾后切换。终片、预算和新增费用授权仍由你决定。
         </p>
@@ -502,7 +585,11 @@ export function InterventionComposer({
                   type="checkbox"
                   aria-label={"修改 " + task.label}
                   checked={draft.taskIds.includes(task.id)}
-                  disabled={target.type === "task"}
+                  disabled={
+                    target.type === "task" ||
+                    (draft.taskIds.length >= 100 &&
+                      !draft.taskIds.includes(task.id))
+                  }
                   onChange={(event) =>
                     update({
                       taskIds: event.target.checked
@@ -555,6 +642,12 @@ export function InterventionComposer({
           )}
         </fieldset>
         <ErrorNotice error={scopeQuery.error} />
+        {(target.type === "leader" || target.type === "department") && (
+          <p className="muted">
+            负责人仅安排你明确选择的任务，每条指令最多选择 100
+            项；执行继续遵守依赖、锁定、审核和费用授权。
+          </p>
+        )}
         <Field label="处理方式">
           <select
             value={draft.operation}
@@ -563,6 +656,9 @@ export function InterventionComposer({
               update({ operation: event.target.value as Draft["operation"] })
             }
           >
+            {(target.type === "leader" || target.type === "department") && (
+              <option value="replan">由负责人调整任务安排</option>
+            )}
             <option value="revise">按新要求修改</option>
             <option value="retry">重新执行</option>
           </select>
@@ -656,7 +752,10 @@ export function InterventionComposer({
             type="button"
             className="button"
             disabled={
-              busy || !draft.taskIds.length || !draft.instruction.trim()
+              busy ||
+              !targetAvailable ||
+              !draft.taskIds.length ||
+              !draft.instruction.trim()
             }
             onClick={inspect}
           >
@@ -667,6 +766,7 @@ export function InterventionComposer({
             type="submit"
             disabled={
               busy ||
+              !targetAvailable ||
               stale ||
               !draft.taskIds.length ||
               !draft.instruction.trim()
@@ -688,24 +788,76 @@ export function InterventionComposer({
   );
 }
 
+export function LeaderEntry({
+  label,
+  enabled,
+  reason,
+  onOpen,
+}: {
+  label: string;
+  enabled: boolean;
+  reason?: string;
+  onOpen: () => void;
+}) {
+  return (
+    <div className="team-leader-entry">
+      <button
+        className="button small"
+        disabled={!enabled}
+        title={reason}
+        onClick={onOpen}
+      >
+        {label}
+      </button>
+      {!enabled && reason && (
+        <details>
+          <summary>查看不可用原因</summary>
+          <p className="muted">{reason}</p>
+        </details>
+      )}
+    </div>
+  );
+}
+
 export function TeamInstructions({
   projectId,
   instructions,
   controlRevision,
+  team,
+  onTask,
 }: {
   projectId: string;
   instructions: RecordData[];
   controlRevision: number;
+  team?: RecordData;
+  onTask?: (id: string) => void;
 }) {
   const client = useQueryClient();
   const [busy, setBusy] = useState(""),
     [error, setError] = useState("");
+  const [offset, setOffset] = useState(0);
+  const history = useQuery({
+    queryKey: ["team-instructions", projectId, offset],
+    queryFn: () =>
+      request(`/projects/${projectId}/interventions?offset=${offset}&limit=20`),
+    enabled:
+      instructions.length > 0 ||
+      rows(team?.actions).some((action) => action.id === "replan"),
+    retry: false,
+    refetchInterval: 5000,
+  });
+  const records = Array.isArray(history.data?.instructions)
+    ? rows(history.data.instructions)
+    : offset === 0
+      ? instructions
+      : [];
   const labels: Record<string, string> = {
     queued: "已登记",
     planning: "正在安排",
     needs_decision: "需要你处理",
     pending: "已登记",
     applied: "已应用",
+    completed: "已完成",
     waiting: "等待安全边界",
     needs_attention: "需要处理",
     conflict: "存在冲突",
@@ -713,7 +865,49 @@ export function TeamInstructions({
     dismissed: "已撤回",
     rejected: "未应用",
   };
-  if (!instructions.length) return null;
+  const operationLabels: Record<string, string> = {
+    prioritize: "调整优先级",
+    pause: "暂停",
+    resume: "恢复",
+    assign: "转派",
+    retry: "重新执行",
+    revise: "修改要求",
+  };
+  const taskRecords = client
+    .getQueryCache()
+    .getAll()
+    .filter((query) => query.queryKey[1] === projectId)
+    .flatMap((query) => {
+      const data = query.state.data as RecordData | undefined;
+      return data?.task ? [data.task] : rows(data?.tasks);
+    });
+  const reportLabels = useTaskLabels(
+    projectId,
+    records.flatMap((item) => [
+      ...(item.affected_tasks || []),
+      ...(
+        item.plan?.management_tasks ||
+        item.management_task_ids ||
+        item.management_tasks ||
+        []
+      ).map((value: string | RecordData) =>
+        typeof value === "string" ? value : value.id || value.task_id,
+      ),
+    ]),
+  );
+  const taskName = (id: string) =>
+    taskRecords.find((task) => task.id === id)?.label ||
+    rows(reportLabels.data).find((task) => task.id === id)?.label ||
+    id;
+  const targetName = (item: RecordData) =>
+    rows(team?.members).find((member) => member.id === item.target_id)?.label ||
+    rows(team?.departments).find(
+      (department) => department.id === item.target_id,
+    )?.label ||
+    taskName(item.target_id) ||
+    roleName(item.target_id);
+  if (!records.length && !history.error && !(history.isPending && offset > 0))
+    return null;
   async function dismiss(id: string) {
     setBusy(id);
     setError("");
@@ -736,41 +930,166 @@ export function TeamInstructions({
       setBusy("");
     }
   }
+  function taskLink(id: string, prefix = "") {
+    return onTask ? (
+      <button
+        className="text-link team-report-task"
+        key={id}
+        onClick={() => onTask(id)}
+      >
+        {prefix}
+        {taskName(id)}
+      </button>
+    ) : (
+      <span key={id}>
+        {prefix}
+        {taskName(id)}
+      </span>
+    );
+  }
   return (
-    <section className="team-instructions" aria-label="已登记的制作指令">
-      <h3>制作指令</h3>
-      <ErrorNotice error={error} />
-      {instructions.map((item) => (
-        <article className="team-attempt" key={item.id}>
-          <div className="row-between">
-            <strong>{item.target_id}</strong>
-            <Badge
-              status={item.status}
-              label={labels[item.status] || item.status}
-            />
-          </div>
-          <p>{item.instruction}</p>
-          {item.reason && <p className="notice">{item.reason}</p>}
-          {[
-            "queued",
-            "needs_decision",
-            "pending",
-            "waiting",
-            "needs_attention",
-            "conflict",
-            "blocked",
-            "rejected",
-          ].includes(item.status) && (
-            <button
-              className="text-link"
-              disabled={!!busy}
-              onClick={() => dismiss(item.id)}
-            >
-              撤回此指令
-            </button>
-          )}
-        </article>
-      ))}
+    <section className="panel team-instructions" aria-label="已登记的制作指令">
+      <h2>制作指令与负责人汇报</h2>
+      {history.isPending && offset > 0 && <Loading />}
+      <ErrorNotice error={error || history.error} />
+      {history.error && (
+        <button className="button small" onClick={() => history.refetch()}>
+          重新读取制作指令
+        </button>
+      )}
+      {records.map((item) => {
+        const management =
+          item.plan?.management_tasks ||
+          item.management_task_ids ||
+          item.management_tasks ||
+          [];
+        return (
+          <article className="team-attempt" key={item.id}>
+            <div className="row-between">
+              <strong>{targetName(item)}</strong>
+              <Badge
+                status={item.status}
+                label={labels[item.status] || item.status}
+              />
+            </div>
+            <small>{date(item.created_at)}</small>
+            <p className="team-instruction-text">{item.instruction}</p>
+            {item.reason && <p className="notice">{item.reason}</p>}
+            {!!item.affected_tasks?.length && (
+              <div className="team-report-links">
+                <small>涉及任务</small>
+                {item.affected_tasks.map((id: string) => taskLink(id))}
+              </div>
+            )}
+            {item.plan && (
+              <section className="team-applied-plan" aria-label="负责人安排">
+                <h3>
+                  {item.status === "applied" || item.status === "completed"
+                    ? "已应用的安排"
+                    : "负责人安排"}
+                </h3>
+                <p>{item.plan.summary}</p>
+                {rows(item.plan.operations).length > 0 && (
+                  <ul>
+                    {rows(item.plan.operations).map((operation, index) => (
+                      <li key={operation.task_id + ":" + index}>
+                        <strong>
+                          {operationLabels[operation.action] ||
+                            operation.action}
+                        </strong>
+                        {taskLink(operation.task_id)}
+                        {operation.action === "prioritize" &&
+                          operation.priority != null && (
+                            <span>优先级 {operation.priority}</span>
+                          )}
+                        {operation.action === "assign" && operation.owner && (
+                          <span>
+                            交给{" "}
+                            {rows(team?.members).find(
+                              (member) => member.id === operation.owner,
+                            )?.label || roleName(operation.owner)}
+                          </span>
+                        )}
+                        {operation.action === "revise" &&
+                          operation.requirements && (
+                            <p>{operation.requirements}</p>
+                          )}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {rows(item.plan.delegations).map((delegation, index) => (
+                  <div
+                    className="team-plan-delegation"
+                    key={delegation.department + ":" + index}
+                  >
+                    <strong>
+                      {rows(team?.departments).find(
+                        (department) => department.id === delegation.department,
+                      )?.label || delegation.department}
+                    </strong>
+                    <p>{delegation.summary}</p>
+                    {(delegation.task_ids || []).map((id: string) =>
+                      taskLink(id),
+                    )}
+                  </div>
+                ))}
+              </section>
+            )}
+            {Array.isArray(management) && management.length > 0 && (
+              <div className="team-report-links">
+                <small>管理任务与执行证据</small>
+                {management.map((value: string | RecordData) =>
+                  taskLink(
+                    typeof value === "string"
+                      ? value
+                      : value.id || value.task_id,
+                    "查看管理任务：",
+                  ),
+                )}
+              </div>
+            )}
+            {[
+              "queued",
+              "needs_decision",
+              "pending",
+              "waiting",
+              "needs_attention",
+              "conflict",
+              "blocked",
+              "rejected",
+            ].includes(item.status) && (
+              <button
+                className="text-link"
+                disabled={!!busy}
+                onClick={() => dismiss(item.id)}
+              >
+                撤回此指令
+              </button>
+            )}
+          </article>
+        );
+      })}
+      <div className="team-pagination">
+        <small>共 {history.data?.total ?? records.length} 条指令</small>
+        <button
+          className="button small"
+          disabled={!offset || history.isFetching}
+          onClick={() => setOffset(Math.max(0, offset - 20))}
+        >
+          上一页指令
+        </button>
+        <button
+          className="button small"
+          disabled={
+            offset + 20 >= (history.data?.total ?? records.length) ||
+            history.isFetching
+          }
+          onClick={() => setOffset(offset + 20)}
+        >
+          下一页指令
+        </button>
+      </div>
     </section>
   );
 }

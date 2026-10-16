@@ -97,6 +97,12 @@ def project_graph(project, attention=None, running=False):
         if project.get("status") == "cancelled" and status != "succeeded": status = "cancelled"
         delegated = ident in {"story_decision", "style_decision"} and project.get("team_mode") == "delegated"
         if delegated: owner = "executive_producer"
+        if project.get("workflow_version", 1) == 2 and project.get("team_control_version") == 1:
+            from .team_ledger import ROLE_DEPARTMENT
+            assigned = obj(project.get("team_assignments")).get("stage:" + ident)
+            if assigned in ROLE_DEPARTMENT:
+                members = list(dict.fromkeys(assigned if member == owner else member for member in members))
+                owner = assigned
         record = obj(obj(row).get("record"))
         nodes.append({**spec, "id": ident, "label": label, "owner": owner, "reviewer": spec.get("reviewer"), "members": members, "execution_nodes": executable,
                       "input": inputs, "output": outputs, "status": status, "evidence": evidence,

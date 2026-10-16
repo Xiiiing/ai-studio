@@ -6,7 +6,10 @@
     "screenwriter": "1.0.0",
     "visual_designer": "1.0.0",
     "storyboard_director": "1.1.0",
-    "executive_producer": "1.0.0"
+    "executive_producer": "1.0.0",
+    "story_editor": "2.0.0",
+    "dialogue_editor": "2.0.0",
+    "edit_director": "2.0.0"
   },
   "prompts": [
     {
@@ -370,6 +373,188 @@
       },
       "output_schema_refs": [
         "factory.storyboard:storyboard_schema"
+      ]
+    },
+    {
+      "role": "executive_producer",
+      "version": "2.0.0",
+      "responsibility": "协调跨部门的明确任务，将每个选定任务交给它所属部门的负责人。",
+      "path": "executive_producer/2.0.0.txt",
+      "sha256": "69566132cc999ce23241a3eaa033cbd17fdf2ed2c8fd364b787a224a115f5ab6",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "project": {},
+          "directive": {},
+          "tasks": {},
+          "constraints": {}
+        },
+        "required": [
+          "project",
+          "directive",
+          "tasks",
+          "constraints"
+        ]
+      },
+      "output_schema_refs": [
+        "factory.team_planning:ROOT_PLAN_SCHEMA"
+      ]
+    },
+    {
+      "role": "story_editor",
+      "version": "2.0.0",
+      "responsibility": "安排题材研究、故事提案与剧本创作；保护已通过审核的内容。",
+      "path": "story_editor/2.0.0.txt",
+      "sha256": "d30ee1c4ab37864836d8f89827174efa08db0be656bdf50cc873d49401a1dbe1",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "project": {},
+          "directive": {},
+          "tasks": {},
+          "constraints": {}
+        },
+        "required": [
+          "project",
+          "directive",
+          "tasks",
+          "constraints"
+        ]
+      },
+      "output_schema_refs": [
+        "factory.team_planning:DEPARTMENT_PLAN_SCHEMA"
+      ]
+    },
+    {
+      "role": "storyboard_director",
+      "version": "2.0.0",
+      "responsibility": "安排分镜、动作、机位和运镜工作；保留既定剧本目标。",
+      "path": "storyboard_director/2.0.0.txt",
+      "sha256": "206b476c7504a0b5c91367514ff4c8ee2e9aaa8e0608e20243968dd8f32c1565",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "project": {},
+          "directive": {},
+          "tasks": {},
+          "constraints": {}
+        },
+        "required": [
+          "project",
+          "directive",
+          "tasks",
+          "constraints"
+        ]
+      },
+      "output_schema_refs": [
+        "factory.team_planning:DEPARTMENT_PLAN_SCHEMA"
+      ]
+    },
+    {
+      "role": "visual_designer",
+      "version": "2.0.0",
+      "responsibility": "安排角色与场景参考、镜头首帧和视频制作。",
+      "path": "visual_designer/2.0.0.txt",
+      "sha256": "5ae92fe8446488fa29b1aa7cec11d0bf9c249a2843c5136fb93e7d31e0a0de87",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "project": {},
+          "directive": {},
+          "tasks": {},
+          "constraints": {}
+        },
+        "required": [
+          "project",
+          "directive",
+          "tasks",
+          "constraints"
+        ]
+      },
+      "output_schema_refs": [
+        "factory.team_planning:DEPARTMENT_PLAN_SCHEMA"
+      ]
+    },
+    {
+      "role": "dialogue_editor",
+      "version": "2.0.0",
+      "responsibility": "安排角色配音和对白时长检查。",
+      "path": "dialogue_editor/2.0.0.txt",
+      "sha256": "5b863d06f20dbc86f04b28543669f6a4199d6b174ced156179f2d23aeec770a2",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "project": {},
+          "directive": {},
+          "tasks": {},
+          "constraints": {}
+        },
+        "required": [
+          "project",
+          "directive",
+          "tasks",
+          "constraints"
+        ]
+      },
+      "output_schema_refs": [
+        "factory.team_planning:DEPARTMENT_PLAN_SCHEMA"
+      ]
+    },
+    {
+      "role": "edit_director",
+      "version": "2.0.0",
+      "responsibility": "安排后期交付、剪辑和技术检查。",
+      "path": "edit_director/2.0.0.txt",
+      "sha256": "bad37ab3a3cae4de0973b9dcea5589b90642fe43f57fddddf5a854fecd523145",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "project": {},
+          "directive": {},
+          "tasks": {},
+          "constraints": {}
+        },
+        "required": [
+          "project",
+          "directive",
+          "tasks",
+          "constraints"
+        ]
+      },
+      "output_schema_refs": [
+        "factory.team_planning:DEPARTMENT_PLAN_SCHEMA"
+      ]
+    },
+    {
+      "role": "independent_critic",
+      "version": "2.0.0",
+      "responsibility": "安排独立文字、画面和连续性检查；不改写已有审核结论。",
+      "path": "independent_critic/2.0.0.txt",
+      "sha256": "aae486656807f98c3e4b17a5c644095f3f1901c3fd8973547b9e8686d63d7c43",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "project": {},
+          "directive": {},
+          "tasks": {},
+          "constraints": {}
+        },
+        "required": [
+          "project",
+          "directive",
+          "tasks",
+          "constraints"
+        ]
+      },
+      "output_schema_refs": [
+        "factory.team_planning:DEPARTMENT_PLAN_SCHEMA"
       ]
     }
   ]
