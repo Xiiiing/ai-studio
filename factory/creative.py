@@ -6,6 +6,7 @@ import json
 import re
 
 from .prompt_registry import load_prompt, derive_prompt
+from .review_policy import automation, exhausted_message, max_review_rounds
 
 from studio.core import write_json
 from studio.planning import export_storyboard
@@ -126,7 +127,7 @@ def create_proposals(project, config, checkpoint):
     if project.get("creation_mode", "original") == "adaptation" and not _adaptation_material(project):
         raise CreativeReviewError("改编任务缺少经过授权检查的可读原著素材")
     folder = planning_dir(project)
-    maximum_rounds = max(1, min(2, int(config.get("creative", {}).get("max_review_rounds", 2))))
+    maximum_rounds = max_review_rounds(config)
     payload = {"project": _safe_context(project),
                "research": project.get("research", {}),
                "authorized_adaptation_material": _adaptation_material(project),
@@ -135,7 +136,9 @@ def create_proposals(project, config, checkpoint):
     proposals, history = [], []
     for round_index in range(1, maximum_rounds + 1):
         report(checkpoint, stage="story_creation", progress=13 + round_index * 3,
-               message="编剧正在形成三套故事方案（第%d轮）" % round_index)
+               message="编剧正在形成三套故事方案（第%d轮）" % round_index,
+               review_automation=automation(config, "proposals", round_index, project.get("proposal_generation", 1),
+                                            "writing", "根据上一轮独立审核定向返修" if round_index > 1 else "生成故事候选"))
         round_payload = copy.deepcopy(payload)
         if proposals:
             round_payload["previous_proposals"] = proposals
@@ -146,7 +149,9 @@ def create_proposals(project, config, checkpoint):
         proposals = [{**item, "id": ident} for item, ident in
                      zip(generated["proposals"], ("A", "B", "C"))]
         report(checkpoint, stage="story_review", progress=17 + round_index * 3,
-               message="独立审稿人正在核查三套故事的因果、动机和结局")
+               message="独立审稿人正在核查三套故事的因果、动机和结局",
+               review_automation=automation(config, "proposals", round_index, project.get("proposal_generation", 1),
+                                            "reviewing", "独立审核当前故事候选"))
         judged = cached_json_call(project, config, "independent_critic",
             "proposal-review-%d" % round_index, CRITIC_SYSTEM,
             {"project": _safe_context(project), "proposals": proposals,
@@ -180,7 +185,7 @@ def create_proposals(project, config, checkpoint):
         write_json(folder / "proposals.json", {"proposals": proposals, "rounds": history,
             "proposal_generation": project.get("proposal_generation", 1)})
         atomic_text(folder / "proposals.md", _proposal_doc(proposals, history))
-        if all(proposal["eligible"] for proposal in proposals):
+        if any(proposal["eligible"] for proposal in proposals):
             break
     eligible_count = sum(bool(proposal["eligible"]) for proposal in proposals)
     all_passed = eligible_count == len(proposals)
@@ -191,7 +196,10 @@ def create_proposals(project, config, checkpoint):
             "passed": selectable, "all_passed": all_passed,
             "eligible_count": eligible_count, "rounds": history},
         "needs_decision": None if selectable else _gate("creative_review",
-            "全部故事方案完成有界改写后仍未通过评审，请修改方向或重新提案。", blockers),
+            exhausted_message("故事方案", round_index), blockers),
+        "review_automation": automation(config, "proposals", round_index, project.get("proposal_generation", 1),
+                                        "passed" if selectable else "blocked",
+                                        "已有通过独立审核的故事候选" if selectable else "自动返修轮次已用尽"),
         "planning_artifacts": {**project.get("planning_artifacts", {}),
                                "proposals": relative_path(folder / "proposals.md")}}
 
@@ -385,6 +393,7 @@ def _resolved_evidence_catalog(target):
 
 def resolve_story_brief(project, config, checkpoint=None, feedback=None):
     """Resolve global producer changes before expanding another full screenplay."""
+    maximum_rounds = max_review_rounds(config)
     proposal = _selected_proposal(project)
     directions = _producer_feedback(project, feedback)
     if not directions["instructions"]:
@@ -448,6 +457,25 @@ evidence_catalog由程序从正文提取。每项check的evidence_ids只能选�
     review_only = False
     start_revision = 1
     previous_policy_record = None
+    history = []
+    resume_feedback = None
+
+    def revise_target(current, review, revision):
+        report(checkpoint, stage="story_resolution", progress=28,
+               message="紧凑目标正在按独立评审自动返修（第%d轮，共至多%d轮）" % (revision, maximum_rounds),
+               review_automation=automation(config, "story_resolution", revision,
+                   project.get("script_generation", 1), "writing", "按真实正文证据返修紧凑目标"))
+        # Keep the original second-round request byte-exact for old receipts.
+        task = ("这是唯一一次紧凑目标返修。逐项满足用户要求和原创门槛，必要时重构AI方案的回馈机制；纠正因果、责任、物品来源与认领，不能增加无关支线。"
+                if revision == 2 else
+                "这是第%d轮紧凑目标修订。对照完整前稿逐项落实独立审核问题，保留用户要求、来源引文和删除约束；修复实际因果而非降低标准，不能增加无关支线。" % revision)
+        return cached_json_call(project, config, "story_editor", "resolved-story-brief-revision-%d" % revision,
+            system + "\n现在修订当前紧凑目标。保留用户硬要求与删除项，AI自选回馈机制、后半段节拍及结局可重构；针对原创不足必须改变实际因果机制。纠正时序和道具持有人矛盾；不恢复旧提案或已删支线。来源引文沿用已有有效引文或逐字摘录producer_feedback。",
+            {"project": _safe_context(project), "producer_feedback": directions,
+             "current_resolved_target": current, "independent_feedback": review,
+             "source_ids": list(sources), "task": task},
+            RESOLVED_STORY_SCHEMA, checkpoint, max_tokens=3800, temperature=.2)
+
     try:
         saved = json.loads((folder / "resolved-story-brief.json").read_text(encoding="utf-8"))
         if saved.get("schema") != "resolved-story-brief.v3":
@@ -463,11 +491,22 @@ evidence_catalog由程序从正文提取。每项check的evidence_ids只能选�
                     not _excluded_story_issues(saved, saved)):
                 report(checkpoint, message="复用已通过独立评审的故事目标；剧本重试保持该目标不变")
                 return copy.deepcopy(saved)
-            if saved.get("resolution_revision") == 2:
-                prior = saved.get("resolution_review", {}).get("rounds", [])
-                issues = prior[-1].get("review", {}).get("issues", []) if prior else []
-                raise CreativeReviewError("当前目标已经达到两版上限且未通过，请调整创作要求后再继续", issues)
-        elif same_target and saved.get("resolution_revision") in (1, 2):
+            completed = saved.get("resolution_revision")
+            prior = saved.get("resolution_review", {}).get("rounds", [])
+            if type(completed) is int and 1 <= completed <= 6 and prior and prior[-1].get("revision") == completed:
+                issues = prior[-1].get("review", {}).get("issues", [])
+                if completed >= maximum_rounds:
+                    report(checkpoint, review_automation=automation(config, "story_resolution", completed,
+                        project.get("script_generation", 1), "blocked", "自动返修轮次已用尽"))
+                    raise CreativeReviewError(exhausted_message("紧凑故事目标", completed), issues)
+                history = copy.deepcopy(prior)
+                previous_policy_record = saved.get("resolution_review", {}).get("previous_policy_record")
+                start_revision = completed + 1
+                resume_feedback = copy.deepcopy(prior[-1]["review"])
+                value = {key: copy.deepcopy(saved[key]) for key in (
+                    *RESOLVED_STORY_SCHEMA["properties"], "schema", "source_signature",
+                    "resolution_revision", "source_mapping") if key in saved}
+        elif same_target and type(saved.get("resolution_revision")) is int and 1 <= saved["resolution_revision"] <= 6:
             # A changed review contract re-evaluates the exact stored target.
             review_only = True
             start_revision = saved["resolution_revision"]
@@ -482,12 +521,15 @@ evidence_catalog由程序从正文提取。每项check的evidence_ids只能选�
         pass
     if value is None:
         report(checkpoint, stage="story_resolution", progress=28,
-               message="制片人反馈正在转换为明确的新故事目标、保留项和删除项")
+               message="制片人反馈正在转换为明确的新故事目标、保留项和删除项",
+               review_automation=automation(config, "story_resolution", 1,
+                   project.get("script_generation", 1), "writing", "落实出品人要求和删除约束"))
         value = cached_json_call(project, config, "story_editor", "resolved-story-brief",
             system, payload, RESOLVED_STORY_SCHEMA, checkpoint, max_tokens=3800, temperature=.2)
+    if resume_feedback is not None:
+        value = revise_target(value, resume_feedback, start_revision)
     compact = lambda text: re.sub(r"\s+", "", str(text))
-    history = []
-    revisions = (start_revision,) if review_only else (1, 2)
+    revisions = range(start_revision, max(start_revision, maximum_rounds) + 1)
     for revision in revisions:
         for group in ("requirements", "excluded_elements"):
             for index, entry in enumerate(value[group], 1):
@@ -508,7 +550,9 @@ evidence_catalog由程序从正文提取。每项check的evidence_ids只能选�
         write_json(catalog_path, {"schema": "story-evidence-catalog.v1", "items": catalog})
         evidence = {item["id"]: item["text"] for item in catalog}
         report(checkpoint, stage="story_resolution_review", progress=29,
-               message="独立审稿人依据正文证据编号核对因果与责任（第%d版）" % revision)
+               message="独立审稿人依据正文证据编号核对因果与责任（第%d版）" % revision,
+               review_automation=automation(config, "story_resolution", revision,
+                   project.get("script_generation", 1), "reviewing", "独立核对正文证据、用户要求与原创性"))
         clean_target = {key: copy.deepcopy(value[key]) for key in RESOLVED_STORY_SCHEMA["properties"]}
         raw_review = cached_json_call(
             project, config, "story_critic", "resolved-story-review-ids-%d" % revision,
@@ -557,7 +601,7 @@ evidence_catalog由程序从正文提取。每项check的evidence_ids只能选�
         history.append({"revision": revision, "target": relative_path(folder / artifact),
                         "review": copy.deepcopy(review),
                         "policy_reassessment": review_only})
-        review_record = {"passed": passed, "maximum_target_versions": 2,
+        review_record = {"passed": passed, "maximum_target_versions": maximum_rounds,
             "minimum_originality_score": 6, "evidence_mode": "catalog_ids", "maximum_review_evidence_repairs": 0,
             "review_evidence_repairs_used": 0, "policy_reassessment": review_only,
             "previous_policy_record": previous_policy_record, "rounds": history}
@@ -566,17 +610,22 @@ evidence_catalog由程序从正文提取。每项check的evidence_ids只能选�
             project.get("script_generation", 1), revision, fingerprint(raw_review)[:12])),
             {"target": relative_path(folder / artifact), "evidence_catalog": relative_path(catalog_path),
              "raw_review": raw_review, "review": review, "policy_reassessment": review_only})
-        if passed or revision == 2 or review_only:
+        # Persist a complete per-round receipt before another model call. A
+        # restarted worker can resume the next revision without replaying review.
+        saved_round = copy.deepcopy(value)
+        saved_round["review_policy_signature"] = review_policy_signature
+        saved_round["reviewed_target_signature"] = fingerprint({key: value.get(key)
+            for key in RESOLVED_STORY_SCHEMA["properties"]})
+        saved_round["resolution_review"] = copy.deepcopy(review_record)
+        write_json(folder / "resolved-story-brief.json", saved_round)
+        report(checkpoint, review_automation=automation(config, "story_resolution", revision,
+            project.get("script_generation", 1),
+            "passed" if passed else "repairing" if revision < maximum_rounds else "blocked",
+            "独立目标审核已通过" if passed else "按正文证据继续返修" if revision < maximum_rounds else "自动返修轮次已用尽"))
+        if passed or revision >= maximum_rounds:
             break
-        report(checkpoint, stage="story_resolution", progress=28,
-               message="紧凑目标正在按独立评审修订；最多再改这一版")
-        value = cached_json_call(project, config, "story_editor", "resolved-story-brief-revision-2",
-            system + "\n现在修订当前紧凑目标。保留用户硬要求与删除项，AI自选回馈机制、后半段节拍及结局可重构；针对原创不足必须改变实际因果机制。纠正时序和道具持有人矛盾；不恢复旧提案或已删支线。来源引文沿用已有有效引文或逐字摘录producer_feedback。",
-            {"project": _safe_context(project), "producer_feedback": directions,
-             "current_resolved_target": value, "independent_feedback": review,
-             "source_ids": list(sources),
-             "task": "这是唯一一次紧凑目标返修。逐项满足用户要求和原创门槛，必要时重构AI方案的回馈机制；纠正因果、责任、物品来源与认领，不能增加无关支线。"},
-            RESOLVED_STORY_SCHEMA, checkpoint, max_tokens=3800, temperature=.2)
+        value = revise_target(value, review, revision + 1)
+        review_only = False
     value["review_policy_signature"] = review_policy_signature
     value["reviewed_target_signature"] = fingerprint({key: value.get(key)
                                                      for key in RESOLVED_STORY_SCHEMA["properties"]})
@@ -597,7 +646,7 @@ evidence_catalog由程序从正文提取。每项check的evidence_ids只能选�
                  for issue in review["issues"])
     atomic_text(folder / "resolved-story-brief.md", "\n".join(lines) + "\n")
     if not passed:
-        raise CreativeReviewError("紧凑故事目标的独立评审仍有阻断项，已保留目标版本与评审证据",
+        raise CreativeReviewError(exhausted_message("紧凑故事目标", revision),
                                   review["issues"])
     return value
 
@@ -621,6 +670,7 @@ def _excluded_story_issues(episode, resolved):
 
 
 def _make_script(project, config, checkpoint, feedback=None):
+    maximum_rounds = max_review_rounds(config)
     proposal = _selected_proposal(project)
     if proposal.get("eligible") is False:
         raise CreativeReviewError("该故事方案存在未解决的评审问题，不能直接进入制作",
@@ -661,15 +711,17 @@ def _make_script(project, config, checkpoint, feedback=None):
             "你先完成剧情、action、对白与连续性，并提供这些制作字段的初稿；导演不能替你改剧情。")
         writer_system = derive_prompt(SCRIPT_SYSTEM, writer_system, "separate_storyboard")
     history, episode, final_review, direction = [], None, None, None
-    for index in range(1, 3):
+    for index in range(1, maximum_rounds + 1):
         report(checkpoint, stage="script_creation", progress=29 + index * 2,
                message=("编剧正在完成剧情、人物、对白和逐镜动作（第%d轮）" if separate_storyboard else
-                        "编剧与导演正在编写完整剧本和逐镜分镜（第%d轮）") % index)
+                        "编剧与导演正在编写完整剧本和逐镜分镜（第%d轮）") % index,
+               review_automation=automation(config, "script", index, project.get("script_generation", 1),
+                                            "writing", "按独立审核返修原稿" if index > 1 else "编写剧本"))
         request = copy.deepcopy(payload)
+        previous_attempt = copy.deepcopy(episode)
         if episode is not None:
-            if not resolved or affected:
-                request["previous_attempt"] = episode
-            else:
+            request["previous_attempt"] = copy.deepcopy(episode)
+            if resolved and not affected:
                 request["rewrite_instruction"] = "保留requirements和删除项，在已选主题内重构AI工作方案；可重新设计回馈机制与后半结构。用实际setup/choice/payoff解决原创和结局问题，不依赖换礼物或追加尾声。逐项处理独立评审证据。"
             request["independent_feedback"] = final_review
         raw = cached_json_call(project, config, "screenwriter", "screenplay-%d" % index,
@@ -693,12 +745,15 @@ def _make_script(project, config, checkpoint, feedback=None):
                 approved_story=resolved_goal or proposal_reference,
                 shot_ids=affected or None, round_index=index,
                 producer_feedback=producer_feedback,
-                repair_issues=(final_review or {}).get("issues", []))
+                repair_issues=(final_review or {}).get("issues", []),
+                previous_attempt=previous_attempt)
             episode, director_issues = direction["episode"], direction["issues"]
         structural = (technical_issues(episode, project) +
                       _excluded_story_issues(episode, resolved) + director_issues)
         report(checkpoint, stage="script_review", progress=32 + index * 3,
-               message="独立审稿人正在逐镜检查剧情闭合、声音槽位和连续性")
+               message="独立审稿人正在逐镜检查剧情闭合、声音槽位和连续性",
+               review_automation=automation(config, "script", index, project.get("script_generation", 1),
+                                            "reviewing", "独立审核返修结果"))
         final_review = cached_json_call(project, config, "independent_critic",
             "screenplay-review-%d" % index, CRITIC_SYSTEM,
             {"project": _safe_context(project), "selected_story": resolved["logline"] if resolved else proposal["logline"],
@@ -744,7 +799,7 @@ def _make_script(project, config, checkpoint, feedback=None):
         "script_review": {"passed": passed, "rounds": history, "review": final_review,
                           "producer_feedback": producer_feedback},
         "needs_decision": None if passed else _gate("script_review",
-            "剧本经过一次自动返修后仍有阻断项，请补充创作反馈后再继续。",
+            exhausted_message("剧本", index),
             _script_gate_issues(final_review)),
         "planning_artifacts": {**project.get("planning_artifacts", {}),
             "resolved_story_brief": relative_path(folder / "resolved-story-brief.md") if resolved else None,
@@ -754,6 +809,9 @@ def _make_script(project, config, checkpoint, feedback=None):
             "script_review": relative_path(folder / "script-review.json"),
             **({"storyboard_direction": direction["artifact"]} if direction else {}),
             "styles": relative_path(folder / "styles.json")},
+        "review_automation": automation(config, "script", index, project.get("script_generation", 1),
+                                        "passed" if passed else "blocked",
+                                        "独立审核已通过" if passed else "自动返修轮次已用尽"),
         "script_updated_at": utc_now()}
 
 

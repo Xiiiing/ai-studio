@@ -74,10 +74,11 @@ def _episode_context(episode):
 
 def direct_storyboard(project, config, episode, checkpoint=None, *,
                       approved_story, shot_ids=None, round_index=1,
-                      producer_feedback=None, repair_issues=None):
+                      producer_feedback=None, repair_issues=None, previous_attempt=None):
     """Direct one draft; immutable story fields and unselected shots survive verbatim."""
-    if round_index not in (1, 2):
-        raise CreativeReviewError("分镜导演沿用至多两版剧本的评审边界")
+    from .review_policy import max_review_rounds
+    if type(round_index) is not int or not 1 <= round_index <= max_review_rounds(config):
+        raise CreativeReviewError("分镜导演轮次超出配置的有界自动返修范围")
     shots = episode.get("shots", [])
     ordered = [shot.get("id") for shot in shots]
     if not ordered or any(not isinstance(sid, str) or not re.fullmatch(r"S\d{2,3}", sid)
@@ -106,6 +107,8 @@ def direct_storyboard(project, config, episode, checkpoint=None, *,
         "model_capabilities": model_capabilities(project, config, episode),
         "instruction": "只编排指定镜头的四个制作字段；完整剧情与未指定镜头保持原样。",
     }
+    if previous_attempt is not None:
+        payload["previous_attempt"] = _episode_context(previous_attempt)
     stage = "storyboard-direction-%d" % round_index
     report(checkpoint, stage="storyboard_direction", progress=32 + round_index,
            message="独立分镜导演正在编排%d镜的构图、运镜和人物参考（第%d版）" %

@@ -5,7 +5,7 @@
     "independent_critic": "1.0.0",
     "screenwriter": "1.0.0",
     "visual_designer": "1.0.0",
-    "storyboard_director": "1.0.0",
+    "storyboard_director": "1.1.0",
     "executive_producer": "1.0.0"
   },
   "prompts": [
@@ -143,11 +143,52 @@
       "path": "executive_producer/1.0.0.txt",
       "sha256": "982f578fcdea540505bcc2332c99cd4bb1962d9499a71a8fe1e325891577d2fd",
       "input_schema": {
-        "type": "object", "additionalProperties": false,
-        "properties": {"project": {}, "gate": {}, "candidates": {}, "review_summary": {}, "constraints": {}},
-        "required": ["project", "gate", "candidates", "review_summary", "constraints"]
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "project": {},
+          "gate": {},
+          "candidates": {},
+          "review_summary": {},
+          "constraints": {}
+        },
+        "required": [
+          "project",
+          "gate",
+          "candidates",
+          "review_summary",
+          "constraints"
+        ]
       },
-      "output_schema_refs": ["factory.supervision:DECISION_SCHEMA"]
+      "output_schema_refs": [
+        "factory.supervision:DECISION_SCHEMA"
+      ]
+    },
+    {
+      "role": "storyboard_director",
+      "version": "1.1.0",
+      "responsibility": "仅修改显式镜头的四个制作字段，保留剧情、人物和锁定镜头。",
+      "path": "storyboard_director/1.1.0.txt",
+      "sha256": "c27c7b20e39e360e839d10658ffc28305812224847f082d6c4ef6ef9851313b5",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "approved_story": {},
+          "producer_feedback": {},
+          "repair_issues": {},
+          "current_episode": {},
+          "editable_shot_ids": {},
+          "locked_shot_ids": {},
+          "editable_fields": {},
+          "model_capabilities": {},
+          "instruction": {},
+          "previous_attempt": {}
+        }
+      },
+      "output_schema_refs": [
+        "factory.storyboard:storyboard_schema"
+      ]
     }
   ]
 }

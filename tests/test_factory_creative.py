@@ -342,7 +342,11 @@ class CreativeContractTests(unittest.TestCase):
             if call["role"] == "screenwriter":
                 self.assertIsNone(call["payload"]["selected_proposal"])
                 self.assertIsNone(call["payload"]["previous_episode"])
-                self.assertNotIn("previous_attempt", call["payload"])
+                if call["payload"].get("independent_feedback"):
+                    self.assertIn("previous_attempt", call["payload"])
+                    self.assertEqual(len(call["payload"]["previous_attempt"]["shots"]), 15)
+                else:
+                    self.assertNotIn("previous_attempt", call["payload"])
             self.assertTrue(call["payload"]["resolved_story_brief"]["requirements"])
             scope = call["payload"]["creative_scope"]
             self.assertEqual(scope["hard_fields"], ["requirements", "excluded_elements"])
@@ -387,14 +391,15 @@ class CreativeContractTests(unittest.TestCase):
         result = creative.create_script_and_styles(project, self.config, None)
         self.assertIsNotNone(result["needs_decision"])
         self.assertFalse(result["script_review"]["passed"])
-        self.assertEqual(len(result["script_review"]["rounds"]), 2)
+        self.assertEqual(len(result["script_review"]["rounds"]), 4)
         self.assertTrue(any(issue["code"] == "producer_excluded_element"
                             for issue in result["script_review"]["review"]["issues"]))
         # The independent critic fixture returned scores of 8 with no issues.
         self.assertEqual(result["script_review"]["review"]["scores"]["causality"], 8)
 
 
-    def test_compact_target_has_at_most_one_rewrite_and_persists_reviews(self):
+    def test_compact_target_respects_explicit_two_round_limit_and_persists_reviews(self):
+        self.config["creative"] = {"max_review_rounds": 2}
         for generation, rejected, expected_pass in ((7, 1, True), (8, 3, False)):
             with self.subTest(expected_pass=expected_pass):
                 self.brief_reviews = 0
@@ -448,6 +453,7 @@ class CreativeContractTests(unittest.TestCase):
         self.assertTrue((self.root / review["evidence_catalog"]).is_file())
 
     def test_policy_update_reviews_second_target_without_new_story_or_old_errors(self):
+        self.config["creative"] = {"max_review_rounds": 2}
         self.reject_brief_reviews = 1
         project = {**self.approved_project(), "script_generation": 30,
                    "story_feedback": "删除豆豆项圈，仅保留同一晚归还闭环"}
@@ -518,7 +524,7 @@ class CreativeContractTests(unittest.TestCase):
                         else issue["code"].startswith("resolved_requirement_")
                         for issue in raised.exception.issues))
                 calls = self.calls[before:]
-                expected = 1 if defect == "none" else 2
+                expected = 1 if defect == "none" else 4
                 self.assertEqual(sum(call["role"] == "story_editor" for call in calls), expected)
                 self.assertEqual(sum(call["role"] == "story_critic" for call in calls), expected)
                 self.assertFalse(any(call["role"] == "screenwriter" for call in calls))
@@ -783,7 +789,7 @@ class CreativeContractTests(unittest.TestCase):
         start = len(self.calls)
         revised = creative.revise_script(project, self.config, None, feedback)
         calls = self.calls[start:]
-        self.assertEqual(sum(call["role"] == "independent_critic" for call in calls), 2)
+        self.assertEqual(sum(call["role"] == "independent_critic" for call in calls), 4)
         self.assertFalse(revised["script_review"]["passed"])
         self.assertTrue(all(not item["review"]["passed"] for item in revised["script_review"]["rounds"]))
         self.assertEqual(revised["needs_decision"]["kind"], "script_review")

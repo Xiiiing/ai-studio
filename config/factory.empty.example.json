@@ -1,6 +1,10 @@
 {
   "schema_version": 1,
   "setup_incomplete": true,
+  "creative": {
+    "max_review_rounds": 4,
+    "separate_storyboard": true
+  },
   "llm_profiles": {},
   "llm_roles": {},
   "video_profiles": {

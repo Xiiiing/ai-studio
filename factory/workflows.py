@@ -459,11 +459,31 @@ def storyboard(state):
 
 def script_review(state):
     from .creative_runtime import review_screenplay
+    from .review_policy import automation, exhausted_message, max_review_rounds
     p=_project(state)
     if p.get('script_complete_generation') == p['script_generation']:
         return {'route':'continue'}
     if (p.get('script_review_complete_round')==p.get('screenplay_complete_round')
             and p.get('script_review_route') in {'repair','continue'}):
+        if p['script_review_route'] == 'repair':
+            # A legacy checkpoint can contain the failed review at its former
+            # two-round ceiling. Move forward once, without reviewing it again.
+            reviewed_generation,index=p['script_review_complete_round']
+            if reviewed_generation != p['script_generation']:
+                raise ReviewBlocked('审核版本与当前剧本不匹配，请刷新项目')
+            limit=max_review_rounds(load_config())
+            if p.get('creative_round',1) == index:
+                status='repairing' if index < limit else 'blocked'
+                patch={'review_automation':automation(load_config(),'script',index,
+                    reviewed_generation,status,
+                    '按已保存的独立审核问题继续自动返修' if index < limit else '自动返修轮次已用尽')}
+                if index < limit:
+                    patch.update(creative_round=index+1,needs_decision=None)
+                else:
+                    from .creative import _gate, _script_gate_issues
+                    patch['needs_decision']=_gate('script_review',exhausted_message('剧本',index),
+                        _script_gate_issues(p.get('draft_review') or p.get('script_review',{}).get('review',{})))
+                _apply(p['id'],patch)
         return {'route':p['script_review_route']}
     store.update(p['id'],{'status':'scripting','stage':'script_review','progress':36,
                           'message':'独立审稿人正在检查剧本与分镜，未通过则定向返修。'})

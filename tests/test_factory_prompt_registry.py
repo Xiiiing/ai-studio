@@ -30,9 +30,10 @@ def no_network(monkeypatch):
 def test_extracted_v1_is_byte_equal_to_frozen_main(role, module, name):
     from factory.prompt_registry import load_prompt, PromptText
     frozen = json.loads((Path(__file__).parent / "fixtures/prompt-baseline-v1.json").read_text())
-    value = load_prompt(role)
+    # Historical templates remain byte-exact even when the active role advances.
+    value = load_prompt(role, "1.0.0")
     assert isinstance(value, PromptText)
-    assert str(value) == str(getattr(module, name))
+    assert str(load_prompt(role)) == str(getattr(module, name))
     assert hashlib.sha256(value.encode()).hexdigest() == frozen["prompts"][role]
     assert value.spec.version == "1.0.0"
     assert value.spec.role == role and value.spec.output_schema_refs

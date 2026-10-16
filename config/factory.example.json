@@ -16,7 +16,7 @@
     }
   },
   "creative": {
-    "max_review_rounds": 2,
+    "max_review_rounds": 4,
     "separate_storyboard": true
   },
   "research": {
