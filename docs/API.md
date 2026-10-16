@@ -177,3 +177,7 @@ MiniMax 任务提交后持久化 `task_id`，生成成功后持久化 `file_id`�
 ```
 
 `./drama outputs PROJECT_ID` 和 `export PROJECT_ID` 列出当前已存在的交付文件；不渲染、不移动、不上传，也不批准成片。`models export` 仅导出模型配置和角色绑定。
+
+## 制作团队任务账本（0.1.0）
+
+项目团队读取与任务分页接口、状态语义和兼容行为见 [可介入的 AI 制作团队](TEAM_CONTROL_0_1_0.md)。团队读取不执行模型，也不将文件存在推断为审核通过。

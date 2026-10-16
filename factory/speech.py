@@ -13,10 +13,12 @@ import os
 import re
 import subprocess
 import time
+from contextlib import ExitStack
 from pathlib import Path
 
 from studio.core import ROOT, fingerprint, media_receipt, read_json, sha256, within, write_json
 from studio.media import SR
+from . import team_ledger
 from .scheduler import ProductionNeedsDecision, ProductionPaused
 from .production_profiles import explicit as explicit_profile, voices_for, profile_signature
 
@@ -146,6 +148,51 @@ class SpeechMixin:
                                                            "oom": any(line["oom"] for line in blocked)})
 
     def _speech_batch(self, lines, voices, expected):
+        """Track each missing line at the real shared adapter batch boundary.
+
+        The installed driver owns its per-line timings. These task attempts cover
+        a shared batch, and explicitly say so rather than inventing serial work.
+        """
+        if not team_ledger.enabled(self.project):
+            return self._speech_batch_impl(lines, voices, expected)
+        signature = fingerprint([{"id": line["id"], "key": expected[line["id"]]["key"]} for line in lines])
+        folder = self.folder / "audio/tts/batches" / signature[:24]
+        cached = {line["id"]: self._speech_receipt(folder / (line["id"] + ".wav"), expected[line["id"]])
+                  for line in lines}
+        with ExitStack() as stack:
+            tokens = {}
+            for line in lines:
+                ident = line["id"]
+                if cached[ident]:
+                    team_ledger.mark_reused(self.project.get("id"), "speech", ident, artifact=cached[ident],
+                                            input_version=expected[ident]["key"])
+                else:
+                    tokens[ident] = stack.enter_context(team_ledger.unit(
+                        self.project.get("id"), "speech", ident, input_version=expected[ident]["key"],
+                        inputs={"line": line, "voice": voices.get(line.get("role")),
+                                "batch_signature": signature, "batch_line_ids": [row["id"] for row in lines],
+                                "execution_boundary": "shared_speech_batch"}))
+            try:
+                records = self._speech_batch_impl(lines, voices, expected)
+            except BaseException:
+                # A failed batch may still have delivered verified lines.
+                for ident, token in tokens.items():
+                    record = self._speech_index(expected[ident])
+                    if record:
+                        team_ledger.finish_unit(token, artifact=record,
+                                                model=record.get("model") or record.get("source", {}).get("settings", {}).get("model_id"),
+                                                details={"batch_signature": signature, "partial_batch": True})
+                raise
+            for ident, token in tokens.items():
+                record = records[ident]
+                team_ledger.finish_unit(token, artifact=record,
+                                        model=record.get("model") or record.get("source", {}).get("settings", {}).get("model_id"),
+                                        details={"batch_signature": signature,
+                                                 "execution_boundary": "shared_speech_batch",
+                                                 "attempt_receipts": self.production.get("voice_attempts", [])})
+            return records
+
+    def _speech_batch_impl(self, lines, voices, expected):
         if self.config.get("audio_connection", {}).get("provider") == "dashscope_tts":
             from .cloud_media import speech_batch
             return speech_batch(self,lines,voices,expected)
@@ -399,6 +446,8 @@ class SpeechMixin:
                 if record:
                     self._speech_index(expected[ident], record)
             if record:
+                team_ledger.mark_reused(self.project.get("id"), "speech", ident, artifact=record,
+                                        input_version=expected[ident]["key"])
                 records[ident] = record
             else:
                 missing.append(line)
@@ -479,13 +528,20 @@ class SpeechMixin:
                 continue
             while True:
                 self.boundary()
-                durations = [len(self._read_audio(mapping[line["id"]])) / SR for line in shot["dialogue"]]
-                measurement = self._speech_timing(shot, durations)
-                for line in measurement["lines"]:
-                    line["sha256"] = sha256(mapping[line["id"]])
-                repairs = shot.setdefault("dialogue_repairs", [])
-                measurement.update(repair_attempt=len(repairs) + 1, max_repair_attempts=maximum)
-                shot["audio_timing"] = measurement
+                with team_ledger.unit(self.project.get("id"), "dialogue", shot["id"],
+                                      input_version=fingerprint({"dialogue": shot["dialogue"], "seconds": shot["seconds"]}),
+                                      dependencies=["speech:" + line["id"] for line in shot["dialogue"]],
+                                      inputs={"dialogue": shot["dialogue"], "seconds": shot["seconds"]}) as token:
+                    durations = [len(self._read_audio(mapping[line["id"]])) / SR for line in shot["dialogue"]]
+                    measurement = self._speech_timing(shot, durations)
+                    for line in measurement["lines"]:
+                        line["sha256"] = sha256(mapping[line["id"]])
+                    repairs = shot.setdefault("dialogue_repairs", [])
+                    measurement.update(repair_attempt=len(repairs) + 1, max_repair_attempts=maximum)
+                    shot["audio_timing"] = measurement
+                    team_ledger.finish_unit(token, artifact=measurement,
+                                            review_status="pass" if measurement["fits"] else "fail",
+                                            model="measured_speech_timing", details={"measurement": measurement})
                 self.emit("dialogue_timing_review")
                 if measurement["fits"]:
                     break

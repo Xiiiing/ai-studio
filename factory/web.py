@@ -25,6 +25,25 @@ class Handler(LocalMediaHandler):
     def do_GET(self):
         path=unquote(urlsplit(self.path).path)
         try:
+            match = re.fullmatch(r"/api/factory/projects/([a-f0-9]{12})/(team|tasks)(?:/([a-z_]+:[A-Za-z0-9_.-]{1,120}))?", path)
+            if match:
+                from .team_ledger import team_snapshot, task_page, task_detail
+                pid, view, task_id = match.groups()
+                query = parse_qs(urlsplit(self.path).query, keep_blank_values=True)
+                allowed = {"offset", "limit", "department", "status", "shot_id"} if view == "tasks" and not task_id else set()
+                if set(query) - allowed or any(len(v) != 1 for v in query.values()) or (task_id and view != "tasks"):
+                    raise ValueError("团队查询参数无效")
+                if task_id:
+                    return self.json(task_detail(pid, task_id))
+                if view == "team":
+                    return self.json(team_snapshot(pid))
+                params = {k: v[0] for k, v in query.items()}
+                for name in ("offset", "limit"):
+                    if name in params:
+                        if not re.fullmatch(r"[0-9]{1,9}", params[name]):
+                            raise ValueError("任务分页无效")
+                        params[name] = int(params[name])
+                return self.json(task_page(pid, **params))
             if path == "/api/factory/library/tasks":
                 from .material_tasks import tasks
                 query = parse_qs(urlsplit(self.path).query)
