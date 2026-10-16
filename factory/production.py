@@ -799,8 +799,13 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                                 graph = builder(record["prompt"], record["seed"], names[0],
                                                   *self.video_size, seconds=target["seconds"],
                                                   prefix=self.slug + "/" + target["key"], profile=self.video_connection if h3 else profile)
+                            # Native H3 base sampling can exceed the legacy two-hour
+                            # task cap. Keep the service cap and the approved project
+                            # budget; count both leased GPUs when bounding local work.
+                            task_limit = (1800 if target["kind"] == "image" else
+                                          21600 if h3 and self.video_connection.get("quality") == "production" else 7200)
                             path = worker.execute(graph, target["folder"] / record["take"], target["kind"],
-                                                  timeout=self.budget.timeout(1800 if target["kind"] == "image" else 7200, 1))
+                                                  timeout=self.budget.timeout(task_limit, 2 if h3 else 1))
                             receipt = read_json(path.parent / "result.json")
                             record.update(state="generated", output=receipt, elapsed_seconds=round(time.monotonic() - started, 3))
                             ready.append((target, record, receipt))

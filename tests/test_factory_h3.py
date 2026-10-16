@@ -154,7 +154,8 @@ def test_h3_rejects_wrong_model_receipt_before_download(tmp_path, monkeypatch):
 
 @pytest.mark.parametrize("profile", [video_providers.H3_PROFILE, video_providers.H3_PRODUCTION_PROFILE,
                                     {**video_providers.H3_PRODUCTION_PROFILE, "steps": 25, "shift_video": 10, "sampler": "heun"}])
-def test_h3_production_uses_selected_recipe_and_reuses_verified_selection(tmp_path, monkeypatch, profile):
+@pytest.mark.parametrize("gpu_budget", [1200, 28800])
+def test_h3_production_uses_selected_recipe_and_reuses_verified_selection(tmp_path, monkeypatch, profile, gpu_budget):
     import factory.production as production
     from factory.audio_editor import FFMPEG
     monkeypatch.setattr(core, "ROOT", tmp_path)
@@ -166,6 +167,11 @@ def test_h3_production_uses_selected_recipe_and_reuses_verified_selection(tmp_pa
         def execute(self, graph, destination, kind, **kw):
             assert kind == "video"
             gpu_service.validate_graph(graph, {"frame.png"}, kind)
+            # A larger explicitly approved budget permits the native base run;
+            # a small budget still bounds both leased devices before execution.
+            limit = 21600 if h3.recipe(profile)["quality"] == "production" else 7200
+            expected = min(limit, gpu_budget / 2)
+            assert expected - 10 < kw["timeout"] <= expected
             calls.append(copy.deepcopy(graph))
             path = destination / "video.mp4"
             frames = graph["6"]["inputs"]["length"]
@@ -186,7 +192,8 @@ def test_h3_production_uses_selected_recipe_and_reuses_verified_selection(tmp_pa
             "prompt": "An adult slowly turns.", "motion_prompt": "An adult slowly turns."}]}}
     cfg = {"video_connection": {"profile": "wkp_h3", **profile},
            "image_width": 160, "image_height": 288, "video_width": 160, "video_height": 288,
-           "output_width": 360, "output_height": 640, "semantic_enabled": False, "max_attempts": 1}
+           "output_width": 360, "output_height": 640, "semantic_enabled": False, "max_attempts": 1,
+           "max_wall_seconds": 21600, "max_gpu_seconds": gpu_budget}
     run = _Run(project, cfg, None, None)
     frame = run.folder / "frame.png"
     Image.new("RGB", (160, 288), "navy").save(frame)
