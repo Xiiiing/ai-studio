@@ -34,6 +34,9 @@ STUDIO = {
     "material_tasks": {"id", "library_key", "signature", "request_id", "status", "lease", "data", "result", "error", "created", "updated"},
     "material_submissions": {"intent_id", "task_id", "request_signature", "status", "response", "receipt", "estimated_cost_micros", "currency", "created", "updated"},
     "factory_migrations": {"name", "applied"},
+    "team_control": {"project_id", "revision", "enabled"},
+    "team_work_items": {"project_id", "id", "ordinal", "generation", "kind", "scope", "owner", "department", "status", "priority", "hold_after", "data"},
+    "team_unit_attempts": {"run_id", "project_id", "task_id", "generation", "attempt", "status", "data"},
     "sqlite_sequence": {"name", "seq"},
 }
 CHECKPOINTS = {
@@ -73,6 +76,10 @@ def schema(db, name):
     if name == "studio.sqlite3" and "cloud_media_receipts" not in {r["name"] for r in entries}:
         expected.pop("cloud_media_receipts", None)  # Backups predating the additive media table.
     if name == "studio.sqlite3":
+        team_tables = {"team_control", "team_work_items", "team_unit_attempts"}
+        if not team_tables & {r["name"] for r in entries}:
+            for table in team_tables:
+                expected.pop(table)
         for table in list(expected):
             if table.startswith("material_") and table not in {r["name"] for r in entries}:
                 expected.pop(table)  # Existing backups predate the optional material library.

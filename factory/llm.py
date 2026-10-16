@@ -68,6 +68,10 @@ def _request(config, role, system, payload, schema, output_dir, max_tokens=4096,
     folder = _folder(output_dir, role)
     def save(name, value):
         write_json(folder / name, redact_secrets(value, llm))
+        if name == "receipt.json" and value.get("status") in {"succeeded", "failed"}:
+            from .team_ledger import record_call
+            from .execution_context import current_execution
+            record_call(current_execution.get(), role, redact_secrets(value, llm), folder / name)
     user_content = content if content is not None else json.dumps(payload,ensure_ascii=False,allow_nan=False)
     if content is None and len(user_content) > 100000:
         raise ValueError("Creative context exceeds the bounded project input")

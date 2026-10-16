@@ -79,6 +79,8 @@ def initialize():
         initialize_material_tasks(db)
         from .remote_tasks import migrate as migrate_remote_tasks
         migrate_remote_tasks(db)
+        from .team_ledger import initialize as initialize_team
+        initialize_team(db)
 
 
 def _read(db, pid):
@@ -96,6 +98,8 @@ def _write(db, project):
     project["revision"] = int(project.get("revision", 0)) + 1
     db.execute("UPDATE projects SET updated=?,revision=?,snapshot=? WHERE id=?",
                (time.time(), project["revision"], encoded(project), project["id"]))
+    from .team_ledger import ensure_project
+    ensure_project(db, project)
 
 
 def _event(db, pid, message, kind="progress", data=None):
@@ -191,6 +195,8 @@ def create(payload):
     }
     if profile is not None:
         project["production_profile"] = profile
+    if workflow_version == 2:
+        project["team_control_version"] = 1
     if contract is not None:
         project["creative_contract"] = contract
     if payload.get("prepare_materials"):
@@ -225,6 +231,8 @@ def create(payload):
         inherit_package(db, project)
         db.execute("INSERT INTO projects(id,updated,revision,snapshot) VALUES(?,?,?,?)",
                    (pid, time.time(), 1, encoded(project)))
+        from .team_ledger import ensure_project
+        ensure_project(db, project)
         _event(db, pid, "项目已建立，等待准备并确认本剧素材。" if project.get("material_setup_requested") else "已建立制片项目，开始检索和原创提案。", "created")
         if not project.get("material_setup_requested"):
             _enqueue(db, pid)

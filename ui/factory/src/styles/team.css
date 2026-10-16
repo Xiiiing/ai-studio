@@ -1,0 +1,307 @@
+.team-console {
+  min-width: 0;
+}
+.team-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px 32px;
+}
+.team-summary > span {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  color: var(--muted);
+  font-size: 13px;
+}
+.team-summary strong {
+  color: var(--ink);
+  font-size: 23px;
+}
+.team-overview-event {
+  color: var(--muted);
+  font-size: 13px;
+  margin: 10px 0 0;
+}
+.team-departments {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 225px), 1fr));
+  gap: 12px;
+}
+.team-department {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 16px;
+  min-width: 0;
+  background: var(--panel);
+}
+.team-department.selected {
+  border-color: var(--accent);
+}
+.team-department > .row-between > svg {
+  color: var(--accent-text);
+}
+.team-department h3 {
+  margin: 12px 0 6px;
+}
+.team-department > p {
+  font-size: 13px;
+  color: var(--muted);
+  min-height: 38px;
+}
+.team-department > small {
+  color: var(--muted);
+}
+.team-members {
+  margin-top: 12px;
+  display: grid;
+  gap: 8px;
+}
+.team-member {
+  border-top: 1px solid var(--line);
+  padding-top: 9px;
+  display: flex;
+  gap: 6px 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+}
+.team-member > div {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+}
+.team-member small {
+  font-size: 10px;
+  color: var(--muted);
+}
+.team-member .badge {
+  font-size: 10px;
+}
+.team-member-task {
+  flex-basis: 100%;
+  justify-content: flex-start;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.team-workspace {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.9fr) minmax(320px, 1.1fr);
+  gap: 20px;
+  align-items: start;
+}
+.team-task-list,
+.team-task-detail {
+  min-width: 0;
+}
+.team-filters {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 18px;
+}
+.team-filters .field {
+  min-width: 0;
+  margin: 0;
+}
+.team-filters .field:last-child {
+  grid-column: 1 / -1;
+}
+.team-filters input,
+.team-filters select {
+  min-width: 0;
+  width: 100%;
+}
+.team-tasks {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 8px;
+}
+.team-task-button {
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--ink);
+  padding: 12px;
+  cursor: pointer;
+  display: grid;
+  gap: 6px;
+}
+.team-task-button:hover {
+  background: var(--surface);
+}
+.team-task-button.selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.team-task-button > span {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  gap: 10px;
+}
+.team-task-button strong {
+  font-size: 13px;
+}
+.team-task-button small {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.team-task-button em {
+  color: var(--warning);
+  font-size: 12px;
+  font-style: normal;
+}
+.team-task-detail .panel-head {
+  gap: 12px;
+}
+.team-task-detail .panel-head > div {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.team-task-detail .panel-head small {
+  color: var(--muted);
+  font-size: 11px;
+}
+.team-task-detail section + section {
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
+  margin-top: 16px;
+}
+.team-task-detail h3 {
+  font-size: 13px;
+  margin: 16px 0 10px;
+}
+.team-task-meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  font-size: 12px;
+}
+.team-task-meta dt {
+  color: var(--muted);
+  margin-bottom: 5px;
+}
+.team-task-meta dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.team-task-artifact {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0;
+  overflow-wrap: anywhere;
+}
+.team-task-artifact small {
+  color: var(--muted);
+}
+.team-dependency {
+  display: flex;
+  margin: 8px 0;
+  overflow-wrap: anywhere;
+  text-align: left;
+}
+.team-attempt {
+  background: var(--surface);
+  border-radius: 8px;
+  padding: 12px;
+  margin: 8px 0;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.team-attempt p {
+  margin: 7px 0;
+}
+.team-pagination {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 16px;
+}
+.team-pagination small {
+  margin-right: auto;
+  color: var(--muted);
+}
+.team-events {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 12px;
+}
+.team-events li {
+  display: flex;
+  gap: 16px;
+  font-size: 13px;
+  align-items: baseline;
+}
+.team-events time {
+  color: var(--muted);
+  white-space: nowrap;
+  font-size: 11px;
+}
+.team-events .text-link {
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.team-legacy-receipts {
+  border: 1px solid var(--line);
+  padding: 18px;
+  border-radius: 12px;
+}
+.team-legacy-receipts > summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.team-legacy-receipts[open] > summary {
+  margin-bottom: 18px;
+}
+@media (max-width: 1050px) {
+  .team-workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 540px) {
+  .team-summary {
+    gap: 12px 20px;
+  }
+  .team-summary > span {
+    font-size: 11px;
+  }
+  .team-summary strong {
+    font-size: 19px;
+  }
+  .team-events li {
+    flex-direction: column;
+    gap: 4px;
+  }
+  .team-legacy-receipts {
+    padding: 12px;
+  }
+  .team-task-button > span {
+    flex-wrap: wrap;
+  }
+}
+.team-task-artifact video,
+.team-task-artifact img {
+  display: block;
+  width: 100%;
+  max-height: 320px;
+  border-radius: 8px;
+  object-fit: contain;
+  background: var(--media);
+}
+.team-task-artifact audio {
+  width: 100%;
+  min-width: 0;
+}

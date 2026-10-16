@@ -1,0 +1,41 @@
+name: "问题反馈 / Bug report"
+description: "报告可复现的软件问题 / Report a reproducible software problem"
+title: "bug: "
+body:
+  - type: markdown
+    attributes:
+      value: "请先查找已有 Issue。不要上传 API 密钥、私有配置、数据库或生产素材。 / Search existing issues first. Never attach secrets, private configuration, databases or production media."
+  - type: input
+    id: revision
+    attributes:
+      label: "代码版本 / Commit"
+      description: "git rev-parse --short HEAD"
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: "运行环境 / Environment"
+      description: "OS、Python、Node、浏览器；模型问题补充运行时/协议/模型 ID，移除密钥和私人地址。 / Include runtimes and browser; for model problems add protocol and model ID with secrets and private addresses removed."
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: "复现步骤 / Steps to reproduce"
+      description: "从什么页面、项目状态或命令开始？ / Which page, project state or command triggers it?"
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: "期望行为 / Expected behavior"
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: "实际行为与证据 / Actual behavior and evidence"
+      description: "提供已脱敏的错误、日志或截图，并说明是模拟、真实 HTTP 还是实际模型调用。 / Provide redacted errors, logs or screenshots; distinguish mock, real HTTP and actual model calls."
+    validations:
+      required: true
