@@ -28,6 +28,9 @@ def normalize_video_profile(value):
     _reject_secret_fields(value)
     profile = copy.deepcopy(value)
     provider = profile.get("provider")
+    if provider in ("comfyui_local", "comfyui_external"):
+        from .media_profiles import normalize_media
+        return normalize_media(profile, "video")
     if provider not in VIDEO_PROVIDERS:
         raise ValueError("Unsupported video provider")
     allowed = _COMMON | (_REMOTE if provider == "minimax" else set())
@@ -132,7 +135,10 @@ def probe_video_profile(profile_id, config):
     if not isinstance(profile_id, str) or profile_id not in profiles:
         raise ValueError("Unknown video profile")
     profile = profiles[profile_id]
-    authenticated = profile["provider"] == "comfyui_wan" or bool(os.environ.get(profile["api_key_env"]))
+    authenticated = profile["provider"] != "minimax" or bool(os.environ.get(profile["api_key_env"]))
+    if profile["provider"] in ("comfyui_local", "comfyui_external"):
+        from .media_profiles import probe
+        return {"profile": profile_id, **probe(profile, "video")}
     result = {"profile": profile_id, "kind": "video", "generation": False,
               "network_checked": False, "configured_model": profile["model"],
               "model_match": False, "models": [], "auth_configured": authenticated,

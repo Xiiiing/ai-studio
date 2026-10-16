@@ -209,3 +209,20 @@ def test_existing_project_create_and_pause_contracts_are_preserved(endpoint):
     code, _, _ = client.request("POST", "/api/factory/projects/" + PROJECT_ID + "/action", {"action": "pause"})
     assert code == 202
     assert calls == [("create", payload), ("action", PROJECT_ID, {"action": "pause"})]
+
+
+def test_template_import_export_and_separate_body_limit(endpoint, monkeypatch, tmp_path):
+    from factory import workflow_templates as wt
+    from studio.http_routes import FACTORY_ROUTES
+    monkeypatch.setattr(wt, 'DATA', tmp_path)
+    client, _, _, _ = endpoint
+    value = {'name': 'API graph', 'kind': 'image',
+             'graph': {'1': {'class_type': 'Prompt', 'inputs': {'text': ''}}},
+             'mappings': [{'node': '1', 'input': 'text', 'source': 'prompt'}],
+             'output': {'node': '1', 'field': 'images', 'index': 0}}
+    code, _, saved = client.request('POST', '/api/factory/workflow-templates', value)
+    assert code == 200
+    code, _, exported = client.request('GET', '/api/factory/workflow-templates/' + saved['id'])
+    assert code == 200 and exported == value
+    assert next(r for r in FACTORY_ROUTES if r.name == 'workflow_template_import').body_limit == 1048576
+    assert next(r for r in FACTORY_ROUTES if r.name == 'model_save').body_limit == 65536

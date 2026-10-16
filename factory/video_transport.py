@@ -43,7 +43,7 @@ def _transfer(url, policy, headers, *, payload=None, destination=None, timeout=6
             abort()
             raise TimeoutError
     connection = _connection(host, port, parsed.scheme == "https", addresses, remaining,
-                             deadline=deadline, register_socket=register)
+                             deadline=deadline, register_socket=register, profile=policy)
     timer = threading.Timer(max(.001, deadline - time.monotonic()), abort)
     timer.daemon = True
     timer.start()

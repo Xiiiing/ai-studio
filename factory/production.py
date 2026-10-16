@@ -19,6 +19,8 @@ from studio.core import ROOT, fingerprint, media_receipt, read_json, sha256, wit
 from studio.graphs import flux_image, wan_video
 from .audio_editor import AudioEditorMixin
 from .speech import SpeechMixin
+from .media_profiles import identity as media_identity
+from .bound_media import uses_bound
 from .video_production import VideoProductionMixin
 from .series_production import SeriesProductionMixin
 from .shot_workbench import plan_signature, pinned_selection
@@ -234,7 +236,7 @@ class _Run(SeriesProductionMixin, VideoProductionMixin, SpeechMixin, AudioEditor
                                     "schema": "autonomous_factory.owner.v1"})
         self.production = copy.deepcopy(self.project.get("production") or {})
         self.budget = Budget(self.config, self.production)
-        self.scheduler = Scheduler(self.config, self.budget, event_callback=self._resource_event)
+        self._scheduler = None
         self.max_attempts = int(self.config.get("max_attempts",
                                                self.project.get("budget", {}).get("max_attempts", 3)))
         if not 1 <= self.max_attempts <= 5:
@@ -475,11 +477,23 @@ class _Run(SeriesProductionMixin, VideoProductionMixin, SpeechMixin, AudioEditor
                                    preview=record, preview_status="generated")
         target["selected"] = record
 
+    @property
+    def scheduler(self):
+        if self._scheduler is None:
+            self._scheduler = Scheduler(self.config, self.budget, event_callback=self._resource_event)
+        return self._scheduler
+
+    @scheduler.setter
+    def scheduler(self, value):
+        self._scheduler = value
+
     def _target(self, key, folder, prompt, references=(), kind="image", **extra):
         refs = [Path(p) for p in references]
         dimensions = self.image_size if kind == "image" else self.video_size
         signature = fingerprint({"prompt": prompt, "references": [media_receipt(p) for p in refs],
                                  "dimensions": dimensions, "kind": kind,
+                                 **({"connection": media_identity(self.config["image_connection"])} if kind == "image" and self.config.get("image_connection", {}).get("provider", "legacy") != "legacy" else {}),
+                                 **({"connection": media_identity(self.video_connection)} if kind == "video" and self.video_connection.get("provider") in {"comfyui_local", "comfyui_external"} else {}),
                                  "model": ("FLUX.2-klein-4B" if kind == "image" else
                                            video_identity(self.video_connection) if self.video_connection["provider"] == "minimax"
                                            else "Wan2.2-TI2V-5B"),
@@ -507,6 +521,9 @@ class _Run(SeriesProductionMixin, VideoProductionMixin, SpeechMixin, AudioEditor
                 media = read_json(result)
                 _receipt_path(media)
                 return record, media
+            if uses_bound(self, target) and record.get("state") == "rendering":
+                target["resume_attempt"] = record
+                return None
             if self._remote_video(target) and record.get("state") == "rendering":
                 target["resume_attempt"] = record
                 return None
@@ -568,7 +585,7 @@ class _Run(SeriesProductionMixin, VideoProductionMixin, SpeechMixin, AudioEditor
         record = {"take": take, "attempt": number, "stage": target["kind"], "state": "rendering",
                   "source_signature": target["signature"], "prompt": prompt,
                   "prompt_version": number, "seed": seed, "repair": repair,
-                  "model": "FLUX.2-klein-4B" if target["kind"] == "image" else "Wan2.2-TI2V-5B",
+                  "model": self.config.get("image_connection", {}).get("model", "FLUX.2-klein-4B") if target["kind"] == "image" else self.video_connection["model"],
                   "parameters": {"width": (self.image_size if target["kind"] == "image" else self.video_size)[0],
                                  "height": (self.image_size if target["kind"] == "image" else self.video_size)[1],
                                  "seconds": target.get("seconds"), "fps": 24,
@@ -594,6 +611,8 @@ class _Run(SeriesProductionMixin, VideoProductionMixin, SpeechMixin, AudioEditor
         return record
 
     def _render_targets(self, targets, phase):
+        if targets and targets[0]["kind"] == "image" and self.config.get("image_connection", {}).get("enabled") is False:
+            raise ProductionNeedsDecision("请先配置并启用图像连接", "image_unconfigured")
         pending = []
         for target in targets:
             selected = self._valid_selection(target)
@@ -613,6 +632,11 @@ class _Run(SeriesProductionMixin, VideoProductionMixin, SpeechMixin, AudioEditor
                     ready.append((target, *candidate))
                 else:
                     generate.append(target)
+            from .bound_media import uses_bound, render_targets
+            bound = [target for target in generate if uses_bound(self, target)]
+            if bound:
+                ready.extend(render_targets(self, bound, phase))
+            generate = [target for target in generate if not uses_bound(self, target)]
             remote_targets = [target for target in generate if self._remote_video(target)]
             if remote_targets:
                 ready.extend(self._render_remote_targets(remote_targets, phase))
@@ -691,7 +715,7 @@ class _Run(SeriesProductionMixin, VideoProductionMixin, SpeechMixin, AudioEditor
                     frames = round(target["seconds"] * 24)
                     while frames % 4 != 1:
                         frames += 1
-                    expected_seconds = target["seconds"] if self._remote_video(target) else frames / 24
+                    expected_seconds = target["seconds"] if self._remote_video(target) or uses_bound(self, target) else frames / 24
                     technical = inspect_video(path, expected_seconds, self.video_size)
                 required = self._review_required(target)
                 semantic = None

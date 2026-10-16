@@ -318,3 +318,34 @@ MiniMax 支持范围是上述 `/v1/video_generation` 生命周期及它支持的
 预设覆盖 OpenAI、DeepSeek、百炼、智谱、Moonshot、MiniMax、硅基流动、Claude 和 Gemini，以及原有本地运行时。Claude 使用原生 Messages，Gemini 使用原生 generateContent；两者目前使用完整 schema 提示词、本地校验及有界修复，不通过删减 schema 约束伪装为原生结构化输出。实际响应模型必须与配置或明确别名匹配。原生接口依据 [Claude Messages](https://platform.claude.com/docs/en/api/messages/create) 和 [Gemini generateContent](https://ai.google.dev/api/generate-content)。OpenAI 预设复用现有 [Chat Completions](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create) 适配器。
 
 密钥继续放在私有 `config/runtime.env`（权限 600），例如 `DEEPSEEK_API_KEY=...`。前台 Web、worker、CLI 与 systemd 都读取该文件；进程已有环境变量优先。文件只支持空行、注释和 KEY=value（可用单／双引号包裹整个值），不执行 shell、不展开变量。修改后重启两个服务。工作台只保存变量名称，不接受或导出密钥。跳过模型目录的预检只检查配置和密钥是否存在，不表示服务在线或生成成功。
+
+## 用户自己的图像、视频与配音
+
+“模型与连接”中的制作连接支持图像与配音分工；现有视频连接继续保留。旧配置缺少新字段时使用 `legacy`，沿用原有本地或专用远端推理环境，不把 Wkp 连接改为开发机本地进程。
+
+- `comfyui_external`：连接用户已运行的 ComfyUI。配置服务地址、网络范围、允许主机及可选密钥变量。上传参考图、提交、查询和下载均通过 HTTP，不要求共享目录；应用不停止这个服务。
+- `comfyui_local`：由应用管理 ComfyUI 进程和 GPU 租约。`model_files` 可配置 `unet_name`、`clip_name`、`vae_name` 的相对文件名。
+- `qwen_tts_local`：配置绝对 `python_path`、`model_dir`，及 `voices` 角色映射。模型目录仍需现有下载来源回执；驱动与逐句音频校验保持一致。
+
+### 自定义 ComfyUI API 工作流
+
+在界面导入下列模板结构，`graph` 使用 ComfyUI 导出的 API 格式，而不是编辑器 nodes/links 格式。完整模板的内容哈希作为编号；保存到私有运行目录，不写入 Git。模板编号可用于连接的 `workflow_template`，读取同编号的 JSON 即为导出，再导入得到相同编号。
+
+```json
+{
+  "name": "我的图像工作流",
+  "kind": "image",
+  "graph": {
+    "1": {"class_type": "CLIPTextEncode", "inputs": {"text": "", "clip": ["2", 0]}},
+    "2": {"class_type": "CLIPLoader", "inputs": {"clip_name": "your-model.safetensors", "type": "flux2", "device": "default"}}
+  },
+  "mappings": [{"node": "1", "input": "text", "source": "prompt"}],
+  "output": {"node": "9", "field": "images", "index": 0}
+}
+```
+
+上例仅展示结构，导入前需要补齐实际生成节点及输出节点 9。映射来源支持 `prompt`、`negative_prompt`、`seed`、`width`、`height`、`frames`、`fps` 和从 0 连续编号的 `reference:0` 等参考图槽位。输出指定节点、`images`/`videos`/`gifs` 字段和文件索引。节点必须已安装，应用不会安装节点或执行配置中的 shell。
+
+工作流需要与当前参考图数量精确匹配，不会忽略多出的参考图。图像制作涉及无参考图预览、多角色及镜头参考图；可用高级配置 `reference_templates: {"0": "模板哈希", "1": "另一模板哈希"}` 为不同数量指定模板。未指定模板时使用内置 FLUX/Wan 图。专用 Wkp 推理服务继续使用原有固定允许图，不接受任意自定义模板。
+
+外部任务的提交编号和输出选择会持久化。已接受任务恢复时查询原编号；提交响应丢失时要求核对，不自动创建新的生成任务。

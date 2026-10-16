@@ -28,7 +28,9 @@ def spoken_length(text):
 class SpeechMixin:
     def _speech_sources(self, lines, voices):
         """Match the installed driver's real per-line source digest, without loading a model."""
-        if self.config.get("gpu_service"):
+        if self.config.get("audio_connection", {}).get("enabled") is False:
+            raise ProductionNeedsDecision("请先配置并启用配音连接", "audio_unconfigured")
+        if self.config.get("gpu_service") and self.config.get("audio_connection", {}).get("provider", "legacy") == "legacy":
             from .gpu_client import GPUClient
             voices=self._remote_voice_subset(lines,voices)
             expected=GPUClient(self.config["gpu_service"]).sources(lines,voices,self._remote_speech_options(),
@@ -39,7 +41,7 @@ class SpeechMixin:
         spec = importlib.util.spec_from_file_location("_factory_tts_source", driver_path)
         driver = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(driver)
-        model = ROOT / "models/tts/Qwen3-TTS-12Hz-1.7B-CustomVoice"
+        model = Path(self.config.get("audio_connection", {}).get("model_dir", ROOT / "models/tts/Qwen3-TTS-12Hz-1.7B-CustomVoice"))
         provenance_path = model / "download_receipt.json"
         provenance = read_json(provenance_path)
         model_state = {"receipt_sha256": sha256(provenance_path), "files": {}}
@@ -141,7 +143,7 @@ class SpeechMixin:
                                                            "oom": any(line["oom"] for line in blocked)})
 
     def _speech_batch(self, lines, voices, expected):
-        if self.config.get("gpu_service"):
+        if self.config.get("gpu_service") and self.config.get("audio_connection", {}).get("provider", "legacy") == "legacy":
             return self._remote_speech_batch(lines,voices,expected)
         signature = fingerprint([{"id": line["id"], "key": expected[line["id"]]["key"]} for line in lines])
         folder = self.folder / "audio/tts/batches" / signature[:24]
@@ -185,13 +187,18 @@ class SpeechMixin:
             attempt["log"] = str(log_path.relative_to(ROOT))
             before = self.budget.snapshot()
             pending_error = None
-            with self.scheduler.audio_lease(self.control) as card:
+            from .scheduler import Scheduler
+            audio_scheduler = self.scheduler
+            if self.config.get("audio_connection", {}).get("provider") == "qwen_tts_local" and self.config.get("gpu_service"):
+                audio_scheduler = Scheduler({k:v for k,v in self.config.items() if k != "gpu_service"}, self.budget)
+            with audio_scheduler.audio_lease(self.control) as card:
                 attempt["physical_gpu"] = card
                 env = os.environ.copy()
                 env.update(CUDA_VISIBLE_DEVICES=str(card), HF_HUB_OFFLINE="1",
                            TRANSFORMERS_OFFLINE="1", TOKENIZERS_PARALLELISM="false")
                 settings = expected[lines[0]["id"]]["source"]["settings"]
-                argv = [str(ROOT / "envs/tts/bin/python"), str(ROOT / "audio/tts.py"),
+                argv = [str(self.config.get("audio_connection", {}).get("python_path", ROOT / "envs/tts/bin/python")), str(ROOT / "audio/tts.py"),
+                        "--model", str(self.config.get("audio_connection", {}).get("model_dir", ROOT / "models/tts/Qwen3-TTS-12Hz-1.7B-CustomVoice")),
                         "--input", str(folder / "input.json"), "--voices", str(folder / "voices.json"),
                         "--output-dir", str(folder), "--device", "cuda:0",
                         "--dtype", settings["dtype"], "--seed", str(self.config.get("tts_seed", 20261012)),
@@ -368,6 +375,7 @@ class SpeechMixin:
             return {}
         voices = read_json(ROOT / "audio/voices.json")
         voices.update(self.episode.get("voices") or {})
+        voices.update(self.config.get("audio_connection", {}).get("voices", {}))
         if explicit_profile(self.project):
             voices = voices_for(self.project, voices)
         else:
