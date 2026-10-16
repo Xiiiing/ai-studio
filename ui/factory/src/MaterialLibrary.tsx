@@ -1,7 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { request, rows, mediaUrl, type RecordData } from "./api";
-import { Heading, Panel, Field, ErrorNotice, Empty, Loading } from "./ui";
+import {
+  Heading,
+  Panel,
+  Field,
+  ErrorNotice,
+  Empty,
+  Loading,
+  Modal,
+} from "./ui";
 
 export const materialKinds: Record<string, string> = {
   character: "人物",
@@ -48,6 +56,9 @@ export function MaterialLibrary({
   const [failure, setFailure] = useState("");
   const [busy, setBusy] = useState(false);
   const [generation, setGeneration] = useState("");
+  const [preview, setPreview] = useState<{ url: string; title: string } | null>(
+    null,
+  );
   const query = useQuery({
     queryKey: ["materials", project?.id, search, kind, offset],
     queryFn: () =>
@@ -62,7 +73,8 @@ export function MaterialLibrary({
       ),
   });
   const selected = useQuery({
-    queryKey: ["material-selection", project?.id],
+    queryKey: ["material-selection", project?.id, project?.revision],
+    refetchInterval: 5000,
     enabled: !!project,
     queryFn: () => request("/projects/" + project!.id + "/materials"),
   });
@@ -252,7 +264,15 @@ export function MaterialLibrary({
             : "保存可跨剧复用的人物、场景、画风与同框参考。"
         }
       />
-      <ErrorNotice error={failure || query.error || selected.error} />
+      <ErrorNotice error={failure} />
+      {selected.error && (
+        <div>
+          <ErrorNotice error={selected.error} />
+          <button className="button" onClick={() => selected.refetch()}>
+            重新读取本剧选择
+          </button>
+        </div>
+      )}
       <div className="form-row">
         <Field label="搜索素材">
           <input
@@ -281,6 +301,7 @@ export function MaterialLibrary({
         </Field>
         <button
           className="button primary"
+          disabled={busy}
           onClick={() =>
             openEditor({
               kind: kind || "character",
@@ -316,6 +337,7 @@ export function MaterialLibrary({
           key={editorSession}
           asset={editing}
           project={project}
+          roles={materialRoles(project, selected.data)}
           candidates={rows(query.data?.assets)}
           busy={busy}
           onCancel={() => setEditing(null)}
@@ -467,10 +489,24 @@ export function MaterialLibrary({
           )}
         </Panel>
       )}
+      {query.error && (
+        <div>
+          <ErrorNotice error={query.error} />
+          <button className="button" onClick={() => query.refetch()}>
+            重新读取素材库
+          </button>
+        </div>
+      )}
       {!query.data ? (
-        <Loading />
+        query.isPending ? (
+          <Loading />
+        ) : null
       ) : !rows(query.data.assets).length ? (
-        <Empty title="还没有素材">上传参考图片，或先建立人物和场景设定。</Empty>
+        <Empty title={search || kind ? "没有匹配的素材" : "还没有素材"}>
+          {search || kind
+            ? "试试其他名称或分类。"
+            : "上传参考图片，或先建立人物和场景设定。"}
+        </Empty>
       ) : (
         <div className="asset-grid">
           {rows(query.data.assets).map((asset) => (
@@ -480,6 +516,7 @@ export function MaterialLibrary({
               project={project}
               selected={selected.data}
               busy={busy}
+              preview={(url, title) => setPreview({ url, title })}
               edit={() => {
                 if (project && asset.library_key === "global")
                   run(async () => {
@@ -502,8 +539,19 @@ export function MaterialLibrary({
         </div>
       )}
       <Panel title="AI 素材任务">
-        <ErrorNotice error={tasks.error} />
-        {!rows(tasks.data?.tasks).length && <p>尚无素材制作任务。</p>}
+        {tasks.error && (
+          <div role="alert">
+            <ErrorNotice error={tasks.error} />
+            <button className="button" onClick={() => tasks.refetch()}>
+              重新读取素材任务
+            </button>
+          </div>
+        )}
+        {tasks.isPending ? (
+          <Loading />
+        ) : tasks.data && !rows(tasks.data.tasks).length ? (
+          <p>尚无素材制作任务。</p>
+        ) : null}
         {rows(tasks.data?.tasks).map((task) => (
           <MaterialTask
             key={task.id}
@@ -547,24 +595,61 @@ export function MaterialLibrary({
           />
         ))}
       </Panel>
-      <div className="form-row">
-        <button
-          className="button"
-          disabled={!offset}
-          onClick={() => setOffset(Math.max(0, offset - 50))}
+      {(offset > 0 || query.data?.has_more) && (
+        <div className="form-row">
+          <span>第 {Math.floor(offset / 50) + 1} 页</span>
+          <button
+            className="button"
+            disabled={!offset}
+            onClick={() => setOffset(Math.max(0, offset - 50))}
+          >
+            上一页
+          </button>
+          <button
+            className="button"
+            disabled={!query.data?.has_more}
+            onClick={() => setOffset(offset + 50)}
+          >
+            下一页
+          </button>
+        </div>
+      )}
+      {preview && (
+        <Modal
+          id="material-preview-dialog"
+          title={preview.title}
+          onClose={() => setPreview(null)}
         >
-          上一页
-        </button>
-        <button
-          className="button"
-          disabled={!query.data?.has_more}
-          onClick={() => setOffset(offset + 50)}
-        >
-          下一页
-        </button>
-      </div>
+          <img
+            className="material-full-preview"
+            src={preview.url}
+            alt={preview.title}
+          />
+          <a className="button" href={preview.url} download>
+            下载参考原图
+          </a>
+        </Modal>
+      )}
     </div>
   );
+}
+
+function materialRoles(
+  project?: RecordData,
+  selection?: RecordData,
+): RecordData[] {
+  const characters = rows(selection?.characters).length
+    ? rows(selection?.characters)
+    : rows(
+        (project?.production_profile || project?.episode?.production_profile)
+          ?.characters,
+      );
+  return characters.length
+    ? characters
+    : [
+        { character_id: "female", name: "角色一" },
+        { character_id: "male", name: "角色二" },
+      ];
 }
 
 function MaterialCard({
@@ -576,6 +661,7 @@ function MaterialCard({
   run,
   select,
   startAI,
+  preview,
 }: {
   asset: RecordData;
   project?: RecordData;
@@ -585,14 +671,17 @@ function MaterialCard({
   run: (work: () => Promise<unknown>, message: string) => Promise<void>;
   select: (asset: RecordData, role: string, shots: string[]) => Promise<void>;
   startAI: (operation: string) => Promise<void>;
+  preview: (url: string, title: string) => void;
 }) {
-  const roles = project?.production_profile?.characters || [
-    { character_id: "female", name: "角色一" },
-    { character_id: "male", name: "角色二" },
-  ];
+  const roles = materialRoles(project, selected);
   const [role, setRole] = useState(
     asset.kind === "character" ? roles[0].character_id : asset.asset_id,
   );
+  const selectedRole =
+    asset.kind === "character" &&
+    !roles.some((character) => character.character_id === role)
+      ? roles[0].character_id
+      : role;
   const [shots, setShots] = useState<string[]>([]);
   const document = asset.data.document;
   return (
@@ -609,10 +698,22 @@ function MaterialCard({
       <div className="material-views">
         {rows(asset.data.images).map((image, index) => (
           <figure key={image.path}>
-            <img
-              src={mediaUrl("/media/" + image.path)}
-              alt={document.name + " · " + image.label}
-            />
+            <button
+              className="material-preview-trigger"
+              aria-label={"放大查看 " + document.name + " · " + image.label}
+              onClick={() =>
+                preview(
+                  mediaUrl("/media/" + image.path),
+                  document.name + " · " + image.label,
+                )
+              }
+            >
+              <img
+                src={mediaUrl("/media/" + image.path)}
+                alt={document.name + " · " + image.label}
+                loading="lazy"
+              />
+            </button>
             <figcaption>
               {image.label}
               {index === 0 ? " · 主参考" : ""}
@@ -760,7 +861,10 @@ function MaterialCard({
         <div className="stack">
           {asset.kind === "character" && (
             <Field label={document.name + "对应角色"}>
-              <select value={role} onChange={(e) => setRole(e.target.value)}>
+              <select
+                value={selectedRole}
+                onChange={(e) => setRole(e.target.value)}
+              >
                 {roles.map((r: RecordData) => (
                   <option key={r.character_id} value={r.character_id}>
                     {r.name}（{r.character_id}）
@@ -799,7 +903,7 @@ function MaterialCard({
             disabled={busy}
             onClick={() =>
               run(
-                () => select(asset, role, shots),
+                () => select(asset, selectedRole, shots),
                 "已选入本批，集中确认后正式采用。",
               )
             }
@@ -826,6 +930,7 @@ function MaterialEditor({
   asset,
   project,
   candidates,
+  roles,
   busy,
   save,
   onCancel,
@@ -834,6 +939,7 @@ function MaterialEditor({
   asset: RecordData;
   project?: RecordData;
   candidates: RecordData[];
+  roles: RecordData[];
   busy: boolean;
   save: (
     document: RecordData,
@@ -944,6 +1050,7 @@ function MaterialEditor({
               setDocument={setDocument}
               candidates={candidates}
               project={project}
+              roles={roles}
               image={rows(asset.data.images)[0]}
             />
           )}
@@ -1148,6 +1255,7 @@ function CompositionEditor({
   setDocument,
   candidates,
   project,
+  roles,
   image,
 }: {
   document: RecordData;
@@ -1155,6 +1263,7 @@ function CompositionEditor({
   candidates: RecordData[];
   project?: RecordData;
   image?: RecordData;
+  roles: RecordData[];
 }) {
   const [active, setActive] = useState(0);
   const [start, setStart] = useState<number[] | null>(null);
@@ -1174,10 +1283,6 @@ function CompositionEditor({
   const available = lookup.data ? rows(lookup.data.assets) : candidates;
   const characters = available.filter((asset) => asset.kind === "character");
   const scenes = available.filter((asset) => asset.kind === "scene");
-  const roles = project?.production_profile?.characters || [
-    { character_id: "female", name: "角色一" },
-    { character_id: "male", name: "角色二" },
-  ];
   const updateMember = (index: number, patch: RecordData) =>
     setDocument({
       ...document,

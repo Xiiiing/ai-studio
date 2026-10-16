@@ -153,3 +153,15 @@ def test_new_episode_inherits_materials_but_directs_its_own_scene_placements(pro
     second = store.create({"brief": "同系列下一集的成年人物故事", "series_key": project["series_key"]})
     assert first["material_package"]["references"][0]["shot_ids"] == ["S01"]
     assert "shot_ids" not in second["material_package"]["references"][0]
+
+
+def test_selection_snapshot_exposes_canonical_characters_for_episode_owned_profile(project):
+    from factory.production_profiles import normalize
+    profile = normalize({"preset": "compact6"})
+    store.update(project["id"], {"production_profile": None, "duration_seconds": 30,
+                               "episode": {"production_profile": profile}})
+    before = store.get(project["id"])
+    result = library.snapshot(project["id"])
+    assert result["characters"] == profile["characters"]
+    assert result["revision"] == before["revision"]
+    assert store.get(project["id"]) == before

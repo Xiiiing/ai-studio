@@ -313,3 +313,79 @@ it("looks up character references independently of the composition-only gallery 
   await user.click(add);
   expect(screen.getByLabelText("同框人物1")).toHaveValue("mat_lin:2");
 });
+
+it("uses canonical server character IDs for episode-owned profiles", async () => {
+  const posts: any[] = [];
+  let resolveSelection!: (response: Response) => void;
+  const pendingSelection = new Promise<Response>((resolve) => {
+    resolveSelection = resolve;
+  });
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (path, init) => {
+      if (init.method === "POST") posts.push(JSON.parse(init.body));
+      if (String(path).includes("/materials")) return pendingSelection;
+      const data = String(path).includes("/materials")
+        ? {
+            revision: 11,
+            characters: [{ character_id: "char_witness", name: "见证者" }],
+            selected: [],
+          }
+        : {
+            assets: [
+              {
+                asset_id: "mat_lin",
+                version: 2,
+                kind: "character",
+                data: { document: { name: "林夏" }, images: [] },
+              },
+            ],
+            tasks: [],
+          };
+      return new Response(JSON.stringify(data));
+    }),
+  );
+  mount({ id: "012345abcdef" });
+  await screen.findByRole("heading", { name: "林夏 · v2" });
+  resolveSelection(
+    new Response(
+      JSON.stringify({
+        revision: 11,
+        characters: [{ character_id: "char_witness", name: "见证者" }],
+        selected: [],
+      }),
+    ),
+  );
+  const user = userEvent.setup();
+  expect(
+    await screen.findByRole("option", { name: "见证者（char_witness）" }),
+  ).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "选入本剧" }));
+  await waitFor(() => expect(posts).toHaveLength(1));
+  expect(posts[0].references[0].role).toBe("char_witness");
+});
+
+it("offers separate retries and never describes failed queries as empty libraries or empty task lists", async () => {
+  let recover = false;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () =>
+      recover
+        ? new Response(JSON.stringify({ assets: [], tasks: [] }))
+        : new Response(JSON.stringify({ error: "暂时无法读取" }), {
+            status: 503,
+          }),
+    ),
+  );
+  mount();
+  await screen.findByRole("button", { name: "重新读取素材库" });
+  expect(screen.queryByText("还没有素材")).toBeNull();
+  expect(screen.queryByText("尚无素材制作任务。")).toBeNull();
+  recover = true;
+  await userEvent.click(screen.getByRole("button", { name: "重新读取素材库" }));
+  expect(await screen.findByText("还没有素材")).toBeVisible();
+  await userEvent.click(
+    screen.getByRole("button", { name: "重新读取素材任务" }),
+  );
+  expect(await screen.findByText("尚无素材制作任务。")).toBeVisible();
+});
