@@ -70,9 +70,8 @@ export function CreativeContract({ project }: { project: RecordData }) {
         "cloud_diffusion_video",
         "generated_video",
       ].includes(method),
-    ) ||
-    Number(provenance?.generated_video_shots) > 0 ||
-    recordedMotion.includes("local_diffusion_video");
+    ) || Number(provenance?.generated_video_shots) > 0;
+  const unknownShots = Number(provenance?.unknown_shots) || 0;
   const actual =
     still && generated
       ? "混合制作：部分镜头为生成视频，部分镜头为静帧运镜。"
@@ -94,7 +93,16 @@ export function CreativeContract({ project }: { project: RecordData }) {
       </div>
       <div>
         <small>以制作记录为准</small>
-        <p>{actual}</p>
+        <p>
+          {unknownShots > 0 && (still || generated)
+            ? "已确认的部分镜头：" + actual.replace(/^实际制作：/, "")
+            : actual}
+        </p>
+        {unknownShots > 0 && (
+          <p>
+            仍有 {unknownShots} 镜制作方式尚未确认，不能据此确认全片的制作方式。
+          </p>
+        )}
         {provenance && (
           <p>
             生成视频 {provenance.generated_video_shots || 0} 镜 · 静帧运镜{" "}

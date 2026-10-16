@@ -141,6 +141,52 @@ it("does not invent old animation style or successful character animation", () =
   expect(screen.getByText(/尚无可确认的镜头制作回执/)).toBeVisible();
 });
 
+it("does not treat a generic historical delivery limitation as a generated-video receipt", () => {
+  render(
+    <CreativeContract
+      project={{
+        format: "animation",
+        shots: [{ video_url: "/media/old.mp4" }],
+        delivery: {
+          limitations: {
+            motion:
+              "local_diffusion_video; consult each shot's QA and lip-sync records",
+          },
+        },
+      }}
+    />,
+  );
+  expect(screen.getByText(/尚无可确认的镜头制作回执/)).toBeVisible();
+  expect(
+    screen.queryByText(/实际制作：模型生成运动视频/),
+  ).not.toBeInTheDocument();
+});
+
+it.each([
+  { generated_video_shots: 2, still_camera_shots: 0 },
+  { generated_video_shots: 0, still_camera_shots: 2 },
+  { generated_video_shots: 1, still_camera_shots: 1 },
+])(
+  "qualifies partially known generation methods rather than asserting a fully verified film: %j",
+  (counts) => {
+    render(
+      <CreativeContract
+        project={{
+          format: "animation",
+          delivery: { motion_provenance: { ...counts, unknown_shots: 3 } },
+        }}
+      />,
+    );
+    expect(screen.getByText(/已确认的部分镜头：/)).toBeVisible();
+    expect(
+      screen.getByText(
+        "仍有 3 镜制作方式尚未确认，不能据此确认全片的制作方式。",
+      ),
+    ).toBeVisible();
+    expect(screen.queryByText(/^实际制作：/)).not.toBeInTheDocument();
+  },
+);
+
 it("shows delivery provenance including unknown shots without hiding camera-only segments", () => {
   render(
     <CreativeContract
