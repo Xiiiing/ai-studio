@@ -124,7 +124,11 @@ POST `/api/factory/projects`，成功返回 202：
 
 CLI 同样使用动作契约：`./drama status ID` 列出有效操作；`./drama action ID provide_authorized_source --inputs-file SOURCE.json --expected-revision REV` 提交结构化输入。`./drama workflow --workflow-version 1` 可核对旧执行图。
 
-总览支持 `offset`、`limit`、`attention_offset`、`attention_limit` 查询参数。`projects` 和 `attention_projects` 独立分页，分别返回 `pagination` / `attention_pagination` 的 offset、limit、total、has_more、next_offset。统计始终覆盖全量项目；较早的阻断项目不会因不在最近项目页中而从待办入口消失。
+总览 `/api/factory/console`（兼容别名 `/api/factory/overview`）支持 `offset`、`limit`、`attention_offset`、`attention_limit` 查询参数。offset 默认为 0，limit 默认为 100；offset 须为非负整数，limit 为 1 至 100，HTTP 数值参数最多 9 位。未知参数、同名参数重复或非法值均返回 400。
+
+项目列表还支持可选 `q`（最多 200 个字符，去除首尾空白后，对项目名称、编号和需求分别做不区分大小写的子串搜索）及 `filter=all|active|attention|delivered`（默认 all）。active 排除 approved、cancelled、blocked、paused；attention 仅包含 `attention.blocking` 为真的项目；delivered 包含状态为 approved 的项目。先从全量项目中搜索、筛选，再按更新时间倒序分页；例如 `/api/factory/console?q=邻里&filter=active&offset=0&limit=20`。
+
+`projects` 和 `attention_projects` 独立分页，分别返回 `pagination` / `attention_pagination` 的 offset、limit、total、has_more、next_offset。`pagination.total` 和 `bounded` 反映搜索、筛选后的项目数；`attention_projects`、`attention_pagination`、全局 metrics、运行任务和近期交付始终覆盖全量项目，不受 q/filter 影响。较早的阻断项目不会因不在最近项目页中而从待办入口消失。无搜索、筛选参数时保持原有返回语义。
 
 ## 人工决策
 

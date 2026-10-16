@@ -156,10 +156,15 @@ def project_summary(project, *, job_running=False):
     return result
 
 
-def dashboard(*, offset=0, limit=100, attention_offset=0, attention_limit=100):
+def dashboard(*, offset=0, limit=100, attention_offset=0, attention_limit=100, q="", filter="all"):
     if (any(type(v) is not int or v < 0 for v in (offset, attention_offset))
             or any(type(v) is not int or not 1 <= v <= 100 for v in (limit, attention_limit))):
         raise ValueError("分页 offset 应为非负整数，limit 应为 1 至 100")
+    if not isinstance(q, str) or len(q) > 200:
+        raise ValueError("项目搜索 q 须为不超过 200 个字符的文字")
+    if not isinstance(filter, str) or filter not in {"all", "active", "attention", "delivered"}:
+        raise ValueError("项目筛选 filter 应为 all、active、attention 或 delivered")
+    search = q.strip().casefold()
     timestamp = time.time()
     with store.connection() as db:
         db.execute("BEGIN")
@@ -169,8 +174,9 @@ def dashboard(*, offset=0, limit=100, attention_offset=0, attention_limit=100):
         metrics = Counter()
         reasons = Counter()
         gpu_minutes = 0
+        matched = 0
         titles = {}
-        # Aggregate all projects. Only the returned recent-project list is bounded.
+        # Aggregate the same full snapshot even when the project list is filtered.
         for row in db.execute("SELECT snapshot,revision FROM projects ORDER BY updated DESC"):
             project = json.loads(row[0]); project["revision"] = row[1]
             summary = project_summary(project, job_running=project["id"] in live)
@@ -189,8 +195,16 @@ def dashboard(*, offset=0, limit=100, attention_offset=0, attention_limit=100):
             gpu_minutes += number(obj(project.get("budget")).get("spent_gpu_minutes"))
             if summary["attention"] and summary["attention"].get("blocking"):
                 reasons[summary["attention"]["kind"]] += 1
-            if offset < metrics["projects"] <= offset + limit:
-                projects.append(summary)
+            matches_search = not search or any(isinstance(project.get(key), str) and search in project[key].casefold()
+                                               for key in ("title", "id", "brief"))
+            matches_filter = (filter == "all"
+                              or filter == "active" and project["status"] not in {"approved", "cancelled", "blocked", "paused"}
+                              or filter == "attention" and bool(summary["attention"] and summary["attention"].get("blocking"))
+                              or filter == "delivered" and project["status"] == "approved")
+            if matches_search and matches_filter:
+                if offset <= matched < offset + limit:
+                    projects.append(summary)
+                matched += 1
             if project["id"] in live and len(running_tasks) < 20:
                 job = live_jobs[project["id"]]
                 running_tasks.append({"project_id": project["id"], "title": project["title"], "stage": project.get("stage"),
@@ -215,9 +229,9 @@ def dashboard(*, offset=0, limit=100, attention_offset=0, attention_limit=100):
             "queue": {"running": queue.get("running", 0), "queued": queue.get("queued", 0), "ready": ready,
                       "waiting_remote": metrics["waiting_remote"], "waiting_resources": metrics["waiting_resources"],
                       "completed": queue.get("completed", 0), "failed": queue.get("failed", 0), "worker_concurrency": 1, "durable": True},
-            "pagination": pagination(offset, limit, metrics["projects"]),
+            "pagination": pagination(offset, limit, matched),
             "attention_pagination": pagination(attention_offset, attention_limit, metrics["attention"]),
-            "project_limit": limit, "bounded": metrics["projects"] > limit,
+            "project_limit": limit, "bounded": matched > limit,
             "attention_project_limit": attention_limit, "attention_bounded": metrics["attention"] > attention_limit}
 
 
