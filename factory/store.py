@@ -129,6 +129,10 @@ def create(payload):
     format_name = payload.get("format", "motion_comic")
     if format_name not in ALLOWED_FORMATS:
         raise ValueError("不支持的视频形态")
+    contract = None
+    if "creative_contract" in payload:
+        from .creative_contract import normalize as normalize_contract
+        contract = normalize_contract(payload["creative_contract"], format_name)
     profile = None
     if "production_profile" in payload:
         from .production_profiles import normalize
@@ -181,6 +185,8 @@ def create(payload):
     }
     if profile is not None:
         project["production_profile"] = profile
+    if contract is not None:
+        project["creative_contract"] = contract
     from .attention_actions import delegation_status
     project["delegation"] = delegation_status(project)
     import hashlib

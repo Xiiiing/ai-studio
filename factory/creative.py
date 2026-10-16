@@ -220,6 +220,9 @@ def _canonical_episode(raw, project):
     episode.update({"slug": project["slug"], "fps": 24, "width": 720, "height": 1280,
                     "generation": {"width": 736, "height": 1312},
                     "total_seconds": sum(plan), "format": project.get("format", "motion_comic")})
+    if "creative_contract" in project:
+        from .creative_contract import resolve as resolve_contract
+        episode["creative_contract"] = resolve_contract(project)
     if len(episode.get("shots", [])) != len(plan):
         raise CreativeReviewError("生成的镜头数不符合创作规格")
     if explicit_profile(project):

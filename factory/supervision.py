@@ -111,7 +111,7 @@ def context_for(project, gate):
         raise ValueError("duplicate_candidate")
     shots = project.get("shots", [])
     shots = shots if isinstance(shots, list) else []
-    return {
+    context = {
         "project": {key: copy.deepcopy(project.get(key)) for key in (
             "id", "brief", "format", "duration_seconds", "creation_mode", "production_profile")},
         "gate": {"id": gate["id"], "type": kind}, "candidates": candidates,
@@ -123,6 +123,10 @@ def context_for(project, gate):
         "constraints": {"basis": BASIS, "allowed_actions": ["escalate"] if kind == "final" else ["select", "escalate"],
             "forbidden": ["approve_final", "authorize_cost", "change_budget", "override_reviews", "publish", "unbounded_retry"]},
     }
+    if "creative_contract" in project:
+        from .creative_contract import resolve as resolve_contract
+        context["project"]["creative_contract"] = resolve_contract(project)
+    return context
 
 
 def _save(db, project, record):

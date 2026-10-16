@@ -40,7 +40,7 @@ def adapt_schema(schema, project):
     return adapt(copy.deepcopy(schema))
 
 
-def adapt_system(system, project):
+def _adapt_profile_system(system, project):
     if not explicit(project):
         return system
     from .prompt_registry import derive_prompt
@@ -68,3 +68,17 @@ def adapt_system(system, project):
         "对新规格，characters明确列出每镜可见的角色；reference_group仅为概要，不替代人物列表。"
         "逐镜服装、手持物、位置和剧情状态独立于不变身份。短对白仅作时长预估，实际声音须另行实测。")
     return derive_prompt(source, rendered, "production_profile")
+
+
+def adapt_system(system, project):
+    """Apply optional intent while preserving byte-exact historical prompts."""
+    from .creative_contract import instructions, resolve as resolve_contract
+    from .prompt_registry import derive_prompt
+    if resolve_contract(project) is None:
+        return _adapt_profile_system(system, project)
+    source = system
+    # Called by both individual roles and the shared cache; never append twice.
+    base = (derive_prompt(source, system.split("\nCREATIVE_CONTRACT_JSON:")[0], "creative_contract")
+            if "\nCREATIVE_CONTRACT_JSON:" in system else source)
+    rendered = _adapt_profile_system(base, project)
+    return derive_prompt(rendered, str(rendered) + instructions(project), "creative_contract")

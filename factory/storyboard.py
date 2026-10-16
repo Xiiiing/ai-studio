@@ -37,7 +37,7 @@ def storyboard_schema(shot_ids, project=None):
 def model_capabilities(project, config, episode):
     production = config.get("production", {})
     mode = project.get("format", episode.get("format", "motion_comic"))
-    return {
+    capabilities = {
         "format": mode,
         "image_engine": "FLUX.2 Klein 4B keyframes through the existing ComfyUI workflow",
         "video_engine": ("No diffusion video; generated still plus FFmpeg camera movement"
@@ -58,13 +58,23 @@ def model_capabilities(project, config, episode):
             "Production feasibility remains provisional until actual media is evaluated.",
         ],
     }
+    if "creative_contract" in project:
+        from .creative_contract import resolve as resolve_contract, style_prompt
+        capabilities["creative_contract"] = resolve_contract(project)
+        capabilities["visual_constraints"] = style_prompt(project)
+        capabilities["continuous_character_action_required"] = mode != "motion_comic"
+        if mode != "motion_comic":
+            capabilities["constraints"].append(
+                "Every video shot needs one simple continuous character/object action; "
+                "camera movement alone does not satisfy animation or live-action delivery.")
+    return capabilities
 
 
 def _episode_context(episode):
     keys = tuple(episode_schema()["properties"])
     value = {key: copy.deepcopy(episode[key]) for key in keys if key in episode and key != "shots"}
     value.update({key: copy.deepcopy(episode[key]) for key in (
-        "format", "total_seconds", "fps", "width", "height", "production_profile", "characters") if key in episode})
+        "format", "total_seconds", "fps", "width", "height", "production_profile", "characters", "creative_contract") if key in episode})
     shot_keys = tuple(episode_schema()["properties"]["shots"]["items"]["properties"]) + (
         "id", "seconds", "lip_sync", "delivery_method", "render_style_prompt", "characters", "character_states")
     value["shots"] = [{key: copy.deepcopy(shot[key]) for key in shot_keys if key in shot}
