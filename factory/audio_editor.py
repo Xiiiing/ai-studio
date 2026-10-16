@@ -18,6 +18,7 @@ from PIL import Image, ImageDraw
 
 from studio.core import ROOT, fingerprint, media_receipt, read_json, sha256, write_json
 from studio.media import SR, chunks, font, piano, stamp, write_wav
+from . import team_ledger
 from .quality import combine, inspect_video, semantic_review
 from .scheduler import ProductionNeedsDecision
 from .shot_workbench import plan_signature
@@ -56,6 +57,8 @@ class AudioEditorMixin:
             if pin["plan_signature"] != plan_signature(self.project, shot, "video") or pin["receipt"].get("source_signature") != signature:
                 raise ProductionNeedsDecision("人工运镜选片参数已变化，请重新确认", "manual_selection_stale")
             self.receipt_path(pin["receipt"])
+            team_ledger.mark_reused(self.ident, "video", shot["id"], artifact=pin["receipt"],
+                                    input_version=signature, review_status=pin["receipt"].get("qa", {}).get("status"))
             return {**pin["receipt"], "producer_selection": {k: v for k, v in pin.items() if k != "receipt"}}
         folder = self.folder / "renders" / shot["id"] / ("camera_" + signature[:16])
         target = folder / "video.mp4"
@@ -63,6 +66,8 @@ class AudioEditorMixin:
         if receipt_path.exists():
             record = read_json(receipt_path)
             self.receipt_path(record)
+            team_ledger.mark_reused(self.ident, "video", shot["id"], artifact=record,
+                                    input_version=signature, review_status=record.get("qa", {}).get("status"))
             return record
         folder.mkdir(parents=True, exist_ok=True)
         if target.exists():
@@ -76,25 +81,36 @@ class AudioEditorMixin:
             zoom, x = "1.075", f"(iw-iw/zoom)*(0.2+0.6*{progress})"
         vf = (f"scale={width*2}:{height*2}:force_original_aspect_ratio=increase,crop={width*2}:{height*2},"
               f"zoompan=z='{zoom}':x='{x}':y='ih/2-ih/zoom/2':d=1:s={width}x{height}:fps=24,setsar=1")
-        started = time.monotonic()
-        self.ffmpeg(["-n", "-loop", "1", "-framerate", "24", "-i", image,
-                     "-vf", vf, "-frames:v", frames, "-an", "-c:v", "libx264", "-preset", "fast",
-                     "-crf", "18", "-pix_fmt", "yuv420p", "-movflags", "+faststart", target])
-        technical = inspect_video(target, shot["seconds"], self.output_size)
-        qa = combine(technical)
-        if technical["status"] == "fail":
-            write_json(folder / "quality_failed.json", qa)
-            raise ProductionNeedsDecision("A procedural camera clip failed technical validation", "technical_video",
-                                          {"shot": shot["id"], "qa": qa})
-        record = media_receipt(target, source_signature=signature, origin="procedural_camera_motion",
-                               motion=motion, requested_motion=requested_motion, diffusion_video=False, lip_sync=False,
-                               source_image=shot["image"], qa=qa, plan_signature=plan_signature(self.project, shot, "video"),
-                               take=folder.name, model="ffmpeg_zoompan_v1", shot_revision=shot.get("shot_revision", 1),
-                               elapsed_seconds=round(time.monotonic() - started, 3))
-        if explicit_profile(self.project):
-            record["production_profile_signature"] = profile_signature(self.project)
-        write_json(receipt_path, record)
-        return record
+        with team_ledger.unit(self.ident, "video", shot["id"], input_version=signature,
+                              dependencies=["image:" + shot["id"]],
+                              inputs={"image": shot["image"], "motion": motion,
+                                      "seconds": shot["seconds"], "output_size": list(self.output_size)}) as token:
+            started = time.monotonic()
+            self.ffmpeg(["-n", "-loop", "1", "-framerate", "24", "-i", image,
+                         "-vf", vf, "-frames:v", frames, "-an", "-c:v", "libx264", "-preset", "fast",
+                         "-crf", "18", "-pix_fmt", "yuv420p", "-movflags", "+faststart", target])
+            team_ledger.finish_unit(token, artifact=media_receipt(target), model="ffmpeg_zoompan_v1",
+                                    details={"motion": motion, "diffusion_video": False})
+            with team_ledger.unit(self.ident, "video_review", shot["id"], input_version=signature,
+                                  dependencies=["video:" + shot["id"]],
+                                  inputs={"source": str(target.relative_to(ROOT)), "scope": "technical_camera_clip"}) as review_token:
+                technical = inspect_video(target, shot["seconds"], self.output_size)
+                qa = combine(technical)
+                team_ledger.finish_unit(review_token, artifact=media_receipt(target), review_status=qa["status"],
+                                        model="technical_checks", details={"qa": qa, "semantic_source": shot["image"].get("qa", {}).get("semantic")})
+            if technical["status"] == "fail":
+                write_json(folder / "quality_failed.json", qa)
+                raise ProductionNeedsDecision("A procedural camera clip failed technical validation", "technical_video",
+                                              {"shot": shot["id"], "qa": qa})
+            record = media_receipt(target, source_signature=signature, origin="procedural_camera_motion",
+                                   motion=motion, requested_motion=requested_motion, diffusion_video=False, lip_sync=False,
+                                   source_image=shot["image"], qa=qa, plan_signature=plan_signature(self.project, shot, "video"),
+                                   take=folder.name, model="ffmpeg_zoompan_v1", shot_revision=shot.get("shot_revision", 1),
+                                   elapsed_seconds=round(time.monotonic() - started, 3))
+            if explicit_profile(self.project):
+                record["production_profile_signature"] = profile_signature(self.project)
+            write_json(receipt_path, record)
+            return record
 
     def _read_audio(self, path):
         run = subprocess.run([FFMPEG, "-hide_banner", "-loglevel", "error", "-nostdin",
@@ -254,22 +270,33 @@ class AudioEditorMixin:
                         "--video", str(source), "--audio", str(audio), "--output", str(target),
                         "--duration", str(shot["seconds"]), "--fps", "24", "--steps", "20",
                         "--guidance", "1.5", "--seed", "1247"]
-                with self.budget.gpu_operation():
-                    result = subprocess.run(argv, cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                            text=True, timeout=self.budget.timeout(7200, 1))
-                (target_dir / "stdout.log").write_text(result.stdout, encoding="utf-8")
-                (target_dir / "stderr.log").write_text(result.stderr, encoding="utf-8")
-                if result.returncode:
-                    raise ProductionNeedsDecision("Local lip-sync failed", "lip_sync_failed",
-                                                  {"shot": shot["id"], "log": str((target_dir / "stderr.log").relative_to(ROOT))})
-                raw = json.loads(result.stdout.strip().splitlines()[-1])
-                if raw.get("state") != "completed" or sha256(target) != raw.get("output_sha256"):
-                    raise ProductionNeedsDecision("Lip-sync completion could not be verified", "lip_sync_failed")
-                technical = inspect_video(target, shot["seconds"], self.video_size)
-                record = media_receipt(target, source_signature=signature, origin="local_lipsync",
-                                       input_video=shot["video"], input_audio=shot["lipsync_audio"],
-                                       qa=combine(technical, semantic_required=self.semantic_enabled))
-                write_json(receipt_file, record)
+                with team_ledger.unit(self.ident, "video", shot["id"], input_version=signature,
+                                      inputs={"origin": "local_lipsync", "input_video": shot["video"],
+                                              "input_audio": shot["lipsync_audio"]}) as token:
+                    with self.budget.gpu_operation():
+                        result = subprocess.run(argv, cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                                text=True, timeout=self.budget.timeout(7200, 1))
+                    (target_dir / "stdout.log").write_text(result.stdout, encoding="utf-8")
+                    (target_dir / "stderr.log").write_text(result.stderr, encoding="utf-8")
+                    if result.returncode:
+                        raise ProductionNeedsDecision("Local lip-sync failed", "lip_sync_failed",
+                                                      {"shot": shot["id"], "log": str((target_dir / "stderr.log").relative_to(ROOT))})
+                    raw = json.loads(result.stdout.strip().splitlines()[-1])
+                    if raw.get("state") != "completed" or sha256(target) != raw.get("output_sha256"):
+                        raise ProductionNeedsDecision("Lip-sync completion could not be verified", "lip_sync_failed")
+                    team_ledger.finish_unit(token, artifact=media_receipt(target), model="LatentSync-1.6",
+                                            details={"origin": "local_lipsync", "input_video": shot["video"],
+                                                     "input_audio": shot["lipsync_audio"]})
+                    with team_ledger.unit(self.ident, "video_review", shot["id"], input_version=review_signature,
+                                          dependencies=["video:" + shot["id"]],
+                                          inputs={"artifact": media_receipt(target), "scope": "technical_lipsync"}) as review_token:
+                        technical = inspect_video(target, shot["seconds"], self.video_size)
+                        team_ledger.finish_unit(review_token, artifact=technical, review_status=technical["status"],
+                                                model="technical_checks")
+                    record = media_receipt(target, source_signature=signature, origin="local_lipsync",
+                                           input_video=shot["video"], input_audio=shot["lipsync_audio"],
+                                           qa=combine(technical, semantic_required=self.semantic_enabled))
+                    write_json(receipt_file, record)
             technical = record.get("qa", {}).get("technical", {})
             if technical.get("status") != "pass":
                 raise ProductionNeedsDecision("Lip-sync output failed technical validation",
@@ -280,7 +307,12 @@ class AudioEditorMixin:
                 for number in range(1, self.semantic_max_attempts + 1):
                     self.boundary()
                     started = time.monotonic()
-                    semantic = semantic_review(self.evaluator, self.project, shot, target, [source])
+                    with team_ledger.unit(self.ident, "video_review", shot["id"], input_version=review_signature,
+                                          dependencies=["video:" + shot["id"]],
+                                          inputs={"artifact": record, "scope": "semantic_lipsync"}) as review_token:
+                        semantic = semantic_review(self.evaluator, self.project, shot, target, [source])
+                        team_ledger.finish_unit(review_token, artifact=record, review_status=semantic["status"],
+                                                model=self.config.get("semantic_model"), details={"assessment": semantic})
                     record.setdefault("semantic_attempts", []).append({
                         "at": time.time(), "invocation_attempt": number, "review_signature": review_signature,
                         "elapsed_seconds": round(time.monotonic() - started, 3), "assessment": semantic})
@@ -334,99 +366,116 @@ class AudioEditorMixin:
             if cached.get("source_signature") == signature:
                 for artifact in cached["artifacts"]:
                     self.receipt_path(artifact)
+                team_ledger.mark_reused(self.ident, "edit", "delivery", artifact=cached,
+                                        input_version=signature)
+                team_ledger.mark_reused(self.ident, "technical_review", "delivery",
+                                        artifact=cached.get("technical_qa"), input_version=signature,
+                                        review_status="pass")
                 self.emit("delivery_ready", delivery=cached)
                 return cached
         # A prior delivered file is never replaced, including an incomplete prior export.
         if release.exists() and any(release.glob("*.mp4")):
             release = release.with_name(release.name + "-retry-" + str(time.time_ns()))
-        release.mkdir(parents=True, exist_ok=True)
-        mix, cues = self._mix_audio(release, mapping)
-        self._lip_sync(release)
-        self._assert_semantic_gate()
-        duration = sum(s["seconds"] for s in self.shots)
-        srt, ass = self._subtitles(release, cues, duration)
-        segments, sources = [], []
-        width, height = self.output_size
-        for shot in self.shots:
-            self.boundary()
-            source = self.receipt_path(shot["video"])
-            clip = release / ("segment_" + shot["id"] + ".mp4")
-            self.ffmpeg(["-n", "-i", source, "-an", "-t", shot["seconds"],
-                         "-vf", f"scale={width}:{height}:force_original_aspect_ratio=increase,crop={width}:{height},setsar=1,fps=24",
-                         "-frames:v", round(shot["seconds"] * 24),
-                         "-c:v", "libx264", "-preset", "fast", "-crf", "18", "-pix_fmt", "yuv420p", clip])
-            segments.append(clip)
-            sources.append({"shot": shot["id"], "video": shot["video"], "image": shot["image"],
-                            "seconds": shot["seconds"], "segment": media_receipt(clip)})
-        listing = release / "concat.txt"
-        listing.write_text("\n".join("file '" + str(p) + "'" for p in segments) + "\n", encoding="utf-8")
-        clean = release / "episode_clean.mp4"
-        self.ffmpeg(["-n", "-f", "concat", "-safe", "0", "-i", listing, "-i", mix,
-                     "-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy", "-c:a", "aac",
-                     "-b:a", "192k", "-ar", SR, "-ac", "2", "-t", duration,
-                     "-movflags", "+faststart", clean])
-        final = release / "episode.mp4"
-        self.ffmpeg(["-n", "-i", clean, "-vf", "ass=" + str(ass) + ":fontsdir=" + str(ROOT / "assets/fonts"),
-                     "-c:v", "libx264", "-preset", "fast", "-crf", "18",
-                     "-c:a", "copy", "-movflags", "+faststart", final])
-        self.emit("final_technical_review")
-        technical = {"clean": inspect_video(clean, duration, self.output_size, require_audio=True),
-                     "subtitled": inspect_video(final, duration, self.output_size, require_audio=True)}
-        write_json(release / "technical_qa.json", technical)
-        if any(value["status"] != "pass" for value in technical.values()):
-            raise ProductionNeedsDecision("An exported film failed its final technical gate", "delivery_quality",
-                                          {"checks": technical})
-        first = Image.open(self.receipt_path(self.shots[0]["image"])).convert("RGB")
-        first = first.resize((width, height))
-        overlay = Image.new("RGBA", first.size, (0, 0, 0, 0))
-        draw = ImageDraw.Draw(overlay)
-        draw.rectangle((0, int(height * .76), width, height), fill=(8, 15, 24, 205))
-        title = str(self.episode.get("title") or self.project.get("title") or self.slug)
-        draw.text((round(width * .07), round(height * .8)), title,
-                  font=font(min(round(width * .08), round(width * .85 / max(1, len(title))))),
-                  fill=(245, 240, 224, 255))
-        draw.text((round(width * .07), round(height * .93)), "AI 生成 · 剧情虚构",
-                  font=font(max(16, round(width * .026))), fill=(210, 212, 220, 255))
-        cover = release / "cover.jpg"
-        Image.alpha_composite(first.convert("RGBA"), overlay).convert("RGB").save(cover, quality=93)
-        timeline = release / "timeline.json"
-        write_json(timeline, {"fps": 24, "duration_seconds": duration, "shots": sources,
-                              "audio": media_receipt(mix), "subtitles": cues,
-                              "edit_feedback": self.project.get("edit_feedback"),
-                              "edit_plan": self.project.get("edit_plan", {}),
-                              **({"creative_contract": contract} if contract else {}),
-                              **({"production_profile": resolve_profile(self.project)} if explicit_profile(self.project) else {})})
-        semantics = [s.get("qa", {}).get("semantic", {}) for s in self.shots]
-        semantic_status = "pass" if semantics and all(s.get("status") == "pass" for s in semantics) else "review_required"
-        artifacts = [media_receipt(p) for p in (final, clean, srt, ass, cover, mix, timeline,
-                                               release / "technical_qa.json", release / "audio_edit.json")]
-        delivery = {"schema": "autonomous_factory.delivery.v1", "title": title,
-                    "project_id": self.ident, "slug": self.slug, "revision": revision,
-                    "source_signature": signature, "created_at": time.time(),
-                    "status": "awaiting_producer_final_review", "format": self.mode,
-                    "path": str(final.relative_to(ROOT)), "url": self.media_url(final),
-                    "video_url": self.media_url(final), "mp4_url": self.media_url(final),
-                    "clean_url": self.media_url(clean), "subtitle_url": self.media_url(srt),
-                    "cover_url": self.media_url(cover), "timeline_url": self.media_url(timeline),
-                    "manifest_url": self.media_url(release / "manifest.json"),
-                    "duration_seconds": duration, "fps": 24, "resolution": list(self.output_size),
-                    "source_image_resolution": list(self.image_size),
-                    "artifacts": artifacts, "sources": sources, "technical_qa": technical,
-                    "motion_provenance": motion_provenance(self.shots, contract["motion"] if contract else None),
-                    "semantic_status": semantic_status, "budget": self.budget.snapshot(),
-                    "capabilities": self.capabilities(),
-                    "limitations": {
-                        "motion": "procedural_camera_motion; illustrated stills with camera moves, no generated character acting or lip sync"
-                                  if self.mode == "motion_comic" else "local_diffusion_video; consult each shot's QA and lip-sync records",
-                        "resolution": "Delivery dimensions are postproduction resampling/cropping of the recorded source dimensions.",
-                        "semantic": "Sampled VLM review is separate from technical decode checks; final producer review is still required.",
-                        "vbench": "VBench and DSPy optimization are not claimed by this renderer.",
-                        "subtitles": "Timing follows measured speech spans with proportional text segmentation; no forced-alignment guarantee."}}
-        if explicit_profile(self.project):
-            delivery.update(production_profile=resolve_profile(self.project), production_profile_signature=profile_signature(self.project))
-        if contract:
-            delivery["creative_contract"] = copy.deepcopy(contract)
-        write_json(release / "manifest.json", delivery)
-        self.emit("delivery_ready", delivery=delivery)
-        return delivery
+        with team_ledger.unit(self.ident, "edit", "delivery", input_version=signature,
+                              dependencies=["video_review:" + shot["id"] for shot in self.shots],
+                              inputs={"shot_order": [shot["id"] for shot in self.shots],
+                                      "revision": revision, "edit_plan": self.project.get("edit_plan", {})}) as edit_token:
+            release.mkdir(parents=True, exist_ok=True)
+            mix, cues = self._mix_audio(release, mapping)
+            self._lip_sync(release)
+            self._assert_semantic_gate()
+            duration = sum(s["seconds"] for s in self.shots)
+            srt, ass = self._subtitles(release, cues, duration)
+            segments, sources = [], []
+            width, height = self.output_size
+            for shot in self.shots:
+                self.boundary()
+                source = self.receipt_path(shot["video"])
+                clip = release / ("segment_" + shot["id"] + ".mp4")
+                self.ffmpeg(["-n", "-i", source, "-an", "-t", shot["seconds"],
+                             "-vf", f"scale={width}:{height}:force_original_aspect_ratio=increase,crop={width}:{height},setsar=1,fps=24",
+                             "-frames:v", round(shot["seconds"] * 24),
+                             "-c:v", "libx264", "-preset", "fast", "-crf", "18", "-pix_fmt", "yuv420p", clip])
+                segments.append(clip)
+                sources.append({"shot": shot["id"], "video": shot["video"], "image": shot["image"],
+                                "seconds": shot["seconds"], "segment": media_receipt(clip)})
+            listing = release / "concat.txt"
+            listing.write_text("\n".join("file '" + str(p) + "'" for p in segments) + "\n", encoding="utf-8")
+            clean = release / "episode_clean.mp4"
+            self.ffmpeg(["-n", "-f", "concat", "-safe", "0", "-i", listing, "-i", mix,
+                         "-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy", "-c:a", "aac",
+                         "-b:a", "192k", "-ar", SR, "-ac", "2", "-t", duration,
+                         "-movflags", "+faststart", clean])
+            final = release / "episode.mp4"
+            self.ffmpeg(["-n", "-i", clean, "-vf", "ass=" + str(ass) + ":fontsdir=" + str(ROOT / "assets/fonts"),
+                         "-c:v", "libx264", "-preset", "fast", "-crf", "18",
+                         "-c:a", "copy", "-movflags", "+faststart", final])
+            team_ledger.finish_unit(edit_token, artifact={"final": media_receipt(final), "clean": media_receipt(clean)},
+                                    model="ffmpeg_editor", details={"duration_seconds": duration})
+            self.emit("final_technical_review")
+            with team_ledger.unit(self.ident, "technical_review", "delivery", input_version=signature,
+                                  dependencies=["edit:delivery"],
+                                  inputs={"final": media_receipt(final), "clean": media_receipt(clean)}) as review_token:
+                technical = {"clean": inspect_video(clean, duration, self.output_size, require_audio=True),
+                             "subtitled": inspect_video(final, duration, self.output_size, require_audio=True)}
+                write_json(release / "technical_qa.json", technical)
+                team_ledger.finish_unit(review_token, artifact=technical,
+                                        review_status="pass" if all(value["status"] == "pass" for value in technical.values()) else "fail",
+                                        model="technical_checks", details={"technical_qa": technical})
+            if any(value["status"] != "pass" for value in technical.values()):
+                raise ProductionNeedsDecision("An exported film failed its final technical gate", "delivery_quality",
+                                              {"checks": technical})
+            first = Image.open(self.receipt_path(self.shots[0]["image"])).convert("RGB")
+            first = first.resize((width, height))
+            overlay = Image.new("RGBA", first.size, (0, 0, 0, 0))
+            draw = ImageDraw.Draw(overlay)
+            draw.rectangle((0, int(height * .76), width, height), fill=(8, 15, 24, 205))
+            title = str(self.episode.get("title") or self.project.get("title") or self.slug)
+            draw.text((round(width * .07), round(height * .8)), title,
+                      font=font(min(round(width * .08), round(width * .85 / max(1, len(title))))),
+                      fill=(245, 240, 224, 255))
+            draw.text((round(width * .07), round(height * .93)), "AI 生成 · 剧情虚构",
+                      font=font(max(16, round(width * .026))), fill=(210, 212, 220, 255))
+            cover = release / "cover.jpg"
+            Image.alpha_composite(first.convert("RGBA"), overlay).convert("RGB").save(cover, quality=93)
+            timeline = release / "timeline.json"
+            write_json(timeline, {"fps": 24, "duration_seconds": duration, "shots": sources,
+                                  "audio": media_receipt(mix), "subtitles": cues,
+                                  "edit_feedback": self.project.get("edit_feedback"),
+                                  "edit_plan": self.project.get("edit_plan", {}),
+                                  **({"creative_contract": contract} if contract else {}),
+                                  **({"production_profile": resolve_profile(self.project)} if explicit_profile(self.project) else {})})
+            semantics = [s.get("qa", {}).get("semantic", {}) for s in self.shots]
+            semantic_status = "pass" if semantics and all(s.get("status") == "pass" for s in semantics) else "review_required"
+            artifacts = [media_receipt(p) for p in (final, clean, srt, ass, cover, mix, timeline,
+                                                   release / "technical_qa.json", release / "audio_edit.json")]
+            delivery = {"schema": "autonomous_factory.delivery.v1", "title": title,
+                        "project_id": self.ident, "slug": self.slug, "revision": revision,
+                        "source_signature": signature, "created_at": time.time(),
+                        "status": "awaiting_producer_final_review", "format": self.mode,
+                        "path": str(final.relative_to(ROOT)), "url": self.media_url(final),
+                        "video_url": self.media_url(final), "mp4_url": self.media_url(final),
+                        "clean_url": self.media_url(clean), "subtitle_url": self.media_url(srt),
+                        "cover_url": self.media_url(cover), "timeline_url": self.media_url(timeline),
+                        "manifest_url": self.media_url(release / "manifest.json"),
+                        "duration_seconds": duration, "fps": 24, "resolution": list(self.output_size),
+                        "source_image_resolution": list(self.image_size),
+                        "artifacts": artifacts, "sources": sources, "technical_qa": technical,
+                        "motion_provenance": motion_provenance(self.shots, contract["motion"] if contract else None),
+                        "semantic_status": semantic_status, "budget": self.budget.snapshot(),
+                        "capabilities": self.capabilities(),
+                        "limitations": {
+                            "motion": "procedural_camera_motion; illustrated stills with camera moves, no generated character acting or lip sync"
+                                      if self.mode == "motion_comic" else "local_diffusion_video; consult each shot's QA and lip-sync records",
+                            "resolution": "Delivery dimensions are postproduction resampling/cropping of the recorded source dimensions.",
+                            "semantic": "Sampled VLM review is separate from technical decode checks; final producer review is still required.",
+                            "vbench": "VBench and DSPy optimization are not claimed by this renderer.",
+                            "subtitles": "Timing follows measured speech spans with proportional text segmentation; no forced-alignment guarantee."}}
+            if explicit_profile(self.project):
+                delivery.update(production_profile=resolve_profile(self.project), production_profile_signature=profile_signature(self.project))
+            if contract:
+                delivery["creative_contract"] = copy.deepcopy(contract)
+            write_json(release / "manifest.json", delivery)
+            self.emit("delivery_ready", delivery=delivery)
+            return delivery
 
