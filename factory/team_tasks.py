@@ -162,6 +162,9 @@ def tracked_node(stage, function):
     @wraps(function)
     def execute(state):
         token = begin(state["project_id"], stage)
+        from .execution_context import current_execution
+        context_token = current_execution.set({"project_id": state["project_id"], "stage": stage,
+                                                "run_id": token["run_id"]})
         try:
             result = function(state)
         except BaseException as exc:
@@ -175,6 +178,8 @@ def tracked_node(stage, function):
             except Exception:
                 logging.getLogger(__name__).exception("Team audit failed; original task error is preserved")
             raise
+        finally:
+            current_execution.reset(context_token)
         status = "skipped" if isinstance(result,dict) and result.get("skipped") else ("waiting" if stage == "production" and isinstance(result, dict) and result.get("route") == "revision" else "succeeded")
         finish(state["project_id"], stage, token["run_id"], status)
         return result

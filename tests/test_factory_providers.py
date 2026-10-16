@@ -541,3 +541,18 @@ def test_role_receipts_responses_and_exceptions_scrub_active_credential(tmp_path
         llm.json_call(cfg, "screenwriter", "Write", {}, SCHEMA, tmp_path, max_tokens=128)
     assert "PRIVATE_AUTH_VALUE" not in str(error.value)
     assert all("PRIVATE_AUTH_VALUE" not in path.read_text() for path in tmp_path.rglob("*.json"))
+
+
+def test_model_receipt_preserves_execution_context_without_changing_wire_request(tmp_path, monkeypatch):
+    from factory.execution_context import current_execution
+    cfg = configuration()
+    calls = mock_role_transport(monkeypatch, lambda request, _: completion(request))
+    identity = {'project_id': '012345abcdef', 'stage': 'screenplay', 'run_id': 'fixture-run'}
+    token = current_execution.set(identity)
+    try:
+        llm.json_call(cfg, 'screenwriter', 'Write', {}, SCHEMA, tmp_path, max_tokens=128)
+    finally:
+        current_execution.reset(token)
+    receipt = json.loads(next(tmp_path.glob('calls/*/receipt.json')).read_text())
+    assert receipt['execution_context'] == identity
+    assert 'execution_context' not in calls[0]

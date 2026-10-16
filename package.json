@@ -13,10 +13,11 @@
   },
   "dependencies": {
     "@tanstack/react-query": "^5.90.0",
-    "@xyflow/react": "^12.10.0",
     "lucide-react": "^0.468.0",
     "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+    "react-dom": "^19.2.0",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
     "@playwright/test": "1.64.0",

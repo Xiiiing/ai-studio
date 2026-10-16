@@ -27,6 +27,30 @@ export interface WorkflowNode extends RecordData {
   owner: string;
   members: string[];
   status: string;
+  input_keys?: string[];
+  output_keys?: string[];
+  description?: string;
+  conditional?: boolean;
+  run_id?: string;
+}
+export interface WorkflowStage {
+  id: string;
+  label: string;
+  node_ids: string[];
+}
+export interface WorkflowPresentation {
+  stages: WorkflowStage[];
+  branches: (WorkflowStage & { return_to: string })[];
+  workflow_version: number;
+}
+export interface WorkflowMaterial extends RecordData {
+  label: string;
+  artifact_url?: string;
+  value?: unknown;
+  source_node?: string;
+  source_label?: string;
+  state?: "available" | "not_recorded" | "not_generated" | "too_large";
+  artifact_state?: "missing";
 }
 export interface Workspace extends RecordData {
   project: RecordData;

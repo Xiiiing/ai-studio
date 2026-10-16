@@ -3,7 +3,11 @@ const stages = [
   ["research", "选题研究", "researcher"],
   ["proposals", "故事提案", "creator"],
   ["story_decision", "故事决策", "producer"],
-  ["screenplay", "剧本与分镜", "screenwriter"],
+  ["story_resolution", "故事目标落实与独立审核", "story_editor"],
+  ["screenplay", "剧本创作", "screenwriter"],
+  ["storyboard", "分镜导演", "storyboard_director"],
+  ["script_review", "剧本与分镜独立审核", "independent_critic"],
+  ["visual_design", "视觉方案设计", "visual_designer"],
   ["visual_development", "视觉预览", "visual_designer"],
   ["style_decision", "视觉决策", "producer"],
   ["production", "镜头与后期", "editor"],
@@ -13,18 +17,85 @@ const stages = [
 ];
 export function mockGraph() {
   return {
-    nodes: stages.map(([id, label, owner]) => ({
+    workflow_version: 2,
+    presentation: {
+      stages: [
+        {
+          id: "story",
+          label: "故事策划",
+          node_ids: ["research", "proposals", "story_decision"],
+        },
+        {
+          id: "script",
+          label: "剧本与分镜",
+          node_ids: [
+            "story_resolution",
+            "screenplay",
+            "storyboard",
+            "script_review",
+          ],
+        },
+        {
+          id: "visual",
+          label: "视觉确认",
+          node_ids: ["visual_design", "visual_development", "style_decision"],
+        },
+        { id: "production", label: "镜头与后期", node_ids: ["production"] },
+        {
+          id: "delivery",
+          label: "终审交付",
+          node_ids: ["final_decision", "delivery"],
+        },
+      ],
+      branches: [
+        {
+          id: "revision",
+          label: "定向返修",
+          node_ids: ["revision"],
+          return_to: "production",
+        },
+      ],
+    },
+    nodes: stages.map(([id, label, owner], display_order) => ({
       id,
       label,
       owner,
+      display_order,
+      description: "根据已保存的上游材料完成本步骤，交付内容与审核分别记录。",
       members: [owner],
       status: "pending",
       input: "需求与上游审核记录",
       output: "版本绑定的交付物",
     })),
     edges: stages
-      .slice(0, 8)
-      .map((s, i) => ({ source: s[0], target: stages[i + 1][0] })),
+      .slice(0, -2)
+      .map((s, i) => ({ source: s[0], target: stages[i + 1][0] }))
+      .concat([
+        {
+          source: "production",
+          target: "revision",
+          loop: true,
+          label: "定向返修",
+        },
+        {
+          source: "delivery",
+          target: "revision",
+          loop: true,
+          label: "按审片意见返修",
+        },
+        {
+          source: "script_review",
+          target: "screenplay",
+          loop: true,
+          label: "审核未通过",
+        },
+        {
+          source: "revision",
+          target: "production",
+          loop: true,
+          label: "返修后接续",
+        },
+      ]),
     groups: [
       {
         id: "direction",

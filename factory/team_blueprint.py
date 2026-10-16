@@ -40,6 +40,7 @@ def topology(workflow_version=1):
         members=list(dict.fromkeys(spec['members']+([spec['reviewer']] if spec.get('reviewer') else [])))
         nodes[ident]={'id':ident,'label':spec['label'],'owner':spec['owner'],'reviewer':spec.get('reviewer'),
                       'members':members,'execution_nodes':[executable],
+                      '_input_keys':spec['inputs'], '_output_keys':spec['outputs'],
                       'input':' / '.join(spec['inputs']),'output':' / '.join(spec['outputs'])}
     edges=[]
     for edge in graph['edges']:
@@ -48,7 +49,8 @@ def topology(workflow_version=1):
             continue
         label=str(edge.get('data') or 'continue')
         edges.append({'source':a,'target':b,'label':label,'loop':bool(edge.get('conditional')) and label!='continue'})
-    return list(nodes.values()),edges
+    from .workflow_presentation import decorate
+    return decorate(list(nodes.values()), workflow_version),edges
 
 
 def project_graph(project, attention=None, running=False):
@@ -96,12 +98,15 @@ def project_graph(project, attention=None, running=False):
         delegated = ident in {"story_decision", "style_decision"} and project.get("team_mode") == "delegated"
         if delegated: owner = "executive_producer"
         record = obj(obj(row).get("record"))
-        nodes.append({"id": ident, "label": label, "owner": owner, "reviewer": spec.get("reviewer"), "members": members, "execution_nodes": executable,
+        nodes.append({**spec, "id": ident, "label": label, "owner": owner, "reviewer": spec.get("reviewer"), "members": members, "execution_nodes": executable,
                       "input": inputs, "output": outputs, "status": status, "evidence": evidence,
+                      "run_id": record.get("run_id"),
                       "attempt": record.get("attempt"), "started_at": record.get("started_at"), "finished_at": record.get("finished_at"),
                       "decision_mode": "delegated" if delegated else "human" if ident.endswith("decision") else None})
     phase = obj(project.get("production")).get("phase") if stage == "production" else stage
+    from .workflow_presentation import presentation
     return {"schema": "ai-studio.production-graph.v2", "workflow_version":project.get("workflow_version",1), "project_id": project.get("id"), "revision": project.get("revision"),
             "active_node": active, "current_activity": PHASES.get(phase, phase), "nodes": nodes,
-            "edges": edges, "production_tasks":list(obj(project.get("production_tasks")).values()),
+            "edges": edges, "presentation": presentation(nodes, project.get("workflow_version", 1)),
+            "production_tasks":list(obj(project.get("production_tasks")).values()),
             "groups": list(GROUPS), "semantics": "execution_nodes map to the existing LangGraph; no editable runtime wiring or inferred approvals"}

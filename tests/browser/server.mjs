@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import { readFile, realpath, stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { teamFlowFixture } from "./team-fixture.mjs";
+import { teamFlowFixture, fixtureDocument } from "./team-fixture.mjs";
 import {
   overviewFor,
   workspaceFor,
@@ -419,6 +419,15 @@ const server = http.createServer(async (request, response) => {
         return json(response, { project }, 202);
       }
       return json(response, { error: "Unexpected fixture API" }, 404);
+    }
+    const document = fixtureDocument(url.pathname, id);
+    if (document) {
+      response.writeHead(200, {
+        "Content-Type": document.mime,
+        "Content-Length": Buffer.byteLength(document.body),
+        "Cache-Control": "no-store",
+      });
+      return response.end(document.body);
     }
     let file;
     if (url.pathname === "/")

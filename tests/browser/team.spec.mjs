@@ -23,12 +23,12 @@ test("workflow is navigable and team roles remain separate from approval", async
     fullPage: true,
   });
   await page.locator('#project-list [data-id="' + id + '"]').click();
-  await page.getByRole("button", { name: "展开完整工作流" }).click();
-  await expect(page.locator("[data-flow-node]")).toHaveCount(10);
+  await expect(page.locator("[data-stage]")).toHaveCount(5);
+  await page.locator('[data-stage="script"]').click();
   await page.locator('[data-flow-node="screenplay"]').click();
-  await expect(page.locator(".node-inspector h3")).toHaveText("剧本与分镜");
-  await expect(page.locator(".node-inspector")).toContainText("独立审稿");
-  await page.locator(".react-flow__controls-fitview").click();
+  await expect(page.locator(".workflow-inspector h3")).toHaveText("剧本创作");
+  await expect(page.locator(".workflow-inspector")).toContainText("独立审稿");
+  await expect(page.locator(".react-flow")).toHaveCount(0);
   await page.screenshot({
     path: "runtime/browser-report/console-workflow.png",
     fullPage: true,
