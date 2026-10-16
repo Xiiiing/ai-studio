@@ -1,0 +1,15 @@
+cff-version: 1.2.0
+message: "If you use AI Studio in your work, please cite this repository and record the commit you used. / 如在研究或作品中使用 AI Studio，请引用本仓库并记录使用的 commit。"
+type: software
+title: "AI Studio: Multi-model short-drama production workflows"
+authors:
+  - family-names: "Xiiiing"
+repository-code: "https://github.com/Xiiiing/ai-studio"
+url: "https://github.com/Xiiiing/ai-studio"
+abstract: "A recoverable workflow for short-drama planning, writing, independent review, storyboarding, visual production, speech and editing, with configurable model providers and a Chinese producer workbench."
+keywords:
+  - short-drama
+  - multi-model
+  - workflow
+  - video-production
+  - human-in-the-loop

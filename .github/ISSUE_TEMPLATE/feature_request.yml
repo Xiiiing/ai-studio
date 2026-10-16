@@ -1,0 +1,31 @@
+name: "功能建议 / Feature request"
+description: "说明使用场景与可验收目标 / Describe a use case and verifiable outcome"
+title: "feat: "
+body:
+  - type: markdown
+    attributes:
+      value: "先检查已有 Issue 与 PR，避免重复。 / Check existing issues and pull requests first."
+  - type: textarea
+    id: problem
+    attributes:
+      label: "使用场景与问题 / Use case and problem"
+      description: "现在什么操作难以完成？ / What is difficult to accomplish today?"
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: "期望行为 / Proposed behavior"
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: "验收标准 / Acceptance criteria"
+      description: "如何确认功能满足需求？ / How would you verify the outcome?"
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: "范围、替代方案与补充 / Scope, alternatives and context"
