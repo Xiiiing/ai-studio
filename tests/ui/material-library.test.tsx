@@ -1,5 +1,11 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
@@ -92,10 +98,202 @@ it("uses stable role IDs when selecting silent characters into a project", async
     references: [{ asset_id: "mat_lin", version: 3, role: "char_lin" }],
   });
 });
+it("persists an adopted AI description without requiring an extra edit and retains it on failure", async () => {
+  const asset = {
+    asset_id: "mat_lin",
+    version: 3,
+    kind: "character",
+    library_key: "global",
+    status: "candidate",
+    data: { document: { name: "林夏", description: "原始设定" }, images: [] },
+  };
+  const posts: any[] = [];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (path, init) => {
+      if (init?.method === "POST") {
+        const body = JSON.parse(String(init.body));
+        posts.push(body);
+        if (posts.length === 1)
+          return new Response(JSON.stringify({ error: "保存暂时失败" }), {
+            status: 503,
+          });
+        return new Response(
+          JSON.stringify({
+            asset: {
+              ...asset,
+              version: 4,
+              data: { ...asset.data, document: body.document },
+            },
+          }),
+        );
+      }
+      const data = String(path).includes("/assets/")
+        ? asset
+        : String(path).endsWith("/tasks")
+          ? {
+              tasks: [
+                {
+                  id: "task-described",
+                  status: "completed",
+                  operation: "describe",
+                  name: "林夏识图",
+                  source: { asset_id: "mat_lin", version: 3 },
+                  result: {
+                    document: {
+                      name: "林夏",
+                      description: "从图片识别的人物设定",
+                    },
+                  },
+                },
+              ],
+            }
+          : { assets: [asset] };
+      return new Response(JSON.stringify(data));
+    }),
+  );
+  mount();
+  await userEvent.click(
+    await screen.findByRole("button", { name: "采用识图草稿并编辑" }),
+  );
+  expect(await screen.findByLabelText("素材说明")).toHaveValue(
+    "从图片识别的人物设定",
+  );
+  await userEvent.click(screen.getByRole("button", { name: "保存素材" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("保存暂时失败");
+  expect(screen.getByLabelText("素材说明")).toHaveValue("从图片识别的人物设定");
+  await userEvent.click(screen.getByRole("button", { name: "保存素材" }));
+  await waitFor(() => expect(screen.queryByLabelText("素材名称")).toBeNull());
+  expect(posts).toHaveLength(2);
+  expect(posts[1]).toMatchObject({
+    action: "revise",
+    asset_id: "mat_lin",
+    expected_version: 3,
+    document: { description: "从图片识别的人物设定" },
+  });
+});
 it("rejects unsupported files before making an upload request", async () => {
   await expect(
     readMaterialFile(new File(["bad"], "bad.svg", { type: "image/svg+xml" })),
   ).rejects.toThrow("PNG/JPEG/WebP");
+});
+
+it("shows the current material binding and keeps secondary actions behind their disclosure", async () => {
+  const asset = {
+    asset_id: "mat_lin",
+    version: 3,
+    kind: "character",
+    library_key: "global",
+    status: "approved",
+    data: { document: { name: "林夏" }, images: [] },
+  };
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(
+      async (path) =>
+        new Response(
+          JSON.stringify(
+            String(path).includes("/materials")
+              ? {
+                  revision: 9,
+                  characters: [
+                    { character_id: "char_lin", name: "林夏" },
+                    { character_id: "char_partner", name: "搭档" },
+                  ],
+                  selected: [
+                    {
+                      binding: {
+                        asset_id: "mat_lin",
+                        version: 3,
+                        role: "char_lin",
+                      },
+                      asset,
+                    },
+                  ],
+                  shots: [],
+                }
+              : { assets: [asset], tasks: [] },
+          ),
+        ),
+    ),
+  );
+  mount({ id: "012345abcdef" });
+  expect(
+    await screen.findByRole("button", { name: "本批已选" }),
+  ).toBeDisabled();
+  expect(
+    screen.getByRole("button", { name: "复制为剧内造型" }),
+  ).not.toBeVisible();
+  await userEvent.click(screen.getByText("更多素材操作"));
+  expect(screen.getByRole("button", { name: "复制为剧内造型" })).toBeVisible();
+  await userEvent.selectOptions(
+    screen.getByLabelText("林夏对应角色"),
+    "char_partner",
+  );
+  expect(screen.getByRole("button", { name: "选入本剧" })).toBeEnabled();
+});
+
+it("edits composition regions without a pointer and can clear the region", async () => {
+  const posts: any[] = [];
+  const asset = {
+    asset_id: "mat_group",
+    version: 2,
+    kind: "composition",
+    library_key: "global",
+    status: "candidate",
+    data: {
+      document: {
+        name: "站台两人",
+        members: [
+          {
+            asset_id: "mat_lin",
+            version: 1,
+            role: "female",
+            box: [0, 0, 1, 1],
+          },
+        ],
+      },
+      images: [],
+    },
+  };
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (_path, init) => {
+      if (init?.method === "POST") posts.push(JSON.parse(String(init.body)));
+      return new Response(
+        JSON.stringify({
+          assets: [asset],
+          tasks: [],
+          asset: { ...asset, version: 3 },
+        }),
+      );
+    }),
+  );
+  mount();
+  await userEvent.click(
+    await screen.findByRole("button", { name: "编辑 / 添加图片" }),
+  );
+  expect(screen.getByRole("button", { name: "框选此人物" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  fireEvent.change(screen.getByLabelText("人物1左边界"), {
+    target: { value: "0.2" },
+  });
+  fireEvent.change(screen.getByLabelText("人物1右边界"), {
+    target: { value: "0.8" },
+  });
+  await userEvent.click(screen.getByRole("button", { name: "保存素材" }));
+  await waitFor(() => expect(posts).toHaveLength(1));
+  expect(posts[0].document.members[0].box).toEqual([0.2, 0, 0.8, 1]);
+  await waitFor(() => expect(screen.queryByLabelText("素材名称")).toBeNull());
+  await userEvent.click(
+    screen.getByRole("button", { name: "编辑 / 添加图片" }),
+  );
+  await userEvent.click(screen.getByRole("button", { name: "清除框选" }));
+  await userEvent.click(screen.getByRole("button", { name: "保存素材" }));
+  await waitFor(() => expect(posts).toHaveLength(2));
+  expect(posts[1].document.members[0].box).toBeUndefined();
 });
 
 it("preserves unfinished uploads and retries only the failed image after a partial save", async () => {

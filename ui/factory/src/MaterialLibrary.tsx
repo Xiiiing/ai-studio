@@ -9,6 +9,7 @@ import {
   Empty,
   Loading,
   Modal,
+  Badge,
 } from "./ui";
 
 export const materialKinds: Record<string, string> = {
@@ -49,9 +50,12 @@ export function MaterialLibrary({
   const [offset, setOffset] = useState(0);
   const [editing, setEditing] = useState<RecordData | null>(null);
   const [editorSession, setEditorSession] = useState(0);
-  function openEditor(asset: RecordData) {
+  const [editorInitialDocument, setEditorInitialDocument] =
+    useState<RecordData>();
+  function openEditor(asset: RecordData, initialDocument?: RecordData) {
     setEditorSession((session) => session + 1);
     setEditing(asset);
+    setEditorInitialDocument(initialDocument);
   }
   const [failure, setFailure] = useState("");
   const [busy, setBusy] = useState(false);
@@ -273,7 +277,7 @@ export function MaterialLibrary({
           </button>
         </div>
       )}
-      <div className="form-row">
+      <div className="form-row material-library-toolbar">
         <Field label="搜索素材">
           <input
             value={search}
@@ -336,6 +340,7 @@ export function MaterialLibrary({
         <MaterialEditor
           key={editorSession}
           asset={editing}
+          initialDocument={editorInitialDocument}
           project={project}
           roles={materialRoles(project, selected.data)}
           candidates={rows(query.data?.assets)}
@@ -578,18 +583,8 @@ export function MaterialLibrary({
                     expected_version: asset.version,
                     scope: "project",
                   });
-                  openEditor({
-                    ...copy.asset,
-                    data: {
-                      ...copy.asset.data,
-                      document: task.result.document,
-                    },
-                  });
-                } else
-                  openEditor({
-                    ...asset,
-                    data: { ...asset.data, document: task.result.document },
-                  });
+                  openEditor(copy.asset, task.result.document);
+                } else openEditor(asset, task.result.document);
               }, "已带入识图草稿，请检查并保存。")
             }
           />
@@ -684,6 +679,18 @@ function MaterialCard({
       : role;
   const [shots, setShots] = useState<string[]>([]);
   const document = asset.data.document;
+  const binding = rows(selected?.selected)
+    .map((row) => row.binding)
+    .find(
+      (ref) =>
+        ref.asset_id === asset.asset_id &&
+        ref.version === asset.version &&
+        ref.role === selectedRole,
+    );
+  const selectedHere =
+    !!binding &&
+    JSON.stringify([...(binding.shot_ids || [])].sort()) ===
+      JSON.stringify([...shots].sort());
   return (
     <Panel
       title={document.name + " · v" + asset.version}
@@ -695,6 +702,9 @@ function MaterialCard({
         (asset.status === "approved" ? "已确认" : "候选")
       }
     >
+      {binding && (
+        <Badge status="approved" label={"本批已选 · " + binding.role} />
+      )}
       <div className="material-views">
         {rows(asset.data.images).map((image, index) => (
           <figure key={image.path}>
@@ -798,65 +808,72 @@ function MaterialCard({
             确认参考
           </button>
         )}
-        {project && (
-          <button
-            className="button"
-            disabled={busy}
-            onClick={() =>
-              run(
-                () =>
-                  request("/library", {
-                    action: "clone",
-                    project_id: project.id,
-                    asset_id: asset.asset_id,
-                    expected_version: asset.version,
-                    scope:
-                      asset.library_key === "global" ? "project" : "global",
-                  }),
-                "已保存独立副本，来源与原素材保持可追溯。",
-              )
-            }
-          >
-            {asset.library_key === "global" ? "复制为剧内造型" : "保存到统一库"}
-          </button>
-        )}
       </div>
-      <div className="form-row">
-        <button
-          className="button"
-          disabled={busy || !rows(asset.data.images).length}
-          onClick={() => startAI("describe")}
-        >
-          AI 识图建档
-        </button>
-        {project && asset.kind !== "style" && (
-          <button
-            className="button"
-            disabled={busy}
-            onClick={() => startAI("restyle")}
-          >
-            按本剧画风转换
-          </button>
-        )}
-        {asset.kind === "character" && (
+      <details className="secondary-actions">
+        <summary>更多素材操作</summary>
+        <div className="form-row">
+          {project && (
+            <button
+              className="button"
+              disabled={busy}
+              onClick={() =>
+                run(
+                  () =>
+                    request("/library", {
+                      action: "clone",
+                      project_id: project.id,
+                      asset_id: asset.asset_id,
+                      expected_version: asset.version,
+                      scope:
+                        asset.library_key === "global" ? "project" : "global",
+                    }),
+                  "已保存独立副本，来源与原素材保持可追溯。",
+                )
+              }
+            >
+              {asset.library_key === "global"
+                ? "复制为剧内造型"
+                : "保存到统一库"}
+            </button>
+          )}
+        </div>
+        <div className="form-row">
           <button
             className="button"
             disabled={busy || !rows(asset.data.images).length}
-            onClick={() => startAI("views")}
+            onClick={() => startAI("describe")}
           >
-            补充三视图
+            AI 识图建档
           </button>
-        )}
-        {asset.kind === "composition" && (
-          <button
-            className="button"
-            disabled={busy}
-            onClick={() => startAI("compose")}
-          >
-            生成同框候选
-          </button>
-        )}
-      </div>
+          {project && asset.kind !== "style" && (
+            <button
+              className="button"
+              disabled={busy}
+              onClick={() => startAI("restyle")}
+            >
+              按本剧画风转换
+            </button>
+          )}
+          {asset.kind === "character" && (
+            <button
+              className="button"
+              disabled={busy || !rows(asset.data.images).length}
+              onClick={() => startAI("views")}
+            >
+              补充三视图
+            </button>
+          )}
+          {asset.kind === "composition" && (
+            <button
+              className="button"
+              disabled={busy}
+              onClick={() => startAI("compose")}
+            >
+              生成同框候选
+            </button>
+          )}
+        </div>
+      </details>
       {project && selected && (
         <div className="stack">
           {asset.kind === "character" && (
@@ -899,8 +916,8 @@ function MaterialCard({
             </Field>
           )}
           <button
-            className="button"
-            disabled={busy}
+            className="button primary"
+            disabled={busy || selectedHere}
             onClick={() =>
               run(
                 () => select(asset, selectedRole, shots),
@@ -908,7 +925,7 @@ function MaterialCard({
               )
             }
           >
-            选入本剧
+            {selectedHere ? "本批已选" : "选入本剧"}
           </button>
         </div>
       )}
@@ -928,6 +945,7 @@ function MaterialCard({
 
 function MaterialEditor({
   asset,
+  initialDocument,
   project,
   candidates,
   roles,
@@ -937,6 +955,7 @@ function MaterialEditor({
   onKind,
 }: {
   asset: RecordData;
+  initialDocument?: RecordData;
   project?: RecordData;
   candidates: RecordData[];
   roles: RecordData[];
@@ -950,7 +969,9 @@ function MaterialEditor({
   onCancel: () => void;
   onKind: (kind: string) => void;
 }) {
-  const [document, setDocument] = useState<RecordData>(asset.data.document);
+  const [document, setDocument] = useState<RecordData>(
+    initialDocument || asset.data.document,
+  );
   const [files, setFiles] = useState<File[]>([]);
   const [scope, setScope] = useState(project ? "project" : "global");
   const form = useRef<HTMLFormElement>(null);
@@ -1197,7 +1218,7 @@ function MaterialTask({
             。估算不代表供应商账单上限。
           </p>
           {task.quote.estimated_total_micros === null && (
-            <label>
+            <label className="check">
               <input
                 type="checkbox"
                 checked={unpriced}
@@ -1267,6 +1288,7 @@ function CompositionEditor({
 }) {
   const [active, setActive] = useState(0);
   const [start, setStart] = useState<number[] | null>(null);
+  const [end, setEnd] = useState<number[] | null>(null);
   const [memberSearch, setMemberSearch] = useState("");
   const lookup = useQuery({
     queryKey: ["composition-candidates", project?.id, memberSearch],
@@ -1349,19 +1371,71 @@ function CompositionEditor({
           <button
             type="button"
             className="button"
-            onClick={() => setActive(index)}
+            aria-pressed={active === index}
+            onClick={() => {
+              setActive(index);
+              setStart(null);
+              setEnd(null);
+            }}
           >
             框选此人物
           </button>
+          <fieldset className="region-coordinates">
+            <legend>{"人物" + (index + 1) + "区域坐标（0–1）"}</legend>
+            {(["左", "上", "右", "下"] as const).map((label, coordinate) => (
+              <Field key={label} label={"人物" + (index + 1) + label + "边界"}>
+                <input
+                  type="number"
+                  min="0"
+                  max="1"
+                  step="any"
+                  value={member.box?.[coordinate] ?? (coordinate < 2 ? 0 : 1)}
+                  onChange={(event) => {
+                    if (event.target.value === "") return;
+                    const box = [...(member.box || [0, 0, 1, 1])];
+                    box[coordinate] = Math.max(
+                      0,
+                      Math.min(1, Number(event.target.value)),
+                    );
+                    updateMember(index, { box });
+                  }}
+                />
+              </Field>
+            ))}
+            <button
+              type="button"
+              className="button small"
+              disabled={!member.box}
+              onClick={() => {
+                const next = { ...member };
+                delete next.box;
+                setDocument({
+                  ...document,
+                  members: members.map((value, i) =>
+                    i === index ? next : value,
+                  ),
+                });
+                setStart(null);
+                setEnd(null);
+              }}
+            >
+              清除框选
+            </button>
+          </fieldset>
           <button
             type="button"
             className="button"
-            onClick={() =>
+            onClick={() => {
+              setStart(null);
+              setEnd(null);
+              setActive((current) =>
+                Math.max(0, Math.min(current, members.length - 2)),
+              );
               setDocument({
                 ...document,
                 members: members.filter((_, i) => i !== index),
-              })
-            }
+              });
+            }}
           >
             移除
           </button>
@@ -1437,60 +1511,96 @@ function CompositionEditor({
         </select>
       </Field>
       {image && (
-        <div className="material-region">
-          <img src={mediaUrl("/media/" + image.path)} alt="同框人物区域标注" />
-          <svg
-            viewBox="0 0 100 100"
-            preserveAspectRatio="none"
-            aria-label="拖动框选同框人物"
-            onPointerDown={(e) => {
-              e.currentTarget.setPointerCapture(e.pointerId);
-              setStart(point(e));
-            }}
-            onPointerUp={(e) => {
-              if (!start || !members[active]) return;
-              const end = point(e);
-              if (
-                Math.abs(end[0] - start[0]) > 0.01 &&
-                Math.abs(end[1] - start[1]) > 0.01
-              )
-                updateMember(active, {
-                  box: [
-                    Math.min(start[0], end[0]),
-                    Math.min(start[1], end[1]),
-                    Math.max(start[0], end[0]),
-                    Math.max(start[1], end[1]),
-                  ],
-                });
-              setStart(null);
-            }}
-          >
-            {members.map(
-              (member, index) =>
-                member.box && (
-                  <g key={index}>
-                    <rect
-                      x={member.box[0] * 100}
-                      y={member.box[1] * 100}
-                      width={(member.box[2] - member.box[0]) * 100}
-                      height={(member.box[3] - member.box[1]) * 100}
-                      fill="transparent"
-                      stroke={index === active ? "#e66c32" : "#398375"}
-                      strokeWidth=".7"
-                    />
-                    <text
-                      x={member.box[0] * 100 + 1}
-                      y={member.box[1] * 100 + 4}
-                      fill="#e66c32"
-                      fontSize="3"
-                    >
-                      {member.role}
-                    </text>
-                  </g>
-                ),
-            )}
-          </svg>
-        </div>
+        <>
+          <p role="status">
+            {members[active]
+              ? "正在标注：" + members[active].role
+              : "请先添加同框人物"}
+          </p>
+          <div className="material-region">
+            <img
+              src={mediaUrl("/media/" + image.path)}
+              alt="同框人物区域标注"
+            />
+            <svg
+              viewBox="0 0 100 100"
+              preserveAspectRatio="none"
+              aria-label="拖动框选同框人物"
+              onPointerDown={(e) => {
+                if (!members[active]) return;
+                e.currentTarget.setPointerCapture(e.pointerId);
+                setStart(point(e));
+                setEnd(point(e));
+              }}
+              onPointerMove={(e) => {
+                if (start) setEnd(point(e));
+              }}
+              onPointerCancel={() => {
+                setStart(null);
+                setEnd(null);
+              }}
+              onPointerUp={(e) => {
+                if (!start || !members[active]) return;
+                const end = point(e);
+                if (
+                  Math.abs(end[0] - start[0]) > 0.01 &&
+                  Math.abs(end[1] - start[1]) > 0.01
+                )
+                  updateMember(active, {
+                    box: [
+                      Math.min(start[0], end[0]),
+                      Math.min(start[1], end[1]),
+                      Math.max(start[0], end[0]),
+                      Math.max(start[1], end[1]),
+                    ],
+                  });
+                setStart(null);
+                setEnd(null);
+              }}
+            >
+              {start && end && (
+                <rect
+                  className="region-draft"
+                  x={Math.min(start[0], end[0]) * 100}
+                  y={Math.min(start[1], end[1]) * 100}
+                  width={Math.abs(end[0] - start[0]) * 100}
+                  height={Math.abs(end[1] - start[1]) * 100}
+                  fill="transparent"
+                  stroke="currentColor"
+                  strokeWidth=".7"
+                  strokeDasharray="2 1"
+                />
+              )}
+              {members.map(
+                (member, index) =>
+                  member.box && (
+                    <g key={index}>
+                      <rect
+                        x={member.box[0] * 100}
+                        y={member.box[1] * 100}
+                        width={(member.box[2] - member.box[0]) * 100}
+                        height={(member.box[3] - member.box[1]) * 100}
+                        fill="transparent"
+                        className={
+                          index === active ? "region-active" : "region-saved"
+                        }
+                        stroke="currentColor"
+                        strokeWidth=".7"
+                      />
+                      <text
+                        x={member.box[0] * 100 + 1}
+                        y={member.box[1] * 100 + 4}
+                        fill="currentColor"
+                        fontSize="3"
+                      >
+                        {member.role}
+                      </text>
+                    </g>
+                  ),
+              )}
+            </svg>
+          </div>
+        </>
       )}
     </div>
   );
