@@ -44,3 +44,5 @@ Dify、Langflow、Toonflow、MoneyPrinterTurbo、ComfyUI、Drama Skills 的职�
 如果未来直接引入第三方代码、模板、图片、字体或图标，应在引入时保存对应文件的来源和许可证，而不是只引用这个总表。
 
 2026-10-15 重构研究固定到 Dify `1f3fdbc0d32ff7a52f94a2a34e00183e698f1c2f`、Toonflow `d2e94aca7b59659ff6b4ca15f03cf134ec7f0e1d` 和 xyflow `3d35b57317576b0916c0bfeaaedd573aaacc2839`。借鉴动作表单、委派事件、节点交互，业务实现自行编写；未复制 Dify 前端或其品牌资源。当时 React Flow 通过依赖引入；当前工作台已改为自有固定阶段图，实际依赖以 `package.json` 与 `package-lock.json` 为准。具体源码入口见参考架构研究的重构补充。
+
+2026-10-16 的项目成果与导出入口修正参考 OpenCut、InvokeAI 和 shadcn/ui 的官方固定版本源码，仅借鉴操作位置、作品查看与导航分区，未复制组件源码或增加依赖。固定版本、具体文件及适用边界见 [0.0.6 界面记录](docs/UI_RESULTS_WORKSPACE_0_0_6.md)。

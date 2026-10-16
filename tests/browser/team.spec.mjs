@@ -1,3 +1,4 @@
+import { openWorkflow } from "./navigation.mjs";
 import { openProjectPage } from "./navigation.mjs";
 import { test, expect } from "@playwright/test";
 
@@ -24,6 +25,7 @@ test("workflow is navigable and team roles remain separate from approval", async
     fullPage: true,
   });
   await page.locator('#project-list [data-id="' + id + '"]').click();
+  await openWorkflow(page);
   await expect(page.locator("[data-stage]")).toHaveCount(5);
   await page.locator('[data-stage="script"]').click();
   await page.locator('[data-flow-node="screenplay"]').click();
@@ -101,9 +103,7 @@ test("saved optional producer binding enables delegated creation but not final a
   });
   await page.locator('#project-dialog button[type="submit"]').click();
   await expect(page.locator("#project-dialog")).not.toBeVisible();
-  await expect(page.locator(".project-attention-banner")).toContainText(
-    "审看并确认终片",
-  );
+  await expect(page.locator(".current-task")).toContainText("审看并确认终片");
   await openProjectPage(page, "decisions");
   await expect(page.locator('form[data-form="final"]')).toBeVisible();
   const calls = await (await request.get("/__test/calls")).json();
@@ -125,6 +125,7 @@ test("a running AI project can be taken over only through its explicit safe-boun
 }) => {
   await request.post("/__test/scenario", { data: { kind: "automatic" } });
   await page.goto("/#project=" + id);
+  await page.locator(".project-actions-menu > summary").click();
   await page.getByRole("button", { name: "人工介入" }).click();
   await expect(page.locator(".project-meta")).toContainText("已暂停");
   const calls = await (await request.get("/__test/calls")).json();

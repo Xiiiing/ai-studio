@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { startRealServer } from "./real-server.mjs";
 import { mkdir, readFile } from "node:fs/promises";
-import { openProjectPage } from "./navigation.mjs";
+import { openProjectPage, openWorkflow } from "./navigation.mjs";
 
 let server;
 test.beforeAll(async () => {
@@ -104,6 +104,7 @@ for (const width of [1440, 1024, 390]) {
     await page.goto(
       `${server.endpoint}/#project=${server.projectId}&tab=overview`,
     );
+    await openWorkflow(page);
     await expect(page.locator("[data-stage]")).toHaveCount(5);
     await page.screenshot({
       path: `runtime/browser-report/studio-real-${width}.png`,
@@ -121,6 +122,7 @@ test("real Markdown attachments, retried calls and step attribution remain reada
   await page.goto(
     `${server.endpoint}/#project=${server.projectId}&tab=overview`,
   );
+  await openWorkflow(page);
   await page.locator('[data-stage="script"]').click();
   await page.locator('[data-flow-node="screenplay"]').click();
   const inspector = page.getByRole("complementary", { name: "节点详情" });

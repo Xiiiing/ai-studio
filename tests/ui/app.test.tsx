@@ -171,18 +171,22 @@ it("实际导航从总览进入具体故事选择，提交绑定当前gate与rev
     expected_revision: 7,
   });
 });
-it("项目默认展示可点击工作流，并保留实际创作产物", async () => {
+it("项目先展示实际创作产物，完整工作流可按需打开", async () => {
   setup();
   await screen.findByRole("heading", { name: "制片总览" });
   await userEvent.click(document.querySelector("#project-list button")!);
   await screen.findByRole("heading", { name: "当前创作产物" });
   expect(screen.getByText("在雨夜寻找旧时钟的主人")).toBeVisible();
   expect(document.querySelector(".react-flow")).toBeNull();
+  expect(document.querySelector(".project-process")).not.toHaveAttribute(
+    "open",
+  );
+  await userEvent.click(screen.getByText("完整制作流程"));
   expect(screen.getByRole("region", { name: "制作工作流" })).toBeVisible();
   expect(
     document
-      .querySelector(".workflow-workspace")!
-      .compareDocumentPosition(document.querySelector(".project-focus")!) &
+      .querySelector(".project-focus")!
+      .compareDocumentPosition(document.querySelector(".workflow-workspace")!) &
       Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
 });
@@ -190,6 +194,8 @@ it("人工介入按钮由真实动作契约提供并提交安全接管动作", a
   const { calls } = setup();
   await screen.findByRole("heading", { name: "制片总览" });
   await userEvent.click(document.querySelector("#project-list button")!);
+  await screen.findByText("项目操作");
+  await userEvent.click(screen.getByText("项目操作"));
   await screen.findByRole("button", { name: "人工介入" });
   await userEvent.click(screen.getByRole("button", { name: "人工介入" }));
   await waitFor(() =>

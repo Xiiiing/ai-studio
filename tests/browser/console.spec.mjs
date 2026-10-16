@@ -1,3 +1,4 @@
+import { openWorkflow } from "./navigation.mjs";
 import { openProjectPage } from "./navigation.mjs";
 import { test, expect } from "@playwright/test";
 const id = "012345abcdef";
@@ -65,9 +66,11 @@ test("remake opens an editable new project without mutating existing media", asy
     await request.get("/api/factory/projects/" + id)
   ).json();
   await page.goto("/#project=" + id + "&tab=overview");
+  await openWorkflow(page);
   await expect(page.locator(".creative-contract")).toContainText(
     "实际制作：静帧图片加程序运镜",
   );
+  await page.locator(".project-actions-menu > summary").click();
   await page.getByRole("button", { name: "按新规格重制" }).click();
   const dialog = page.getByRole("dialog");
   await expect(dialog.getByLabel("创作方向")).toHaveValue(before.brief);
@@ -298,6 +301,7 @@ test("automatic supervisor gate is not a phantom human decision", async ({
   await page.goto("/");
   await expect(page.locator('[data-metric="1"]')).toHaveText("0");
   await page.locator('#project-list [data-id="' + id + '"]').click();
+  await openWorkflow(page);
   await page.locator('[data-stage="story"]').click();
   await expect(page.locator('[data-flow-node="story_decision"]')).toContainText(
     "执行中",
