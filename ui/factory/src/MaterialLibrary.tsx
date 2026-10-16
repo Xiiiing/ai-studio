@@ -1070,9 +1070,22 @@ function CompositionEditor({
 }) {
   const [active, setActive] = useState(0);
   const [start, setStart] = useState<number[] | null>(null);
+  const [memberSearch, setMemberSearch] = useState("");
+  const lookup = useQuery({
+    queryKey: ["composition-candidates", project?.id, memberSearch],
+    queryFn: () =>
+      request(
+        "/library?" +
+          new URLSearchParams({
+            q: memberSearch,
+            ...(project ? { project_id: project.id } : {}),
+          }),
+      ),
+  });
   const members = rows(document.members);
-  const characters = candidates.filter((asset) => asset.kind === "character");
-  const scenes = candidates.filter((asset) => asset.kind === "scene");
+  const available = lookup.data ? rows(lookup.data.assets) : candidates;
+  const characters = available.filter((asset) => asset.kind === "character");
+  const scenes = available.filter((asset) => asset.kind === "scene");
   const roles = project?.production_profile?.characters || [
     { character_id: "female", name: "角色一" },
     { character_id: "male", name: "角色二" },
@@ -1096,6 +1109,14 @@ function CompositionEditor({
       <p>
         关联同框人物和稳定角色；上传同框图片后，可再次编辑并拖动框选人物区域。
       </p>
+      <ErrorNotice error={lookup.error} />
+      <Field label="查找组合人物或场景">
+        <input
+          value={memberSearch}
+          onChange={(e) => setMemberSearch(e.target.value)}
+          placeholder="按名称搜索，选择后可继续搜索其他素材"
+        />
+      </Field>
       {members.map((member, index) => (
         <div key={index} className="form-row">
           <Field label={"同框人物" + (index + 1)}>
@@ -1200,6 +1221,18 @@ function CompositionEditor({
           }}
         >
           <option value="">未指定</option>
+          {document.scene &&
+            !scenes.some(
+              (scene) =>
+                scene.asset_id === document.scene.asset_id &&
+                scene.version === document.scene.version,
+            ) && (
+              <option
+                value={document.scene.asset_id + ":" + document.scene.version}
+              >
+                {document.scene.asset_id} · v{document.scene.version}
+              </option>
+            )}
           {scenes.map((asset) => (
             <option
               key={asset.asset_id}

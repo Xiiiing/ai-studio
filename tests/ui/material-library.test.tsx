@@ -186,3 +186,36 @@ it("requires acknowledgement of an unpriced material batch before authorizing it
     confirmed: true,
   });
 });
+
+it("looks up character references independently of the composition-only gallery filter", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (path) => {
+      const filtered = String(path).includes("kind=composition");
+      return new Response(
+        JSON.stringify({
+          assets: filtered
+            ? []
+            : [
+                {
+                  asset_id: "mat_lin",
+                  version: 2,
+                  kind: "character",
+                  library_key: "global",
+                  status: "approved",
+                  data: { document: { name: "林夏" }, images: [] },
+                },
+              ],
+        }),
+      );
+    }),
+  );
+  const user = userEvent.setup();
+  mount();
+  await user.selectOptions(screen.getByLabelText("素材分类"), "composition");
+  await user.click(screen.getByRole("button", { name: "新建素材" }));
+  const add = await screen.findByRole("button", { name: "添加同框人物" });
+  await waitFor(() => expect(add).toBeEnabled());
+  await user.click(add);
+  expect(screen.getByLabelText("同框人物1")).toHaveValue("mat_lin:2");
+});
