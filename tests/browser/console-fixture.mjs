@@ -78,6 +78,23 @@ export function operatorFor(project) {
       action_label: "查看问题并修改",
       target_tab: "decisions",
       suggested_feedback: "请在 S03 补齐救人的原因，并保留已确认的人物设定。",
+      feedback_choices: issues.length
+        ? [
+            {
+              id: "all_review_issues",
+              label: "按全部审核建议修改",
+              kind: "all_issues",
+              feedback: "请在 S03 补齐救人的原因，并保留已确认的人物设定。",
+            },
+            {
+              id: "issue_motivation",
+              label: "S03 · 补齐人物动机",
+              kind: "issue",
+              feedback:
+                "S03 补充人物此前的承诺，让救助行为有明确动机，修改后重新独立审核。",
+            },
+          ]
+        : [],
     };
   else if (gate && !automatic && project.status !== "approved")
     attention = {
@@ -93,6 +110,17 @@ export function operatorFor(project) {
       issues: [],
       action_label: "处理待办",
       target_tab: "decisions",
+      feedback_choices:
+        gate.type === "final"
+          ? [
+              {
+                id: "final_pacing",
+                label: "调整剪辑节奏",
+                kind: "direction",
+                feedback: "缩短重复空镜，保留完整对白，调整镜头衔接。",
+              },
+            ]
+          : [],
     };
   if (attention)
     attention.actions =

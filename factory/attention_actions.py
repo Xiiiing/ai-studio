@@ -9,6 +9,8 @@ from __future__ import annotations
 import copy
 from urllib.parse import urlsplit
 
+from .review_feedback import feedback_choices
+
 GENERATIONS = {
     "story": "proposal_generation",
     "style": "style_generation",
@@ -168,7 +170,7 @@ def _editable(project):
 
 
 def _feedback_fields(project):
-    return [_field("feedback", "修改要求", maxlength=4000)]
+    return [_field("feedback", "修改要求", maxlength=4000, choices=feedback_choices(project))]
 
 
 def _retry_fields(project):
@@ -478,6 +480,7 @@ REGISTRY = {
                 "新方案要求",
                 required=p.get("status") == "awaiting_style",
                 maxlength=4000,
+                choices=feedback_choices(p),
             )
         ],
         "impact": "生成新版本并重新审核；视觉方案会重新生成预览",

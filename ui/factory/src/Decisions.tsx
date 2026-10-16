@@ -1,5 +1,5 @@
 import { CloudAuthorization } from "./Assets";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ArrowRight, Check, AlertTriangle, Inbox } from "lucide-react";
 import {
   request,
@@ -14,6 +14,158 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Panel, Badge, Empty, ErrorNotice, Field } from "./ui";
 export function actionsFor(project: RecordData) {
   return rows(project.operator?.attention?.actions);
+}
+
+export function ReviewFeedback({
+  label,
+  value,
+  onChange,
+  choices,
+  suggestion,
+  maxLength = 4000,
+  required = false,
+  disabled = false,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  choices?: RecordData[];
+  suggestion?: string;
+  maxLength?: number;
+  required?: boolean;
+  disabled?: boolean;
+}) {
+  const [selected, setSelected] = useState<RecordData[]>([]);
+  const [notes, setNotes] = useState(value);
+  const emitted = useRef(value);
+  useEffect(() => {
+    if (value !== emitted.current) {
+      setSelected([]);
+      setNotes(value);
+      emitted.current = value;
+    }
+  }, [value]);
+  const options =
+    choices === undefined && suggestion
+      ? [
+          {
+            id: "all-review",
+            label: "按全部审核建议修改",
+            feedback: suggestion,
+            kind: "all_issues",
+          },
+        ]
+      : rows(choices);
+  function change(next: RecordData[], text: string) {
+    const combined = [
+      ...next.map((c) => c.feedback),
+      ...(text.trim() ? [text] : []),
+    ].join("\n\n");
+    setSelected(next);
+    setNotes(text);
+    emitted.current = combined;
+    onChange(combined);
+  }
+  function toggle(choice: RecordData) {
+    if (selected.some((c) => c.id === choice.id)) {
+      change(
+        selected.filter((c) => c.id !== choice.id),
+        notes,
+      );
+      return;
+    }
+    // Keep the selected wording as a draft snapshot if polling changes choices.
+    const remaining = selected.filter((c) =>
+      choice.kind === "all_issues"
+        ? c.kind !== "issue"
+        : choice.kind === "issue"
+          ? c.kind !== "all_issues"
+          : true,
+    );
+    change([...remaining, { ...choice }], notes);
+  }
+  return (
+    <div className="review-feedback">
+      {options.length > 0 && (
+        <fieldset className="review-choice-group" disabled={disabled}>
+          <legend>选择修改要求（可多选）</legend>
+          <p>先选择修改要求，再点击下方按钮提交；文字可以留空。</p>
+          <div className="review-choices">
+            {options.map((choice) => (
+              <button
+                key={choice.id}
+                type="button"
+                className="review-choice"
+                data-review-choice={choice.id}
+                aria-pressed={selected.some((c) => c.id === choice.id)}
+                onClick={() => toggle(choice)}
+              >
+                <span className="review-choice-check" aria-hidden="true">
+                  <Check size={13} />
+                </span>
+                <span>{choice.label}</span>
+              </button>
+            ))}
+          </div>
+        </fieldset>
+      )}
+      {selected.length > 0 && (
+        <details className="review-selected">
+          <summary>已选择 {selected.length} 项处理意见</summary>
+          {selected.map((choice) => (
+            <p key={choice.id}>
+              <strong>{choice.label}</strong>
+              <span>{choice.feedback}</span>
+            </p>
+          ))}
+          <button
+            type="button"
+            className="text-link"
+            disabled={disabled}
+            onClick={() => change([], notes)}
+          >
+            清除选项
+          </button>
+        </details>
+      )}
+      <Field
+        label={label}
+        hint={options.length ? "选择修改要求后，文字可以留空。" : undefined}
+      >
+        <textarea
+          name="feedback"
+          rows={3}
+          maxLength={maxLength}
+          required={required && selected.length === 0}
+          disabled={disabled}
+          aria-invalid={value.length > maxLength}
+          value={notes}
+          onChange={(e) => change(selected, e.target.value)}
+          placeholder={
+            options.length
+              ? "补充具体要求（可选）；也可以直接输入你的意见。"
+              : "填写具体修改要求。"
+          }
+        />
+        {suggestion && (
+          <button
+            type="button"
+            className="text-link"
+            data-action="use-review-feedback"
+            disabled={disabled}
+            onClick={() => change([], suggestion)}
+          >
+            填入审核建议
+          </button>
+        )}
+      </Field>
+      {value.length > maxLength && (
+        <ErrorNotice
+          error={`所选要求与补充文字合计超过 ${maxLength} 字，请减少选项或缩短文字。`}
+        />
+      )}
+    </div>
+  );
 }
 
 export function DecisionCenter({
@@ -46,6 +198,13 @@ export function DecisionCenter({
   };
   async function submit(payload: RecordData, decision = false) {
     if (busy) return;
+    if (
+      typeof payload.feedback === "string" &&
+      payload.feedback.length > 4000
+    ) {
+      setError("修改要求超过 4000 字，请减少选项或缩短补充文字。");
+      return;
+    }
     setBusy(true);
     setError("");
     try {
@@ -114,29 +273,30 @@ export function DecisionCenter({
     </div>
   ) : null;
   const feedbackField = (
-    <Field label="你的处理意见">
-      <textarea
-        id="decision-feedback"
-        name="feedback"
-        rows={5}
-        maxLength={3900}
-        value={feedback}
-        onChange={(e) => edit(e.target.value)}
-        placeholder="说明要保留的内容、希望改变的方向，以及具体镜头要求。"
-      />
-      {suggestion && (
-        <button
-          type="button"
-          className="text-link"
-          data-action="use-review-feedback"
-          onClick={() => edit(suggestion)}
-        >
-          填入审核建议
-        </button>
-      )}
-    </Field>
+    <ReviewFeedback
+      label="你的处理意见"
+      value={feedback}
+      onChange={edit}
+      choices={attention?.feedback_choices}
+      suggestion={suggestion}
+      maxLength={4000}
+      disabled={busy}
+    />
   );
   const actions = actionsFor(project);
+  const primaryReview = actions.find((a) => a.id === "provide_feedback");
+  function actionForm(action: RecordData) {
+    return (
+      <ActionForm
+        key={action.id + ":" + project.id}
+        action={action}
+        project={project}
+        busy={busy}
+        onSubmit={(body) => submit(body)}
+        suggestion={suggestion}
+      />
+    );
+  }
   return (
     <Panel
       className="decision-section"
@@ -164,11 +324,38 @@ export function DecisionCenter({
           <span>当前版本 {project.revision} · 所有决定都会留下记录</span>
         </div>
         <ErrorNotice error={error} />
-      {String(project.needs_decision?.code || "").startsWith("cloud_") && project.cloud_quote && <CloudAuthorization quote={project.cloud_quote} projectRevision={revision} busy={busy} onSubmit={async (payload)=>{
-        setBusy(true);setError("");try {await request("/projects/"+project.id+"/cloud-authorize",payload);onNotify("云媒体批次已授权。");await client.invalidateQueries();}catch(e){setError((e as Error).message);}finally{setBusy(false);}
-      }} /> }
+        {String(project.needs_decision?.code || "").startsWith("cloud_") &&
+          project.cloud_quote && (
+            <CloudAuthorization
+              quote={project.cloud_quote}
+              projectRevision={revision}
+              busy={busy}
+              onSubmit={async (payload) => {
+                setBusy(true);
+                setError("");
+                try {
+                  await request(
+                    "/projects/" + project.id + "/cloud-authorize",
+                    payload,
+                  );
+                  onNotify("云媒体批次已授权。");
+                  await client.invalidateQueries();
+                } catch (e) {
+                  setError((e as Error).message);
+                } finally {
+                  setBusy(false);
+                }
+              }}
+            />
+          )}
+        {primaryReview && (
+          <div className="review-primary-action">
+            {actionForm(primaryReview)}
+          </div>
+        )}
         {issues.length > 0 && (
           <div className="decision-issues">
+            <h3>审核问题与依据</h3>
             {issues.map((i, index) => (
               <article className="decision-issue" key={index}>
                 <div className="row-between">
@@ -285,7 +472,7 @@ export function DecisionCenter({
                 onSubmit={(e) => {
                   e.preventDefault();
                   if (!feedback.trim()) {
-                    setError("请填写新的创作方向。");
+                    setError("请选择修改方向，或填写新的创作方向。");
                     return;
                   }
                   submit(
@@ -333,7 +520,7 @@ export function DecisionCenter({
                     return;
                   }
                   if (choice !== "approve" && !feedback.trim()) {
-                    setError("请填写具体修改意见。");
+                    setError("请选择修改要求，或填写具体修改意见。");
                     return;
                   }
                   submit(
@@ -396,19 +583,20 @@ export function DecisionCenter({
               缺少有效媒体，当前不能批准交付。
             </Empty>
           ))}
-        {actions.length > 0 && (
-          <div className="decision-action-list">
-            {actions.map((a: RecordData) => (
-              <ActionForm
-                key={a.id + ":" + project.id}
-                action={a}
-                project={project}
-                busy={busy}
-                onSubmit={(body) => submit(body)}
-                suggestion={suggestion}
-              />
-            ))}
-          </div>
+        {primaryReview && actions.length > 1 ? (
+          <details className="review-other-actions">
+            <summary>其他处理方式</summary>
+            <div className="decision-action-list">
+              {actions.filter((a) => a.id !== primaryReview.id).map(actionForm)}
+            </div>
+          </details>
+        ) : (
+          !primaryReview &&
+          actions.length > 0 && (
+            <div className="decision-action-list">
+              {actions.map(actionForm)}
+            </div>
+          )
         )}
         {!["story", "style", "final"].includes(gateKind) &&
           actions.length === 0 && (
@@ -462,6 +650,18 @@ export function ActionForm({
             .map((input) => [input.name, input.value]),
         );
         Object.assign(fields, values);
+        const tooLong = rows(action.inputs).find(
+          (input) =>
+            typeof fields[input.name] === "string" &&
+            input.maxlength &&
+            fields[input.name].length > input.maxlength,
+        );
+        if (tooLong) {
+          setFieldError(
+            `${tooLong.label}超过 ${tooLong.maxlength} 字，请减少选项或缩短文字。`,
+          );
+          return;
+        }
         for (const input of rows(action.inputs))
           if (
             input.type === "number" &&
@@ -489,92 +689,108 @@ export function ActionForm({
       <h3>{action.label}</h3>
       <ErrorNotice error={fieldError} />
       {action.impact && <p>{action.impact}</p>}
-      {rows(action.inputs).map((input) => (
-        <Field
-          label={input.label || input.name}
-          hint={input.help || input.description}
-          key={input.name}
-        >
-          {input.type === "textarea" ? (
-            <>
-              <textarea
+      {rows(action.inputs).map((input) =>
+        input.name === "feedback" && input.type === "textarea" ? (
+          <ReviewFeedback
+            key={input.name}
+            label={input.label || input.name}
+            value={values[input.name] ?? input.value ?? ""}
+            onChange={(value) => update(input.name, value)}
+            choices={
+              input.choices ?? project.operator?.attention?.feedback_choices
+            }
+            suggestion={suggestion}
+            maxLength={input.maxlength || 4000}
+            required={input.required}
+            disabled={busy || action.enabled === false}
+          />
+        ) : (
+          <Field
+            label={input.label || input.name}
+            hint={input.help || input.description}
+            key={input.name}
+          >
+            {input.type === "textarea" ? (
+              <>
+                <textarea
+                  name={input.name}
+                  rows={4}
+                  value={values[input.name] ?? input.value ?? ""}
+                  onChange={(e) => update(input.name, e.target.value)}
+                  required={input.required}
+                  maxLength={input.maxlength || 6000}
+                />
+                {suggestion && input.name === "feedback" && (
+                  <button
+                    className="text-link"
+                    type="button"
+                    data-action="use-review-feedback"
+                    onClick={() => update(input.name, suggestion)}
+                  >
+                    填入审核建议
+                  </button>
+                )}
+              </>
+            ) : input.type === "select" ? (
+              <select
                 name={input.name}
-                rows={4}
+                required={input.required}
                 value={values[input.name] ?? input.value ?? ""}
                 onChange={(e) => update(input.name, e.target.value)}
+              >
+                <option value="">请选择</option>
+                {rows(input.options).map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            ) : input.type === "multiselect" ? (
+              <div className="shot-options">
+                {rows(input.options).map((o) => (
+                  <label className="check" key={o.id}>
+                    <input
+                      type="checkbox"
+                      name={input.name}
+                      checked={(values[input.name] || []).includes(o.id)}
+                      onChange={(e) =>
+                        update(
+                          input.name,
+                          e.target.checked
+                            ? [...(values[input.name] || []), o.id]
+                            : (values[input.name] || []).filter(
+                                (v: string) => v !== o.id,
+                              ),
+                        )
+                      }
+                    />
+                    {o.label}
+                  </label>
+                ))}
+              </div>
+            ) : input.type === "checkbox" ? (
+              <input
+                type="checkbox"
+                name={input.name}
+                checked={!!(values[input.name] ?? input.value)}
                 required={input.required}
-                maxLength={input.maxlength || 6000}
+                onChange={(e) => update(input.name, e.target.checked)}
               />
-              {suggestion && input.name === "feedback" && (
-                <button
-                  className="text-link"
-                  type="button"
-                  data-action="use-review-feedback"
-                  onClick={() => update(input.name, suggestion)}
-                >
-                  填入审核建议
-                </button>
-              )}
-            </>
-          ) : input.type === "select" ? (
-            <select
-              name={input.name}
-              required={input.required}
-              value={values[input.name] ?? input.value ?? ""}
-              onChange={(e) => update(input.name, e.target.value)}
-            >
-              <option value="">请选择</option>
-              {rows(input.options).map((o) => (
-                <option key={o.id} value={o.id}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-          ) : input.type === "multiselect" ? (
-            <div className="shot-options">
-              {rows(input.options).map((o) => (
-                <label className="check" key={o.id}>
-                  <input
-                    type="checkbox"
-                    name={input.name}
-                    checked={(values[input.name] || []).includes(o.id)}
-                    onChange={(e) =>
-                      update(
-                        input.name,
-                        e.target.checked
-                          ? [...(values[input.name] || []), o.id]
-                          : (values[input.name] || []).filter(
-                              (v: string) => v !== o.id,
-                            ),
-                      )
-                    }
-                  />
-                  {o.label}
-                </label>
-              ))}
-            </div>
-          ) : input.type === "checkbox" ? (
-            <input
-              type="checkbox"
-              name={input.name}
-              checked={!!(values[input.name] ?? input.value)}
-              required={input.required}
-              onChange={(e) => update(input.name, e.target.checked)}
-            />
-          ) : (
-            <input
-              name={input.name}
-              type={input.type === "number" ? "number" : "text"}
-              min={input.min}
-              max={input.max}
-              maxLength={input.maxlength}
-              value={values[input.name] ?? input.value ?? ""}
-              required={input.required}
-              onChange={(e) => update(input.name, e.target.value)}
-            />
-          )}
-        </Field>
-      ))}
+            ) : (
+              <input
+                name={input.name}
+                type={input.type === "number" ? "number" : "text"}
+                min={input.min}
+                max={input.max}
+                maxLength={input.maxlength}
+                value={values[input.name] ?? input.value ?? ""}
+                required={input.required}
+                onChange={(e) => update(input.name, e.target.value)}
+              />
+            )}
+          </Field>
+        ),
+      )}
       {stale && (
         <div className="notice decision-draft-stale">
           项目已更新，输入仍保留。

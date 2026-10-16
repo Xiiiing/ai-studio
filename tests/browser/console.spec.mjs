@@ -119,6 +119,74 @@ test("creative blocker exposes review evidence, suggested edits, and preserves s
   expect(actions[0].body.expected_revision).toBe(Number(old) + 1);
   expect(actions[0].body.feedback).toBe(original);
 });
+test("review buttons submit actual repair requirements without typed notes", async ({
+  page,
+  request,
+}) => {
+  await request.post("/__test/scenario", { data: { kind: "creative" } });
+  await openDecision(page);
+  const form = page.locator('form[data-form="retry"]');
+  await form.getByRole("button", { name: "按全部审核建议修改" }).click();
+  const issue = form.getByRole("button", { name: "S03 · 补齐人物动机" });
+  await issue.click();
+  await expect(
+    form.getByRole("button", { name: "按全部审核建议修改" }),
+  ).toHaveAttribute("aria-pressed", "false");
+  await expect(issue).toHaveAttribute("aria-pressed", "true");
+  await expect(form.locator("textarea")).toHaveValue("");
+  expect(
+    (await (await request.get("/__test/calls")).json()).filter((c) =>
+      c.path.endsWith("/action"),
+    ),
+  ).toHaveLength(0);
+  await form.getByRole("button", { name: "提交修改并重新审核" }).click();
+  await expect(page.locator(".project-meta")).toContainText("排队中");
+  const actions = (await (await request.get("/__test/calls")).json()).filter(
+    (c) => c.path.endsWith("/action"),
+  );
+  expect(actions).toHaveLength(1);
+  expect(actions[0].body).toMatchObject({
+    action: "provide_feedback",
+    feedback:
+      "S03 补充人物此前的承诺，让救助行为有明确动机，修改后重新独立审核。",
+  });
+  expect(Number.isInteger(actions[0].body.expected_revision)).toBeTruthy();
+});
+
+test("final review choices support keyboard and narrow screens without typing", async ({
+  page,
+  request,
+}) => {
+  await request.post("/__test/scenario", { data: { kind: "final" } });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await openDecision(page);
+  const form = page.locator('form[data-form="final"]');
+  const choice = form.getByRole("button", { name: "调整剪辑节奏" });
+  await choice.focus();
+  await page.keyboard.press("Space");
+  await expect(choice).toHaveAttribute("aria-pressed", "true");
+  await expect(form.locator("textarea")).toHaveValue("");
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBeTruthy();
+  await page.screenshot({
+    path: "runtime/browser-report/review-options-mobile.png",
+    fullPage: true,
+  });
+  await form.getByRole("button", { name: "重新剪辑", exact: true }).click();
+  const mutations = (await (await request.get("/__test/calls")).json()).filter(
+    (c) => c.path.endsWith("/decision"),
+  );
+  expect(mutations).toHaveLength(1);
+  expect(mutations[0].body).toMatchObject({
+    type: "final",
+    choice: "reedit",
+    feedback: "缩短重复空镜，保留完整对白，调整镜头衔接。",
+  });
+});
+
 test("automatic supervisor gate is not a phantom human decision", async ({
   page,
   request,

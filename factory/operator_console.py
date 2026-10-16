@@ -10,6 +10,7 @@ from collections import Counter
 from urllib.parse import quote
 
 from . import store
+from .review_feedback import feedback_choices, review_issues
 from .attention_actions import descriptors, generation, validate_gate, delegation_status
 
 TERMINAL = {"approved", "cancelled"}
@@ -63,44 +64,6 @@ def media_url(project, value):
     return "/media/" + quote(raw, safe="/")
 
 
-def review_issues(project):
-    """Expose actionable current evidence, not historic rounds or model thoughts."""
-    need = obj(project.get("needs_decision"))
-    sources = [need]
-    if not need.get("issues"):
-        review = obj(project.get("script_review") if project.get("selected_story") else project.get("creation_review"))
-        sources.append(review.get("review") or review)
-    found, seen, visited = [], set(), 0
-
-    def visit(value, depth=0):
-        nonlocal visited
-        visited += 1
-        if depth > 6 or visited > 180 or len(found) >= 24:
-            return
-        if isinstance(value, list):
-            for item in value[:30]:
-                visit(item, depth + 1)
-        elif isinstance(value, dict):
-            description = text(value.get("description") or value.get("detail"), 1400)
-            if description and description not in seen:
-                seen.add(description)
-                ids = value.get("shot_ids", [])
-                found.append({"code": text(value.get("code"), 80), "description": description,
-                              "severity": text(value.get("severity"), 32) or "blocking",
-                              "suggestion": text(value.get("suggestion") or value.get("repair"), 1000),
-                              "evidence": text(value.get("evidence"), 1000),
-                              "shot_ids": [v for v in ids[:120] if isinstance(v, str) and re.fullmatch(r"S\d{2,3}", v)] if isinstance(ids, list) else []})
-            for key in ("issues", "details", "review", "blockers"):
-                if value.get(key):
-                    visit(value[key], depth + 1)
-            rounds = value.get("rounds")
-            if isinstance(rounds, list) and rounds:
-                visit(rounds[-1], depth + 1)
-    for source in sources:
-        visit(source)
-    return found
-
-
 def current_gate(project):
     if project.get("status") in TERMINAL:
         return None
@@ -147,13 +110,13 @@ def attention(project, *, job_running=False):
                 "owner": "producer", "blocking": True, "gate": gate, "options": candidates, "issues": [],
                 "action_label": names[kind], "target_tab": "decisions", "revision": project.get("revision"),
                 "can_choose": bool(candidates) if kind != "final" else bool(media_url(project, obj(project.get("delivery")).get("video_url"))),
-                "suggested_feedback": "", "actions": descriptors(project, job_running=job_running),
+                "suggested_feedback": "", "feedback_choices": feedback_choices(project), "actions": descriptors(project, job_running=job_running),
                 "delegation": delegation_status(project)}
     if status == "paused" or project.get("pause_requested"):
         return {"kind": "paused", "title": "制作已暂停" if not job_running else "正在安全暂停",
                 "summary": "已有素材与进度保留。" if not job_running else "当前执行单元结束后暂停，不强制中断生成。",
                 "action_label": "恢复制作" if not job_running else "查看执行进度", "target_tab": "overview", "blocking": False,
-                "can_resume": not job_running, "issues": [], "revision": project.get("revision"),
+                "can_resume": not job_running, "issues": [], "feedback_choices": [], "revision": project.get("revision"),
                 "actions": descriptors(project, job_running=job_running)}
     if status not in {"blocked", "failed"}:
         return None
@@ -161,7 +124,7 @@ def attention(project, *, job_running=False):
     kind = ("budget" if need.get("type") == "budget" else "cloud" if str(need.get("code", "")).startswith("cloud_")
             else "production" if need.get("type") == "production" else "creative" if need.get("kind") in {"creative_review", "script_review"}
             or need.get("type") in {"review", "script_review", "edit_feedback", "creative_review"} else "runtime")
-    titles = {"creative": "审核未通过，需要明确修改意见", "production": "镜头制作受阻，需要处理素材", "budget": "制作预算已达到上限", "cloud": "云任务等待授权或核对", "runtime": "模型或执行服务需要处理"}
+    titles = {"creative": "审核未通过，请选择处理方式", "production": "镜头制作受阻，需要处理素材", "budget": "制作预算已达到上限", "cloud": "云任务等待授权或核对", "runtime": "模型或执行服务需要处理"}
     labels = {"creative": "查看问题并修改", "production": "选择镜头返修", "budget": "调整预算", "cloud": "核对云任务", "runtime": "诊断并重试"}
     issues = review_issues(project)
     significant = [i for i in issues if i["severity"] in {"blocking", "major", "error"}] or issues
@@ -170,7 +133,7 @@ def attention(project, *, job_running=False):
     return {"kind": kind, "title": titles[kind], "summary": text(need.get("message") or project.get("error")),
             "code": text(need.get("code"), 120), "blocking": True, "owner": "producer", "revision": project.get("revision"),
             "action_label": labels[kind], "target_tab": "costs" if kind == "cloud" else "decisions", "issues": issues,
-            "suggested_feedback": feedback, "can_retry": kind in {"creative", "production", "runtime"},
+            "suggested_feedback": feedback, "feedback_choices": feedback_choices(project), "can_retry": kind in {"creative", "production", "runtime"},
             "actions": descriptors(project, job_running=job_running)}
 
 
