@@ -305,3 +305,90 @@
   width: 100%;
   min-width: 0;
 }
+.team-action-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.team-control-actions {
+  margin-bottom: 16px;
+}
+.team-control-actions > p {
+  margin: 10px 0;
+  font-size: 12px;
+}
+.team-control-notice {
+  color: var(--success);
+}
+.team-enable-control:empty {
+  display: none;
+}
+.team-intervention-form {
+  display: grid;
+  gap: 16px;
+}
+.team-intervention-form > p {
+  margin: 0;
+  font-size: 13px;
+}
+.team-intervention-form .field {
+  margin: 0;
+}
+.team-intervention-form fieldset {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  min-width: 0;
+}
+.team-intervention-form legend {
+  padding: 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.team-scope-choice {
+  display: flex;
+  align-items: start;
+  gap: 9px;
+  padding: 8px 0;
+  font-size: 13px;
+  cursor: pointer;
+}
+.team-scope-choice input {
+  flex: 0 0 auto;
+  margin: 2px 0 0;
+  accent-color: var(--accent);
+}
+.team-scope-choice > span {
+  overflow-wrap: anywhere;
+}
+.team-scope-choice small {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  margin-top: 4px;
+}
+.team-impact-preview {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  overflow-wrap: anywhere;
+}
+.team-impact-preview h3 {
+  margin: 0 0 8px;
+  font-size: 14px;
+}
+.team-impact-preview p {
+  margin: 8px 0;
+  font-size: 13px;
+}
+.team-instructions > h3 {
+  margin: 0;
+}
+@media (max-width: 540px) {
+  .team-intervention-form .team-action-buttons > button {
+    width: 100%;
+    justify-content: center;
+  }
+}

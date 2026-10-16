@@ -207,3 +207,221 @@ test("team console desktop/mobile themes, filters, evidence and playback survive
     page.getByRole("button", { name: "打开团队指挥台" }),
   ).toBeVisible();
 });
+
+test("task controls preserve draft, preview lock conflicts, recover baseline and retain media", async ({
+  page,
+  request,
+}) => {
+  await request.post("/__test/reset");
+  let control = 1,
+    generation = 1,
+    locked = false,
+    rejectOnce = true;
+  const submissions = [],
+    quickActions = [],
+    instructions = [];
+  const controlledTask = () => ({
+    ...task,
+    generation,
+    locked,
+    actions: [
+      {
+        id: locked ? "unlock" : "lock",
+        label: locked ? "解锁成果" : "锁定成果",
+        enabled: true,
+      },
+      { id: "hold_after", label: "完成后等我确认", enabled: true },
+      { id: "intervene", label: "介入并下达要求", enabled: true },
+    ],
+  });
+  await page.route(`**/api/factory/projects/${id}/team`, (route) =>
+    route.fulfill({
+      json: {
+        schema: 1,
+        enabled: true,
+        control_revision: control,
+        departments: departments.map(([id, label], index) => ({
+          id,
+          label,
+          lead: leads[index][0],
+          responsibility: `${label}负责实际任务与成果交接`,
+        })),
+        members: [
+          ...departments.map(([department], index) => ({
+            id: leads[index][0],
+            role: leads[index][0],
+            label: leads[index][1],
+            department,
+            leader: true,
+            status: "idle",
+            current_tasks: [],
+          })),
+          {
+            id: "video_generator",
+            role: "video_generator",
+            label: "视频制作",
+            department: "visual",
+            status: "completed",
+            current_tasks: [task.id],
+          },
+        ],
+        task_summary: {
+          total: 2,
+          running: 0,
+          waiting: 0,
+          blocked: 0,
+          completed: 2,
+        },
+        events: [],
+        instructions,
+        locks: [],
+        actions: [{ id: "intervene", enabled: true }],
+      },
+    }),
+  );
+  await page.route(`**/api/factory/projects/${id}/tasks**`, (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname.endsWith("/actions")) {
+      const body = route.request().postDataJSON();
+      quickActions.push(body);
+      if (body.action === "lock") locked = true;
+      if (body.action === "unlock") locked = false;
+      return route.fulfill({
+        json: { task: controlledTask(), control_revision: ++control },
+      });
+    }
+    return route.fulfill({
+      json: url.pathname.endsWith("/tasks")
+        ? {
+            tasks: [controlledTask(), image],
+            total: 2,
+            control_revision: control,
+          }
+        : {
+            task: decodeURIComponent(url.pathname).endsWith(image.id)
+              ? image
+              : controlledTask(),
+            control_revision: control,
+          },
+    });
+  });
+  await page.route(`**/api/factory/projects/${id}/interventions**`, (route) => {
+    const body = route.request().postDataJSON();
+    if (route.request().url().endsWith("/preview"))
+      return route.fulfill({
+        json: {
+          affected_tasks: [task.id, "edit:project"],
+          preserved_tasks: body.preserve,
+          conflicts: locked
+            ? [{ task_id: task.id, reason: "视频成果已锁定，请解锁后重试" }]
+            : [],
+        },
+      });
+    submissions.push(body);
+    if (rejectOnce) {
+      rejectOnce = false;
+      generation++;
+      control++;
+      return route.fulfill({
+        status: 409,
+        json: { error: "任务版本已变化，请重新读取基线" },
+      });
+    }
+    const instruction = {
+      ...body,
+      id: "instruction-1",
+      status: "pending",
+      affected_tasks: [task.id, "edit:project"],
+    };
+    instructions.push(instruction);
+    return route.fulfill({
+      json: { instruction, control_revision: ++control },
+    });
+  });
+  await page.goto(`/#project=${id}`);
+  await page.getByRole("button", { name: "打开团队指挥台" }).click();
+  const detail = page.getByRole("complementary", { name: "制作任务详情" });
+  const video = detail.locator("video");
+  await video.evaluate(async (element) => {
+    await element.play();
+  });
+  await expect
+    .poll(() => video.evaluate((element) => element.currentTime))
+    .toBeGreaterThan(0.2);
+  const before = await video.evaluate((element) => element.currentTime);
+  await detail.getByRole("button", { name: "锁定成果" }).click();
+  await expect(detail.getByRole("button", { name: "解锁成果" })).toBeVisible();
+  await expect
+    .poll(() => video.evaluate((element) => element.currentTime))
+    .toBeGreaterThan(before);
+  await detail.getByRole("button", { name: "介入并下达要求" }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog
+    .getByLabel("新的制作要求", { exact: true })
+    .fill("只调整人物表情，保留构图和服装");
+  await dialog.getByRole("button", { name: "查看影响", exact: true }).click();
+  await expect(dialog).toContainText("视频成果已锁定，请解锁后重试");
+  await expect(dialog.getByLabel("新的制作要求", { exact: true })).toHaveValue(
+    "只调整人物表情，保留构图和服装",
+  );
+  await dialog.getByRole("button", { name: "稍后继续编辑" }).click();
+  await detail.getByRole("button", { name: "解锁成果" }).click();
+  await openProjectPage(page, "overview");
+  await page.getByRole("button", { name: "打开团队指挥台" }).click();
+  await detail.getByRole("button", { name: "介入并下达要求" }).click();
+  await expect(dialog.getByLabel("新的制作要求", { exact: true })).toHaveValue(
+    "只调整人物表情，保留构图和服装",
+  );
+  await dialog
+    .getByRole("group", { name: "保留现有成果" })
+    .getByRole("checkbox", { name: /第 1 镜首帧/ })
+    .check();
+  await dialog.getByLabel("完成后的安排", { exact: true }).selectOption("wait");
+  await dialog.getByRole("button", { name: "查看影响", exact: true }).click();
+  await expect(dialog.getByLabel("返工影响预览")).toContainText("edit:project");
+  await page.screenshot({
+    path: "runtime/browser-report/team-controls-light-desktop.png",
+    fullPage: false,
+  });
+  await page.evaluate(() => (document.documentElement.dataset.theme = "dark"));
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.locator(".sidebar")).toBeHidden();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth + 1,
+    ),
+  ).toBeTruthy();
+  await page.screenshot({
+    path: "runtime/browser-report/team-controls-dark-mobile.png",
+    fullPage: false,
+  });
+  await dialog.getByLabel("返工影响预览").scrollIntoViewIfNeeded();
+  await page.screenshot({
+    path: "runtime/browser-report/team-controls-dark-mobile-impact.png",
+    fullPage: false,
+  });
+  await dialog.getByRole("button", { name: "登记指令并执行" }).click();
+  await expect(dialog).toContainText("任务版本已变化，请重新读取基线");
+  await expect(dialog.getByLabel("新的制作要求", { exact: true })).toHaveValue(
+    "只调整人物表情，保留构图和服装",
+  );
+  await dialog
+    .getByRole("button", { name: "重新读取基线（保留要求）" })
+    .click();
+  await expect(
+    dialog.getByRole("button", { name: "登记指令并执行" }),
+  ).toBeEnabled();
+  await dialog.getByRole("button", { name: "登记指令并执行" }).click();
+  await expect(
+    page.getByText("指令已登记，当前调用收尾后生效。", { exact: true }),
+  ).toBeVisible();
+  expect(submissions).toHaveLength(2);
+  expect(submissions[0].task_generations).toEqual({ [task.id]: 1 });
+  expect(submissions[1].task_generations).toEqual({ [task.id]: 2 });
+  expect(submissions[1].preserve).toEqual([image.id]);
+  expect(submissions[1].after).toBe("wait");
+  expect(quickActions.map((action) => action.action)).toEqual([
+    "lock",
+    "unlock",
+  ]);
+});

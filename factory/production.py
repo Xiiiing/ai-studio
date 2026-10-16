@@ -18,7 +18,7 @@ from pathlib import Path
 
 from studio.core import ROOT, fingerprint, media_receipt, read_json, sha256, within, write_json
 from studio.graphs import flux_image, wan_video
-from . import team_ledger
+from . import team_control, team_ledger
 from .audio_editor import AudioEditorMixin
 from .speech import SpeechMixin
 from .media_profiles import identity as media_identity
@@ -500,6 +500,22 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
             return target["kind"], str(shot["id"])
         return None
 
+    def _team_admit_target(self, target):
+        identity = self._team_target(target)
+        team_control.admit(self.ident, *(identity or (target["kind"], str(target["key"]))))
+
+    def _team_publish_target(self, target):
+        identity = self._team_target(target)
+        if identity:
+            team_control.assert_publishable(self.ident, *identity, input_version=target["signature"])
+        else:
+            team_control.assert_publishable(self.ident, "stage", "visual_development")
+
+    def _team_after_target(self, target):
+        identity = self._team_target(target)
+        if identity:
+            team_control.after_unit(self.ident, *identity)
+
     def _team_begin_target(self, target, record):
         identity = self._team_target(target)
         if identity is None:
@@ -546,6 +562,7 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                                                  ("error", "elapsed_seconds", "remote_task", "repair") if key in record})
 
     def _attach(self, target, record):
+        self._team_publish_target(target)
         path = _receipt_path(record)
         if target.get("shot") is not None:
             shot = target["shot"]
@@ -561,6 +578,9 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
             target["style"].update(preview_url=media_url(path), preview_path=record["path"],
                                    preview=record, preview_status="generated")
         target["selected"] = record
+        identity = self._team_target(target)
+        if identity:
+            team_ledger.record_adoption(self.ident, *identity, artifact=record)
 
     @property
     def scheduler(self):
@@ -601,8 +621,13 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                             visual_direction=shot.get("visual_direction"))
         if shot.get("material_constraints"):
             expected["material_constraints"] = shot["material_constraints"]
+        if extra.get("character") and self.project.get("team_character_revisions", {}).get(extra["character"]):
+            signature = fingerprint({"source_signature": signature, "character_revision": self.project["team_character_revisions"][extra["character"]]})
+        review_key = ("video_review:" if kind == "video" else "image_review:") + str(extra.get("character") or key)
         review_signature = fingerprint({"source_signature": signature, "policy": self.review_policy,
                                         "expected": expected, "cast": self.cast, "format": self.mode})
+        if self.project.get("team_review_revisions", {}).get(review_key):
+            review_signature = fingerprint({"review": review_signature, "producer_review_revision": self.project["team_review_revisions"][review_key]})
         return {"key": key, "folder": folder, "prompt": prompt, "references": refs,
                 "kind": kind, "signature": signature, "review_signature": review_signature, **extra}
 
@@ -654,6 +679,7 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
         return None
 
     def _new_attempt(self, target):
+        self._team_admit_target(target)
         previous = self._attempts(target)
         if len(previous) >= self.max_attempts:
             if target.get("shot") is not None:
@@ -674,6 +700,9 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
             target["kind"], number, target.get("shot"), target.get("reference_roles", ())) if previous else {}
         seed = (int(fingerprint({"project": self.ident, "asset": target["key"]})[:8], 16)
                 + int(repair.get("seed_delta", 0)) + number - 1) % (2**31)
+        retake = (target.get("shot") or {}).get("render_revisions", {}).get(target["kind"], 0) or self.project.get("team_character_revisions", {}).get(target.get("character"), 0)
+        if retake:
+            seed = (seed + int(fingerprint({"retake": retake, "kind": target["kind"]})[:8], 16)) % (2**31)
         prompt = ((repair["prompt_prefix"] + "\n\n" + target["prompt"]) if repair.get("prompt_prefix")
                   else target["prompt"] + (" " + repair["prompt_suffix"] if repair.get("prompt_suffix") else ""))
         record = {"take": take, "attempt": number, "stage": target["kind"], "state": "rendering",
@@ -706,6 +735,9 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
         return record
 
     def _render_targets(self, targets, phase):
+        if targets and self._team_target(targets[0]):
+            kind = self._team_target(targets[0])[0]
+            targets = team_control.ordered(self.ident, kind, targets, key=lambda value: self._team_target(value)[1])
         if targets and targets[0]["kind"] == "image" and self.config.get("image_connection", {}).get("enabled") is False:
             raise ProductionNeedsDecision("请先配置并启用图像连接", "image_unconfigured")
         pending = []
@@ -731,8 +763,6 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                 if candidate:
                     ready.append((target, *candidate))
                 else:
-                    if target.get("resume_attempt"):
-                        self._team_begin_target(target, target["resume_attempt"])
                     generate.append(target)
             from .bound_media import uses_bound, render_targets
             bound = [target for target in generate if uses_bound(self, target)]
@@ -747,8 +777,10 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                 self.boundary(gpu=True)
                 with self.scheduler.worker(self.slug + "_" + phase, self.control) as worker:
                     for target in generate:
+                        self._team_admit_target(target)
                         self.boundary(gpu=True)
                         record = target.pop("resume_attempt", None) or self._new_attempt(target)
+                        self._team_begin_target(target, record)
                         shot = target.get("shot")
                         if shot is not None:
                             shot["status"] = "rendering" if record["attempt"] == 1 else "retrying"
@@ -761,6 +793,10 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                                                    references=names, prefix=self.slug + "/" + target["key"])
                             else:
                                 if record.get("repair", {}).get("regenerate_keyframe"):
+                                    if team_control.is_locked(self.ident, "image", target["shot"]["id"]):
+                                        raise ProductionNeedsDecision(
+                                            "视频返修需要更换已锁定首帧，请先解锁或调整返修要求", "team_locked_keyframe",
+                                            {"shot_id": target["shot"]["id"], "task_id": "image:" + target["shot"]["id"]})
                                     # A diagnosed identity/composition failure gets a genuinely new
                                     # first frame, rather than merely a differently worded video prompt.
                                     shot_refs = list(target["references"])
@@ -804,9 +840,11 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                         finally:
                             self._save_attempt(target, record)
                             self.emit(phase)
+                        self._team_after_target(target)
             # The owned Comfy process and its GPU lease are closed before VLM evaluation.
             semantic_pending = []
             for target, record, receipt in ready:
+                self._team_publish_target(target)
                 with self._team_review_unit(target, record, receipt) as review_token:
                     self.boundary()
                     path = _receipt_path(receipt)
@@ -857,8 +895,18 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                         record["output"] = copy.deepcopy(saved)
                     write_json(path.parent / "result.json", saved)
                     self._save_attempt(target, record)
+                    self._team_publish_target(target)
+                    identity = self._team_target(target)
+                    if identity:
+                        team_control.assert_publishable(self.ident, "video_review" if identity[0] == "video" else "image_review", identity[1],
+                                                        input_version=target["review_signature"])
                     selection_file = target["folder"] / "selected.json"
                     if qa["eligible_for_selection"]:
+                        self._team_publish_target(target)
+                        identity = self._team_target(target)
+                        if identity:
+                            team_control.assert_publishable(self.ident, "video_review" if identity[0] == "video" else "image_review", identity[1],
+                                                            input_version=target["review_signature"])
                         write_json(selection_file, saved)
                         self._attach(target, saved)
                         (target["folder"] / "pending_review.json").unlink(missing_ok=True)
@@ -880,6 +928,10 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                                                      "path": saved["path"], "take": saved["take"],
                                                      "detail": semantic.get("detail")})
                     self.emit(phase)
+                    self._team_after_target(target)
+                    identity = self._team_target(target)
+                    if identity:
+                        team_control.after_unit(self.ident, "video_review" if identity[0] == "video" else "image_review", identity[1])
             if semantic_pending:
                 self.emit("semantic_review_pending")
                 raise ProductionNeedsDecision("The semantic reviewer is unavailable; generated media is preserved for review-only resume",
@@ -963,6 +1015,7 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
             references = [preview] if role == preview_role else []
             approved = self._material_character(role) or self._series_character(role)
             if approved:
+                team_control.assert_publishable(self.ident, "character", role)
                 team_ledger.mark_reused(self.ident, "character", role, artifact=approved,
                                         input_version=approved.get("source_signature"),
                                         review_status=approved.get("qa", {}).get("status"))
@@ -1017,11 +1070,12 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
 
     def _video(self):
         if self.mode == "motion_comic":
-            for shot in self.shots:
+            for shot in team_control.ordered(self.ident, "video", self.shots, key=lambda value: value["id"]):
                 self.boundary()
                 shot["status"] = "rendering"
                 self.emit("camera_motion")
                 record = self._camera_clip(shot)
+                team_control.assert_publishable(self.ident, "video", shot["id"])
                 # Camera movement does not animate speech or acting.
                 record["semantic_source"] = shot["image"].get("qa", {}).get("semantic", {})
                 if shot["image"].get("asset_references"):
@@ -1033,7 +1087,10 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                                 "semantic": record["semantic_source"],
                                 "scope": "semantic_review_of_keyframe_plus_camera_clip_technical_checks"})
                 write_json(self.folder / "renders" / shot["id"] / "selected.json", record)
+                team_ledger.record_adoption(self.ident, "video", shot["id"], artifact=record)
                 self.emit("camera_motion")
+                team_control.after_unit(self.ident, "video", shot["id"])
+                team_control.after_unit(self.ident, "video_review", shot["id"])
             return
         targets = []
         for shot in self.shots:

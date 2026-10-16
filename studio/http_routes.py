@@ -39,6 +39,10 @@ FACTORY_ROUTES = (
     *(Route("GET", PROJECT + "/" + name, "read", name) for name in (
         "shots", "series", "cloud-budget", "flow", "delivery-readiness", "workspace", "team", "tasks")),
     Route("GET", PROJECT + r"/tasks/[a-z_]+:[A-Za-z0-9_.-]{1,120}", "read", "team_task"),
+    Route("GET", PROJECT + r"/interventions", "read", "team_instructions"),
+    Route("POST", PROJECT + r"/interventions(?:/(preview|[a-f0-9]{32}/dismiss))?", "task_control", "team_intervention", 65536),
+    Route("POST", PROJECT + r"/tasks/[a-z_]+:[A-Za-z0-9_.-]{1,120}/actions", "task_control", "team_task_control", 65536),
+    Route("POST", PROJECT + r"/team/actions", "task_control", "team_enable", 65536),
     Route("GET", r"/api/factory/jobs/" + JID, "read", "job"),
     Route("POST", r"/api/factory/jobs/" + JID + r"/(pause|cancel)", "task_control", "job_control", 65536),
     Route("POST", r"/api/factory/models/test", "network_probe", "model_probe", 65536),

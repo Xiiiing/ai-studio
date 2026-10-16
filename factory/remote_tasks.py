@@ -100,7 +100,8 @@ def claim_job(project_id=None):
             project = store._read(db, row["project_id"])
             from .review_advice import eligible as advice_eligible
             advice = row["kind"] == "review_advice" and advice_eligible(project)
-            if ((row["kind"] == "review_advice" and not advice) or project.get("pause_requested") or (project["status"] in store.TERMINAL | {"paused", "blocked", "failed"} and not advice)
+            team_command = row["kind"] == "team_instruction" and project.get("team_control_version") == 1 and project["status"] != "cancelled"
+            if not team_command and ((row["kind"] == "review_advice" and not advice) or project.get("pause_requested") or (project["status"] in store.TERMINAL | {"paused", "blocked", "failed"} and not advice)
                     or project["status"].startswith("awaiting_")):
                 db.execute("UPDATE jobs SET status='cancelled',finished=? WHERE id=?", (timestamp, row["id"]))
                 continue
