@@ -134,3 +134,24 @@ def test_execution_context_is_scoped_to_actual_run_and_resets(project, fails):
     saved = store.get(project['id'], False)['team_tasks']['screenplay']
     assert captured == [{'project_id': project['id'], 'stage': 'screenplay', 'run_id': saved['run_id']}]
     assert current_execution.get() is None
+
+
+@pytest.mark.parametrize("stage", ["screenplay", "storyboard", "visual_design", "production"])
+def test_only_confirmed_material_changes_supersede_step_evidence(project, stage):
+    def current():
+        return next(row for row in tasks.snapshot(store.get(project["id"], False))["tasks"] if row["id"] == stage)["current"]
+    run = tasks.begin(project["id"], stage)
+    tasks.finish(project["id"], stage, run["run_id"], "succeeded")
+    assert current()
+    refs = [{"asset_id": "mat_test", "version": 1, "kind": "character", "role": "female"}]
+    store.update(project["id"], {"material_selection": refs})
+    assert current()  # A pending choice is not an input to production.
+    package = {"signature": "confirmed-inputs-a", "confirmed_at": 1, "references": refs}
+    store.update(project["id"], {"material_package": package})
+    assert not current()
+    run = tasks.begin(project["id"], stage)
+    tasks.finish(project["id"], stage, run["run_id"], "succeeded")
+    store.update(project["id"], {"material_package": {**package, "confirmed_at": 2}})
+    assert current()  # Confirming the same immutable input again preserves its run.
+    store.update(project["id"], {"material_package": {**package, "signature": "confirmed-inputs-b"}})
+    assert not current()
