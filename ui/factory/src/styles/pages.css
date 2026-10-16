@@ -485,7 +485,7 @@
 }
 .material-region svg rect {
   fill: var(--crop-fill);
-  stroke: var(--crop-stroke);
+  stroke: currentColor;
   stroke-width: 2;
   vector-effect: non-scaling-stroke;
 }
@@ -527,6 +527,11 @@
 }
 .region-saved {
   color: var(--success);
+}
+[data-region-target][aria-pressed="true"] {
+  color: var(--accent-text);
+  background: var(--accent-soft);
+  border-color: var(--accent);
 }
 .material-library-toolbar {
   grid-template-columns: minmax(0, 1.5fr) minmax(180px, 1fr) auto;

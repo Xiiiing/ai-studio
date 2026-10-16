@@ -1372,6 +1372,7 @@ function CompositionEditor({
             type="button"
             className="button"
             aria-pressed={active === index}
+            data-region-target={index}
             onClick={() => {
               setActive(index);
               setStart(null);
