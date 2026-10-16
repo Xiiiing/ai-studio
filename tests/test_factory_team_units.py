@@ -295,6 +295,63 @@ class ProductionTeamUnitTests(unittest.TestCase):
         self.assertEqual(self.task("image:S02")["attempt"], 0)
         self.assertEqual(len(fixtures.FixtureWorker.calls), 1)
 
+    def test_voice_retry_preserves_locked_frames_videos_and_unrelated_speech_versions(self):
+        for shot in self.project["episode"]["shots"]:
+            shot["dialogue"] = [{"id": shot["id"] + "_L1", "role": "female", "text": "同一段对白。"}]
+            shot["seconds"] = 3
+        self.project["production_revision"] = 1
+        self.save({"episode": self.project["episode"], "production_revision": 1})
+        review_calls = []
+
+        def reviewer(_project, shot, path, _references):
+            review_calls.append((shot["id"], path))
+            return {"status": "pass", "issues": [], "score": 95}
+
+        with mock.patch.object(Scheduler, "worker", fixtures.fake_worker), \
+                mock.patch.object(Scheduler, "audio_lease", fixtures.fake_audio_lease), \
+                mock.patch("factory.speech.subprocess.run", side_effect=fixtures.FixtureSpeech.invoke):
+            original = generate_project(self.project, self.config, self.save, semantic_evaluator=reviewer)
+            media = {shot["id"]: {kind: (shot[kind]["path"], shot[kind]["sha256"])
+                                  for kind in ("image", "video")} for shot in self.project["shots"]}
+            voices = {line["id"]: copy.deepcopy(line) for line in self.project["assets"]["audio"]["lines"]}
+            original_image_calls = list(fixtures.FixtureWorker.calls)
+            original_reviews = len(review_calls)
+            for index, kind in enumerate(("image", "video")):
+                ident = kind + ":S01"
+                team_control.task_action(self.ident, ident, {
+                    "action": "lock", "request_id": "lock-voice-retake-" + kind,
+                    "expected_control_revision": index, "expected_generation": self.task(ident)["generation"]})
+            request = {
+                "request_id": "voice-retake-keep-visuals", "expected_control_revision": 2,
+                "target_type": "task", "target_id": "speech:S01_L1", "task_ids": ["speech:S01_L1"],
+                "task_generations": {"speech:S01_L1": self.task("speech:S01_L1")["generation"]},
+                "instruction": "相同对白重新生成声音，保留镜头", "operation": "retry", "after": "auto",
+                "preserve": ["image:S01", "video:S01", "speech:S02_L1"]}
+            preview = team_control.preview(self.ident, request)
+            self.assertEqual(preview["conflicts"], [])
+            self.assertNotIn("image:S01", preview["affected_tasks"])
+            self.assertNotIn("video:S01", preview["affected_tasks"])
+            self.assertNotIn("speech:S02_L1", preview["affected_tasks"])
+            submitted = team_control.submit(self.ident, request)
+            self.assertEqual(submitted["instruction"]["status"], "queued")
+            applied = team_control.process_pending(self.ident)
+            self.assertEqual(applied["status"], "applied", applied)
+            self.project = store.get(self.ident)
+            updated = generate_project(self.project, self.config, self.save, semantic_evaluator=reviewer)
+        self.assertEqual(fixtures.FixtureWorker.calls, original_image_calls)
+        self.assertGreater(len(review_calls), original_reviews)
+        self.assertEqual(fixtures.FixtureSpeech.calls, ["S01_L1", "S02_L1", "S01_L1"])
+        for shot in self.project["shots"]:
+            for kind in ("image", "video"):
+                self.assertEqual((shot[kind]["path"], shot[kind]["sha256"]), media[shot["id"]][kind])
+        current = {line["id"]: line for line in self.project["assets"]["audio"]["lines"]}
+        self.assertNotEqual(current["S01_L1"]["path"], voices["S01_L1"]["path"])
+        self.assertNotEqual(current["S01_L1"]["source_signature"], voices["S01_L1"]["source_signature"])
+        self.assertEqual(current["S02_L1"], voices["S02_L1"])
+        self.assertEqual(updated["sources"][0]["video"]["sha256"], original["sources"][0]["video"]["sha256"])
+        self.assertTrue(team_control.is_locked(self.ident, "image", "S01"))
+        self.assertTrue(team_control.is_locked(self.ident, "video", "S01"))
+
 
 if __name__ == "__main__":
     unittest.main()

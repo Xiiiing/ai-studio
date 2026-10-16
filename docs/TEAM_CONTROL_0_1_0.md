@@ -59,3 +59,5 @@ SQLite 增加 `team_control`、`team_work_items`、`team_unit_attempts`。备份
 ![桌面介入要求](images/team-0-1-0/controls-light-desktop.png)
 
 ![手机返工影响](images/team-0-1-0/controls-dark-mobile.png)
+
+第二阶段后续自查修复了锁定成果复查与新生成的边界：配音重做可以保留锁定首帧及视频，视频内部返修也必须遵守首帧锁定。另将待处理指令解除冲突后的目标版本随规划占用一起落盘，进程中断恢复不会再次增加返工版本。阶段二分支上的相关任务控制和真实合成生产测试 45 项通过。

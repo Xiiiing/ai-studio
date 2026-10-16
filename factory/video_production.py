@@ -49,6 +49,10 @@ class VideoProductionMixin:
             return frame
         if record.get("repair_keyframe"):
             return self.receipt_path(record["repair_keyframe"])
+        from .team_control import is_locked
+        if is_locked(self.ident, "image", target["shot"]["id"]):
+            raise ProductionNeedsDecision("视频返修需要更换已锁定首帧，请先解锁或调整返修要求", "team_locked_keyframe",
+                                          {"shot_id": target["shot"]["id"], "task_id": "image:" + target["shot"]["id"]})
         if self.config.get("image_connection", {}).get("provider", "legacy") != "legacy":
             refs=list(target["references"]) + [self.receipt_path(v) for v in self.assets.get("characters", {}).values()]
             repair=self._target("repair_"+target["key"],target["folder"]/record["take"]/"repair_keyframe",

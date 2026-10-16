@@ -222,7 +222,7 @@ def _draining_remote(db, pid, kind="stage", scope="production"):
     return bool(db.execute("SELECT 1 FROM cloud_tasks WHERE project_id=? AND shot_id IN (" + ",".join("?" for _ in candidates) + ") AND status NOT IN ('downloaded','failed','rejected')", (pid, *candidates)).fetchone())
 
 
-def admit(pid, kind, scope):
+def admit(pid, kind, scope, *, check_locks=True):
     if not ledger._existing(pid):
         return
     with store.connection() as db:
@@ -234,7 +234,7 @@ def admit(pid, kind, scope):
             return
         if _pending(db, pid) and not _draining_remote(db, pid, kind, scope):
             raise TeamInterventionPending(task_id=kind + ":" + str(scope))
-        if kind in {"character", "image", "video", "speech"} and db.execute("SELECT 1 FROM team_locks WHERE project_id=? AND task_id=?", (pid, kind + ":" + str(scope))).fetchone():
+        if check_locks and kind in {"character", "image", "video", "speech"} and db.execute("SELECT 1 FROM team_locks WHERE project_id=? AND task_id=?", (pid, kind + ":" + str(scope))).fetchone():
             raise TeamInterventionPending("具体成果已锁定，请解锁后再生成新版本", kind + ":" + str(scope))
         rows = list(db.execute("SELECT * FROM team_work_items WHERE project_id=? AND (status='paused' OR hold_after=1)", (pid,)))
         ident = kind + ":" + str(scope)
@@ -275,7 +275,8 @@ def assert_publishable(pid, kind, scope, input_version=None):
 
 
 def after_unit(pid, kind, scope):
-    admit(pid, kind, scope)
+    # Finishing/rechecking an existing locked result is not a new generation.
+    admit(pid, kind, scope, check_locks=False)
 
 
 def ordered(pid, kind, values, key=lambda value: value):
@@ -716,7 +717,7 @@ def process_pending(pid):
         if not command.get("accepted_generations") and command.get("operation") != "replan":
             _invalidate(db, pid, command["affected_tasks"])
             command["accepted_generations"] = {t: ledger._stored(db, pid, t)["generation"] for t in command["affected_tasks"]}
-        db.execute("UPDATE team_instructions SET status='planning' WHERE id=?", (command["id"],))
+        db.execute("UPDATE team_instructions SET status='planning',data=? WHERE id=?", (store.encoded(command), command["id"]))
         tasks = _tasks(db, pid)
     # Planning has no open SQLite writer transaction and cannot publish changes.
     try:
