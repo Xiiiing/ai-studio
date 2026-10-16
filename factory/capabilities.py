@@ -63,6 +63,12 @@ def _observe(config):
     except Exception:
         info["quality"]["available"]=False
     video=resolve_video(config, require_enabled=False)
+    info["video"].update(model=video["model"], provider=video["provider"], profile=video["profile"])
+    if video["provider"] == "comfyui_h3":
+        from studio.h3 import installation
+        installed = installation() if local["video"] else None
+        info["video"].update(available=bool(installed and installed["installed"]),
+                             message="ComfyUI / MiniMax H3 双卡图生视频；按实际生成回执验收")
     if not video["enabled"]:
         info["video"].update(available=False,status="disabled",model=video["model"],
                              provider=video["provider"],profile=video["profile"],
@@ -73,7 +79,8 @@ def _observe(config):
                              model=video["model"],provider=video["provider"],profile=video["profile"],
                              message="已选择云视频连接；任务提交、生成和下载由实际回执确认。动态漫仍使用程序运镜。")
     remote = config.get("production", {}).get("gpu_service")
-    remote_needed = remote and any(resolve(config,k)["provider"] == "legacy" for k in ("image","audio"))
+    remote_needed = remote and (any(resolve(config,k)["provider"] == "legacy" for k in ("image","audio")) or
+                                video["provider"] in {"comfyui_wan", "comfyui_h3"})
     if remote_needed:
         info["gpu_message"] = "GPU 由远端推理服务调度；控制服务器不加载模型或检查本机显卡。"
         for kind in ("image", "audio"):
@@ -92,6 +99,15 @@ def _observe(config):
                 info[kind].update(available=observed.get("models", {}).get(kind) is True,
                                   execution_host=host,
                                   message="远端推理服务可达；权重安装与实际生成验收分别记录")
+                if kind == "video" and video["provider"] == "comfyui_h3":
+                    from studio.h3 import MODEL, REVISION
+                    backend = observed.get("video_backends", {}).get("comfyui_h3", {})
+                    available = (backend.get("installed") is True and backend.get("model") == MODEL and
+                                 backend.get("revision") == REVISION and backend.get("gpu_count") == 2 and
+                                 len(set(observed.get("gpu_cards", []))) >= 2)
+                    info[kind].update(available=available, status="installed" if available else "unavailable",
+                        message="Wkp 已提供 H3 双卡工作流；实际生成尚需回执验收" if available else
+                                "Wkp 推理入口尚未提供 H3 工作流；不会回退到 Wan")
         except Exception:
             info["inference_service"] = {"available": False, "message": "远端推理服务暂时不可用"}
     elif any(local.values()):
