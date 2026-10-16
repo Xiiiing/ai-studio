@@ -69,11 +69,13 @@ class Handler(LocalMediaHandler):
             if path in {"/api/factory/overview", "/api/factory/console"}:
                 from .operator_console import dashboard
                 query = parse_qs(urlsplit(self.path).query, keep_blank_values=True)
-                allowed = {"offset", "limit", "attention_offset", "attention_limit"}
-                if set(query) - allowed or any(len(values) != 1 or not re.fullmatch(r"[0-9]{1,9}", values[0]) for values in query.values()):
+                paging_keys = {"offset", "limit", "attention_offset", "attention_limit"}
+                if set(query) - (paging_keys | {"q", "filter"}) or any(len(values) != 1 for values in query.values()):
+                    raise ValueError("总览查询参数须为已支持的单个值")
+                if any(not re.fullmatch(r"[0-9]{1,9}", values[0]) for key, values in query.items() if key in paging_keys):
                     raise ValueError("分页参数须为单个非负整数")
-                paging = {key: int(values[0]) for key, values in query.items()}
-                return self.json({**dashboard(**paging),"capabilities":snapshot(),"version":__version__})
+                params = {key: int(values[0]) if key in paging_keys else values[0] for key, values in query.items()}
+                return self.json({**dashboard(**params),"capabilities":snapshot(),"version":__version__})
             match=re.fullmatch(r"/api/factory/projects/([a-f0-9]{12})/workspace",path)
             if match:
                 from .operator_console import workspace

@@ -25,6 +25,8 @@ AI Studio brings planning, screenwriting, independent review, storyboarding, vis
 
 It is designed for creators assembling a complete short-drama pipeline and developers exploring agent collaboration, human decisions and media-task recovery. The web workbench and CLI share project state and a persistent queue; closing the browser does not discard background tasks.
 
+**Workspace iteration 0.0.2** adds light/dark/system themes, grouped desktop navigation, a mobile page picker, and search across all projects. Model and shot editing drafts remain available within the current app session, with conflict checks and recovery after failed saves. See the [workspace UX and validation notes](docs/UI_REDESIGN_0_0_2.md) (Chinese; this is an iteration label, not a tagged release).
+
 ## Preview
 
 ![AI Studio production overview with projects, progress and pending actions](docs/assets/workbench.png)

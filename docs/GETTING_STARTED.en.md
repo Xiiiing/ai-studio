@@ -77,6 +77,12 @@ CLI equivalents, replacing profile placeholders with your saved IDs:
 
 Exports retain a configuration revision. If another window has saved changes, export again and reconcile them before applying; stale files are rejected.
 
+## Workspace 0.0.2: themes, navigation and drafts
+
+The top-bar **外观主题** control switches between light, dark and system appearance, including changes to the operating-system preference. On a phone, use the upper-left button for studio navigation and the current project page name to select any of the ten project pages. Selecting a stage opens its steps, and desktop step details scroll independently. The project search filters the full list before applying pagination.
+
+Model settings and shot-edit drafts stay in memory for the **current application session** across page or shot navigation; saves lock the corresponding edit until completion and preserve unsaved changes after errors. Drafts are not stored in browser persistent storage. Refreshing or leaving warns about unsaved work; if the server revision changes, inspect the newer version before submitting. See the [0.0.2 UX validation report](UI_REDESIGN_0_0_2.md) (Chinese).
+
 ## Read workflow artifacts
 
 The project overview shows five stages: story, script/storyboard, visuals, shots/post-production, and final delivery. Select a stage to inspect its actual steps, inputs, artifacts, roles and execution records. On narrow screens, details appear below the graph with a return action. Paused and human-waiting states stop activity animation; reduced-motion settings disable it. Refresh preserves your selected step and open document.

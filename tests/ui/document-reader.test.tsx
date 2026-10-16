@@ -10,6 +10,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import {
   DocumentReader,
+  DocumentValue,
   MaterialCard,
   documentUrl,
   readDocument,
@@ -35,6 +36,23 @@ function mount(item: any, material = false) {
   );
 }
 describe("project document reading", () => {
+  it("prepares Markdown inside a local boundary while surrounding controls and raw text stay available", async () => {
+    render(
+      <>
+        <button>返回工作区</button>
+        <DocumentValue value="未经转换的原文" raw />
+        <DocumentValue value="# 延迟排版完成" />
+      </>,
+    );
+    expect(screen.getByRole("button", { name: "返回工作区" })).toBeVisible();
+    expect(screen.getByText("未经转换的原文")).toBeVisible();
+    expect(screen.getByRole("status")).toHaveTextContent("正在准备文档排版");
+    expect(
+      await screen.findByRole("heading", { name: "延迟排版完成" }),
+    ).toBeVisible();
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
   it("loads file-only inputs on demand and renders Markdown tables, lists and code", async () => {
     const fetcher = vi
       .fn()
@@ -195,6 +213,45 @@ it("shows saved JSON bytes as text without reserializing numbers or whitespace",
   expect(result.container.querySelector(".document-raw")?.textContent).toBe(
     source,
   );
+});
+
+it("retains raw and expanded reading state while the current document refreshes", async () => {
+  let finish!: (response: Response) => void;
+  const fetcher = vi
+    .fn()
+    .mockResolvedValueOnce(new Response("# 已打开文档"))
+    .mockImplementationOnce(
+      () =>
+        new Promise<Response>((resolve) => {
+          finish = resolve;
+        }),
+    );
+  vi.stubGlobal("fetch", fetcher);
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  const view = (revision: number) => (
+    <QueryClientProvider client={client}>
+      <DocumentReader
+        projectId={id}
+        item={{ label: "阅读中的文件", artifact_url: url, revision }}
+      />
+    </QueryClientProvider>
+  );
+  const result = render(view(1));
+  await screen.findByRole("heading", { name: "已打开文档" });
+  await userEvent.click(screen.getByRole("button", { name: "原文" }));
+  await userEvent.click(screen.getByRole("button", { name: "放大阅读" }));
+  result.rerender(view(2));
+  await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
+  const dialog = screen.getByRole("dialog");
+  expect(within(dialog).getByText("# 已打开文档")).toBeVisible();
+  expect(screen.queryByText("正在读取文件…")).not.toBeInTheDocument();
+  finish(new Response("# 文件更新完成"));
+  expect(await within(dialog).findByText("# 文件更新完成")).toBeVisible();
+  expect(
+    within(dialog).queryByRole("heading", { name: "文件更新完成" }),
+  ).not.toBeInTheDocument();
 });
 
 it("resolves Markdown images and links against the saved file directory while rejecting another project's images", async () => {

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Field, Panel, Modal, ErrorNotice } from "./ui";
 import { request, type RecordData } from "./api";
 
@@ -15,8 +15,20 @@ export function MediaSettings({
   onChange,
   notify,
   mode = "mixed",
+  saving = false,
+  dirty = false,
+  generation = 0,
+  probes,
+  probing,
+  onProbe,
 }: {
   mode?: string;
+  saving?: boolean;
+  dirty?: boolean;
+  generation?: number;
+  probes?: RecordData;
+  probing?: string;
+  onProbe?: (kind: Kind, id: string) => void;
   draft: RecordData;
   inventory: RecordData;
   onChange: (fn: (old: RecordData) => RecordData) => void;
@@ -28,6 +40,54 @@ export function MediaSettings({
   const [templateJSON, setTemplateJSON] = useState("");
   const [error, setError] = useState("");
   const [result, setResult] = useState<RecordData>({});
+  const [pending, setPending] = useState("");
+  const pendingRef = useRef(false);
+  const fingerprint = JSON.stringify([
+    draft,
+    inventory.revision,
+    generation,
+    saving,
+    dirty,
+  ]);
+  const latest = useRef(fingerprint);
+  latest.current = fingerprint;
+  const currentResult =
+    probes || (result.fingerprint === fingerprint ? result.entries || {} : {});
+  const checking = probing === undefined ? pending : probing;
+  const draftChanged =
+    dirty ||
+    ["image", "audio", "video"].some(
+      (kind) =>
+        JSON.stringify(draft[kind + "_profiles"]) !==
+        JSON.stringify(inventory[kind + "_profiles"]),
+    );
+  async function check(kind: Kind, id: string) {
+    if (saving || draftChanged || checking || pendingRef.current) return;
+    if (onProbe) {
+      onProbe(kind, id);
+      return;
+    }
+    pendingRef.current = true;
+    const key = kind + ":" + id;
+    const started = fingerprint;
+    setPending(key);
+    let response: RecordData;
+    try {
+      response = await request("/models/test", { kind, profile_id: id });
+    } catch (e) {
+      response = { status: "error", message: (e as Error).message };
+    }
+    if (latest.current === started)
+      setResult((old) => ({
+        fingerprint: started,
+        entries: {
+          ...(old.fingerprint === started ? old.entries : {}),
+          [key]: response,
+        },
+      }));
+    pendingRef.current = false;
+    setPending("");
+  }
   const [templateId, setTemplateId] = useState("");
   return (
     <>
@@ -42,6 +102,7 @@ export function MediaSettings({
               action={
                 <button
                   className="button"
+                  disabled={saving}
                   onClick={() => setEditing({ kind, id: "" })}
                 >
                   添加{labels[kind]}连接
@@ -50,6 +111,7 @@ export function MediaSettings({
             >
               <Field label={labels[kind] + "使用的连接"}>
                 <select
+                  disabled={saving}
                   value={draft[kind + "_roles"]?.[roles[kind]] || ""}
                   onChange={(e) =>
                     onChange((d) => ({
@@ -95,6 +157,7 @@ export function MediaSettings({
                       <div className="button-row">
                         <button
                           className="button"
+                          disabled={saving}
                           onClick={() => setEditing({ kind, id })}
                         >
                           编辑{labels[kind]}连接
@@ -102,28 +165,29 @@ export function MediaSettings({
                         <button
                           className="button"
                           disabled={
-                            JSON.stringify(draft[kind + "_profiles"]) !==
-                            JSON.stringify(inventory[kind + "_profiles"])
+                            saving ||
+                            draftChanged ||
+                            !!checking ||
+                            p.enabled === false
                           }
-                          onClick={async () => {
-                            try {
-                              const r = await request("/models/test", {
-                                kind,
-                                profile_id: id,
-                              });
-                              setResult((old) => ({
-                                ...old,
-                                [kind + id]: r.message || r.status,
-                              }));
-                            } catch (e) {
-                              setError((e as Error).message);
-                            }
-                          }}
+                          onClick={() => check(kind, id)}
                         >
-                          检查{labels[kind]}配置
+                          {checking === kind + ":" + id
+                            ? "检测中…"
+                            : "检查" + labels[kind] + "配置"}
                         </button>
                       </div>
-                      <p role="status">{result[kind + id]}</p>
+                      {currentResult[kind + ":" + id] && (
+                        <div className="probe-result" role="status">
+                          {currentResult[kind + ":" + id].message ||
+                            currentResult[kind + ":" + id].error?.message ||
+                            "已完成配置检测；未运行生成任务"}
+                        </div>
+                      )}
+                      {p.enabled === false && <small>已停用</small>}
+                      {draftChanged && (
+                        <small>配置待保存，保存后可检查连接</small>
+                      )}
                     </article>
                   ))}
               </div>
@@ -139,6 +203,7 @@ export function MediaSettings({
           >
             <Field label="工作流模板 JSON">
               <textarea
+                disabled={saving}
                 value={templateJSON}
                 onChange={(e) => setTemplateJSON(e.target.value)}
                 rows={8}
@@ -150,6 +215,7 @@ export function MediaSettings({
             <div className="button-row">
               <button
                 className="button"
+                disabled={saving}
                 onClick={async () => {
                   try {
                     const t = await request(
@@ -167,7 +233,7 @@ export function MediaSettings({
               </button>
               <button
                 className="button"
-                disabled={!templateId}
+                disabled={saving || !templateId}
                 onClick={async () => {
                   try {
                     const t = await request(
@@ -193,6 +259,7 @@ export function MediaSettings({
             </div>
             <Field label="模板编号">
               <input
+                disabled={saving}
                 value={templateId}
                 onChange={(e) => setTemplateId(e.target.value)}
               />
@@ -204,6 +271,7 @@ export function MediaSettings({
       {editing && (
         <MediaEditor
           key={editing.kind + editing.id}
+          disabled={saving}
           preferLocal={mode === "local"}
           kind={editing.kind}
           id={editing.id}
@@ -212,6 +280,7 @@ export function MediaSettings({
           labels={inventory.media_providers}
           onClose={() => setEditing(null)}
           onSave={(id, p) => {
+            if (saving) return;
             const kind = editing.kind;
             if (!editing.id && draft[kind + "_profiles"]?.[id])
               throw new Error("连接编号已存在");
@@ -227,6 +296,7 @@ export function MediaSettings({
   );
 }
 function MediaEditor({
+  disabled = false,
   kind,
   id,
   current,
@@ -236,6 +306,7 @@ function MediaEditor({
   onSave,
   preferLocal,
 }: {
+  disabled?: boolean;
   preferLocal: boolean;
   kind: Kind;
   id: string;
@@ -334,90 +405,92 @@ function MediaEditor({
           }
         }}
       >
-        <Field label="制作连接编号">
-          <input
-            name="id"
-            defaultValue={values.id ?? id}
-            readOnly={!!id}
-            required
-            pattern="[A-Za-z0-9][A-Za-z0-9_.-]{0,63}"
-          />
-        </Field>
-        <Field label="制作服务类型">
-          <select
-            value={provider}
-            onChange={(e) => {
-              const enteredId = new FormData(e.currentTarget.form!).get("id");
-              setProvider(e.target.value);
-              setValues({ ...presets[e.target.value], id: enteredId });
-            }}
-          >
-            {!presets[provider] && (
-              <option value={provider}>
-                {providerLabels?.[provider]?.label || provider}
-              </option>
-            )}
-            {Object.keys(presets).map((p) => (
-              <option key={p} value={p}>
-                {providerLabels?.[p]?.label || p}
-              </option>
-            ))}
-          </select>
-        </Field>
-        {field("model", "制作模型标识", true)}
-        {provider === "comfyui_external" &&
-          field("base_url", "ComfyUI 服务地址", true)}
-        {values.base_url &&
-          provider !== "comfyui_external" &&
-          field("base_url", "API 地址", true)}
-        {field("api_key_env", "制作密钥环境变量")}
-        {provider.startsWith("dashscope_") && (
-          <Field label="百炼工作空间 ID（专属入口需要时填写）">
-            <input name="workspace_id" pattern="[A-Za-z0-9-]+" />
-          </Field>
-        )}
-        {provider === "dashscope_tts" && (
-          <>
-            {field("default_voice", "默认云端声线", true)}
-            {field("language", "配音语言", true)}
-          </>
-        )}
-        {kind !== "audio" &&
-          ["comfyui_local", "comfyui_external"].includes(provider) &&
-          field("workflow_template", "默认工作流模板编号")}
-        {provider === "qwen_tts_local" && (
-          <>
-            {field("python_path", "TTS Python 绝对路径")}
-            {field("model_dir", "TTS 模型绝对目录")}
-          </>
-        )}
-        <details>
-          <summary>高级设置：网络、模型文件、声线和参考图模板</summary>
-          <Field label="制作高级设置 JSON">
-            <textarea
-              name="advanced"
-              rows={6}
-              defaultValue={JSON.stringify(advanced, null, 2)}
+        <fieldset disabled={disabled} className="model-editor-fields">
+          <Field label="制作连接编号">
+            <input
+              name="id"
+              defaultValue={values.id ?? id}
+              readOnly={!!id}
+              required
+              pattern="[A-Za-z0-9][A-Za-z0-9_.-]{0,63}"
             />
           </Field>
-        </details>
-        <label className="check">
-          <input
-            name="enabled"
-            type="checkbox"
-            defaultChecked={values.enabled !== false}
-          />
-          启用制作连接
-        </label>
-        <ErrorNotice error={error} />
-        <div className="dialog-actions">
-          <button type="button" className="button" onClick={onClose}>
-            取消
-          </button>
-          <button className="button primary" type="submit">
-            加入制作配置草稿
-          </button>
-        </div>
+          <Field label="制作服务类型">
+            <select
+              value={provider}
+              onChange={(e) => {
+                const enteredId = new FormData(e.currentTarget.form!).get("id");
+                setProvider(e.target.value);
+                setValues({ ...presets[e.target.value], id: enteredId });
+              }}
+            >
+              {!presets[provider] && (
+                <option value={provider}>
+                  {providerLabels?.[provider]?.label || provider}
+                </option>
+              )}
+              {Object.keys(presets).map((p) => (
+                <option key={p} value={p}>
+                  {providerLabels?.[p]?.label || p}
+                </option>
+              ))}
+            </select>
+          </Field>
+          {field("model", "制作模型标识", true)}
+          {provider === "comfyui_external" &&
+            field("base_url", "ComfyUI 服务地址", true)}
+          {values.base_url &&
+            provider !== "comfyui_external" &&
+            field("base_url", "API 地址", true)}
+          {field("api_key_env", "制作密钥环境变量")}
+          {provider.startsWith("dashscope_") && (
+            <Field label="百炼工作空间 ID（专属入口需要时填写）">
+              <input name="workspace_id" pattern="[A-Za-z0-9-]+" />
+            </Field>
+          )}
+          {provider === "dashscope_tts" && (
+            <>
+              {field("default_voice", "默认云端声线", true)}
+              {field("language", "配音语言", true)}
+            </>
+          )}
+          {kind !== "audio" &&
+            ["comfyui_local", "comfyui_external"].includes(provider) &&
+            field("workflow_template", "默认工作流模板编号")}
+          {provider === "qwen_tts_local" && (
+            <>
+              {field("python_path", "TTS Python 绝对路径")}
+              {field("model_dir", "TTS 模型绝对目录")}
+            </>
+          )}
+          <details>
+            <summary>高级设置：网络、模型文件、声线和参考图模板</summary>
+            <Field label="制作高级设置 JSON">
+              <textarea
+                name="advanced"
+                rows={6}
+                defaultValue={JSON.stringify(advanced, null, 2)}
+              />
+            </Field>
+          </details>
+          <label className="check">
+            <input
+              name="enabled"
+              type="checkbox"
+              defaultChecked={values.enabled !== false}
+            />
+            启用制作连接
+          </label>
+          <ErrorNotice error={error} />
+          <div className="dialog-actions">
+            <button type="button" className="button" onClick={onClose}>
+              取消
+            </button>
+            <button className="button primary" type="submit">
+              加入制作配置草稿
+            </button>
+          </div>
+        </fieldset>
       </form>
     </Modal>
   );

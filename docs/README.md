@@ -18,6 +18,7 @@
 
 | 文档 | 内容 |
 | --- | --- |
+| [工作台主题与多屏编辑（0.0.2）](UI_REDESIGN_0_0_2.md) | 浅深主题、移动端导航、草稿保护、项目搜索、素材框选与恢复 |
 | [首次使用与创作操作](GETTING_STARTED.md) / [English](GETTING_STARTED.en.md) | 安装、模型配置、CLI、文件阅读、审核与恢复 |
 | [使用自己的模型和 API](USER_MODELS.md) | 全 API、自建和混合路线，账号、地域、费用与恢复 |
 | [短剧规格与画面媒介](SHORT_DRAMA_CONTRACT.md) | 独立故事、视觉方向、运动方式与实际制作区分 |

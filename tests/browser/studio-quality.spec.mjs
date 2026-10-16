@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { startRealServer } from "./real-server.mjs";
 import { mkdir, readFile } from "node:fs/promises";
+import { openProjectPage } from "./navigation.mjs";
 
 let server;
 test.beforeAll(async () => {
@@ -173,7 +174,7 @@ test("real Markdown attachments, retried calls and step attribution remain reada
       () => document.documentElement.scrollWidth <= innerWidth,
     ),
   ).toBeTruthy();
-  await page.getByRole("button", { name: "团队与回执", exact: true }).click();
+  await openProjectPage(page, "team");
   await expect(
     page
       .locator(".execution-record")

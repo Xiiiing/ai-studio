@@ -417,6 +417,97 @@ function shotBoard(): RecordData {
   };
 }
 describe("the actual shot workbench submits the Python mutation contract", () => {
+  it("retains separate shot drafts across shot selection and route remounts", async () => {
+    const user = userEvent.setup(),
+      board = shotBoard();
+    board.shots.push({
+      ...board.shots[0],
+      id: "S02",
+      prompt: "Second shot",
+      candidates: [],
+    });
+    captureRequests(() => board);
+    const { client, wrapper } = queryWrapper();
+    client.setQueryData(keys.shots(project.id), board);
+    const view = render(<Shots project={project} notify={vi.fn()} />, {
+      wrapper,
+    });
+    await waitFor(() =>
+      expect(client.isFetching({ queryKey: keys.shots(project.id) })).toBe(0),
+    );
+    fireEvent.change(screen.getByLabelText("首帧提示词"), {
+      target: { value: "First shot draft" },
+    });
+    await user.click(screen.getByRole("button", { name: /S02 4 秒/ }));
+    fireEvent.change(screen.getByLabelText("首帧提示词"), {
+      target: { value: "Second shot draft" },
+    });
+    await user.click(screen.getByRole("button", { name: /S01 4 秒/ }));
+    expect(screen.getByLabelText("首帧提示词")).toHaveValue("First shot draft");
+    view.unmount();
+    render(<Shots project={project} initialShot="S02" notify={vi.fn()} />, {
+      wrapper,
+    });
+    expect(screen.getByLabelText("首帧提示词")).toHaveValue(
+      "Second shot draft",
+    );
+  });
+
+  it("keeps in-flight shot edits locked even after leaving and returning", async () => {
+    const user = userEvent.setup();
+    let board = shotBoard();
+    let finish!: (value: Response) => void;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url, init) => {
+        if (init?.method === "POST")
+          return new Promise<Response>((resolve) => {
+            finish = resolve;
+          });
+        return new Response(JSON.stringify(board));
+      }),
+    );
+    const { client, wrapper } = queryWrapper();
+    client.setQueryData(keys.shots(project.id), board);
+    const view = render(<Shots project={project} notify={vi.fn()} />, {
+      wrapper,
+    });
+    await waitFor(() =>
+      expect(client.isFetching({ queryKey: keys.shots(project.id) })).toBe(0),
+    );
+    fireEvent.change(screen.getByLabelText("首帧提示词"), {
+      target: { value: "Saved shot draft" },
+    });
+    await user.click(screen.getByRole("button", { name: "保存局部制作版本" }));
+    expect(screen.getByLabelText("首帧提示词")).toBeDisabled();
+    view.unmount();
+    render(<Shots project={project} notify={vi.fn()} />, { wrapper });
+    expect(screen.getByLabelText("首帧提示词")).toBeDisabled();
+    expect(screen.getByLabelText("首帧提示词")).toHaveValue("Saved shot draft");
+    board = {
+      ...board,
+      revision: 18,
+      shots: [{ ...board.shots[0], prompt: "Saved shot draft" }],
+    };
+    await act(async () => {
+      finish(new Response("{}"));
+    });
+    await waitFor(() =>
+      expect(screen.getByLabelText("首帧提示词")).toBeEnabled(),
+    );
+    expect(screen.getByLabelText("首帧提示词")).toHaveValue("Saved shot draft");
+  });
+
+  it("makes shot fields read-only while production is not editable", async () => {
+    const board = { ...shotBoard(), editable: false };
+    captureRequests(() => board);
+    const { client, wrapper } = queryWrapper();
+    client.setQueryData(keys.shots(project.id), board);
+    render(<Shots project={project} notify={vi.fn()} />, { wrapper });
+    expect(screen.getByLabelText("首帧提示词")).toBeDisabled();
+    expect(screen.getByLabelText("程序运镜")).toBeDisabled();
+  });
+
   it("sends an explicit video retake with its original revision and visual edit fields", async () => {
     const user = userEvent.setup(),
       board = shotBoard(),
@@ -479,6 +570,9 @@ describe("the actual shot workbench submits the Python mutation contract", () =>
     await waitFor(() =>
       expect(screen.getByText(/草稿仍绑定旧版本/)).toBeVisible(),
     );
+    expect(
+      screen.getByRole("checkbox", { name: /确认采用此候选/ }),
+    ).toBeDisabled();
     expect(
       screen.getByRole("button", { name: "保存局部制作版本" }),
     ).toBeDisabled();

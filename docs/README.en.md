@@ -17,6 +17,7 @@ Start with the English README and getting-started guide. Most detailed reference
 
 | Document | Subject |
 | --- | --- |
+| [Workspace themes and editing (0.0.2)](UI_REDESIGN_0_0_2.md) | Light/dark themes, mobile navigation, session drafts, search and recovery (Chinese) |
 | [Getting started](GETTING_STARTED.en.md) / [中文](GETTING_STARTED.md) | Installation, connections, CLI, artifacts, review and recovery |
 | [Your models and APIs](USER_MODELS.md) | Cloud, self-hosted and mixed routes; accounts, regions, costs and recovery |
 | [Short-drama contract](SHORT_DRAMA_CONTRACT.md) | Standalone story, visual direction, motion and recorded production |
