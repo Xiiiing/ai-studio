@@ -114,3 +114,23 @@ def test_real_graph_uses_tracking_wrapper(project, monkeypatch):
     monkeypatch.setattr(tasks, "tracked_node", track)
     wf.build_graph(None)
     assert set(captured) == set(tasks.TASKS)
+
+
+@pytest.mark.parametrize('fails', [False, True])
+def test_execution_context_is_scoped_to_actual_run_and_resets(project, fails):
+    from factory.execution_context import current_execution
+    captured = []
+    def invoke(state):
+        captured.append(dict(current_execution.get()))
+        if fails:
+            raise ValueError('fixture failure')
+        return {}
+    wrapper = tasks.tracked_node('screenplay', invoke)
+    if fails:
+        with pytest.raises(ValueError):
+            wrapper({'project_id': project['id']})
+    else:
+        wrapper({'project_id': project['id']})
+    saved = store.get(project['id'], False)['team_tasks']['screenplay']
+    assert captured == [{'project_id': project['id'], 'stage': 'screenplay', 'run_id': saved['run_id']}]
+    assert current_execution.get() is None

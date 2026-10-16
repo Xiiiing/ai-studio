@@ -17,12 +17,14 @@ def export_spec(config=None, workflow_version=2):
     remote_video = video["provider"] == "minimax"
     from .team_blueprint import topology as display_topology, GROUPS
     display_nodes,display_edges=display_topology(workflow_version)
+    from .workflow_presentation import presentation
     return {
         "schema_version": 2, "workflow_version":workflow_version, "supported_workflow_versions":[1,2], "name": "ai-studio.short-drama", "version": __version__,
         "orchestrator": "LangGraph", "persistence": "SQLite WAL + LangGraph checkpoints",
         "configuration_scope": "One worker advance, until the next decision or pause",
         "nodes": topology["nodes"], "edges": topology["edges"],
         "production_graph":{"nodes":[{**node,"status":"pending"} for node in display_nodes],
+                            "presentation": presentation(display_nodes, workflow_version),
                             "edges":display_edges,"groups":list(GROUPS),"workflow_version":workflow_version,
                             "semantics":"executable topology with task ownership; no execution inferred"},
         "roles": list_roles(config),

@@ -227,6 +227,7 @@ def _execution(record, ident, receipt=None):
                    if type(row.get("attempt")) is int and row["attempt"] > 0]
         number = max(numbers) if numbers else None
     remote = _object(record.get("remote_task"))
+    context = _object(record.get("execution_context"))
     return {
         "id": ident, "profile_id": _text(record.get("profile") or record.get("profile_id")),
         "model": response_model or requested_model, "configured_model": requested_model,
@@ -237,6 +238,7 @@ def _execution(record, ident, receipt=None):
         "attempt": number, "started_at": _timestamp(record.get("started_at")),
         "finished_at": _timestamp(record.get("finished_at")), "receipt": receipt,
         "scope": "project_history",
+        "execution_context": {k: _text(context.get(k)) for k in ("project_id", "stage", "run_id")},
         "task_id": _text(remote.get("task_id") or record.get("task_id")),
         "file_id": _text(remote.get("file_id") or record.get("file_id")),
     }
@@ -270,7 +272,23 @@ def _call_executions(root, evidence):
         if not record or not isinstance(record.get("role"), str) or record["role"] not in ROLE_LABELS:
             continue
         receipt = _artifact_url(root, "production/" + root.name + "/" + relative.as_posix())
-        result.append((record["role"], _execution(record, "llm:" + relative.parent.name, receipt)))
+        execution = _execution(record, "llm:" + relative.parent.name, receipt)
+        prefix = "production/" + root.name + "/" + relative.parent.as_posix() + "/"
+        execution["artifacts"] = []
+        for filename, label in (("receipt.json", "执行回执"), ("parsed.json", "解析结果")):
+            url = _artifact_url(root, prefix + filename)
+            if url:
+                execution["artifacts"].append({"label": label, "artifact_url": url, "kind": filename.split(".")[0]})
+        execution["attempts"] = []
+        for attempt in range(1, 17):
+            files = []
+            for kind, label in (("request", "请求原文"), ("response", "响应原文")):
+                url = _artifact_url(root, prefix + f"{kind}-{attempt:02d}.json")
+                if url:
+                    files.append({"label": label, "artifact_url": url, "kind": kind})
+            if files:
+                execution["attempts"].append({"attempt": attempt, "artifacts": files})
+        result.append((record["role"], execution))
     return result
 
 
@@ -591,8 +609,21 @@ def build_flow(project, config=None):
     edges = [{**edge, "status": nodes[edge["source"]]["status"]}
              for edge in specification["handoffs"]]
     from .team_tasks import snapshot as task_snapshot
+    task_board = task_snapshot(project)
+    current_runs = {row["id"]: _object(row.get("record")).get("run_id")
+                    for row in task_board["tasks"] if row["current"]}
+    for node in nodes.values():
+        for execution in node["executions"]:
+            context = execution["execution_context"]
+            if context["project_id"] == project["id"] and context["stage"] and context["run_id"]:
+                execution["stage"] = context["stage"]
+                execution["run_id"] = context["run_id"]
+                if current_runs.get(context["stage"]) == context["run_id"]:
+                    execution["scope"] = "current_run"
+    from .workflow_content import step_materials
     return {"project_id": project["id"], "revision": project.get("revision"),
-            "task_board": task_snapshot(project), "production_tasks":list(_object(project.get("production_tasks")).values()),
+            "task_board": task_board, "steps": step_materials(project, root, _artifact_url),
+            "production_tasks":list(_object(project.get("production_tasks")).values()),
             "assignment_mode": "orchestrator", "orchestrator": "LangGraph",
             "assignment_semantics": specification["assignment_semantics"],
             "teams": teams, "nodes": list(nodes.values()), "edges": edges,

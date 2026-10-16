@@ -250,3 +250,63 @@ def test_rejected_or_missing_media_is_not_marked_as_finished(context):
     flow = team_flow.build_flow(project, config)
     assert role(flow, "image_generator")["status"] == "pending"
     assert role(flow, "editor")["status"] == "pending"
+
+
+@pytest.mark.parametrize('version', [1, 2])
+def test_presentation_orders_actual_steps_and_keeps_repair_branch(context, version):
+    from factory.team_blueprint import project_graph
+    root, project, config = context
+    project['workflow_version'] = version
+    graph = project_graph(project)
+    groups = graph['presentation']['stages']
+    assert [g['label'] for g in groups] == ['故事策划', '剧本与分镜', '视觉确认', '镜头与后期', '终审交付']
+    ordered = [n for g in groups for n in g['node_ids']] + ['revision']
+    assert ordered == [n['id'] for n in graph['nodes']]
+    assert graph['presentation']['branches'][0]['return_to'] == 'production'
+    design = next(n for n in graph['nodes'] if n['id'] == 'visual_design')
+    assert design['conditional'] == (version == 1)
+    assert 'brief' not in graph['nodes'][0]['input']
+    assert all(n['status'] == 'pending' for n in graph['nodes'])
+    exported = workflow_spec.export_spec(config, workflow_version=version)['production_graph']
+    assert exported['presentation'] == graph['presentation']
+
+
+def test_business_documents_keep_content_and_both_sides_of_handoff(context):
+    root, project, config = context
+    path = put(root, f'production/factory-{PID}/planning/story.md', '# 故事目标')
+    project.update(workflow_version=2,
+                   resolved_story_brief={'logline': '全文故事', 'motivation': '履行约定'},
+                   screenplay_draft={'title': '未通过审核的草稿', 'shots': [{'id': 'S01', 'action': '完整动作'}]},
+                   planning_artifacts={'resolved_story_brief': str(path.relative_to(root)),
+                                       'screenplay_draft': f'production/factory-{PID}/planning/missing.json'})
+    flow = team_flow.build_flow(project, config)
+    step = next(s for s in flow['steps'] if s['id'] == 'screenplay')
+    story = next(v for v in step['inputs'] if v['key'] == 'resolved_story_brief')
+    assert story['value']['motivation'] == '履行约定'
+    assert story['artifact_url'].endswith('/planning/story.md')
+    assert story['source_node'] == 'story_resolution'
+    draft = step['outputs'][0]
+    assert draft['value']['shots'][0]['action'] == '完整动作'
+    assert draft['artifact_state'] == 'missing'
+    assert next(v for v in step['inputs'] if v['key'] == 'series_bible')['state'] == 'not_recorded'
+
+
+def test_saved_call_files_and_current_identity_do_not_infer_old_history(context):
+    from factory.team_tasks import _signature
+    root, project, config = context
+    project['team_tasks'] = {'screenplay': {'run_id': 'current-run', 'status': 'running',
+        'input_signature': _signature(project, 'screenplay')}}
+    receipt = call(root, '20261016-screenwriter-new', {'role': 'screenwriter', 'status': 'failed',
+        'execution_context': {'project_id': PID, 'stage': 'screenplay', 'run_id': 'current-run'}})
+    for filename in ['request-01.json', 'response-01.json', 'request-02.json']:
+        put(root, receipt.parent.relative_to(root) / filename, {'prompt': '真实记录'})
+    (receipt.parent / 'parsed.json').symlink_to(receipt)
+    call(root, '20261015-screenwriter-old', {'role': 'screenwriter', 'status': 'succeeded'})
+    records = role(team_flow.build_flow(project, config), 'screenwriter')['executions']
+    current, old = records
+    assert current['scope'] == 'current_run' and current['stage'] == 'screenplay'
+    assert [[a['kind'] for a in t['artifacts']] for t in current['attempts']] == [['request', 'response'], ['request']]
+    assert [a['kind'] for a in current['artifacts']] == ['receipt']
+    assert old['scope'] == 'project_history' and 'stage' not in old
+    project['script_generation'] = 2
+    assert role(team_flow.build_flow(project, config), 'screenwriter')['executions'][0]['scope'] == 'project_history'

@@ -98,6 +98,9 @@ def _request(config, role, system, payload, schema, output_dir, max_tokens=4096,
                "parameters":parameters, "model_identity":llm_identity(config,role),
                "config_revision": config_revision(config), "prompt": prompt_meta,
                "started_at":time.time(),"status":"starting","attempts":[]}
+    from .execution_context import current_execution
+    if current_execution.get() is not None:
+        receipt["execution_context"] = dict(current_execution.get())
     save("receipt.json", receipt)
     started = time.monotonic()
     try:
