@@ -47,6 +47,8 @@ LAN 入口由独立的 `scripts/wkp_live_gateway.py` 管理，本启动器只管
 
 ## 准备与运行
 
+创作审核与自动返修采用 `creative.max_review_rounds`，默认每批最多 4 轮审核（3 次返修），支持整数 1–6。每轮保留前稿与独立审核意见，合格后立即停止。达到上限时，已配置的 `executive_producer` 通过持久化任务提供实际模型建议；用户采纳后通过原有反馈、版本校验和独立复审继续。模型未配置或建议请求结果不确定时保留人工处理入口，不自动重复调用。已有显式上限不会因升级被静默改写；本次 cami 测试配置按用户需求设为 4。
+
 先按 [部署说明](DEPLOYMENT.md) 安装本仓库 `.venv` 和 UI 依赖并运行 `npm run build`，准备上述既有 TLS 文件。执行命令的用户需要可用的 systemd user session。
 
 ```bash

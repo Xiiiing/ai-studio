@@ -204,6 +204,70 @@ test("automatic supervisor gate is not a phantom human decision", async ({
   await expect(page.locator("#workspace")).toContainText("当前没有人工待办");
   await expect(page.locator('[data-action="decide"]')).toHaveCount(0);
 });
+
+test("automatic review displays its bounded repair round without a human blocker", async ({
+  page,
+  request,
+}) => {
+  await request.post("/__test/scenario", { data: { kind: "repairing" } });
+  await page.goto("/#project=" + id + "&tab=decisions");
+  await expect(page.locator(".review-automation")).toContainText(
+    "第 3 / 4 轮审核",
+  );
+  await expect(page.locator(".review-automation")).toContainText(
+    "正在按审核意见返修",
+  );
+  await expect(
+    page.getByText("当前没有人工待办", { exact: true }),
+  ).toBeVisible();
+  const calls = await (await request.get("/__test/calls")).json();
+  expect(calls.filter((c) => c.path.endsWith("/action"))).toHaveLength(0);
+});
+
+test("AI advice is requested separately and only adopted by an explicit producer action", async ({
+  page,
+  request,
+}) => {
+  await request.post("/__test/scenario", { data: { kind: "review_assist" } });
+  await openDecision(page);
+  await page
+    .getByRole("button", { name: "请 AI 分析并推荐", exact: true })
+    .click();
+  await expect(page.locator(".review-advisor")).toContainText(
+    "缺少救助动机，建议保留故事方向补齐过渡。",
+  );
+  let calls = (await (await request.get("/__test/calls")).json()).filter((c) =>
+    c.path.endsWith("/action"),
+  );
+  expect(calls).toHaveLength(1);
+  expect(calls[0].body.action).toBe("request_review_advice");
+  await expect(page.locator(".review-primary-action textarea")).toHaveValue("");
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBeTruthy();
+  await page.screenshot({
+    path: "runtime/browser-report/ai-review-advice-mobile.png",
+    fullPage: true,
+  });
+  await page
+    .getByRole("button", { name: "采纳 AI 方案并继续返修", exact: true })
+    .click();
+  await expect(page.locator(".project-meta")).toContainText("排队中");
+  calls = (await (await request.get("/__test/calls")).json()).filter((c) =>
+    c.path.endsWith("/action"),
+  );
+  expect(calls).toHaveLength(2);
+  expect(calls[1].body).toMatchObject({
+    action: "provide_feedback",
+    feedback: "在 S03 前增加人物发现危险的动作，保留其他镜头，再交独立审核。",
+  });
+  expect(calls[1].body.expected_revision).toBeGreaterThan(
+    calls[0].body.expected_revision,
+  );
+});
 test("dashboard navigation filters and mobile viewport remain functional", async ({
   page,
 }) => {

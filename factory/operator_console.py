@@ -149,6 +149,9 @@ def project_summary(project, *, job_running=False):
                   delivery_ready=bool(project.get("delivery")), shot_total=len(shots),
                   shot_images=sum(bool(obj(s.get("image")).get("path")) for s in shots),
                   shot_videos=sum(bool(obj(s.get("video")).get("path")) for s in shots))
+    advice = advice_snapshot(project)
+    if job_running and advice and advice.get("current") and advice.get("status") in {"queued", "requested"}:
+        result["current_activity"] = "等待总制片分析审核问题" if advice["status"] == "queued" else "总制片正在分析返修方案"
     result["poster"] = next((u for s in shots for u in [media_url(project, obj(s.get("image")).get("path") or s.get("image_url"))] if u), None)
     return result
 

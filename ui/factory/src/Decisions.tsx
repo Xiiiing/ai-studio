@@ -12,6 +12,7 @@ import {
 } from "./api";
 import { useQueryClient } from "@tanstack/react-query";
 import { Panel, Badge, Empty, ErrorNotice, Field } from "./ui";
+import { ReviewAutomation, ReviewAdvisor } from "./ReviewAssistance";
 export function actionsFor(project: RecordData) {
   return rows(project.operator?.attention?.actions);
 }
@@ -184,6 +185,7 @@ export function DecisionCenter({
   const [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [feedback, setFeedback] = useState("");
+  const [manualFeedback, setManualFeedback] = useState("");
   const [base, setBase] = useState(project.revision),
     [dirty, setDirty] = useState(false);
   const current = useRef(project.revision);
@@ -218,7 +220,11 @@ export function DecisionCenter({
       );
       setFeedback("");
       setDirty(false);
-      onNotify("操作已提交，制作团队将按当前决定继续。");
+      onNotify(
+        payload.action === "request_review_advice"
+          ? "已安排 AI 分析当前审核问题，建议返回后由你选择。"
+          : "操作已提交，制作团队将按当前决定继续。",
+      );
       await client.invalidateQueries();
     } catch (e) {
       setError((e as Error).message);
@@ -253,9 +259,12 @@ export function DecisionCenter({
     issues.map((i) => i.suggestion || i.description).join("\n");
   if (!attention?.blocking && !gate)
     return (
-      <Empty title="当前没有人工待办">
-        Agent 团队正在自动执行。你可以随时查看任务与产物，并在必要时暂停介入。
-      </Empty>
+      <>
+        <ReviewAutomation project={project} />
+        <Empty title="当前没有人工待办">
+          Agent 团队正在自动执行。你可以随时查看任务与产物，并在必要时暂停介入。
+        </Empty>
+      </>
     );
   const confirm = stale ? (
     <div className="notice decision-draft-stale">
@@ -286,6 +295,11 @@ export function DecisionCenter({
   );
   const actions = actionsFor(project);
   const primaryReview = actions.find((a) => a.id === "provide_feedback");
+  const otherActions = actions.filter(
+    (a) =>
+      a.id !== primaryReview?.id &&
+      !["request_review_advice", "continue_auto_review"].includes(a.id),
+  );
   function actionForm(action: RecordData) {
     return (
       <ActionForm
@@ -293,6 +307,9 @@ export function DecisionCenter({
         action={action}
         project={project}
         busy={busy}
+        onFeedbackChange={
+          action.id === "provide_feedback" ? setManualFeedback : undefined
+        }
         onSubmit={(body) => submit(body)}
         suggestion={suggestion}
       />
@@ -325,6 +342,13 @@ export function DecisionCenter({
           <span>当前版本 {project.revision} · 所有决定都会留下记录</span>
         </div>
         <ErrorNotice error={error} />
+        <ReviewAutomation project={project} />
+        <ReviewAdvisor
+          project={project}
+          busy={busy}
+          manualFeedback={manualFeedback}
+          onSubmit={(body) => submit(body)}
+        />
         {String(project.needs_decision?.code || "").startsWith("cloud_") &&
           project.cloud_quote && (
             <CloudAuthorization
@@ -584,18 +608,18 @@ export function DecisionCenter({
               缺少有效媒体，当前不能批准交付。
             </Empty>
           ))}
-        {primaryReview && actions.length > 1 ? (
+        {primaryReview && otherActions.length > 0 ? (
           <details className="review-other-actions">
             <summary>其他处理方式</summary>
             <div className="decision-action-list">
-              {actions.filter((a) => a.id !== primaryReview.id).map(actionForm)}
+              {otherActions.map(actionForm)}
             </div>
           </details>
         ) : (
           !primaryReview &&
           actions.length > 0 && (
             <div className="decision-action-list">
-              {actions.map(actionForm)}
+              {otherActions.map(actionForm)}
             </div>
           )
         )}
@@ -618,12 +642,14 @@ export function ActionForm({
   busy,
   onSubmit,
   suggestion,
+  onFeedbackChange,
 }: {
   action: RecordData;
   project: RecordData;
   busy: boolean;
   onSubmit: (body: RecordData) => void;
   suggestion?: string;
+  onFeedbackChange?: (feedback: string) => void;
 }) {
   const [values, setValues] = useState<RecordData>({}),
     [base, setBase] = useState(project.revision),
@@ -637,7 +663,9 @@ export function ActionForm({
       setBase(project.revision);
     }
     setValues((v) => ({ ...v, [name]: value }));
+    if (name === "feedback") onFeedbackChange?.(value);
   };
+  useEffect(() => () => onFeedbackChange?.(""), [onFeedbackChange]);
   return (
     <form
       className="action-form"

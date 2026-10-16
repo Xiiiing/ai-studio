@@ -50,6 +50,7 @@ import {
 } from "./ui";
 import { Workflow, Team } from "./Workflow";
 import { DecisionCenter, ActionForm } from "./Decisions";
+import { ReviewAutomation } from "./ReviewAssistance";
 import { Models } from "./Models";
 import { Shots, Series, Costs } from "./Assets";
 type Route = { view: string; project: string; tab: string };
@@ -1112,6 +1113,7 @@ function Project({
                 <CurrentOutput project={p} />
               </Panel>
               <Panel title="当前任务与下一步">
+                <ReviewAutomation project={p} />
                 <div className="current-task">
                   <Badge status={p.status} />
                   <h3>{w.operator?.current_activity || names[p.status]}</h3>
