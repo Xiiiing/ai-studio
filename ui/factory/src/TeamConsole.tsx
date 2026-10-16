@@ -30,6 +30,13 @@ import {
   Panel,
 } from "./ui";
 import { MaterialCard } from "./DocumentReader";
+import {
+  EnableTeamControl,
+  InterventionComposer,
+  TaskControlActions,
+  TeamInstructions,
+  useInterventionTarget,
+} from "./TeamControls";
 
 const statusLabels: Record<string, string> = {
   pending: "待执行",
@@ -140,6 +147,9 @@ export function TeamConsole({
 }) {
   const teamQuery = useTeam(projectId);
   const team = teamQuery.data;
+  const [interventionTarget, setInterventionTarget] =
+    useInterventionTarget(projectId);
+  const [controlNotice, setControlNotice] = useState("");
   const [department, setDepartment] = useState("");
   const [status, setStatus] = useState("");
   const [shot, setShot] = useState("");
@@ -210,6 +220,12 @@ export function TeamConsole({
   return (
     <div className="stack team-console">
       <ErrorNotice error={teamQuery.error} />
+      {controlNotice && (
+        <div className="notice team-control-notice" role="status">
+          {controlNotice}
+        </div>
+      )}
+      <EnableTeamControl projectId={projectId} team={team} />
       {!team.enabled && (
         <div className="notice">
           当前为团队观察模式，保留项目既有流程。
@@ -271,6 +287,32 @@ export function TeamConsole({
                           "未记录"
                         }
                       />
+                      {rows(team.actions).some(
+                        (action) => action.id === "intervene",
+                      ) && (
+                        <button
+                          className="text-link team-member-task"
+                          disabled={
+                            rows(team.actions).find(
+                              (action) => action.id === "intervene",
+                            )?.enabled === false
+                          }
+                          title={
+                            rows(team.actions).find(
+                              (action) => action.id === "intervene",
+                            )?.disabled_reason
+                          }
+                          onClick={() =>
+                            setInterventionTarget({
+                              type: "member",
+                              id: member.id,
+                              label: member.label || roleName(member.role),
+                            })
+                          }
+                        >
+                          介入成员任务
+                        </button>
+                      )}
                       {Array.isArray(member.current_tasks) &&
                         member.current_tasks.map((taskId: string) => (
                           <button
@@ -410,6 +452,25 @@ export function TeamConsole({
               projectId={projectId}
               memberName={memberName}
               onTask={selectTask}
+              controls={
+                <TaskControlActions
+                  projectId={projectId}
+                  task={detail}
+                  controlRevision={Math.max(
+                    team.control_revision ?? 0,
+                    detailQuery.data?.control_revision ?? 0,
+                    tasksQuery.data?.control_revision ?? 0,
+                  )}
+                  onIntervene={() =>
+                    setInterventionTarget({
+                      type: "task",
+                      id: detail.id,
+                      label: detail.label,
+                      task: detail,
+                    })
+                  }
+                />
+              }
             />
           ) : selected && detailQuery.isPending ? (
             <Loading />
@@ -456,6 +517,21 @@ export function TeamConsole({
           <p className="muted">尚无任务交接事件。</p>
         )}
       </Panel>
+      <TeamInstructions
+        projectId={projectId}
+        instructions={rows(team.instructions)}
+        controlRevision={team.control_revision ?? 0}
+      />
+      {interventionTarget && (
+        <InterventionComposer
+          key={interventionTarget.type + ":" + interventionTarget.id}
+          projectId={projectId}
+          target={interventionTarget}
+          team={team}
+          onClose={() => setInterventionTarget(null)}
+          onRegistered={setControlNotice}
+        />
+      )}
       {children && (
         <details className="team-legacy-receipts">
           <summary>工作流与历史执行回执</summary>
@@ -470,11 +546,13 @@ function TaskDetail({
   projectId,
   memberName,
   onTask,
+  controls,
 }: {
   task: RecordData;
   projectId: string;
   memberName: (id: string) => string;
   onTask: (id: string) => void;
+  controls?: ReactNode;
 }) {
   return (
     <>
@@ -485,6 +563,7 @@ function TaskDetail({
         </div>
         {taskStatus(task)}
       </header>
+      {controls}
       <dl className="team-task-meta">
         <div>
           <dt>负责人</dt>

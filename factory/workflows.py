@@ -42,6 +42,10 @@ class State(TypedDict, total=False):
 
 def _project(state):
     p=store.get(state["project_id"],False)
+    from .team_control import admit
+    from .execution_context import current_execution
+    context = current_execution.get() or {}
+    admit(p["id"], "stage", context.get("stage", p.get("stage", "production")))
     if p.get("pause_requested"):
         raise ProjectPaused("已在检查点暂停")
     return p
@@ -53,6 +57,11 @@ def _checkpoint(pid):
 
 
 def _apply(pid, patch):
+    from .team_control import assert_publishable
+    from .execution_context import current_execution
+    context = current_execution.get() or {}
+    if context.get("project_id") == pid:
+        assert_publishable(pid, "stage", context.get("stage", "production"))
     if patch.get("needs_decision"):
         patch={k:v for k,v in patch.items() if not k.endswith("_complete_generation") and k not in {"research_complete","revision_prepared"}}
         store.update(pid,patch)
@@ -560,7 +569,8 @@ def _restart_graph(graph,snapshot,project,configuration):
         raise ValueError('恢复请求版本无效')
     routes={'research':(START,'continue'),'proposals':('research','continue'),
             'story_resolution':('apply_story','continue'),'screenplay':('story_resolution','continue'),
-            'visual_design':('script_review','continue')} if version == 2 else {
+            'visual_design':('script_review','continue'), 'storyboard':('screenplay','continue'),
+            'script_review':('storyboard','continue')} if version == 2 else {
             'research':(START,'continue'),'proposals':('research','continue'),
             'story_resolution':('apply_story','continue'),'screenplay':('apply_story','continue'),
             'visual_design':('apply_style','restyle')}

@@ -51,6 +51,8 @@ def image_body(profile, prompt, refs, size, seed):
 def make_line(pid, item, record, profile, body, kind):
     source=record['source_signature']
     signature=fingerprint({'connection':identity(profile),'body':body})
+    if record.get('team_revision'):
+        signature=fingerprint({'request':signature,'explicit_retake':record['team_revision']})
     return {'intent_id':fingerprint({'project':pid,'kind':kind,'item':item,'take':record['take']}),
             'shot_id':kind+':'+item, 'attempt':record['attempt'], 'take':record['take'],
             'provider':profile['provider'], 'model':profile['model'],
@@ -183,6 +185,8 @@ def speech_sources(engine,lines,voices):
         if isinstance(voice,dict): voice=voice.get('speaker',voice.get('voice'))
         if not isinstance(voice,str) or not voice: raise ValueError('请配置有效的云端角色声线')
         source={'line':line,'settings':{'connection':identity(profile),'voice':voice,'language':profile.get('language','Chinese')}}
+        if original.get('team_revision'):
+            source['team_revision']=original['team_revision']
         signature=fingerprint(source)
         expected[line['id']]={'source':source,'source_sha256':signature,'key':fingerprint({'source':signature,'schema':'cloud_tts.v1'}),
                               'model_state':{'provider':profile['provider'],'model':profile['model']}}
@@ -213,7 +217,7 @@ def speech_batch(engine,lines,voices,expected):
         # A changed source gets a new take identity, but cannot bypass a prior
         # unresolved request for this logical line in cloud_budget.reserve.
         take='tts_'+e['key'][:24]
-        info=make_line(engine.ident,line['id'],{'source_signature':e['key'],'take':take,'attempt':1},profile,body,'audio')
+        info=make_line(engine.ident,line['id'],{'source_signature':e['key'],'take':take,'attempt':1,'team_revision':source.get('team_revision')},profile,body,'audio')
         with store.connection() as db:
             old=db.execute('SELECT * FROM cloud_tasks WHERE project_id=? AND shot_id=? AND request_signature=? ORDER BY created DESC LIMIT 1',
                            (engine.ident,info['shot_id'],info['request_signature'])).fetchone()
@@ -222,7 +226,7 @@ def speech_batch(engine,lines,voices,expected):
             if number>engine.config.get('max_attempts',3):
                 raise ProductionNeedsDecision('云端配音已达到本次输入的尝试上限','voice_failed')
             take=old['take'] if number==old['attempt'] else 'tts_'+e['key'][:24]+f'_{number:03d}'
-            info=make_line(engine.ident,line['id'],{'source_signature':e['key'],'take':take,'attempt':number},profile,body,'audio')
+            info=make_line(engine.ident,line['id'],{'source_signature':e['key'],'take':take,'attempt':number,'team_revision':source.get('team_revision')},profile,body,'audio')
         prepared.append((line,e,folder,path,body,info))
         if not old or old['status'] in {'failed','rejected'}:fresh.append(info)
     batch=cloud_budget.ensure_batch(engine.project,profile,fresh) if fresh else None

@@ -234,3 +234,349 @@ describe("team command console", () => {
     expect(screen.getByLabelText("团队任务概况")).toHaveTextContent("1执行中");
   });
 });
+
+function controlApi(
+  options: {
+    conflict?: boolean;
+    failSubmit?: boolean;
+    disabled?: boolean;
+  } = {},
+) {
+  let generation = 2,
+    control = 3,
+    locked = false;
+  const submissions: RecordData[] = [];
+  const quickActions: RecordData[] = [];
+  const current = () =>
+    task({
+      generation,
+      locked,
+      actions: [
+        {
+          id: "pause",
+          label: "暂停任务",
+          enabled: !options.disabled,
+          disabled_reason: options.disabled ? "任务已完成" : undefined,
+        },
+        {
+          id: locked ? "unlock" : "lock",
+          label: locked ? "解锁成果" : "锁定成果",
+          enabled: true,
+        },
+        { id: "hold_after", label: "完成后等我确认", enabled: true },
+        { id: "intervene", label: "介入并下达要求", enabled: true },
+      ],
+    });
+  const fetch = vi.fn(async (url: string, init?: RequestInit) => {
+    const path = new URL(url, "http://localhost");
+    const body = init?.body ? JSON.parse(String(init.body)) : {};
+    let data: RecordData;
+    if (path.pathname.endsWith("/team"))
+      data = {
+        ...team(),
+        control_revision: control,
+        actions: [{ id: "intervene", enabled: true }],
+      };
+    else if (path.pathname.endsWith("/interventions/preview"))
+      data = {
+        affected_tasks: ["video:S01", "edit:project"],
+        preserved_tasks: body.preserve,
+        conflicts: options.conflict
+          ? [
+              {
+                task_id: "video:S01",
+                reason: "视频候选已锁定，请解锁或调整范围",
+              },
+            ]
+          : [],
+      };
+    else if (
+      path.pathname.endsWith("/interventions") &&
+      init?.method === "POST"
+    ) {
+      submissions.push(body);
+      if (options.failSubmit)
+        return new Response(JSON.stringify({ error: "任务基线已变化" }), {
+          status: 409,
+        });
+      generation++;
+      data = {
+        instruction: {
+          id: "instruction-1",
+          status: "pending",
+          affected_tasks: ["video:S01"],
+        },
+        control_revision: ++control,
+      };
+    } else if (path.pathname.endsWith("/actions")) {
+      quickActions.push(body);
+      if (body.action === "lock") locked = true;
+      if (body.action === "unlock") locked = false;
+      data = { task: current(), control_revision: ++control };
+    } else if (path.pathname.endsWith("/tasks/video%3AS01"))
+      data = { task: current(), control_revision: control };
+    else
+      data = {
+        tasks: [
+          current(),
+          task({
+            id: "speech:S01:D1",
+            label: "第 1 镜配音",
+            kind: "speech",
+            owner: "speech",
+            department: "sound",
+          }),
+        ],
+        total: 2,
+        control_revision: control,
+      };
+    return new Response(JSON.stringify(data), {
+      headers: { "Content-Type": "application/json" },
+    });
+  });
+  return {
+    fetch,
+    submissions,
+    quickActions,
+    bump: () => {
+      generation++;
+      control++;
+    },
+  };
+}
+
+describe("task control and intervention", () => {
+  it("enables legacy v2 control only through the server capability", async () => {
+    const base = mockApi();
+    let enabled = false;
+    const enableBodies: RecordData[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        if (url.endsWith("/team/actions")) {
+          enableBodies.push(JSON.parse(String(init?.body)));
+          enabled = true;
+          return new Response(
+            JSON.stringify({ team: { ...team(), control_revision: 1 } }),
+          );
+        }
+        if (url.endsWith("/team"))
+          return new Response(
+            JSON.stringify({
+              ...team(),
+              enabled,
+              enable_available: !enabled,
+              control_revision: enabled ? 1 : 0,
+              actions: enabled
+                ? []
+                : [
+                    {
+                      id: "enable_control",
+                      label: "启用团队控制",
+                      enabled: true,
+                    },
+                  ],
+            }),
+          );
+        return base(url);
+      }),
+    );
+    mount();
+    await userEvent.click(
+      await screen.findByRole("button", { name: "启用团队控制" }),
+    );
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("button", { name: "启用团队控制" }),
+      ).not.toBeInTheDocument(),
+    );
+    expect(enableBodies).toHaveLength(1);
+    expect(enableBodies[0]).toMatchObject({
+      action: "enable",
+      expected_control_revision: 0,
+    });
+  });
+  it("uses server capabilities and optimistic versions for lock/pause/hold actions", async () => {
+    const api = controlApi({ disabled: true });
+    vi.stubGlobal("fetch", api.fetch);
+    mount();
+    const lock = await screen.findByRole("button", { name: "锁定成果" });
+    expect(screen.getByRole("button", { name: "暂停任务" })).toBeDisabled();
+    expect(screen.getByText("暂停任务：任务已完成")).toBeVisible();
+    await userEvent.click(lock);
+    await screen.findByRole("button", { name: "解锁成果" });
+    expect(api.quickActions[0]).toMatchObject({
+      action: "lock",
+      expected_generation: 2,
+      expected_control_revision: 3,
+    });
+    expect(api.quickActions[0].request_id).toEqual(expect.any(String));
+    await userEvent.click(
+      screen.getByRole("button", { name: "完成后等我确认" }),
+    );
+    await waitFor(() =>
+      expect(api.quickActions[1]).toMatchObject({
+        action: "hold_after",
+        expected_control_revision: 4,
+      }),
+    );
+  });
+  it("previews impact, preserves selected sound and registers explicit wait behavior", async () => {
+    const api = controlApi();
+    vi.stubGlobal("fetch", api.fetch);
+    mount();
+    await userEvent.click(
+      await screen.findByRole("button", { name: "介入并下达要求" }),
+    );
+    const form = within(screen.getByRole("dialog"));
+    await userEvent.type(
+      form.getByLabelText("新的制作要求"),
+      "人物表情更克制，保留配音",
+    );
+    await userEvent.click(
+      await form.findByRole("checkbox", { name: /第 1 镜配音/ }),
+    );
+    await userEvent.selectOptions(form.getByLabelText("完成后的安排"), "wait");
+    await userEvent.click(form.getByRole("button", { name: "查看影响" }));
+    expect(await form.findByLabelText("返工影响预览")).toHaveTextContent(
+      "edit:project",
+    );
+    await userEvent.click(form.getByRole("button", { name: "登记指令并执行" }));
+    expect(
+      await screen.findByText("指令已登记，当前调用收尾后生效。"),
+    ).toBeVisible();
+    expect(api.submissions).toHaveLength(1);
+    expect(api.submissions[0]).toMatchObject({
+      target_type: "task",
+      target_id: "video:S01",
+      task_ids: ["video:S01"],
+      task_generations: { "video:S01": 2 },
+      preserve: ["speech:S01:D1"],
+      after: "wait",
+      expected_control_revision: 3,
+    });
+    await userEvent.click(
+      await screen.findByRole("button", { name: "介入并下达要求" }),
+    );
+    expect(screen.getByLabelText("新的制作要求")).toHaveValue("");
+    expect(screen.queryByText(/任务版本已变化/)).not.toBeInTheDocument();
+  });
+  it("keeps the instruction draft on lock conflict and does not dispatch", async () => {
+    const api = controlApi({ conflict: true });
+    vi.stubGlobal("fetch", api.fetch);
+    mount();
+    await userEvent.click(
+      await screen.findByRole("button", { name: "介入并下达要求" }),
+    );
+    await userEvent.type(
+      screen.getByLabelText("新的制作要求"),
+      "保留构图，修改表情",
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "登记指令并执行" }),
+    );
+    expect(await screen.findByText(/视频候选已锁定/)).toBeVisible();
+    expect(screen.getByLabelText("新的制作要求")).toHaveValue(
+      "保留构图，修改表情",
+    );
+    expect(api.submissions).toHaveLength(0);
+  });
+  it("retains drafts across refresh and tab unmount, keeps original generation until explicit reload", async () => {
+    const api = controlApi();
+    vi.stubGlobal("fetch", api.fetch);
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const view = (visible: boolean) => (
+      <QueryClientProvider client={client}>
+        {visible && <TeamConsole projectId={id} />}
+      </QueryClientProvider>
+    );
+    const rendered = render(view(true));
+    await userEvent.click(
+      await screen.findByRole("button", { name: "介入并下达要求" }),
+    );
+    await userEvent.type(screen.getByLabelText("新的制作要求"), "不要改动服装");
+    rendered.rerender(view(false));
+    rendered.rerender(view(true));
+    expect(await screen.findByLabelText("新的制作要求")).toHaveValue(
+      "不要改动服装",
+    );
+    api.bump();
+    await client.invalidateQueries({
+      predicate: (query) => !String(query.queryKey[0]).includes("draft"),
+    });
+    expect(await screen.findByText(/任务版本已变化/)).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "登记指令并执行" }),
+    ).toBeDisabled();
+    await userEvent.click(
+      screen.getByRole("button", { name: "重新读取基线（保留要求）" }),
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "登记指令并执行" }),
+      ).toBeEnabled(),
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "登记指令并执行" }),
+    );
+    await waitFor(() =>
+      expect(api.submissions[0].task_generations).toEqual({ "video:S01": 3 }),
+    );
+  });
+  it("preserves the draft and original generation after a server rejection", async () => {
+    const api = controlApi({ failSubmit: true });
+    vi.stubGlobal("fetch", api.fetch);
+    mount();
+    await userEvent.click(
+      await screen.findByRole("button", { name: "介入并下达要求" }),
+    );
+    await userEvent.type(screen.getByLabelText("新的制作要求"), "只重做动作");
+    await userEvent.click(
+      screen.getByRole("button", { name: "登记指令并执行" }),
+    );
+    expect(await screen.findByText("任务基线已变化")).toBeVisible();
+    expect(screen.getByLabelText("新的制作要求")).toHaveValue("只重做动作");
+    expect(api.submissions[0].task_generations).toEqual({ "video:S01": 2 });
+    expect(
+      screen.getByRole("button", { name: "重新读取基线（保留要求）" }),
+    ).toBeVisible();
+  });
+  it("selects explicit owned tasks for member intervention", async () => {
+    const api = controlApi();
+    vi.stubGlobal("fetch", api.fetch);
+    mount();
+    await userEvent.click(
+      await screen.findByRole("button", { name: "介入成员任务" }),
+    );
+    const dialog = within(screen.getByRole("dialog"));
+    expect(
+      dialog.getByRole("button", { name: "登记指令并执行" }),
+    ).toBeDisabled();
+    await userEvent.click(
+      await within(dialog.getByRole("group", { name: "修改范围" })).findByRole(
+        "checkbox",
+        { name: /第 1 镜视频/ },
+      ),
+    );
+    await userEvent.type(dialog.getByLabelText("新的制作要求"), "按原要求重做");
+    await userEvent.selectOptions(dialog.getByLabelText("处理方式"), "retry");
+    await userEvent.click(
+      dialog.getByRole("button", { name: "登记指令并执行" }),
+    );
+    await waitFor(() =>
+      expect(api.submissions[0]).toMatchObject({
+        target_type: "member",
+        target_id: "video_generator",
+        task_ids: ["video:S01"],
+        operation: "retry",
+      }),
+    );
+    expect(
+      api.fetch.mock.calls.some(([url]) =>
+        String(url).includes("owner=video_generator"),
+      ),
+    ).toBe(true);
+  });
+});

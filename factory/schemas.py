@@ -391,6 +391,11 @@ def cached_json_call(project, config, role, stage, system, payload, schema,
     from factory.config import llm_identity
     model_identity = llm_identity(config, role)
     from .profile_creative import adapt_schema, adapt_system
+    from .team_control import requirements_payload
+    payload = requirements_payload(project, payload)
+    if "producer_task_requirements" in payload:
+        from .prompt_registry import derive_prompt
+        system = derive_prompt(system, str(system) + "\n落实 producer_task_requirements 中本次出品人的任务要求；只在该任务职责与既有范围内修改，不跳过独立审核。", "producer_intervention")
     schema, system = adapt_schema(schema, project), adapt_system(system, project)
     from .prompt_registry import prompt_receipt
     prompt_meta = prompt_receipt(system, role, payload, schema)

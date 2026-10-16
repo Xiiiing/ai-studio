@@ -30,7 +30,7 @@ class Handler(LocalMediaHandler):
                 from .team_ledger import team_snapshot, task_page, task_detail
                 pid, view, task_id = match.groups()
                 query = parse_qs(urlsplit(self.path).query, keep_blank_values=True)
-                allowed = {"offset", "limit", "department", "status", "shot_id"} if view == "tasks" and not task_id else set()
+                allowed = {"offset", "limit", "department", "status", "shot_id", "owner"} if view == "tasks" and not task_id else set()
                 if set(query) - allowed or any(len(v) != 1 for v in query.values()) or (task_id and view != "tasks"):
                     raise ValueError("团队查询参数无效")
                 if task_id:
@@ -44,6 +44,13 @@ class Handler(LocalMediaHandler):
                             raise ValueError("任务分页无效")
                         params[name] = int(params[name])
                 return self.json(task_page(pid, **params))
+            match = re.fullmatch(r"/api/factory/projects/([a-f0-9]{12})/interventions", path)
+            if match:
+                from .team_control import instructions
+                query = parse_qs(urlsplit(self.path).query, keep_blank_values=True)
+                if set(query) - {"offset", "limit"} or any(len(v) != 1 or not re.fullmatch(r"[0-9]{1,9}", v[0]) for v in query.values()):
+                    raise ValueError("指令分页无效")
+                return self.json(instructions(match[1], **{k: int(v[0]) for k, v in query.items()}))
             if path == "/api/factory/library/tasks":
                 from .material_tasks import tasks
                 query = parse_qs(urlsplit(self.path).query)
@@ -161,6 +168,20 @@ class Handler(LocalMediaHandler):
             return super().do_POST()
         try:
             payload=self.read_json_body()
+            match = re.fullmatch(r"/api/factory/projects/([a-f0-9]{12})/interventions(?:/(preview|[a-f0-9]{32}/dismiss))?", route)
+            if match:
+                from .team_control import submit, preview, dismiss
+                pid, operation = match.groups()
+                result = preview(pid, payload) if operation == "preview" else dismiss(pid, operation.split('/')[0], payload) if operation else submit(pid, payload)
+                return self.json(result, 200 if operation == "preview" else 202)
+            match = re.fullmatch(r"/api/factory/projects/([a-f0-9]{12})/tasks/([a-z_]+:[A-Za-z0-9_.-]{1,120})/actions", unquote(route))
+            if match:
+                from .team_control import task_action
+                return self.json(task_action(*match.groups(), payload), 202)
+            match = re.fullmatch(r"/api/factory/projects/([a-f0-9]{12})/team/actions", route)
+            if match:
+                from .team_control import enable
+                return self.json(enable(match[1], payload), 202)
             if route == "/api/factory/library/tasks":
                 from .material_tasks import create
                 return self.json({"task": create(payload)}, 202)

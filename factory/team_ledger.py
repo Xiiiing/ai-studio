@@ -31,6 +31,7 @@ KINDS = {
     "speech": ("角色配音", "speech"), "dialogue": ("对白时长检查", "dialogue_editor"),
     "edit": ("后期交付", "editor"), "technical_review": ("成片技术检查", "editor"),
     "management": ("制作安排", "executive_producer"),
+    "script": ("剧本镜头单元", "screenwriter"), "dialogue_text": ("对白正文", "screenwriter"),
 }
 STATUSES = frozenset({"pending", "running", "waiting", "completed", "failed", "blocked", "paused", "superseded", "reused", "unknown"})
 TASK_ID = re.compile(r"[a-z_]+:[A-Za-z0-9_.-]{1,120}\Z")
@@ -120,15 +121,23 @@ def ensure_project(db, project):
         inputs = [{"label": key, "version": project.get("script_generation")} for key in spec["inputs"]]
         _insert(db, pid, _definition("stage", stage, dependencies=["stage:" + dep for dep in spec["depends_on"]], inputs=inputs))
     episode = project.get("episode") or project.get("script") or {}
+    if not isinstance(episode, dict):
+        return
     cast = episode.get("cast") or {}
     for role in cast:
         _insert(db, pid, _definition("character", role, dependencies=["stage:visual_development"]))
     delivery_inputs = []
     for shot in episode.get("shots", [])[:80]:
         sid = shot["id"]
+        script_definition = _definition("script", sid, dependencies=["stage:script_review"], inputs=[{"label": "镜头剧本", "text": store.encoded(shot)}])
+        _insert(db, pid, script_definition)
+        if (project.get("script_review") or {}).get("passed") is True:
+            _import_text(db, pid, "script:" + sid, shot)
         from .series_bindings import shot_roles
-        dependencies = ["character:" + role for role in shot_roles(shot, cast)]
+        dependencies = ["script:" + sid] + ["character:" + role for role in shot_roles(shot, cast)]
         dependencies += ["image:" + ref for ref in shot.get("reference_shots", [])]
+        from .material_library import shot_references
+        dependencies += ["scene:" + r["asset_id"] for r in shot_references(project, shot) if r.get("kind") == "scene"]
         _insert(db, pid, _definition("image", sid, dependencies=dependencies,
                                     inputs=[{"label": "镜头要求", "text": shot.get("prompt"), "version": project.get("script_generation")}]))
         _insert(db, pid, _definition("image_review", sid, dependencies=["image:" + sid]))
@@ -137,14 +146,37 @@ def ensure_project(db, project):
         dialogue = []
         for index, line in enumerate(shot.get("dialogue", [])):
             lid = line.get("id") or f"{sid}_D{index + 1:02d}"
-            _insert(db, pid, _definition("speech", lid, dependencies=["stage:script_review"],
+            _insert(db, pid, _definition("dialogue_text", lid, dependencies=["script:" + sid], inputs=[{"label": "对白正文", "text": line.get("text")}]))
+            if (project.get("script_review") or {}).get("passed") is True:
+                _import_text(db, pid, "dialogue_text:" + lid, line)
+            _insert(db, pid, _definition("speech", lid, dependencies=["stage:script_review", "dialogue_text:" + lid],
                                         inputs=[{"label": "对白", "text": line.get("text"), "role": line.get("role")}]))
             dialogue.append("speech:" + lid)
-        _insert(db, pid, _definition("dialogue", sid, dependencies=dialogue))
-        delivery_inputs += ["video_review:" + sid, "dialogue:" + sid]
+        if dialogue:
+            _insert(db, pid, _definition("dialogue", sid, dependencies=dialogue))
+        delivery_inputs += ["video_review:" + sid] + (["dialogue:" + sid] if dialogue else [])
+    for reference in project.get("material_package", {}).get("references", []):
+        if reference.get("kind") == "scene":
+            scope = reference.get("asset_id")
+            if isinstance(scope, str) and TASK_ID.fullmatch("scene:" + scope):
+                _insert(db, pid, _definition("scene", scope, inputs=[{"label": "已固定场景素材", "text": store.encoded(reference)}]))
+                _import_text(db, pid, "scene:" + scope, reference)
     if episode.get("shots"):
         _insert(db, pid, _definition("edit", "delivery", dependencies=delivery_inputs))
         _insert(db, pid, _definition("technical_review", "delivery", dependencies=["edit:delivery"]))
+
+
+def _import_text(db, pid, ident, value):
+    row = _stored(db, pid, ident)
+    data = _data(row)
+    signature = fingerprint(value)
+    if data["input_version"] == signature:
+        return
+    if data["input_version"] is not None:
+        data["generation"] += 1
+    data.update(status="reused", input_version=signature, inputs=[{"label": "已审核文本或已固定素材", "text": store.encoded(value)}],
+                review_status="passed" if data["kind"] != "scene" else "not_required")
+    _save(db, row, data)
 
 
 def _stored(db, pid, ident):
@@ -174,6 +206,8 @@ def _existing(pid):
 def begin_unit(pid, kind, scope, *, owner=None, input_version=None, dependencies=(), inputs=None):
     if not _existing(pid):
         return None
+    from .team_control import admit
+    admit(pid, kind, scope)
     with store.connection() as db:
         db.execute("BEGIN IMMEDIATE")
         try:
@@ -236,13 +270,23 @@ def finish_unit(token, *, status="completed", artifact=None, review_status=None,
         if json.loads(attempt["data"]).get("finished_at"):
             return False
         current = data["generation"] == token["generation"] and data.get("active_run") == token["run_id"]
+        pending = any(token["task_id"] in json.loads(r[0]).get("affected_tasks", []) for r in db.execute(
+            "SELECT data FROM team_instructions WHERE project_id=? AND status IN ('queued','planning','needs_decision')", (token["project_id"],)))
+        current = current and not pending
         item = _artifact(artifact)
         evidence = {**json.loads(attempt["data"]), "status": status if current else "superseded", "finished_at": store.now(),
                     "artifact": item, "review_status": review_status, "model": model, "details": copy.deepcopy(details or {})}
         db.execute("UPDATE team_unit_attempts SET status=?,data=? WHERE run_id=?", (evidence["status"], store.encoded(evidence), token["run_id"]))
         if not current:
+            if pending and data.get("active_run") == token["run_id"]:
+                data.update(status="pending", active_run=None)
+                _save(db, row, data)
             return False
         data.update(status=status, finished_at=evidence["finished_at"], model=model if model is not None else data.get("model"))
+        if data.get("paused"):
+            data["status"] = "paused"
+        if data["hold_after"] and status in {"completed", "reused"}:
+            data["awaiting_ack"] = True
         if item is not None:
             data["artifacts"] = [item]
         if review_status is not None:
@@ -251,6 +295,8 @@ def finish_unit(token, *, status="completed", artifact=None, review_status=None,
             data["details"] = copy.deepcopy(details)
         _save(db, row, data)
         store._event(db, token["project_id"], data["label"] + " · " + status, "team_unit", {"task_id": data["id"], "run_id": token["run_id"]})
+        from .team_control import settle_instructions
+        settle_instructions(db, token["project_id"])
         return True
 
 
@@ -295,6 +341,21 @@ def record_call(context, role, receipt, path):
         _save(db, row, data)
 
 
+def record_adoption(pid, kind, scope, artifact):
+    if not _existing(pid):
+        return
+    with store.connection() as db:
+        row = db.execute("SELECT * FROM team_work_items WHERE project_id=? AND id=?", (pid, kind + ":" + str(scope))).fetchone()
+        if row is None:
+            return
+        row = dict(row)
+        task = _data(row)
+        if task["status"] not in {"completed", "reused"}:
+            return
+        task.update(adoption_status="selected", artifacts=[_artifact(artifact)])
+        _save(db, row, task)
+
+
 @contextmanager
 def unit(pid, kind, scope, **kwargs):
     token = begin_unit(pid, kind, scope, **kwargs)
@@ -328,7 +389,7 @@ def mark_reused(pid, kind, scope, *, artifact=None, input_version=None, review_s
         # Re-reading a completed current result is not another execution.
         if data["status"] == "completed" and data["input_version"] == input_version:
             return
-        data.update(status="reused", input_version=input_version)
+        data.update(status="paused" if data.get("paused") else "reused", input_version=input_version)
         if artifact is not None:
             data["artifacts"] = [_artifact(artifact)]
         if review_status is not None:
@@ -344,7 +405,10 @@ def _attempts(db, pid, ident):
 def _public_task(db, row):
     data = _data(row)
     data["attempts"] = _attempts(db, row["project_id"], row["id"])
-    data["actions"] = []
+    from .team_control import task_descriptors
+    project = store._read(db, row["project_id"])
+    data["actions"] = task_descriptors(db, project, data)
+    data["locked"] = bool(db.execute("SELECT 1 FROM team_locks WHERE project_id=? AND task_id=?", (row["project_id"], row["id"])).fetchone())
     if data["kind"] in {"image", "video", "character"}:
         kind = "video_review" if data["kind"] == "video" else "image_review"
         review = db.execute("SELECT data,status FROM team_work_items WHERE project_id=? AND id=?", (row["project_id"], kind + ":" + row["scope"])).fetchone()
@@ -358,7 +422,7 @@ def _revision(db, pid):
     return row[0] if row else 0
 
 
-def task_page(pid, offset=0, limit=30, department=None, status=None, shot_id=None):
+def task_page(pid, offset=0, limit=30, department=None, status=None, shot_id=None, owner=None):
     if type(offset) is not int or offset < 0 or type(limit) is not int or not 1 <= limit <= 100:
         raise ValueError("任务分页无效")
     if department is not None and department not in {g["id"] for g in DEPARTMENTS}:
@@ -367,11 +431,13 @@ def task_page(pid, offset=0, limit=30, department=None, status=None, shot_id=Non
         raise ValueError("未知任务状态")
     if shot_id is not None and not re.fullmatch(r"S\d{2,3}", shot_id):
         raise ValueError("镜头编号无效")
+    if owner is not None and owner not in ROLE_DEPARTMENT:
+        raise ValueError("未知成员")
     with store.connection() as db:
         db.execute("BEGIN")
         store._read(db, pid)
         clauses, args = ["project_id=?"], [pid]
-        for column, value in (("department", department), ("status", status)):
+        for column, value in (("department", department), ("status", status), ("owner", owner)):
             if value is not None:
                 clauses.append(column + "=?")
                 args.append(value)
@@ -401,6 +467,9 @@ def team_snapshot(pid):
             extra = json.loads(row["data"])
             events.append({"id": row["id"], "at": row["at"], "kind": row["kind"], "message": row["message"], "task_id": extra.get("task_id")})
         revision = _revision(db, pid)
+        from .team_control import _instruction
+        commands = [_instruction(r) for r in db.execute("SELECT * FROM team_instructions WHERE project_id=? ORDER BY rowid DESC LIMIT 20", (pid,))]
+        locks = [{"task_id": r["task_id"], "generation": r["generation"], "created_at": r["created_at"]} for r in db.execute("SELECT * FROM team_locks WHERE project_id=?", (pid,))]
         running = bool(db.execute("SELECT 1 FROM jobs WHERE project_id=? AND status='running'", (pid,)).fetchone())
     from .team_flow import team_spec
     assignments = {r["role"]: r for r in team_spec()["teams"]}
@@ -420,4 +489,6 @@ def team_snapshot(pid):
             "task_summary": {"total": len(tasks), "running": sum(t["status"] == "running" for t in tasks),
                              "waiting": sum(t["status"] in {"pending", "waiting", "paused"} for t in tasks), "blocked": sum(t["status"] in {"blocked", "failed"} for t in tasks),
                              "completed": sum(t["status"] in {"completed", "reused"} for t in tasks)},
-            "events": events, "instructions": [], "locks": [], "actions": []}
+            "events": events, "instructions": commands, "locks": locks,
+            "actions": ([{"id": "intervene", "label": "介入并下达要求", "enabled": True}] if enabled(project) else
+                        [{"id": "enable_control", "label": "启用团队控制", "enabled": not running and project.get("workflow_version", 1) == 2 and project["status"] in {"paused", "blocked", "awaiting_final"}, "disabled_reason": "请在安全边界启用；v1 项目仅支持观察"}])}
