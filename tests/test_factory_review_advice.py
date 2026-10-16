@@ -386,3 +386,51 @@ def test_auto_continue_rejects_unsettled_cloud_and_gpu_intents(env, monkeypatch)
     assert store.queue_summary()["queued"] == 0
     (folder / "remote_result.json").write_text(json.dumps({"id": "a" * 64, "status": "completed"}))
     assert continue_review(p)["status"] == "queued"
+
+
+@pytest.mark.parametrize("decisions", [["repair"], ["human_decision"], [], ["retry?"], ["human_decision?"], ["repair??"]])
+def test_human_decision_requires_substantive_questions_and_preserves_manual_recovery(env, monkeypatch, decisions):
+    from jsonschema import ValidationError
+    invalid = {**proposal(), "recommendation": "human_decision", "decisions": decisions}
+    with pytest.raises((ValueError, ValidationError)):
+        advice.validate_proposal(invalid)
+    p = blocked()
+    request(p)
+    calls = []
+    monkeypatch.setattr(advice, "cached_json_call", lambda *a, **k: calls.append(True) or invalid)
+    worker.handle(store.claim_job())
+    saved = store.get(p["id"], False)
+    assert saved["review_advice"]["status"] == "manual"
+    assert saved["review_advice"]["reason_code"] == "model_failure"
+    assert "proposal" not in saved["review_advice"]
+    assert saved["needs_decision"] == p["needs_decision"] and saved["status"] == "blocked"
+    assert store.queue_summary()["running"] == 0 and len(calls) == 1
+    # Returning to the same intent cannot cause a second model call.
+    assert request(saved)["review_advice"]["status"] == "manual"
+    assert len(calls) == 1
+
+
+def test_advisor_distinguishes_authorized_repair_from_real_unresolved_choice(env, monkeypatch):
+    from jsonschema import ValidationError
+    valid = {**proposal(), "recommendation": "human_decision",
+             "rationale": "用户同时要求保留角色关系并改为首次见面，两个目标冲突。",
+             "decisions": ["是否保留现有角色关系，还是按你的新目标调整为陌生人？"]}
+    advice.validate_proposal(valid)
+    advice.validate_proposal(proposal())
+    with pytest.raises((ValueError, ValidationError)):
+        advice.validate_proposal({**valid, "recommendation": "repair"})
+    p = blocked()
+    request(p)
+    monkeypatch.setattr(advice, "cached_json_call", lambda *a, **k: valid)
+    worker.handle(store.claim_job())
+    saved = store.get(p["id"], False)
+    assert saved["review_advice"]["status"] == "ready"
+    assert saved["review_advice"]["proposal"] == valid
+    assert saved["status"] == "blocked" and saved["needs_decision"] == p["needs_decision"]
+
+
+def test_old_token_only_advice_is_not_exposed_as_a_valid_public_proposal(env):
+    p = blocked()
+    p["review_advice"] = {**advice.queued_record(p), "status": "ready", "proposal": {
+        **proposal(), "recommendation": "human_decision", "decisions": ["repair"]}}
+    assert "proposal" not in advice.snapshot(p)

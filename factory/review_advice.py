@@ -6,6 +6,7 @@ reposted. A human can still use the ordinary feedback/recovery boundary.
 from __future__ import annotations
 
 import copy
+import re
 import uuid
 
 from jsonschema import validate
@@ -20,20 +21,40 @@ ROLE = "executive_producer"
 SYSTEM = (
     "你是协助出品人处理独立审核失败的总制片顾问。基于完整审核问题、当前稿件和用户约束，"
     "给出最小范围且可执行的返修建议，并解释理由、风险及必须由用户决定的事项。"
-    "repair表示在现有授权范围内建议返修，human_decision表示存在目标冲突或授权不足。"
+    "若问题可在已批准创作目标、现有预算和授权范围内通过局部改写解决，必须选择recommendation=repair，decisions=[]；"
+    "不能仅因为作品需要返修、需要重新审核或出品人最终可采纳建议，就选择human_decision。"
+    "只有具体且尚未解决的目标冲突或授权缺口确实阻止返修时，才选择human_decision；"
+    "此时decisions必须至少一项，逐项写清实际冲突、可选择方案及需要用户决定什么，使用完整问题并以问号结束。"
+    "decisions不是动作枚举列表，严禁填repair、human_decision、retry等标签或笼统的请确认；"
+    "例如是否保留现有角色关系，还是按你的新目标调整为陌生人？属于具体问题，repair不属于问题。"
     "不得替用户改变创作目标、增加预算或授权新费用、批准终片、宣布独立审核已通过；"
     "不能通过删除审核要求规避问题。不确定事项明确说明。feedback为可交给创作角色的返修指令，"
     "必须保留未涉及的设定和素材并要求修改后重新独立审核。仅给建议，不执行操作。"
 )
 SCHEMA = object_schema({
-    "recommendation": {"type": "string", "enum": ["repair", "human_decision"]},
+    "recommendation": {"type": "string", "enum": ["repair", "human_decision"],
+                       "description": "现有目标、预算和授权内的局部返修用repair；仅具体未解决的目标冲突或授权缺口用human_decision。"},
     "rationale": text_schema(1, 1200),
     "feedback": text_schema(1, 3000),
     "risks": array_schema(text_schema(1, 400), 0, 6),
-    "decisions": array_schema(text_schema(1, 400), 0, 6),
+    "decisions": {**array_schema({**text_schema(8, 400), "pattern": "[?？]$",
+                                  "description": "完整具体的待决定问题，写明冲突及可选方案，以问号结束；禁止repair、human_decision等枚举标签。"}, 0, 6),
+                  "description": "repair时必须为空数组；human_decision时至少一个实际未解决、需要用户选择的问题。"},
 })
 PUBLIC_KEYS = frozenset({"status", "run_id", "input_signature", "source_revision", "started_at", "finished_at",
                          "profile_id", "requested_model", "model_source", "reason_code", "error_type", "proposal"})
+
+
+def validate_proposal(proposal):
+    """Validate structure and authority-dependent semantics across providers."""
+    validate(proposal, SCHEMA)
+    tokens = {"repair", "humandecision", "retry", "approve", "reject", "select", "escalate"}
+    if any(re.sub(r"[\W_]+", "", question).casefold() in tokens for question in proposal["decisions"]):
+        raise ValueError("Decision items must be concrete questions, not action tokens")
+    if proposal["recommendation"] == "human_decision" and not proposal["decisions"]:
+        raise ValueError("human_decision requires a substantive unresolved question")
+    if proposal["recommendation"] == "repair" and proposal["decisions"]:
+        raise ValueError("Authorized repair must not invent required human decisions")
 
 
 def eligible(project):
@@ -154,7 +175,7 @@ def snapshot(project):
     proposal = result.get("proposal")
     if proposal:
         try:
-            validate(proposal, SCHEMA)
+            validate_proposal(proposal)
         except Exception:
             result.pop("proposal", None)
     return result
@@ -214,9 +235,9 @@ def run(pid, job, config=None):
     try:
         proposal = cached_json_call(project, config, ROLE, "review-advice-" + sig[:24], SYSTEM,
                                     payload, SCHEMA, max_tokens=3072, temperature=0.2)
-        validate(proposal, SCHEMA)
+        validate_proposal(proposal)
         proposal = redact_secrets(proposal, profile)
-        validate(proposal, SCHEMA)
+        validate_proposal(proposal)
     except Exception as exc:
         error_type = type(exc).__name__[:100]
     with store.connection() as db:
