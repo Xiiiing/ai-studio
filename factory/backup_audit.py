@@ -81,6 +81,12 @@ def inspect(root, readers, media):
             raise BackupError("Pinned series dependency differs from its approved version")
     for row in rows(db, "SELECT scope FROM cloud_batches"):
         references += receipt_references(files.decode_json(row[0]), catalog)
+    if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='material_versions'").fetchone():
+        for row in rows(db, "SELECT data FROM material_versions"):
+            references += receipt_references(files.decode_json(row[0]), catalog)
+        for row in rows(db, "SELECT d.asset_id,d.version,v.status FROM material_dependencies d LEFT JOIN material_versions v ON v.asset_id=d.asset_id AND v.version=d.version"):
+            if row["status"] != "approved":
+                raise BackupError("Pinned material dependency is missing or unapproved")
     # Include receipt/manifest references in historical takes and deliveries, not
     # merely the currently selected media. Do not follow URLs or execute scripts.
     for name in catalog:

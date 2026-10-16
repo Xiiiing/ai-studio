@@ -53,6 +53,7 @@ import { DecisionCenter, ActionForm } from "./Decisions";
 import { ReviewAutomation } from "./ReviewAssistance";
 import { Models } from "./Models";
 import { Shots, Series, Costs } from "./Assets";
+import { MaterialLibrary } from "./MaterialLibrary";
 import {
   CreativeContract,
   creativeChoice,
@@ -71,6 +72,7 @@ function readRoute(): Route {
 const links = [
   ["dashboard", "制片总览", LayoutDashboard],
   ["projects", "全部项目", FolderKanban],
+  ["library", "统一素材库", FolderKanban],
   ["inbox", "待办决策", Inbox],
   ["workflow", "Agent 指挥中心", Bot],
   ["models", "模型与连接", Settings2],
@@ -276,6 +278,8 @@ export default function App() {
               />
             ) : route.view === "models" ? (
               <Models notify={setToast} />
+            ) : route.view === "library" ? (
+              <MaterialLibrary notify={setToast} />
             ) : (
               <>
                 <ErrorNotice error={overview.error} />
@@ -973,6 +977,7 @@ function Project({
     ["quality", "制作与质检"],
     ["delivery", "成片交付"],
     ["series", "系列资产"],
+    ["materials", "素材与定稿"],
     ["costs", "云任务与费用"],
   ];
   return (
@@ -1354,6 +1359,8 @@ function Project({
           </div>
         ) : tab === "series" ? (
           <Series project={p} notify={notify} />
+        ) : tab === "materials" ? (
+          <MaterialLibrary project={p} notify={notify} />
         ) : tab === "costs" ? (
           <Costs project={p} notify={notify} />
         ) : (

@@ -73,6 +73,8 @@ def initialize():
         initialize_cloud_budget(db)
         from .series_bible import initialize as initialize_series
         initialize_series(db)
+        from .material_library import initialize as initialize_materials
+        initialize_materials(db)
         from .remote_tasks import migrate as migrate_remote_tasks
         migrate_remote_tasks(db)
 
@@ -213,6 +215,8 @@ def create(payload):
         if profile is not None:
             from .profile_references import validated
             validated(db, project)
+        from .material_library import inherit_package
+        inherit_package(db, project)
         db.execute("INSERT INTO projects(id,updated,revision,snapshot) VALUES(?,?,?,?)",
                    (pid, time.time(), 1, encoded(project)))
         _event(db, pid, "已建立制片项目，开始检索和原创提案。", "created")

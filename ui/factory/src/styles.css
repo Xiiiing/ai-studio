@@ -3243,3 +3243,7 @@ textarea {
     padding: 16px;
   }
 }
+.material-views { display: flex; gap: 12px; overflow-x: auto; }
+.material-views figure { margin: 0; flex: 0 0 140px; }
+.material-views img { width: 140px; height: 180px; object-fit: contain; border-radius: 8px; background: #f1f3f5; }
+.material-views figcaption { font-size: 12px; color: #687078; overflow-wrap: anywhere; }

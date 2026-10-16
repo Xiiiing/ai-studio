@@ -25,6 +25,22 @@ class Handler(LocalMediaHandler):
     def do_GET(self):
         path=unquote(urlsplit(self.path).path)
         try:
+            if path == "/api/factory/library" or re.fullmatch(r"/api/factory/library/assets/[A-Za-z][A-Za-z0-9_-]{0,63}", path):
+                from . import material_library as materials
+                query = parse_qs(urlsplit(self.path).query, keep_blank_values=True)
+                if set(query) - {"project_id", "q", "kind", "offset", "version"} or any(len(v) != 1 for v in query.values()):
+                    raise ValueError("素材查询参数无效")
+                params = {k: v[0] for k, v in query.items()}
+                if path == "/api/factory/library":
+                    return self.json(materials.inventory(params.get("project_id"), params.get("q", ""), params.get("kind") or None, int(params.get("offset", 0))))
+                with store.connection() as db:
+                    project = store._read(db, params["project_id"]) if params.get("project_id") else None
+                    value = materials.accessible(materials.get(db, path.rsplit("/", 1)[1], int(params["version"]) if "version" in params else None), project)
+                    return self.json(value)
+            match = re.fullmatch(r"/api/factory/projects/([a-f0-9]{12})/materials", path)
+            if match:
+                from .material_library import snapshot
+                return self.json(snapshot(match[1]))
             if path=="/api/factory/production-profiles":
                 from .production_profiles import catalog
                 return self.json(catalog())
@@ -118,6 +134,13 @@ class Handler(LocalMediaHandler):
             return super().do_POST()
         try:
             payload=self.read_json_body()
+            if route == "/api/factory/library":
+                from .material_library import mutate
+                return self.json({"asset": mutate(payload)}, 201)
+            match = re.fullmatch(r"/api/factory/projects/([a-f0-9]{12})/materials", route)
+            if match:
+                from .material_library import mutate_project
+                return self.json({"project": mutate_project(match[1], payload)}, 202)
             match=re.fullmatch(r"/api/factory/jobs/([a-f0-9]{32})/(pause|cancel)",route)
             if match:
                 from .job_api import control
