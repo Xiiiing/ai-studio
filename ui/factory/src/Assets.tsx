@@ -111,6 +111,10 @@ function ShotDetail({
     project.id,
     shot.id,
   );
+  const [editorOpen, setEditorOpen] = useState(!!draft);
+  const candidates = [...rows(shot.candidates)].sort(
+    (a, b) => Number(b.stage === "video") - Number(a.stage === "video"),
+  );
   const revision = draft?.revision ?? board.revision,
     stale = !!draft && revision !== board.revision,
     disabled = busy || !board.editable || !!error;
@@ -156,10 +160,49 @@ function ShotDetail({
           先暂停制作，等待当前安全步骤结束后，即可精修或选片。
         </div>
       )}
-      <Panel
-        title="单镜精修"
-        description="编辑提示词和运镜；原候选、用量与历史回执继续保留。"
+      <h3 className="section-label">
+        候选比较 <span>{rows(shot.candidates).length} 个版本</span>
+      </h3>
+      {rows(board.errors).length > 0 && (
+        <ErrorNotice error={"部分候选回执不可用：" + text(board.errors)} />
+      )}
+      <div className="candidate-grid">
+        {candidates.map((c) => (
+          <Candidate
+            projectId={project.id}
+            key={c.id || c.stage + ":" + c.take}
+            candidate={c}
+            revision={board.revision}
+            disabled={disabled || stale || !c.selectable}
+            onSubmit={mutate}
+          />
+        ))}
+      </div>
+      {!rows(shot.candidates).length && (
+        <Empty title="此镜头尚无候选">
+          素材生成后可比较画面、视频与审核记录。
+        </Empty>
+      )}
+      <details
+        className="shot-editor"
+        open={editorOpen}
+        onToggle={(event) => setEditorOpen(event.currentTarget.open)}
       >
+        <summary className="shot-editor-summary">
+          <strong>单镜精修</strong>
+          <span className="shot-editor-status">
+            {busy
+              ? "正在保存"
+              : stale
+                ? "草稿版本待核对"
+                : draft
+                  ? "有未保存修改"
+                  : !board.editable
+                    ? "当前只读"
+                    : "提示词、运镜与局部重制"}
+          </span>
+        </summary>
+        <p className="muted">原候选、用量与历史回执继续保留。</p>
         <form
           data-shot-operation="edit"
           data-revision={revision}
@@ -265,30 +308,7 @@ function ShotDetail({
             保存后恢复制作；新的付费云请求仍需单独授权。
           </small>
         </form>
-      </Panel>
-      <h3 className="section-label">
-        候选比较 <span>{rows(shot.candidates).length} 个版本</span>
-      </h3>
-      {rows(board.errors).length > 0 && (
-        <ErrorNotice error={"部分候选回执不可用：" + text(board.errors)} />
-      )}
-      <div className="candidate-grid">
-        {rows(shot.candidates).map((c) => (
-          <Candidate
-            projectId={project.id}
-            key={c.id || c.stage + ":" + c.take}
-            candidate={c}
-            revision={board.revision}
-            disabled={disabled || stale || !c.selectable}
-            onSubmit={mutate}
-          />
-        ))}
-      </div>
-      {!rows(shot.candidates).length && (
-        <Empty title="此镜头尚无候选">
-          素材生成后可比较画面、视频与审核记录。
-        </Empty>
-      )}
+      </details>
     </div>
   );
 }

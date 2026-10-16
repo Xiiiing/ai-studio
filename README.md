@@ -164,6 +164,7 @@ flowchart TD
 | --- | --- |
 | 第一次使用 | [首次使用](docs/GETTING_STARTED.md) · [模型接入](docs/USER_MODELS.md) |
 | 制作与返修 | [短剧规格](docs/SHORT_DRAMA_CONTRACT.md) · [素材库](docs/MATERIAL_LIBRARY.md) · [镜头工作台](docs/SHOT_WORKBENCH.md) |
+| 工作台 0.0.3 界面修复 | [质检、布局与手机操作](docs/UI_DEPLOYED_REFINEMENT.md) |
 | 开发与扩展 | [架构导览](docs/ARCHITECTURE.md) · [API](docs/API.md) · [贡献与验证](CONTRIBUTING.md) |
 | 部署与数据保护 | [部署](docs/DEPLOYMENT.md) · [一致备份](docs/CONSISTENT_BACKUP.md) · [HTTP 边界](docs/HTTP_SECURITY.md) |
 | 查看全部资料 | [中文文档中心](docs/README.md) · [English documentation index](docs/README.en.md) |

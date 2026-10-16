@@ -27,11 +27,9 @@ for (const width of [1440, 1024, 390]) {
       ).toBeLessThan(40);
     }
     await expect(page.locator(".workflow-flow-line")).toHaveCount(7);
-    await page
-      .locator(".workflow-stages")
-      .screenshot({
-        path: `runtime/browser-report/workflow-stages-${width}.png`,
-      });
+    await page.locator(".workflow-stages").screenshot({
+      path: `runtime/browser-report/workflow-stages-${width}.png`,
+    });
     const routing = await page.locator(".workflow-map").evaluate((map) => {
       const bounds = map.getBoundingClientRect();
       const boxes = [...map.querySelectorAll("[data-map-node]")].map((n) =>
@@ -341,7 +339,11 @@ test("narrow screens jump directly to details and can return to the flow", async
   await expect
     .poll(async () =>
       Math.abs(
-        (await inspector.evaluate((el) => el.getBoundingClientRect().top)) - 16,
+        (await inspector.evaluate((el) => el.getBoundingClientRect().top)) -
+          (await page
+            .locator(".project-navigation-mobile")
+            .evaluate((el) => el.getBoundingClientRect().bottom)) -
+          6,
       ),
     )
     .toBeLessThan(10);
@@ -352,7 +354,11 @@ test("narrow screens jump directly to details and can return to the flow", async
       Math.abs(
         (await page
           .locator(".workflow-map-container")
-          .evaluate((el) => el.getBoundingClientRect().top)) - 16,
+          .evaluate((el) => el.getBoundingClientRect().top)) -
+          (await page
+            .locator(".project-navigation-mobile")
+            .evaluate((el) => el.getBoundingClientRect().bottom)) -
+          6,
       ),
     )
     .toBeLessThan(10);

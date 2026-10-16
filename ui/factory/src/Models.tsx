@@ -570,14 +570,22 @@ export function Models({ notify }: { notify: (v: string) => void }) {
         probing={probing}
         onProbe={(kind, id) => probe(id, kind === "video", kind)}
       />
-      <div className="config-savebar" aria-busy={saving}>
+      {(dirty || saving) && (
+        <div className="mobile-save-spacer" aria-hidden="true" />
+      )}
+      <div
+        className={"config-savebar" + (dirty || saving ? " is-dirty" : "")}
+        aria-busy={saving}
+      >
         <div role="status">
-          <strong>
+          <strong className={error ? "error-text" : undefined}>
             {saving
               ? "正在保存配置…"
-              : dirty
-                ? "有尚未保存的配置修改"
-                : "当前配置已同步"}
+              : error
+                ? "保存未完成，草稿已保留"
+                : dirty
+                  ? "有尚未保存的配置修改"
+                  : "当前配置已同步"}
           </strong>
           <p>
             {dirty

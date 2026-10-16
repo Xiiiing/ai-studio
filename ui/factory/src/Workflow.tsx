@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowRight, Users, CircleCheck, ArrowUp } from "lucide-react";
-import { rows, roleName, date, type RecordData } from "./api";
+import { rows, roleName, date, activityName, type RecordData } from "./api";
 import { Badge, Panel, Empty, Artifact } from "./ui";
 import { ExecutionRecord, MaterialCard } from "./DocumentReader";
 import { WorkflowMap } from "./WorkflowMap";
@@ -257,7 +257,10 @@ export function Workflow({
         <div>
           <strong>制作工作流</strong>
           <p>
-            {graph.current_activity || "按阶段查看制作步骤、参与角色与交付内容"}
+            {activityName(
+              graph.current_activity,
+              "按阶段查看制作步骤、参与角色与交付内容",
+            )}
           </p>
         </div>
         <small>
@@ -623,6 +626,286 @@ export function Team({
     ? rows(graph.groups)
     : rows(flow.groups);
   const records = rows(flow.supervision?.records);
+  const timestamp = (value: any) => {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : Date.parse(value) || 0;
+  };
+  const completedTaskStatuses = new Set([
+    "succeeded",
+    "finished",
+    "completed",
+    "done",
+    "skipped",
+    "cancelled",
+    "reused",
+  ]);
+  const attentionTaskStatuses = new Set([
+    "running",
+    "failed",
+    "error",
+    "blocked",
+    "paused",
+    "waiting",
+    "waiting_remote",
+    "human",
+    "human_required",
+    "interrupted",
+    "requested",
+    "queued",
+  ]);
+  const currentTasks = tasks.filter(
+    (task) =>
+      !completedTaskStatuses.has(task.status) &&
+      (task.id === graph.active_node ||
+        (task.current !== false &&
+          (task.current || attentionTaskStatuses.has(task.status)))),
+  );
+  const latestHandoff = tasks
+    .filter(
+      (task) =>
+        task.current !== false && completedTaskStatuses.has(task.status),
+    )
+    .sort(
+      (a, b) =>
+        timestamp(b.record?.finished_at || b.record?.started_at) -
+          timestamp(a.record?.finished_at || a.record?.started_at) ||
+        Number(["production", "delivery"].includes(b.id)) -
+          Number(["production", "delivery"].includes(a.id)) ||
+        tasks.indexOf(b) - tasks.indexOf(a),
+    )
+    .slice(0, 1);
+  const visibleTasks =
+    tasks.length > 6
+      ? currentTasks.length
+        ? currentTasks
+        : latestHandoff
+      : tasks;
+  const otherTasks =
+    tasks.length > 6
+      ? tasks.filter((task) => !visibleTasks.includes(task))
+      : [];
+  const foldOrganization = tasks.length > 6 && groups.length > 1;
+  const completedDecisionStatuses = new Set([
+    "selected",
+    "answered",
+    "approved",
+    "completed",
+    "succeeded",
+    "superseded",
+    "cancelled",
+    "skipped",
+  ]);
+  const currentDecisions = records.filter(
+    (record) => record.current_gate_version,
+  );
+  const latestDecision = [
+    ...(currentDecisions.length ? currentDecisions : records),
+  ]
+    .sort(
+      (a, b) =>
+        timestamp(a.finished_at || a.started_at) -
+        timestamp(b.finished_at || b.started_at),
+    )
+    .pop();
+  const visibleDecisions = records.filter(
+    (record) =>
+      record === latestDecision ||
+      !completedDecisionStatuses.has(record.status),
+  );
+  const historicalDecisions = records.filter(
+    (record) => !visibleDecisions.includes(record),
+  );
+  const executionEntries = rows(flow.nodes)
+    .flatMap((node) =>
+      rows(node.executions).map((execution) => {
+        const value = execution.started_at || execution.finished_at;
+        const numeric = Number(value);
+        return {
+          key: `${node.id}:${execution.id}`,
+          role: node.role || node.id,
+          execution,
+          time: Number.isFinite(numeric) ? numeric : Date.parse(value) || 0,
+        };
+      }),
+    )
+    .sort((a, b) => b.time - a.time || a.key.localeCompare(b.key));
+  const [executionView, setExecutionView] = useState(() => ({
+    project: flow.project_id,
+    role: "all",
+    page: 0,
+    keys: executionEntries.slice(0, 6).map((entry) => entry.key),
+  }));
+  const executionRole =
+    executionView.project === flow.project_id ? executionView.role : "all";
+  const executionRoles = [
+    ...new Set([
+      ...executionEntries.map((entry) => entry.role),
+      ...(executionRole === "all" ? [] : [executionRole]),
+    ]),
+  ];
+  const filteredExecutions = executionEntries.filter(
+    (entry) => executionRole === "all" || entry.role === executionRole,
+  );
+  const executionPages = Math.max(1, Math.ceil(filteredExecutions.length / 6));
+  const executionPage = Math.min(
+    executionView.project === flow.project_id ? executionView.page : 0,
+    executionPages - 1,
+  );
+  const latestPage = filteredExecutions.slice(
+    executionPage * 6,
+    executionPage * 6 + 6,
+  );
+  // Keep the current reading window during polling. New calls must not unmount
+  // an expanded request or document by pushing it onto another page.
+  const savedPage =
+    executionView.project === flow.project_id &&
+    executionView.role === executionRole &&
+    executionView.page === executionPage
+      ? executionView.keys.flatMap((key) => {
+          const entry = filteredExecutions.find((item) => item.key === key);
+          return entry ? [entry] : [];
+        })
+      : [];
+  const visibleExecutions = savedPage.length ? savedPage : latestPage;
+  const executionKeys = JSON.stringify(
+    visibleExecutions.map((entry) => entry.key),
+  );
+  const executionOrderChanged =
+    executionKeys !== JSON.stringify(latestPage.map((entry) => entry.key));
+  useEffect(() => {
+    setExecutionView((current) =>
+      current.project === flow.project_id &&
+      current.role === executionRole &&
+      current.page === executionPage &&
+      JSON.stringify(current.keys) === executionKeys
+        ? current
+        : {
+            project: flow.project_id,
+            role: executionRole,
+            page: executionPage,
+            keys: JSON.parse(executionKeys) as string[],
+          },
+    );
+  }, [flow.project_id, executionRole, executionPage, executionKeys]);
+  const showExecutions = (role: string, page: number) => {
+    const entries = executionEntries.filter(
+      (entry) => role === "all" || entry.role === role,
+    );
+    setExecutionView({
+      project: flow.project_id,
+      role,
+      page,
+      keys: entries.slice(page * 6, page * 6 + 6).map((entry) => entry.key),
+    });
+  };
+  const organization = (
+    <>
+      <div className="department-grid">
+        {groups.map((g) => (
+          <article className="department-card" key={g.id}>
+            <Users size={23} />
+            <h3>{g.label}</h3>
+            <p>{g.responsibility}</p>
+            <div className="member-chips">
+              {(Array.isArray(g.roles) ? g.roles : []).map((r: string) => (
+                <span key={r}>{roleName(r)}</span>
+              ))}
+            </div>
+          </article>
+        ))}
+      </div>
+      {!groups.length && (
+        <div className="member-chips">
+          {rows(flow.teams).map((t) => (
+            <span key={t.id}>
+              {t.label || roleName(t.role)} · {t.model || "自动编排"}
+            </span>
+          ))}
+        </div>
+      )}
+    </>
+  );
+  const renderTask = (t: RecordData) => (
+    <article className="task-card" data-team-task={t.id} key={t.id}>
+      <div className="row-between">
+        <h3>{t.label}</h3>
+        <Badge
+          status={t.current === false ? "pending" : t.status || "pending"}
+        />
+      </div>
+      <p>
+        负责：{roleName(t.owner)} <ArrowRight size={13} /> 审核：
+        {roleName(t.reviewer)}
+      </p>
+      <div className="task-io">
+        <small>接收</small>
+        <span>
+          {rows(graph.nodes).find((n) => n.id === t.id)?.input ||
+            (t.inputs || [])
+              .map((v: any) => (typeof v === "object" ? v.label : v))
+              .join(" · ") ||
+            "创作需求"}
+        </span>
+        <small>交付</small>
+        <span>
+          {rows(graph.nodes).find((n) => n.id === t.id)?.output ||
+            (t.outputs || [])
+              .map((v: any) => (typeof v === "object" ? v.label : v))
+              .join(" · ") ||
+            "尚未记录"}
+        </span>
+      </div>
+      {t.record && (
+        <small>
+          第 {t.record.attempt || 1} 次 ·{" "}
+          {date(t.record.finished_at || t.record.started_at)}
+        </small>
+      )}
+      <button
+        className="text-link"
+        onClick={() =>
+          onInspect
+            ? onInspect(t.id)
+            : onOpen?.(
+                t.id === "production"
+                  ? "shots"
+                  : t.id === "delivery"
+                    ? "delivery"
+                    : t.id.endsWith("_decision")
+                      ? "decisions"
+                      : "script",
+              )
+        }
+      >
+        打开关联产物
+        <ArrowRight size={12} />
+      </button>
+    </article>
+  );
+  const renderDecision = (r: RecordData) => (
+    <article
+      className="supervisor-record"
+      key={`${r.kind}:${r.gate_id || r.run_id || r.started_at || "saved"}`}
+    >
+      <div className="row-between">
+        <h3>
+          {(
+            {
+              story: "故事方向",
+              style: "视觉方向",
+              final: "终审建议",
+            } as RecordData
+          )[r.kind] || r.kind}
+        </h3>
+        <Badge status={r.status} />
+      </div>
+      <p>{r.proposal?.rationale || "决定尚未完成"}</p>
+      {rows(r.proposal?.risks).length > 0 && (
+        <p className="muted">{r.proposal.risks.join("；")}</p>
+      )}
+      <small>{r.requested_model || "模型未记录"} · 不代表已观看成片</small>
+    </article>
+  );
   return (
     <div className="stack">
       {stale && (
@@ -631,146 +914,132 @@ export function Team({
         </div>
       )}
       <Panel
-        title="制作团队与职责"
-        description="负责人、独立审核和交接产物共同构成任务闭环。"
-      >
-        <div className="department-grid">
-          {groups.map((g) => (
-            <article className="department-card" key={g.id}>
-              <Users size={23} />
-              <h3>{g.label}</h3>
-              <p>{g.responsibility}</p>
-              <div className="member-chips">
-                {(Array.isArray(g.roles) ? g.roles : []).map((r: string) => (
-                  <span key={r}>{roleName(r)}</span>
-                ))}
-              </div>
-            </article>
-          ))}
-        </div>
-        {!groups.length && (
-          <div className="member-chips">
-            {rows(flow.teams).map((t) => (
-              <span key={t.id}>
-                {t.label || roleName(t.role)} · {t.model || "自动编排"}
-              </span>
-            ))}
-          </div>
-        )}
-      </Panel>
-      <Panel
         title="当前任务与交接"
         description="工单完成和独立审核通过分别记录。"
       >
-        <div className="task-grid">
-          {tasks.map((t) => (
-            <article className="task-card" data-team-task={t.id} key={t.id}>
-              <div className="row-between">
-                <h3>{t.label}</h3>
-                <Badge status={t.current ? t.status : "pending"} />
-              </div>
-              <p>
-                负责：{roleName(t.owner)} <ArrowRight size={13} /> 审核：
-                {roleName(t.reviewer)}
-              </p>
-              <div className="task-io">
-                <small>接收</small>
-                <span>
-                  {rows(graph.nodes).find((n) => n.id === t.id)?.input ||
-                    (t.inputs || [])
-                      .map((v: any) => (typeof v === "object" ? v.label : v))
-                      .join(" · ") ||
-                    "创作需求"}
-                </span>
-                <small>交付</small>
-                <span>
-                  {rows(graph.nodes).find((n) => n.id === t.id)?.output ||
-                    (t.outputs || [])
-                      .map((v: any) => (typeof v === "object" ? v.label : v))
-                      .join(" · ") ||
-                    "尚未记录"}
-                </span>
-              </div>
-              {t.record && (
-                <small>
-                  第 {t.record.attempt || 1} 次 ·{" "}
-                  {date(t.record.finished_at || t.record.started_at)}
-                </small>
-              )}
-              <button
-                className="text-link"
-                onClick={() =>
-                  onInspect
-                    ? onInspect(t.id)
-                    : onOpen?.(
-                        t.id === "production"
-                          ? "shots"
-                          : t.id === "delivery"
-                            ? "delivery"
-                            : t.id.endsWith("_decision")
-                              ? "decisions"
-                              : "script",
-                      )
-                }
-              >
-                打开关联产物
-                <ArrowRight size={12} />
-              </button>
-            </article>
-          ))}
-        </div>
+        <div className="task-grid">{visibleTasks.map(renderTask)}</div>
         {!tasks.length && (
           <Empty title="尚无当前任务记录">
             团队执行后显示实际工单，不根据阶段名称推测调用。
           </Empty>
         )}
+        {tasks.length > 6 && !visibleTasks.length && (
+          <p className="muted">
+            暂无正在执行或待处理的工单，其余记录可按需展开。
+          </p>
+        )}
+        {otherTasks.length > 0 && (
+          <details>
+            <summary>其他工单 · {otherTasks.length} 项</summary>
+            <div className="task-grid">{otherTasks.map(renderTask)}</div>
+          </details>
+        )}
+      </Panel>
+      <Panel
+        title={foldOrganization ? undefined : "制作团队与职责"}
+        description={
+          foldOrganization
+            ? undefined
+            : "负责人、独立审核和交接产物共同构成任务闭环。"
+        }
+      >
+        {foldOrganization ? (
+          <details>
+            <summary>团队分工 · {groups.length} 个协作组</summary>
+            {organization}
+          </details>
+        ) : (
+          organization
+        )}
       </Panel>
       {records.length > 0 && (
         <Panel title="总制片决定" className="supervisor-panel">
-          {records.map((r, i) => (
-            <article className="supervisor-record" key={i}>
-              <div className="row-between">
-                <h3>
-                  {(
-                    {
-                      story: "故事方向",
-                      style: "视觉方向",
-                      final: "终审建议",
-                    } as RecordData
-                  )[r.kind] || r.kind}
-                </h3>
-                <Badge status={r.status} />
-              </div>
-              <p>{r.proposal?.rationale || "决定尚未完成"}</p>
-              {rows(r.proposal?.risks).length > 0 && (
-                <p className="muted">{r.proposal.risks.join("；")}</p>
-              )}
-              <small>
-                {r.requested_model || "模型未记录"} · 不代表已观看成片
-              </small>
-            </article>
-          ))}
+          {visibleDecisions.map(renderDecision)}
+          {historicalDecisions.length > 0 && (
+            <details>
+              <summary>
+                历史总制片决定 · {historicalDecisions.length} 条
+              </summary>
+              {historicalDecisions.map(renderDecision)}
+            </details>
+          )}
         </Panel>
       )}
       <Panel
         title="实际调用与回执"
         description="按实际调用查看请求、响应和重试；缺少步骤归属的旧调用保留为角色历史。"
       >
-        {rows(flow.nodes).flatMap((n) =>
-          rows(n.executions).map((e) => (
-            <ExecutionRecord
-              key={n.id + ":" + e.id}
-              execution={
-                stale ? { ...e, artifacts: [], attempts: [], receipt: null } : e
-              }
-              role={n.role}
-              projectId={flow.project_id}
-              onLocate={onInspect}
-            />
-          )),
+        {(executionEntries.length > 0 || executionRole !== "all") && (
+          <div className="execution-history-toolbar">
+            <label className="field">
+              <span>调用角色</span>
+              <select
+                value={executionRole}
+                onChange={(event) => showExecutions(event.target.value, 0)}
+              >
+                <option value="all">全部角色</option>
+                {executionRoles.map((role) => (
+                  <option key={role} value={role}>
+                    {roleName(role)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <p className="muted">
+              共 {filteredExecutions.length} 条 · 最近执行优先
+            </p>
+            {executionOrderChanged && (
+              <button
+                className="button small"
+                onClick={() => showExecutions(executionRole, 0)}
+              >
+                查看最新调用
+              </button>
+            )}
+          </div>
         )}
-        {!rows(flow.nodes).some((n) => rows(n.executions).length) && (
-          <p className="muted">尚无保存的执行记录。</p>
+        {visibleExecutions.map(({ key, role, execution }) => (
+          <ExecutionRecord
+            key={key}
+            execution={
+              stale
+                ? { ...execution, artifacts: [], attempts: [], receipt: null }
+                : execution
+            }
+            role={role}
+            projectId={flow.project_id}
+            onLocate={onInspect}
+          />
+        ))}
+        {executionPages > 1 && (
+          <nav className="pagination" aria-label="调用记录分页">
+            <span>
+              第 {executionPage + 1} / {executionPages} 页
+            </span>
+            <div className="button-row">
+              <button
+                className="button small"
+                disabled={executionPage === 0}
+                onClick={() => showExecutions(executionRole, executionPage - 1)}
+              >
+                上一页调用
+              </button>
+              <button
+                className="button small"
+                disabled={executionPage + 1 >= executionPages}
+                onClick={() => showExecutions(executionRole, executionPage + 1)}
+              >
+                下一页调用
+              </button>
+            </div>
+          </nav>
+        )}
+        {!filteredExecutions.length && (
+          <p className="muted">
+            {executionRole === "all"
+              ? "尚无保存的执行记录。"
+              : "该角色尚无保存的执行记录。"}
+          </p>
         )}
         {flow.evidence?.truncated && (
           <p className="muted">当前展示最近保存的部分历史记录。</p>
