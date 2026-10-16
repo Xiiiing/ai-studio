@@ -95,7 +95,13 @@ def _signature(project, stage):
         "production": ["script_generation", "production_revision", "selected_style", "production_edit_revision"],
         "revision": ["script_generation", "production_revision", "revision_request"],
     }[stage]
-    raw = json.dumps({"stage": stage, "inputs": {key: project.get(key) for key in keys}},
+    inputs = {key: project.get(key) for key in keys}
+    package = project.get("material_package") or {}
+    if package.get("references"):
+        # Confirmed materials enter the actual model context. Pending selections
+        # do not; repeated confirmation of identical fixed versions stays current.
+        inputs["confirmed_materials"] = package.get("signature") or package["references"]
+    raw = json.dumps({"stage": stage, "inputs": inputs},
                      ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
     return hashlib.sha256(raw.encode()).hexdigest()
 

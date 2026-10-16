@@ -419,7 +419,7 @@ def build_flow(project, config=None):
     item("orchestrator", "outputs", "当前阶段", project.get("stage"))
     item("orchestrator", "outputs", "运行状态", project.get("status"))
     item("researcher", "inputs", "创作方向", project.get("brief"))
-    item("researcher", "inputs", "提供的来源", len(_rows(project.get("submitted_sources"), 24)))
+    item("researcher", "inputs", "提供的来源", _rows(project.get("submitted_sources"), 24) or None)
     item("researcher", "outputs", "研究状态", research or None, artifacts.get("research"))
     item("researcher", "outputs", "研究来源", research.get("sources") or research.get("source_count"), artifacts.get("sources"))
     item("creator", "inputs", "题材研究", research or None, artifacts.get("research"))
@@ -454,12 +454,15 @@ def build_flow(project, config=None):
     item("visual_designer", "inputs", "剧本", script or None, artifacts.get("script"))
     for value in styles:
         item("visual_designer", "outputs", "视觉方案", value, artifacts.get("styles"))
-        item("image_generator", "inputs", "视觉方案", value.get("name"))
+        item("image_generator", "inputs", "视觉方案", value, artifacts.get("styles"))
         item("image_generator", "outputs", "视觉预览", value.get("name"),
              value.get("preview_url") or _object(value.get("preview")).get("path"))
-    item("prompt_style_compiler", "inputs", "已选画风", project.get("selected_style"))
+    selected_style = project.get("selected_style")
+    style_id = selected_style.get("id") if isinstance(selected_style, dict) else selected_style
+    chosen_style = next((value for value in styles if value.get("id") == style_id), selected_style)
+    item("prompt_style_compiler", "inputs", "已选画风", chosen_style, artifacts.get("styles"))
     item("prompt_style_compiler", "outputs", "视觉约束记录", artifact=artifacts.get("visual_traits"))
-    item("image_generator", "inputs", "镜头分镜", len(shots), artifacts.get("storyboard"))
+    item("image_generator", "inputs", "镜头分镜", _rows(script.get("shots")) or None, artifacts.get("storyboard"))
     item("video_generator", "inputs", "视频形态", project.get("format"))
     pinned = _object(project.get("series_bible"))
     if pinned:

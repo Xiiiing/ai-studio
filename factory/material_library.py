@@ -277,12 +277,14 @@ def reference(db, project, ref, approved=False):
 
 
 def snapshot(pid):
+    from .production_profiles import resolve
     with store.connection() as db:
         project = store._read(db, pid)
         selected = []
         for ref in project.get("material_selection", []):
             selected.append({"binding": ref, "asset": accessible(get(db, ref["asset_id"], ref["version"]), project)})
         return {"revision": project["revision"], "library_key": library_key(project), "selected": selected,
+                "characters": resolve(project)["characters"],
                 "package": project.get("material_package"), "shots": (project.get("episode") or project.get("script") or {}).get("shots", [])}
 
 

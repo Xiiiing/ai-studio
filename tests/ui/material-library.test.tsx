@@ -98,8 +98,14 @@ it("rejects unsupported files before making an upload request", async () => {
   ).rejects.toThrow("PNG/JPEG/WebP");
 });
 
-it("retains a successfully uploaded view when a later file fails, without creating another material on retry", async () => {
+it("preserves unfinished uploads and retries only the failed image after a partial save", async () => {
   const posts: any[] = [];
+  let version = 0;
+  let failed = false;
+  const data = {
+    document: { name: "林夏", description: "完整草稿" },
+    images: [] as any[],
+  };
   vi.stubGlobal(
     "fetch",
     vi.fn(async (_path, init) => {
@@ -107,16 +113,61 @@ it("retains a successfully uploaded view when a later file fails, without creati
         return new Response(JSON.stringify({ assets: [], tasks: [] }));
       const body = JSON.parse(init.body);
       posts.push(body);
+      if (body.label === "side.png" && !failed) {
+        failed = true;
+        return new Response(JSON.stringify({ error: "第二张上传失败" }), {
+          status: 503,
+        });
+      }
+      version++;
+      if (body.action === "upload") data.images.push({ path: body.label });
       return new Response(
         JSON.stringify({
-          asset: {
-            asset_id: "mat_partial",
-            version: body.action === "create" ? 1 : 2,
-            kind: "character",
-            data: { document: { name: "林夏" }, images: [] },
-          },
+          asset: { asset_id: "mat_partial", version, kind: "character", data },
         }),
       );
+    }),
+  );
+  const user = userEvent.setup();
+  mount();
+  await user.click(screen.getByRole("button", { name: "新建素材" }));
+  await user.type(screen.getByLabelText("素材名称"), "林夏");
+  await user.type(screen.getByLabelText("素材说明"), "完整草稿");
+  await user.upload(screen.getByLabelText("添加参考图片"), [
+    new File(["front"], "front.png", { type: "image/png" }),
+    new File(["side"], "side.png", { type: "image/png" }),
+  ]);
+  await user.click(screen.getByRole("button", { name: "保存素材" }));
+  await screen.findByText("第二张上传失败");
+  expect(screen.getByLabelText("素材说明")).toHaveValue("完整草稿");
+  expect(
+    screen.queryByRole("button", { name: "移除待上传图片 front.png" }),
+  ).toBeNull();
+  expect(
+    screen.getByRole("button", { name: "移除待上传图片 side.png" }),
+  ).toBeVisible();
+  await user.click(screen.getByRole("button", { name: "保存素材" }));
+  await waitFor(() => expect(screen.queryByLabelText("素材名称")).toBeNull());
+  expect(posts.map((p) => p.action)).toEqual([
+    "create",
+    "upload",
+    "upload",
+    "upload",
+  ]);
+  expect(posts[3]).toMatchObject({
+    asset_id: "mat_partial",
+    expected_version: 2,
+    label: "side.png",
+  });
+});
+
+it("validates all selected files before creating a material and lets the user remove an invalid file", async () => {
+  const posts: any[] = [];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (_path, init) => {
+      if (init.method === "POST") posts.push(JSON.parse(init.body));
+      return new Response(JSON.stringify({ assets: [], tasks: [] }));
     }),
   );
   const user = userEvent.setup({ applyAccept: false });
@@ -124,19 +175,62 @@ it("retains a successfully uploaded view when a later file fails, without creati
   await user.click(screen.getByRole("button", { name: "新建素材" }));
   await user.type(screen.getByLabelText("素材名称"), "林夏");
   await user.upload(screen.getByLabelText("添加参考图片"), [
-    new File(["fixture"], "front.png", { type: "image/png" }),
+    new File(["front"], "front.png", { type: "image/png" }),
     new File(["bad"], "bad.svg", { type: "image/svg+xml" }),
   ]);
   await user.click(screen.getByRole("button", { name: "保存素材" }));
   await screen.findByText("请选择不超过8 MiB的PNG/JPEG/WebP图片。");
-  expect(posts.map((post) => post.action)).toEqual(["create", "upload"]);
+  expect(posts).toEqual([]);
+  expect(screen.getByLabelText("素材名称")).toHaveValue("林夏");
+  await user.click(
+    screen.getByRole("button", { name: "移除待上传图片 bad.svg" }),
+  );
+  expect(
+    screen.queryByRole("button", { name: "移除待上传图片 bad.svg" }),
+  ).toBeNull();
+  expect(
+    screen.getByRole("button", { name: "移除待上传图片 front.png" }),
+  ).toBeVisible();
+});
+
+it("clears composition-only fields when changing a new material to a character", async () => {
+  const posts: any[] = [];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (_path, init) => {
+      if (init.method === "POST") posts.push(JSON.parse(init.body));
+      return new Response(
+        JSON.stringify({
+          assets: [
+            {
+              asset_id: "mat_lin",
+              version: 1,
+              kind: "character",
+              data: { document: { name: "林夏" } },
+            },
+          ],
+          tasks: [],
+          asset: {
+            asset_id: "mat_new",
+            version: 1,
+            data: { document: { name: "新参考" } },
+          },
+        }),
+      );
+    }),
+  );
+  const user = userEvent.setup();
+  mount();
+  await user.click(screen.getByRole("button", { name: "新建素材" }));
+  await user.type(screen.getByLabelText("素材名称"), "新参考");
+  await user.selectOptions(screen.getByLabelText("新素材类型"), "composition");
+  await user.click(await screen.findByRole("button", { name: "添加同框人物" }));
+  await user.selectOptions(screen.getByLabelText("新素材类型"), "character");
+  expect(screen.getByLabelText("素材名称")).toHaveValue("新参考");
   await user.click(screen.getByRole("button", { name: "保存素材" }));
-  await waitFor(() => expect(posts).toHaveLength(3));
-  expect(posts[2]).toMatchObject({
-    action: "revise",
-    asset_id: "mat_partial",
-    expected_version: 2,
-  });
+  await waitFor(() => expect(posts).toHaveLength(1));
+  expect(posts[0].kind).toBe("character");
+  expect(posts[0].document.members).toBeUndefined();
 });
 
 it("requires acknowledgement of an unpriced material batch before authorizing it", async () => {
@@ -218,4 +312,80 @@ it("looks up character references independently of the composition-only gallery 
   await waitFor(() => expect(add).toBeEnabled());
   await user.click(add);
   expect(screen.getByLabelText("同框人物1")).toHaveValue("mat_lin:2");
+});
+
+it("uses canonical server character IDs for episode-owned profiles", async () => {
+  const posts: any[] = [];
+  let resolveSelection!: (response: Response) => void;
+  const pendingSelection = new Promise<Response>((resolve) => {
+    resolveSelection = resolve;
+  });
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (path, init) => {
+      if (init.method === "POST") posts.push(JSON.parse(init.body));
+      if (String(path).includes("/materials")) return pendingSelection;
+      const data = String(path).includes("/materials")
+        ? {
+            revision: 11,
+            characters: [{ character_id: "char_witness", name: "见证者" }],
+            selected: [],
+          }
+        : {
+            assets: [
+              {
+                asset_id: "mat_lin",
+                version: 2,
+                kind: "character",
+                data: { document: { name: "林夏" }, images: [] },
+              },
+            ],
+            tasks: [],
+          };
+      return new Response(JSON.stringify(data));
+    }),
+  );
+  mount({ id: "012345abcdef" });
+  await screen.findByRole("heading", { name: "林夏 · v2" });
+  resolveSelection(
+    new Response(
+      JSON.stringify({
+        revision: 11,
+        characters: [{ character_id: "char_witness", name: "见证者" }],
+        selected: [],
+      }),
+    ),
+  );
+  const user = userEvent.setup();
+  expect(
+    await screen.findByRole("option", { name: "见证者（char_witness）" }),
+  ).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "选入本剧" }));
+  await waitFor(() => expect(posts).toHaveLength(1));
+  expect(posts[0].references[0].role).toBe("char_witness");
+});
+
+it("offers separate retries and never describes failed queries as empty libraries or empty task lists", async () => {
+  let recover = false;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () =>
+      recover
+        ? new Response(JSON.stringify({ assets: [], tasks: [] }))
+        : new Response(JSON.stringify({ error: "暂时无法读取" }), {
+            status: 503,
+          }),
+    ),
+  );
+  mount();
+  await screen.findByRole("button", { name: "重新读取素材库" });
+  expect(screen.queryByText("还没有素材")).toBeNull();
+  expect(screen.queryByText("尚无素材制作任务。")).toBeNull();
+  recover = true;
+  await userEvent.click(screen.getByRole("button", { name: "重新读取素材库" }));
+  expect(await screen.findByText("还没有素材")).toBeVisible();
+  await userEvent.click(
+    screen.getByRole("button", { name: "重新读取素材任务" }),
+  );
+  expect(await screen.findByText("尚无素材制作任务。")).toBeVisible();
 });

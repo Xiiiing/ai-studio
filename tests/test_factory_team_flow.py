@@ -335,3 +335,28 @@ def test_empty_business_containers_are_not_generated_documents(context):
     assert steps['screenplay']['outputs'][0]['state'] == 'not_generated'
     assert 'value' not in steps['screenplay']['outputs'][0]
     assert steps['style_decision']['inputs'][1]['state'] == 'not_recorded'
+
+
+def test_role_handoffs_retain_actual_sources_styles_and_storyboard_content(context):
+    root, project, config = context
+    source = {"title": "提供的原始资料", "url": "https://source.invalid/story", "excerpt": "成年人物兑现承诺", "rights": "owned"}
+    style = {"id": "style_A", "name": "柔和水彩", "description": "灰色外套，暖色站台，稳定人物造型", "palette": ["暖灰", "深蓝"]}
+    shot = {"id": "S01", "action": "主角拿出旧信", "characters": ["female"], "seconds": 4}
+    project.update(submitted_sources=[source], styles=[style], selected_style="style_A",
+                   script={"title": "约定", "shots": [shot]}, shots=[])
+    previous = copy.deepcopy(project)
+    flow = team_flow.build_flow(project, config)
+    def input_for(name, label):
+        return next(item for item in role(flow, name)["inputs"] if item["label"] == label)["value"]
+    assert input_for("researcher", "提供的来源") == [source]
+    assert input_for("image_generator", "视觉方案") == style
+    assert input_for("image_generator", "镜头分镜") == [shot]
+    assert input_for("prompt_style_compiler", "已选画风") == style
+    assert project == previous
+
+
+def test_role_handoffs_leave_unknown_source_and_shot_inputs_unrecorded(context):
+    root, project, config = context
+    flow = team_flow.build_flow(project, config)
+    assert not any(item["label"] == "提供的来源" for item in role(flow, "researcher")["inputs"])
+    assert not any(item["label"] == "镜头分镜" for item in role(flow, "image_generator")["inputs"])

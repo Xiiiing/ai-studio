@@ -1,5 +1,11 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -188,5 +194,52 @@ it("shows saved JSON bytes as text without reserializing numbers or whitespace",
   await userEvent.click(screen.getByRole("button", { name: "原文" }));
   expect(result.container.querySelector(".document-raw")?.textContent).toBe(
     source,
+  );
+});
+
+it("resolves Markdown images and links against the saved file directory while rejecting another project's images", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi
+      .fn()
+      .mockResolvedValue(
+        new Response(
+          "# 相对附件\n\n![场景参考](../frames/frame.png)\n\n[原始分镜](storyboard.json)\n\n![其他项目](../../factory-abcdef012345/frames/frame.png)",
+        ),
+      ),
+  );
+  mount({ artifact_url: url });
+  await screen.findByRole("heading", { name: "相对附件" });
+  expect(screen.getByRole("img", { name: "场景参考" })).toHaveAttribute(
+    "src",
+    window.location.origin + `/media/production/factory-${id}/frames/frame.png`,
+  );
+  expect(screen.queryByRole("img", { name: "其他项目" })).toBeNull();
+  expect(screen.getByRole("link", { name: "原始分镜" })).toHaveAttribute(
+    "href",
+    window.location.origin +
+      `/media/production/factory-${id}/planning/storyboard.json`,
+  );
+  expect(documentUrl(id, `production/factory-${id}/planning/script.md`)).toBe(
+    window.location.origin + url,
+  );
+  expect(
+    documentUrl(id, `production/factory-abcdef012345/planning/script.md`),
+  ).toBe("");
+});
+
+it("reports missing preview media and permits a fresh request without losing the original download", async () => {
+  const imageUrl = url.replace("planning/script.md", "frames/missing.png");
+  mount({ artifact_url: imageUrl, label: "参考图片" });
+  fireEvent.error(screen.getByRole("img", { name: "参考图片" }));
+  expect(screen.getByRole("alert")).toHaveTextContent("媒体读取失败");
+  expect(screen.getByRole("link", { name: "下载原文件" })).toHaveAttribute(
+    "href",
+    window.location.origin + imageUrl,
+  );
+  await userEvent.click(screen.getByRole("button", { name: "重新读取" }));
+  expect(screen.getByRole("img", { name: "参考图片" })).toHaveAttribute(
+    "src",
+    window.location.origin + imageUrl + "?reader_retry=1",
   );
 });
