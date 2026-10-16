@@ -97,6 +97,7 @@ export function ReviewFeedback({
                 type="button"
                 className="review-choice"
                 data-review-choice={choice.id}
+                title={choice.feedback}
                 aria-pressed={selected.some((c) => c.id === choice.id)}
                 onClick={() => toggle(choice)}
               >

@@ -137,12 +137,18 @@ def feedback_choices(project):
                         + "\n保留未涉及的设定和素材；以上为问题摘要，不免除完整审核记录中的其他要求。修改后重新独立审核。"})
         for issue in significant[:8]:
             scope = "、".join(issue["shot_ids"][:8])
+            label_scope = "、".join(issue["shot_ids"][:2])
+            if len(issue["shot_ids"]) > 2:
+                label_scope += "等镜头"
+            summary = issue["description"][:24]
+            if len(issue["description"]) > 24:
+                summary += "…"
             content = (scope + "：" if scope else "") + issue["description"][:280]
             if issue["suggestion"]:
                 content += "；建议：" + issue["suggestion"][:320]
             identity = "\0".join((issue["code"], issue["description"], ",".join(issue["shot_ids"])))
             choices.append({"id": "issue_" + hashlib.sha256(identity.encode()).hexdigest()[:12],
-                            "label": ((scope + " · ") if scope else "") + issue["description"][:72],
+                            "label": ((label_scope + " · ") if label_scope else "") + summary,
                             "kind": "issue", "feedback": ("重点修改：" + content + "。" + preserve)[:800]})
     for ident, label, instruction in _DIRECTIONS[context]:
         choices.append({"id": context + "_" + ident, "label": label, "kind": "direction",
