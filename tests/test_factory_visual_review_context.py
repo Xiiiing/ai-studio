@@ -56,3 +56,47 @@ def test_visual_request_excludes_prior_verdict_and_worker_metadata(tmp_path, pre
     assert result["status"] == expected
     assert result["score"] == fresh["score"]
     assert shot["qa"]["semantic"]["summary"] == "OLD_REVIEW_SENTINEL"
+
+
+@pytest.mark.parametrize("action_mismatch", [False, True])
+def test_video_review_separates_observed_head_motion_from_approved_action_completion(tmp_path, action_mismatch):
+    project = {"slug": "factory-human-motion-review", "format": "live_action", "creative_contract": {
+        "schema_version": 1, "visual_style": "photorealistic", "story_mode": "standalone",
+        "pacing": "short_drama", "motion": "generated_video"}}
+    shot = {"id": "S01", "seconds": 5,
+            "action": "The adult turns toward the door, then raises her right hand.",
+            "motion_prompt": "Turn toward the door first, then raise the right hand."}
+    issues = [{"code": "action", "severity": "blocking", "detail":
+               "0至5秒可见转头和表情改变，但批准动作要求随后抬右手；全部样本中右手未抬起。"}] if action_mismatch else []
+    fresh = {"status": "pass", "score": 99, "summary": "时间样本可见人物头部和表情变化", "issues": issues,
+             "style_alignment": {"status": "match", "evidence": "全部样本中人物皮肤和场景呈写实影像"},
+             "motion_alignment": {"status": "character_motion", "evidence":
+                 "0.000秒面向前方、1.667秒转头，3.333秒表情改变；手部和躯干静止，镜头也有平移。"}}
+    sampled = [{"image": tmp_path / f"sample-{index}.png"} for index in range(4)]
+    seen = {}
+    def request(*args, **kwargs):
+        seen.update(content=kwargs["content"], schema=args[4])
+        return deepcopy(fresh)
+    with patch.object(llm, "_image_url", return_value="data:image/png;base64,bW9jaw=="), \
+         patch("factory.evaluation_sampling.sample_video", return_value=(sampled, {
+             "policy": "fixture", "timestamps": [0, 5 / 3, 10 / 3, 5]})), \
+         patch.object(llm, "_request", side_effect=request):
+        result = llm.review_media(project, shot, tmp_path / "candidate.mp4", [], {
+            "llm": {"model": "fixture-vision"}, "quality": {"temporal_samples": 4}}, output_dir=tmp_path / "review")
+    context = json.loads(seen["content"][0]["text"])
+    rule = context["contract_rule"]
+    assert "只分类时间样本之间实际可见的运动，不表示本镜批准动作已经兑现" in rule
+    assert "转头、眨眼、眼神或面部表情改变" in rule
+    assert "即使手部或躯干保持静止、相机也同时移动" in rule
+    assert "所有主体姿态和表情均不变" in rule
+    assert "抽帧本身是静态图片" in rule
+    assert "code=action、severity=blocking并判fail" in rule
+    assert "误标为camera_only" in rule and "无法确定时填uncertain" in rule
+    assert context["shot"]["action"] == shot["action"]
+    assert context["shot"]["motion_prompt"] == shot["motion_prompt"]
+    assert "motion_alignment" in seen["schema"]["required"]
+    labels = [part["text"] for part in seen["content"][1:] if part["type"] == "text"]
+    assert "时间 0.000 秒" in labels[0] and "时间 5.000 秒" in labels[-1]
+    assert result["motion_alignment"]["status"] == "character_motion"
+    assert result["status"] == ("fail" if action_mismatch else "pass")
+    assert result["issues"] == issues
