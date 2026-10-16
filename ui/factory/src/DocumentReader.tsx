@@ -10,7 +10,9 @@ export const MAX_PREVIEW_BYTES = 2 * 1024 * 1024;
 export function documentUrl(projectId: string | undefined, raw: unknown) {
   if (!projectId || typeof raw !== "string") return "";
   try {
-    const url = new URL(raw, window.location.origin);
+    // Saved receipts may carry a production-relative path rather than a media URL.
+    const path = raw.startsWith("production/") ? "/media/" + raw : raw;
+    const url = new URL(path, window.location.origin);
     if (url.origin !== window.location.origin || url.search || url.hash)
       return "";
     return ownedMedia(projectId, decodeURIComponent(url.pathname));
@@ -88,7 +90,7 @@ function MarkdownBody({
             try {
               const url = new URL(
                 href || "",
-                baseUrl || window.location.origin,
+                new URL(baseUrl || "/", window.location.origin),
               );
               if (["http:", "https:"].includes(url.protocol)) safe = url.href;
             } catch {
@@ -109,7 +111,7 @@ function MarkdownBody({
             try {
               raw = new URL(
                 typeof src === "string" ? src : "",
-                baseUrl || window.location.origin,
+                new URL(baseUrl || "/", window.location.origin),
               ).href;
             } catch {
               /* No image request. */
@@ -166,6 +168,43 @@ export function DocumentValue({
     );
   return <span>{text(value)}</span>;
 }
+function MediaPreview({
+  url,
+  media,
+  label,
+}: {
+  url: string;
+  media: string;
+  label: string;
+}) {
+  const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  if (failed)
+    return (
+      <div role="alert">
+        <p>媒体读取失败，文件可能缺失或格式无法预览。</p>
+        <button
+          className="button small"
+          onClick={() => {
+            setAttempt((value) => value + 1);
+            setFailed(false);
+          }}
+        >
+          <RotateCcw size={14} />
+          重新读取
+        </button>
+      </div>
+    );
+  const props = {
+    className: "document-media",
+    src: url + (attempt ? "?reader_retry=" + attempt : ""),
+    onError: () => setFailed(true),
+  };
+  if (media === "image") return <img {...props} alt={label} />;
+  if (media === "video")
+    return <video {...props} controls preload="metadata" />;
+  return <audio {...props} controls preload="metadata" />;
+}
 export function DocumentReader({
   item,
   projectId,
@@ -203,30 +242,13 @@ export function DocumentReader({
   });
   const renderBody = () => {
     if (!url) return <p className="muted">未记录可访问的项目文件。</p>;
-    if (media === "image")
+    if (media)
       return (
-        <img
-          className="document-media"
-          src={url}
-          alt={item.label || "项目图片"}
-        />
-      );
-    if (media === "video")
-      return (
-        <video
-          className="document-media"
-          src={url}
-          controls
-          preload="metadata"
-        />
-      );
-    if (media === "audio")
-      return (
-        <audio
-          className="document-media"
-          src={url}
-          controls
-          preload="metadata"
+        <MediaPreview
+          key={url}
+          url={url}
+          media={media}
+          label={item.label || "项目图片"}
         />
       );
     if (!supported) return <p className="muted">此文件支持下载后查看。</p>;
