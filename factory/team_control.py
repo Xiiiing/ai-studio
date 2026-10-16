@@ -598,6 +598,16 @@ def _apply_direct(db, project, command, plan):
             raise ValueError("该成果请通过素材或剧本入口修改，不能直接重做")
     if stage:
         from .attention_actions import _invalidate as invalidate_stage, _restart
+        if stage not in {"research", "proposals", "story_resolution"}:
+            if project.get("delivery"):
+                project.setdefault("delivery_history", []).append({"production_revision": project["production_revision"],
+                                                                  "delivery": copy.deepcopy(project["delivery"]), "at": store.now()})
+            project["production_revision"] += 1
+            project.update(delivery=None)
+            project.pop("delivery_complete_revision", None)
+            for decision in project.get("decisions", []):
+                if decision.get("type") == "final" and decision.get("status") == "pending":
+                    decision["status"] = "superseded"
         if stage in {"research", "proposals", "story_resolution"}:
             invalidate_stage(project, stage)
         elif stage == "screenplay":
@@ -606,15 +616,18 @@ def _apply_direct(db, project, command, plan):
             project.pop("script_complete_generation", None)
             project.pop("visual_design_complete_generation", None)
             project.pop("style_previews_generation", None)
+            project["script_review"] = None
             project.pop("screenplay_complete_round", None)
             project.pop("storyboard_complete_round", None)
             project.pop("script_review_complete_round", None)
             _restart(project, stage)
         elif stage == "storyboard":
+            project["script_review"] = None
             project.pop("storyboard_complete_round", None)
             project.pop("script_review_complete_round", None)
             _restart(project, stage)
         elif stage == "script_review":
+            project["script_review"] = None
             project.pop("script_review_complete_round", None)
             _restart(project, stage)
         elif stage in {"visual_design", "visual_development"}:
@@ -629,7 +642,7 @@ def _apply_direct(db, project, command, plan):
             project.pop("revision_prepared", None)
             _restart(project, "revision")
         elif stage == "production":
-            project.pop("delivery_complete_revision", None)
+            project["production_edit_revision"] = project["production_revision"]
         else:
             raise ValueError("该阶段不能直接重启")
     elif affected_shots:
