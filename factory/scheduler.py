@@ -226,7 +226,7 @@ class StartupLock:
 class FactoryComfyWorker(ComfyWorker):
     """Existing Comfy API adapter with a configurable, verified free-memory gate."""
     def __init__(self, cards, port, tag, min_free=15000, startup_timeout=240, reserve_vram=1.5,
-                 resource_probe=None, resource_check=None, resource_heartbeat=None, h3=False):
+                 resource_probe=None, resource_check=None, resource_heartbeat=None, h3=False, int8_scratch_mib=64):
         super().__init__(cards, port, tag, precision="fp16")
         self.min_free = int(min_free)
         self.startup_timeout = float(startup_timeout)
@@ -234,6 +234,9 @@ class FactoryComfyWorker(ComfyWorker):
         self.resource_probe = resource_probe
         self.resource_check, self.resource_heartbeat = resource_check, resource_heartbeat
         self.h3 = h3
+        self.int8_scratch_mib = int8_scratch_mib
+        if h3 and (type(int8_scratch_mib) is not int or not 64 <= int8_scratch_mib <= 512):
+            raise ValueError("H3 INT8 scratch budget must be an integer within 64..512 MiB")
         if h3 and len(self.cards) != 2:
             raise ValueError("MiniMax H3 requires exactly two reserved GPUs")
 
@@ -279,9 +282,11 @@ class FactoryComfyWorker(ComfyWorker):
                     "--database-url", "sqlite:///" + str(self.folder / "comfyui.db")]
             if self.h3:
                 env["DRAMA_H3_CHUNKED_INT8"] = "1"
+                env["DRAMA_H3_INT8_SCRATCH_MIB"] = str(self.int8_scratch_mib)
                 argv += ["--disable-smart-memory"]
             else:
                 env.pop("DRAMA_H3_CHUNKED_INT8", None)
+                env.pop("DRAMA_H3_INT8_SCRATCH_MIB", None)
                 argv += ["--fp16-unet", "--fp16-text-enc", "--fp32-vae"]
             self.log = (self.folder / "comfy.log").open("a")
             self.child = subprocess.Popen(argv, cwd=COMFY, env=env, stdout=self.log,
@@ -485,13 +490,17 @@ class Scheduler:
         if h3 and (isinstance(reserve_vram, bool) or not isinstance(reserve_vram, (int, float)) or
                    not math.isfinite(reserve_vram) or not 8 <= reserve_vram <= 20):
             raise ValueError("H3 reserved VRAM must be a finite number within 8..20 GiB")
+        int8_scratch_mib = self.config.get("h3_int8_scratch_mib", 64)
+        if h3 and (type(int8_scratch_mib) is not int or not 64 <= int8_scratch_mib <= 512):
+            raise ValueError("H3 INT8 scratch budget must be an integer within 64..512 MiB")
         def create(card, probe, check, heartbeat):
             cards = card if h3 else [card]
             return FactoryComfyWorker(cards, self.port + cards[0], tag, min_free=minimum,
                                       startup_timeout=self.budget.timeout(240, len(cards)),
                                       reserve_vram=reserve_vram,
                                       resource_probe=probe, resource_check=check,
-                                      resource_heartbeat=heartbeat, **({"h3": True} if h3 else {}))
+                                      resource_heartbeat=heartbeat,
+                                      **({"h3": True, "int8_scratch_mib": int8_scratch_mib} if h3 else {}))
         with self._acquire("comfy_h3" if h3 else "comfy", control, minimum, create,
                            **({"gpu_count": 2} if h3 else {})) as (_, worker):
             yield worker

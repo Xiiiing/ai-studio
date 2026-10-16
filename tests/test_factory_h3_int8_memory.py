@@ -78,11 +78,18 @@ def test_chunks_retain_row_quantization_rotation_scales_bias_dtype(convrot, per_
     assert calls == [7, 7, 7, 7, 7, 3]
 
 
-def test_backend_registration_preserves_other_operations_constraints_and_is_idempotent():
+@pytest.mark.parametrize("scratch", [64, 256, 512])
+def test_backend_registration_preserves_other_operations_constraints_and_is_idempotent(monkeypatch, scratch):
     untouched = lambda: "same operation"
     implementations = {"int8_linear": reference, "other": untouched}
     constraints = {"int8_linear": object(), "other": object()}
     registrations = []
+    budgets = []
+    wrap = adapter.row_chunked
+    def wrap_with_budget(original, **kwargs):
+        budgets.append(kwargs["scratch_bytes"])
+        return wrap(original, **kwargs)
+    monkeypatch.setattr(adapter, "row_chunked", wrap_with_budget)
 
     def register(name, module, limits):
         registrations.append((name, module, limits))
@@ -92,13 +99,14 @@ def test_backend_registration_preserves_other_operations_constraints_and_is_idem
         get_implementation=lambda name, backend: implementations[name],
         list_backends=lambda: {"eager": {"capabilities": list(implementations)}},
         get_constraints=lambda backend, name: constraints[name], register=register)
-    adapter.install(registry)
-    adapter.install(registry)
+    adapter.install(registry, scratch_mib=scratch)
+    adapter.install(registry, scratch_mib=scratch)
     assert len(registrations) == 1
     assert registrations[0][0] == "eager"
     assert registrations[0][1].other is untouched
     assert registrations[0][2] == constraints
     assert implementations["int8_linear"] is not reference
+    assert budgets == [scratch * 1024 * 1024]
 
 
 def test_convrot_keeps_original_full_shape_before_chunking(monkeypatch):
@@ -113,3 +121,9 @@ def test_convrot_keeps_original_full_shape_before_chunking(monkeypatch):
 def test_future_backend_signature_fails_explicitly():
     with pytest.raises(RuntimeError, match="verified Comfy Kitchen"):
         adapter.row_chunked(lambda x, new_argument: x)
+
+
+@pytest.mark.parametrize("scratch", [True, "256", None, 63, 513, 256.5])
+def test_plugin_rejects_invalid_scratch_budget(scratch):
+    with pytest.raises(ValueError, match="64..512 MiB"):
+        adapter.install(None, scratch_mib=scratch)

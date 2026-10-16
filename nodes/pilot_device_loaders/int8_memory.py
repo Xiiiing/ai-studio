@@ -67,14 +67,16 @@ def row_chunked(original, *, max_rows=1024, scratch_bytes=64 * 1024 * 1024):
     return bounded
 
 
-def install(registry):
+def install(registry, *, scratch_mib=64):
     """Use the public backend API; preserve all other eager functions/constraints."""
+    if type(scratch_mib) is not int or not 64 <= scratch_mib <= 512:
+        raise ValueError("H3 INT8 scratch budget must be an integer within 64..512 MiB")
     original = registry.get_implementation("int8_linear", backend="eager")
     if getattr(original, "_pilot_h3_chunked_int8", False):
         return
     names = registry.list_backends()["eager"]["capabilities"]
     implementations = {name: registry.get_implementation(name, backend="eager") for name in names}
     constraints = {name: registry.get_constraints("eager", name) for name in names}
-    implementations["int8_linear"] = row_chunked(original)
+    implementations["int8_linear"] = row_chunked(original, scratch_bytes=scratch_mib * 1024 * 1024)
     registry.register("eager", SimpleNamespace(**implementations), constraints)
-    logging.info("H3 worker: bounded eager INT8 row chunks enabled; upstream arithmetic retained")
+    logging.info("H3 worker: bounded eager INT8 row chunks enabled (%s MiB scratch); upstream arithmetic retained", scratch_mib)

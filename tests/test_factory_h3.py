@@ -63,12 +63,14 @@ def test_h3_pair_is_leased_and_accounted_together(monkeypatch, reserve):
     cfg = {"gpu_cards": [4, 5, 6], "resource_wait_seconds": 0}
     if reserve is not None:
         cfg["h3_reserve_vram_gib"] = reserve
+        cfg["h3_int8_scratch_mib"] = 256
     budget = scheduler.Budget(cfg)
     with scheduler.Scheduler(cfg, budget).worker("h3-fixture", h3=True):
         assert budget.snapshot()["active_gpu_leases"] == 2
         now[0] = 3
     assert calls[0][0] == [4, 6]
     assert calls[0][1]["h3"] is True and calls[0][1]["reserve_vram"] == (reserve or 8)
+    assert calls[0][1]["int8_scratch_mib"] == (256 if reserve else 64)
     assert budget.snapshot()["gpu_seconds"] == 6
 
 
@@ -79,8 +81,8 @@ def test_h3_rejects_single_gpu_configuration():
             pytest.fail("A one-card H3 worker was started")
 
 
-@pytest.mark.parametrize("reserve", [8, 12])
-def test_h3_launch_preserves_native_quantization_and_existing_lora(monkeypatch, tmp_path, reserve):
+@pytest.mark.parametrize("reserve,scratch", [(8, 64), (12, 256), (12, 512)])
+def test_h3_launch_preserves_native_quantization_and_existing_lora(monkeypatch, tmp_path, reserve, scratch):
     monkeypatch.setattr(scheduler, "ROOT", tmp_path)
     monkeypatch.setattr(core, "ROOT", tmp_path)
     monkeypatch.setattr(h3, "require_installation", lambda: None)
@@ -92,7 +94,7 @@ def test_h3_launch_preserves_native_quantization_and_existing_lora(monkeypatch, 
     launch = Mock(return_value=child)
     monkeypatch.setattr(scheduler.subprocess, "Popen", launch)
     monkeypatch.setattr(scheduler, "api", lambda *a, **kw: {})
-    worker = scheduler.FactoryComfyWorker([4, 6], 8299, "h3-fixture", reserve_vram=reserve, h3=True)
+    worker = scheduler.FactoryComfyWorker([4, 6], 8299, "h3-fixture", reserve_vram=reserve, h3=True, int8_scratch_mib=scratch)
     try:
         worker._start()
         argv = launch.call_args.args[0]
@@ -101,6 +103,7 @@ def test_h3_launch_preserves_native_quantization_and_existing_lora(monkeypatch, 
         assert not {"--fp16-unet", "--fp16-text-enc", "--fp32-vae"}.intersection(argv)
         assert launch.call_args.kwargs["env"]["CUDA_VISIBLE_DEVICES"] == "4,6"
         assert launch.call_args.kwargs["env"]["DRAMA_H3_CHUNKED_INT8"] == "1"
+        assert launch.call_args.kwargs["env"]["DRAMA_H3_INT8_SCRATCH_MIB"] == str(scratch)
         assert str(tmp_path / "existing-loras") in (worker.folder / "models.yaml").read_text()
     finally:
         worker.__exit__(None, None, None)
@@ -113,6 +116,15 @@ def test_h3_reserve_vram_rejects_invalid_configuration_before_gpu_probe(monkeypa
     monkeypatch.setattr(scheduler, "gpu_snapshot", lambda *args, **kwargs: pytest.fail("Invalid configuration probed GPUs"))
     with pytest.raises(ValueError, match="8..20 GiB"):
         with scheduler.Scheduler(cfg, scheduler.Budget(cfg)).worker("invalid-reserve", h3=True):
+            pytest.fail("Invalid configuration started a worker")
+
+
+@pytest.mark.parametrize("scratch", [True, "256", None, 63, 513, 256.5, float("nan")])
+def test_h3_int8_scratch_rejects_invalid_configuration_before_gpu_probe(monkeypatch, scratch):
+    cfg = {"gpu_cards": [4, 5], "h3_int8_scratch_mib": scratch}
+    monkeypatch.setattr(scheduler, "gpu_snapshot", lambda *args, **kwargs: pytest.fail("Invalid configuration probed GPUs"))
+    with pytest.raises(ValueError, match="64..512 MiB"):
+        with scheduler.Scheduler(cfg, scheduler.Budget(cfg)).worker("invalid-scratch", h3=True):
             pytest.fail("Invalid configuration started a worker")
 
 
