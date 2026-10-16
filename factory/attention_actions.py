@@ -493,6 +493,18 @@ REGISTRY = {
         ),
         "handler": _regenerate,
     },
+    "continue_auto_review": {
+        "label": "继续自动返修",
+        "inputs": lambda p: [],
+        "impact": "保留当前剧本版本和已完成审核轮次，从原检查点继续剩余自动返修，不提高上限",
+        "when": lambda p: _can_continue_auto_review(p),
+    },
+    "request_review_advice": {
+        "label": "请 AI 分析并推荐",
+        "inputs": lambda p: [],
+        "impact": "总制片根据当前审核问题给出返修建议，由你决定是否采纳",
+        "when": lambda p: _advice_eligible(p),
+    },
     "provide_feedback": {
         "label": "提交意见并重新审核",
         "inputs": _feedback_fields,
@@ -503,6 +515,16 @@ REGISTRY = {
         "handler": _feedback,
     },
 }
+
+
+def _can_continue_auto_review(project):
+    from .review_advice import can_continue_auto_review
+    return can_continue_auto_review(project)
+
+
+def _advice_eligible(project):
+    from .review_advice import eligible
+    return eligible(project)
 
 
 def descriptors(project, *, job_running=False):
@@ -527,6 +549,12 @@ def descriptors(project, *, job_running=False):
                 if isinstance(record, dict)
             ):
                 disabled_reason = "此前总制片调用结果尚未确认，请先人工处理当前方案"
+        if ident == "request_review_advice":
+            from .review_advice import snapshot as advice_snapshot, retry_unconfigured
+            advice = advice_snapshot(project)
+            if advice and advice.get("current") and not retry_unconfigured(advice):
+                disabled_reason = {"queued": "AI 建议已排队", "requested": "此前 AI 请求结果尚未确认，请使用人工处理入口",
+                                   "ready": "已有当前审核的 AI 建议", "manual": "本次 AI 分析未完成，可直接人工处理"}.get(advice.get("status"))
         label = (
             "调整预算并继续"
             if ident == "retry" and _need(project).get("type") == "budget"

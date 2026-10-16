@@ -104,15 +104,15 @@ def event(pid, message, kind="progress", data=None):
         _event(db, pid, message, kind, data)
 
 
-def _enqueue(db, pid):
+def _enqueue(db, pid, kind="workflow"):
     existing = db.execute(
-        "SELECT id FROM jobs WHERE project_id=? AND status='queued'",
-        (pid,)).fetchone()
+        "SELECT id FROM jobs WHERE project_id=? AND status='queued' AND kind=?",
+        (pid, kind)).fetchone()
     if existing:
         return existing["id"]
     jid = uuid.uuid4().hex
-    db.execute("INSERT INTO jobs(id,project_id,status,created) VALUES(?,?,?,?)",
-               (jid, pid, "queued", time.time()))
+    db.execute("INSERT INTO jobs(id,project_id,status,created,kind) VALUES(?,?,?,?,?)",
+               (jid, pid, "queued", time.time(), kind))
     return jid
 
 
@@ -395,7 +395,7 @@ def action(pid, payload):
     command = payload.get("action")
     if command not in REGISTRY:
         raise ValueError("不支持的项目操作")
-    if command in RECOVERY_ACTIONS | {"take_control", "delegate_control"} and type(payload.get("expected_revision")) is not int:
+    if command in RECOVERY_ACTIONS | {"take_control", "delegate_control", "request_review_advice", "continue_auto_review"} and type(payload.get("expected_revision")) is not int:
         raise ValueError("此操作需要当前项目的 expected_revision，请刷新后提交")
     if command == "repropose":
         return decide(pid, {**payload, "type":"story", "choice":"__repropose__"})
@@ -408,10 +408,50 @@ def action(pid, payload):
     with connection() as db:
         db.execute("BEGIN IMMEDIATE")
         p = _read(db, pid)
+        if command == "continue_auto_review":
+            prior = p.get("auto_review_continuation") or {}
+            if (p.get("status") == "queued" and payload.get("expected_revision") == prior.get("source_revision")
+                    and p.get("script_generation") == prior.get("script_generation")
+                    and p.get("creative_round") == prior.get("round")
+                    and db.execute("SELECT 1 FROM jobs WHERE project_id=? AND kind='workflow' AND status IN ('queued','running')", (pid,)).fetchone()):
+                return p
+        if command == "request_review_advice":
+            from .review_advice import eligible as advice_eligible, queued_record, signature, retry_unconfigured
+            if not advice_eligible(p):
+                raise ValueError("仅当前创作审核未通过时可请求 AI 建议")
+            previous = p.get("review_advice") or {}
+            if (previous.get("input_signature") == signature(p)
+                    and payload.get("expected_revision") in {p["revision"], previous.get("source_revision")}
+                    and not retry_unconfigured(previous)):
+                return p
         if command != "revise":
             _check_revision(p, payload)
-        if command in RECOVERY_ACTIONS:
-            if db.execute("SELECT 1 FROM jobs WHERE project_id=? AND status='running'", (pid,)).fetchone():
+        if command not in {"pause", "take_control", "request_review_advice"} and db.execute(
+                "SELECT 1 FROM jobs WHERE project_id=? AND kind='review_advice' AND status IN ('queued','running')", (pid,)).fetchone():
+            raise ValueError("当前 AI 分析任务正在收尾，请完成后再提交创作修改")
+        if command == "continue_auto_review":
+            from .review_advice import can_continue_auto_review, ensure_no_gpu_intents
+            if not can_continue_auto_review(p):
+                raise ValueError("当前没有可继续的自动返修轮次；不会重置版本或提高审核上限")
+            if db.execute("SELECT 1 FROM jobs WHERE project_id=? AND status IN ('running','queued')", (pid,)).fetchone():
+                raise ValueError("当前项目仍有任务排队或执行，请完成后再继续自动返修")
+            if db.execute("SELECT 1 FROM cloud_tasks WHERE project_id=? AND status NOT IN ('downloaded','failed','rejected')", (pid,)).fetchone():
+                raise ValueError("已有云任务尚未确认完成，请先核对原提交")
+            ensure_no_gpu_intents(p)
+            p["auto_review_continuation"] = {"source_revision": p["revision"], "script_generation": p["script_generation"],
+                                             "round": p["creative_round"], "at": now()}
+            p.update(status="queued", pause_requested=False, error=None)
+            p.pop("needs_decision", None)
+            _enqueue(db, pid)
+            _event(db, pid, "保留当前稿件和历史审核，从原检查点继续剩余自动返修。", "auto_review_continuation", p["auto_review_continuation"])
+        elif command == "request_review_advice":
+            if db.execute("SELECT 1 FROM jobs WHERE project_id=? AND status IN ('running','queued')", (pid,)).fetchone():
+                raise ValueError("当前任务正在执行或等待执行，请完成后再请求建议")
+            p["review_advice"] = queued_record(p)
+            _enqueue(db, pid, kind="review_advice")
+            _event(db, pid, "已安排总制片分析审核问题；完成后由你决定是否采纳。", "review_advice", {"status": "queued"})
+        elif command in RECOVERY_ACTIONS:
+            if db.execute("SELECT 1 FROM jobs WHERE project_id=? AND (status='running' OR (status='queued' AND kind='review_advice'))", (pid,)).fetchone():
                 raise ValueError("当前任务正在收尾，请完成后再提交创作修改")
             recover(p, payload)
             _enqueue(db, pid)

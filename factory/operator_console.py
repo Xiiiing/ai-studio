@@ -11,6 +11,7 @@ from urllib.parse import quote
 
 from . import store
 from .review_feedback import feedback_choices, review_issues
+from .review_advice import snapshot as advice_snapshot
 from .attention_actions import descriptors, generation, validate_gate, delegation_status
 
 TERMINAL = {"approved", "cancelled"}
@@ -134,7 +135,7 @@ def attention(project, *, job_running=False):
             "code": text(need.get("code"), 120), "blocking": True, "owner": "producer", "revision": project.get("revision"),
             "action_label": labels[kind], "target_tab": "costs" if kind == "cloud" else "decisions", "issues": issues,
             "suggested_feedback": feedback, "feedback_choices": feedback_choices(project), "can_retry": kind in {"creative", "production", "runtime"},
-            "actions": descriptors(project, job_running=job_running)}
+            "actions": descriptors(project, job_running=job_running), "review_advice": advice_snapshot(project)}
 
 
 def project_summary(project, *, job_running=False):
@@ -223,7 +224,7 @@ def workspace(pid):
     with store.connection() as db:
         db.execute("BEGIN")
         project = store._read(db, pid)
-        running = bool(db.execute("SELECT 1 FROM jobs WHERE project_id=? AND status='running' LIMIT 1", (pid,)).fetchone())
+        running = bool(db.execute("SELECT 1 FROM jobs WHERE project_id=? AND (status='running' OR (status='queued' AND kind='review_advice')) LIMIT 1", (pid,)).fetchone())
         project["events"] = [{"id": r[0], "at": r[1], "kind": r[2], "message": r[3], "data": json.loads(r[4])}
                              for r in reversed(db.execute("SELECT id,at,kind,message,data FROM events WHERE project_id=? ORDER BY id DESC LIMIT 120", (pid,)).fetchall())]
     issue = attention(project, job_running=running)

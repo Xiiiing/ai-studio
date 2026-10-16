@@ -37,6 +37,15 @@ def handle(job):
         return  # A completed/recovered claim is not permission to execute again.
     pid=job["project_id"]
     try:
+        if job.get("kind") == "review_advice":
+            from .review_advice import run
+            try:
+                run(pid, job)
+            except Exception as advice_error:
+                store.event(pid, "AI 辅助分析暂不可用，原审核问题和人工入口已保留。", "review_advice",
+                            {"error_type": type(advice_error).__name__[:100]})
+            store.finish_job(job["id"], lease=job["lease"])
+            return
         advance(pid)
         store.finish_job(job["id"], lease=job["lease"])
     except ProductionDeferred as deferred:
@@ -73,6 +82,14 @@ def handle(job):
         expected = isinstance(exc, (ReviewBlocked, CreativeReviewError)) or name in {"ProductionNeedsDecision", "ProductionBudgetExceeded"}
         store.event(pid,"请在待办决策中查看问题并选择处理方式。" if expected else "异常详情已写入本地运行日志。",
                     "review_blocked" if expected else "error",{"exception_type":name,"stage":store.get(pid,False).get("stage")})
+        if isinstance(exc, (ReviewBlocked, CreativeReviewError)):
+            from .review_advice import eligible, run
+            if (not isinstance(exc, CreativeReviewError) or bool(exc.issues)) and eligible(store.get(pid, False)):
+                try:
+                    run(pid, job)
+                except Exception as advice_error:
+                    store.event(pid, "AI 辅助分析暂不可用，原审核问题和人工入口已保留。", "review_advice",
+                                {"error_type": type(advice_error).__name__[:100]})
         store.finish_job(job["id"],str(exc)[:2500],lease=job["lease"])
         if expected:
             print(json.dumps({"event":"project_needs_attention","project":pid,"reason_type":needs.get("kind") or needs.get("type"),"exception_type":name},ensure_ascii=False),flush=True)
