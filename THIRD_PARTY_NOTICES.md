@@ -11,7 +11,8 @@
 | LangGraph | Python 执行图、决策中断、SQLite 检查点 | [仓库](https://github.com/langchain-ai/langgraph)、[LICENSE](https://github.com/langchain-ai/langgraph/blob/main/LICENSE) |
 | React / React DOM | 制作工作台组件与渲染 | [仓库与 MIT LICENSE](https://github.com/facebook/react) |
 | TanStack Query | 工作台服务端状态、刷新与失效 | [仓库与 MIT LICENSE](https://github.com/TanStack/query) |
-| React Flow / xyflow | 真实执行图、节点详情、缩放定位 | [仓库与 MIT LICENSE](https://github.com/xyflow/xyflow) |
+| React Flow / xyflow | 历史工作台采用的图交互参考与依赖；当前主分支已使用自有固定阶段图，不在当前 UI 依赖清单中 | [仓库与 MIT LICENSE](https://github.com/xyflow/xyflow) |
+| react-markdown / remark-gfm | Markdown 文件阅读与 GFM 表格、列表等解析 | [react-markdown](https://github.com/remarkjs/react-markdown)、[remark-gfm](https://github.com/remarkjs/remark-gfm)，MIT |
 | Lucide | 工作台矢量图标 | [仓库与 ISC LICENSE](https://github.com/lucide-icons/lucide) |
 | Vite / Vitest | UI 构建与开发测试 | [Vite](https://github.com/vitejs/vite)、[Vitest](https://github.com/vitest-dev/vitest)，MIT |
 | TypeScript | UI 类型检查，仅构建依赖 | [Apache-2.0 LICENSE](https://github.com/microsoft/TypeScript/blob/main/LICENSE.txt) |
@@ -42,4 +43,4 @@ Dify、Langflow、Toonflow、MoneyPrinterTurbo、ComfyUI、Drama Skills 的职�
 
 如果未来直接引入第三方代码、模板、图片、字体或图标，应在引入时保存对应文件的来源和许可证，而不是只引用这个总表。
 
-2026-10-15 重构研究固定到 Dify `1f3fdbc0d32ff7a52f94a2a34e00183e698f1c2f`、Toonflow `d2e94aca7b59659ff6b4ca15f03cf134ec7f0e1d` 和 xyflow `3d35b57317576b0916c0bfeaaedd573aaacc2839`。借鉴动作表单、委派事件、节点交互，业务实现自行编写；未复制 Dify 前端或其品牌资源。React Flow 通过依赖引入，准确版本由 `package-lock.json` 固定。具体源码入口见参考架构研究的重构补充。
+2026-10-15 重构研究固定到 Dify `1f3fdbc0d32ff7a52f94a2a34e00183e698f1c2f`、Toonflow `d2e94aca7b59659ff6b4ca15f03cf134ec7f0e1d` 和 xyflow `3d35b57317576b0916c0bfeaaedd573aaacc2839`。借鉴动作表单、委派事件、节点交互，业务实现自行编写；未复制 Dify 前端或其品牌资源。当时 React Flow 通过依赖引入；当前工作台已改为自有固定阶段图，实际依赖以 `package.json` 与 `package-lock.json` 为准。具体源码入口见参考架构研究的重构补充。

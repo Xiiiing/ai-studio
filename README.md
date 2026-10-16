@@ -1,102 +1,105 @@
-# AI Studio · 多模型短剧工作流
+<div align="center">
+  <img src="docs/assets/logo.svg" alt="AI Studio Logo" width="88" height="88">
+  <h1>AI Studio</h1>
+  <p><strong>让故事走向银幕，让创作过程可见。</strong></p>
+  <p>多模型协作的短剧制作工作室 · 从故事策划到出品人终审</p>
+  <p><strong>简体中文</strong> · <a href="README.en.md">English</a></p>
+  <p>
+    <a href="https://github.com/Xiiiing/ai-studio/actions/workflows/ci.yml"><img src="https://github.com/Xiiiing/ai-studio/actions/workflows/ci.yml/badge.svg?branch=main" alt="Workflow contracts CI"></a>
+    <a href="docs/DEPLOYMENT.md"><img src="https://img.shields.io/badge/Python-3.12-3776AB?logo=python&amp;logoColor=white" alt="Python 3.12"></a>
+    <a href="package.json"><img src="https://img.shields.io/badge/React-19-149ECA?logo=react&amp;logoColor=white" alt="React 19"></a>
+    <a href="CONTRIBUTING.md"><img src="https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&amp;logoColor=white" alt="TypeScript 5"></a>
+  </p>
+  <p>
+    <a href="#快速开始">快速开始</a> ·
+    <a href="docs/README.md">文档中心</a> ·
+    <a href="docs/USER_MODELS.md">模型接入</a><br>
+    <a href="https://github.com/Xiiiing/ai-studio/issues">问题反馈</a> ·
+    <a href="#引用项目">引用项目</a>
+  </p>
+</div>
 
-让不同模型分别负责故事策划、编剧、审稿、分镜和画面质检，组合本地图像、配音与剪辑，以及本地或云端视频生成，完成短剧交付。
+![AI Studio — From story to screen](docs/assets/banner.svg)
 
-**AI Studio 的核心是一条可恢复的制作工作流。** 新项目默认由总制片代理选择合格故事与视觉方向，出品人可在安全边界接管，并负责初版成片的终审；普通修复在既有尝试与预算内执行。CLI 和中文工作台共用同一套状态与任务队列。
+AI Studio（工作台名称「映序」）将策划、编剧、独立审稿、分镜、视觉、配音和剪辑组织成一条**可恢复、可追溯的制作工作流**。你可以为不同角色选择自己的模型或 API，在工作台查看产物与审核意见，处理关键决策，最终确认成片。
 
-## 这版解决什么问题
+适合想把多个模型接成完整短剧流程的创作者，也适合研究 Agent 分工、人工决策与媒体任务恢复的开发者。Web 工作台和 CLI 共用项目状态与任务队列；关闭页面不会丢失后台任务。
 
-- **制作台与团队指挥连通。** 浅色制片总览展示实际执行、待办和作品；项目按故事、视觉、分镜、镜头与成片组织内容，Agent 任务直接关联产物与独立审核。
-- **待办有实际处理方式。** 补充授权素材、切回原创、修改方向、反馈后重新审核、全部否决视觉及指定镜头返修，共用服务端动作契约。
-- **执行图按项目版本恢复。** 新项目分别保存故事目标、剧本、分镜、独立审核和视觉设计步骤；已有项目使用原检查点。旧 UI、旧启动器及固定样片专项验收入口已删除。
+## 界面预览
 
-- **模型通过接口调用。** 同一角色可配置 llama.cpp、Ollama 原生或兼容接口、vLLM、LM Studio、DeepSeek、百炼或其他 OpenAI-compatible 服务；部署位置与协议分开配置。
-- **角色和模型分开。** 编剧、独立审稿、分镜导演、视觉质检有各自绑定；多个角色共用模型时也会明确显示。
-- **团队工作数据流可查看。** 每个项目展示当前角色分配、任务状态、输入输出、上下游交接，以及当次实际模型的执行回执。总控沿现有工作流分工，用户可调整角色绑定。
-- **视频引擎可选择。** `video_generator` 可以绑定本地 ComfyUI / Wan 或 MiniMax 视频接口；云端任务按 ID 持久化并恢复查询、下载，再进入现有逐镜质检和剪辑。
-- **配置可查看、测试、导出和保存。** 文本连接可以探测模型列表；显式跳过发现和视频连接只做配置预检，不生成内容。配置用版本校验保存；已开始的执行批次持有自己的快照。
-- **工作流可中断和恢复。** LangGraph + SQLite 保存状态；后台 worker 执行长任务，关闭页面不丢失任务。
-- **制作按镜头追踪。** 保存参考图、提示词、模型身份、参数、生成任务 ID、质检和修复回执，复用仍有效的素材。
-- **人物、场景与画风可复用。** 统一素材库和剧内素材库支持上传、多图版本、AI 素材制作与全剧定稿，固定参考实际参与编剧、分镜和首帧生成。见[素材库使用说明](docs/MATERIAL_LIBRARY.md)。
-- **输出完整交付。** MP4、字幕、时间线、剧本、分镜和制作清单保存在制作工程中；初版生成和出品人终审是两个状态。
+![AI Studio 制片总览：项目、当前进度与待办](docs/assets/workbench.png)
 
-## 模型究竟怎样运行和调用
+<details>
+<summary><strong>查看项目工作流与步骤详情</strong></summary>
 
-| 环节 | 当前调用接口 | 模型在哪里运行 |
-| --- | --- | --- |
-| 策划、编剧、审稿、导演、视觉理解 | OpenAI-compatible Chat Completions 或 Ollama 原生 `/api/chat` | 本机、LAN 或远程模型服务，按角色配置 |
-| 图像 | ComfyUI HTTP，提交 `/prompt` 后按 `prompt_id` 查询历史 | 本机受 GPU 租约管理的 ComfyUI 进程 |
-| 扩散视频 | 本地 ComfyUI / Wan，或 MiniMax `video_generation` → 查询任务 → 获取文件 | 本地 GPU，或显式选择的远程 HTTPS 视频服务 |
-| 角色配音 | 受控本地进程，结构化输入、WAV 和回执 | 独立 Qwen3-TTS Python 环境 |
-| 剪辑、混音、字幕、媒体检查 | 本地 FFmpeg / PyAV | 本机 CPU |
+![五阶段制作工作流与步骤输入输出](docs/assets/workflow.png)
 
-本地运行是部署位置，HTTP 是调用协议，两者可以同时成立。主程序不会把全部 LLM 权重加载到自身进程，也不会通过模型设置执行任意安装或启动命令。视频异步任务和配音进程保留各自的执行语义。
+</details>
 
-默认制作路线为动态漫：关键帧、程序运镜、配音、字幕与剪辑。真人和二维动画路线使用图生视频，实际质量仍需要逐镜质检。默认不启用 DSPy、VBench，也不把完整真人短剧的艺术质量当成已保证的能力。
+*以上为真实界面的隔离模拟数据截图，用于展示产品布局，不代表真实模型生成效果。当前应用界面为中文。[资源来源与复现说明](docs/assets/README.md)*
+
+## 核心能力
+
+| 能力 | 你可以做什么 |
+| --- | --- |
+| 多角色模型协作 | 分别配置编剧、独立审稿、分镜导演、视觉质检与总制片；查看当次实际模型和执行回执。 |
+| 可恢复的工作流 | 用 LangGraph + SQLite 保存检查点、决策与任务；中断后接续，按镜头进行有界返修。 |
+| 可读的创作过程 | 在五阶段流程图中查看真实步骤，打开 Markdown、JSON、提示词、请求响应与媒体。 |
+| 两层素材库 | 管理跨项目及剧内的人物、场景、画风与多图版本，定稿后作为实际制作参考。 |
+| 灵活的制作引擎 | 混合自己的文本服务、ComfyUI、Qwen3-TTS，以及已适配的云端图像、语音和视频 API。 |
+| 明确的交付与终审 | 保存 MP4、字幕、时间线、剧本、分镜与制作清单；初版生成后由出品人确认终版。 |
+
+```mermaid
+flowchart LR
+  A["故事策划"] --> B["剧本与分镜"] --> C["视觉确认"] --> D["镜头与后期"] --> E["终审交付"]
+  B -->|独立审核与返修| B
+  E -->|定向修改| D
+```
+
+创作默认由总制片代理选择合格的故事与视觉方向，也可使用人工引导模式。自动返修受轮次、尝试次数和预算约束；终片确认、预算增加和新增付费授权仍由出品人决定。
 
 ## 快速开始
 
-控制层适合 Linux + Python 3.12；UI 构建机需要 Node.js 24。只使用文本创作或远程 LLM 接口时，控制层无需 GPU；本地图像、视频和配音需要另外准备对应模型、运行环境与显存。
+需要 **Linux、Python 3.12**；从源码构建工作台建议 **Node.js 24**（与 CI 一致）。控制层本身不需要 GPU；云端路线需要自己的服务账号，本地制作需要相应模型与运行环境。媒体与字幕依赖见[部署说明](docs/DEPLOYMENT.md)。
+
+### 1. 安装
 
 ```bash
 git clone https://github.com/Xiiiing/ai-studio.git
 cd ai-studio
 python3.12 scripts/bootstrap.py
-./drama models
-./drama workflow --json
 ```
 
-初始化仅在缺失时创建 `config/factory.json`，保留已有配置，并将 React 工作台构建到 `ui/factory/dist`。运行服务器可安装匹配代码版本的预构建 UI，使用 `--skip-ui-build` 跳过 Node。公开示例中的模型 ID 是示例别名，需改成你的服务实际提供的 ID。Ollama、vLLM、LM Studio、DeepSeek、百炼和 MiniMax 示例连接默认禁用，启用前填写实际服务与模型 ID。
+初始化会创建控制环境、构建 UI，并在配置缺失时使用**空配置**；不会下载模型或自动连接开发者的服务器。已有配置会保留。
 
-启动工作台和后台执行器，分别在两个终端运行：
+### 2. 启动
+
+分别在两个终端运行：
 
 ```bash
+# 终端 A：工作台与业务 API
 envs/factory/bin/python -m factory.web
 ```
 
 ```bash
+# 终端 B：后台任务执行器
 envs/factory/bin/python -m factory.worker
 ```
 
-浏览器打开 **http://127.0.0.1:8787/**。服务器部署可通过 SSH 转发这个端口。长期运行使用[部署说明](docs/DEPLOYMENT.md)中的 systemd 安装方式。
+打开 [http://127.0.0.1:8787/](http://127.0.0.1:8787/)。长期运行与远程访问见[部署、升级与恢复](docs/DEPLOYMENT.md)。
 
-### 配置模型
+### 3. 接入模型，创建第一部短剧
 
-进入工作台的“模型与连接”：
+1. 在“模型与连接”中配置自己的服务地址、实际模型 ID 和能力，为创作与审核角色分配连接。
+2. 按制作路线配置图像、配音和视频；保存后测试文本连接、检查媒体配置。检查通过不等于已经生成成功。
+3. 新建项目，填写创作方向、画面与运动方式和预算；在工作流中查看产物，处理待办并确认终片。
 
-1. 添加或编辑连接，填写服务类型、地址、服务端模型 ID、上下文和能力。
-2. 为各个角色选择模型，视觉质检必须绑定支持视觉输入的配置。
-3. 点击“保存配置”。保存不开始生产，也不会自动下载或启动模型。
-4. 对已保存的连接点击“测试连接”，核对模型列表和 ID；测试失败时修改配置、重新保存后再测试。草稿不能直接进行连接测试。
-5. 在“视频模型”中添加 MiniMax 连接或选择本地 Wan，为“视频生成”指定连接；点击“预检配置”检查保存的配置和密钥变量。
-6. 进入项目的“制作工作流”或“团队与回执”，查看角色的输入、产物和执行记录。成员卡显示当前分配；历史回执保留当次实际模型，不随默认配置变化。
+API 密钥放入被 Git 忽略的 `config/runtime.env`；配置仅保存密钥变量名。完整步骤见[首次使用指南](docs/GETTING_STARTED.md)与[使用自己的模型和 API](docs/USER_MODELS.md)。
 
-Base URL 是完整 API 前缀，不统一追加 `/v1`。例如 DeepSeek 可使用服务根，百炼保留 `/compatible-mode/v1`，Ollama 原生使用服务根或 `/api`。百炼等目录协议不同的服务可设 `model_discovery: "skip"`，预检会明确显示“未验证”，实际调用仍校验响应模型与 JSON 结构。
+<details>
+<summary><strong>CLI 示例：创建一个 60 秒动态漫项目</strong></summary>
 
-MiniMax 的当前适配器使用 v1 图生视频协议，支持任务、文件 ID 与可恢复下载；这不表示自动支持所有其他视频供应商或 H3 的不同协议。`motion_comic` 仍使用关键帧与程序运镜，云视频选择用于真人和二维动画路线。详见模型文档中的支持组合与恢复说明。
-
-也可使用 CLI：
-
-```bash
-./drama roles
-./drama models probe writer_local
-./drama models probe minimax_example --kind video
-./drama models export --file runtime/models-edit.json
-# 编辑导出文件中的 llm_profiles 和 llm_roles
-./drama models apply --file runtime/models-edit.json
-```
-
-导出文件保留配置版本；其他页面已修改配置时，旧文件会被拒绝，先重新导出再修改。真实密钥只放在服务环境变量中，配置仅保存 `api_key_env` 名称。详见[模型接口说明](docs/MODEL_PROVIDERS.md)。
-
-### 阅读工作流与 Agent 输入输出
-
-项目首页使用固定布局流程图展示故事策划、剧本与分镜、视觉确认、镜头与后期、终审交付五个阶段。节点端口和方向箭头表达真实拓扑中的数据流向，执行中的阶段显示流动线与流动点，返修使用金色连线；无需缩放或平移。点击阶段在右侧查看真实子步骤、输入材料、交付内容、参与角色与执行记录；窄屏点击后直接定位下方详情，并可返回流程图。暂停和等待人工处理时动效停止，减少动态效果设置会关闭动画。自动刷新保留手动选择和正在阅读的文件。
-
-输入与输出文件均可点击“阅读文件”。Markdown 支持标题、表格、列表和代码块，JSON 可切换正文与原文；支持放大阅读、媒体预览和下载。文本预览上限为 2 MiB，超限时下载阅读；文件缺失或读取失败可重试。
-
-“执行记录”按调用及重试次数展示已保存的请求、响应、解析结果和回执，包括提示词与消息原文。当前业务材料与当次模型输入分别展示；旧调用缺少步骤归属时标为角色历史，不推测所属步骤。团队页中的执行记录可定位回对应步骤。查看内容不会启动生成或改变终审决定。
-
-### 提交创作任务
+先完成模型配置，再运行：
 
 ```bash
 ./drama run \
@@ -110,94 +113,87 @@ MiniMax 的当前适配器使用 v1 图生视频协议，支持任务、文件 I
   --request-id first-episode
 ```
 
-工作流需要人工处理时，工作台展示候选、审核依据和有效操作。新项目默认 AI 代管故事与视觉；总制片未配置时明确回到人工处理。创建时使用 `--team-mode guided` 可全程人工选择故事与画风。
+返回项目 ID 后，用 `./drama status PROJECT_ID` 查看进度，`./drama outputs PROJECT_ID` 查看交付物。`PROJECT_ID` 需替换为实际编号；人工选择、暂停恢复和配置导出见[使用指南](docs/GETTING_STARTED.md)。
 
-审核待办可以直接选择“按全部审核建议修改”、具体问题或当前阶段的常用修改方向，再确认提交，无需填写文字；也可保留选项并补充自定义要求。视觉重新生成和成片返修、重剪同样支持选项。选择表达修改重点，作品仍需通过独立审核；页面更新时会保留已选要求，并在版本冲突后要求核对再提交。
+</details>
 
-创作审核默认每批最多 4 轮（3 次自动返修）：审稿人指出问题，创作角色按原稿和意见重做，再送独立审核，通过后继续。超过上限时保留历史，由已配置的总制片模型分析返修方案、理由、风险和需要你决定的取舍；也可点击“请 AI 分析并推荐”。你可以采纳 AI 方案继续一批返修，或使用自己的审核选项。终片确认、预算增加和新增费用授权由你决定。`creative.max_review_rounds` 支持 1–6，旧配置的显式上限继续有效。
+## 模型与制作路线
 
-CLI 可用：
+| 环节 | 已实现的接入方式 | 进一步阅读 |
+| --- | --- | --- |
+| 文本与视觉理解 | llama.cpp、Ollama、vLLM、LM Studio；OpenAI-compatible 及已适配的平台协议 | [模型接口与能力](docs/MODEL_PROVIDERS.md) |
+| 图像 | 托管或用户自建的 ComfyUI；已适配的百炼图像 API | [用户模型指南](docs/USER_MODELS.md) |
+| 视频 | ComfyUI / Wan、自定义 ComfyUI API 工作流；MiniMax 已适配图生视频接口 | [模型与工作流配置](docs/MODEL_PROVIDERS.md) |
+| 配音 | 制作机独立 Qwen3-TTS 进程；已适配的百炼语音 API | [本地与云端配音](docs/USER_MODELS.md) |
+| 后期 | FFmpeg / PyAV 剪辑、混音、字幕与媒体检查 | [部署依赖](docs/DEPLOYMENT.md) |
 
-```bash
-./drama status PROJECT_ID
-./drama choose PROJECT_ID --type story --choice PROPOSAL_ID --decision-id STORY_GATE_ID
-./drama choose PROJECT_ID --type style --choice STYLE_ID --decision-id STYLE_GATE_ID
-./drama outputs PROJECT_ID
-```
+**动态漫**使用关键帧加程序运镜；**二维动画和真人路线**使用图生视频，需逐镜验收，不承诺同步口型或自动达到商业成片质量。模型名称、服务协议、视觉能力、地域和账号权限需分别核对；并非任意供应商接口都能直接替换。
 
-实际编号来自 `status`，不要使用上述占位符。制作中可请求暂停并在安全边界恢复；详情页提供预算、失败原因、镜头状态和局部返修。终审也可以选择修改，并给出反馈。
-
-## 架构
-
-当前测试部署采用 **cami 控制层 + Wkp 推理服务**：前端、业务 API、项目库、Agent 编排、工作流 worker 和剪辑全部在 cami；Wkp 只执行模型推理。只迁移系统，不迁移旧数据。详见 [部署与唯一测试入口](docs/CAMI_CONTROL_PLANE.md)。
+## 架构与文件导航
 
 ```mermaid
 flowchart TD
-  UI["中文工作台 / CLI"] --> API["项目状态与任务 API"]
-  API --> DB["SQLite 状态 / 队列 / 检查点"]
-  DB --> W["LangGraph 后台执行器"]
-  W --> R["角色模型路由"]
-  R --> L["本地 / LAN / 远程 LLM 接口"]
-  W --> G["GPU 制作适配器"]
-  G --> C["ComfyUI 图像与视频"]
-  G --> T["本地配音"]
-  C --> Q["逐镜质检与有界返修"]
-  T --> Q
-  Q --> E["FFmpeg 剪辑与交付"]
-  E --> D["出品人终审"]
-  D -->|局部修改| W
+  UI["React 工作台 / CLI"] --> API["Python 业务层"]
+  API --> DB["SQLite 状态、队列、检查点"]
+  DB --> W["LangGraph Worker"]
+  W --> L["角色模型路由 / 文本与视觉服务"]
+  W --> M["图像、视频与配音适配器"]
+  M --> Q["逐镜质检 / 有界返修"]
+  Q --> F["FFmpeg 剪辑 / 交付 / 出品人终审"]
 ```
 
-工作流图的程序化导出来自实际 LangGraph 图，并不是另一套编辑器的演示拓扑。当前提供固定的短剧制作流程与可配置的角色模型绑定；导出的图说明不能用来导入任意可执行代码。
+模型服务可以运行在本机、局域网或远端；`localhost` 始终指后端所在机器。工作台、worker、状态库和制作资源的部署关系由实际配置决定，见[架构与目录导览](docs/ARCHITECTURE.md)。
 
-| 代码位置 | 职责 |
+| 路径 | 内容 |
 | --- | --- |
-| `factory/providers.py` | 模型协议、连接目录、网络范围、配置校验与保存 |
-| `factory/llm.py` | 角色调用、结构化输出、上下文预算、回执 |
-| `factory/workflows.py` | 持久化执行图与人工决策 |
-| `factory/creative.py`、`storyboard.py` | 编剧、独立评审、分镜和反馈处理 |
-| `factory/production.py`、`scheduler.py` | 镜头生产、GPU 租约、预算、失败恢复 |
-| `factory/video_providers.py`、`video_transport.py`、`minimax_video.py`、`video_production.py` | 视频连接、受限网络、持久化云任务与逐镜生产接入 |
-| `factory/team_flow.py` | 当前分工、产物流转和有界历史回执投影 |
-| `factory/web.py`、`ui/factory/` | 中文工作台和业务 API |
-| `studio/`、`audio/` | 制作、媒体和配音适配器 |
-| `config/factory.example.json` | 可移植配置示例 |
+| [`factory/`](factory/) | 工作流、角色模型、项目状态、API 与后台 worker |
+| [`ui/factory/`](ui/factory/) | React + TypeScript 制片工作台 |
+| [`studio/`](studio/) · [`audio/`](audio/) | 媒体制作、剪辑与本地语音 |
+| [`config/`](config/) · [`workflows/`](workflows/) | 公开配置示例与制作工作流模板 |
+| [`scripts/`](scripts/) · [`deploy/`](deploy/) | 初始化、运维工具与服务模板 |
+| [`tests/`](tests/) · [`evaluation/`](evaluation/) | 工作流、UI、浏览器契约与离线创作评估 |
+| [`docs/`](docs/README.md) | 按使用、开发、运维与历史记录分类的文档中心 |
 
-## 从哪些项目学习
+配置、密钥、数据库、权重、运行环境和生成素材留在 Git 之外；目录边界见[贡献指南](CONTRIBUTING.md)。
 
-参考 Dify 的供应商与模型能力分离、Langflow 的流程 API 和配置导出、Toonflow 的角色/场景/镜头组织、MoneyPrinterTurbo 的完整视频交付、ComfyUI 的异步执行、Drama Skills 的创作职责和内容阅读界面。
+## 文档与参与
 
-这些是架构与产品设计依据；项目没有把上述平台全部安装并串成多重调度系统。具体框架、采用原则、当前官方来源和许可边界见[参考架构研究](docs/REFERENCE_ARCHITECTURES.md)和[第三方说明](THIRD_PARTY_NOTICES.md)。
+| 你的目标 | 阅读入口 |
+| --- | --- |
+| 第一次使用 | [首次使用](docs/GETTING_STARTED.md) · [模型接入](docs/USER_MODELS.md) |
+| 制作与返修 | [短剧规格](docs/SHORT_DRAMA_CONTRACT.md) · [素材库](docs/MATERIAL_LIBRARY.md) · [镜头工作台](docs/SHOT_WORKBENCH.md) |
+| 开发与扩展 | [架构导览](docs/ARCHITECTURE.md) · [API](docs/API.md) · [贡献与验证](CONTRIBUTING.md) |
+| 部署与数据保护 | [部署](docs/DEPLOYMENT.md) · [一致备份](docs/CONSISTENT_BACKUP.md) · [HTTP 边界](docs/HTTP_SECURITY.md) |
+| 查看全部资料 | [中文文档中心](docs/README.md) · [English documentation index](docs/README.en.md) |
 
-## 验证与边界
+欢迎通过 [Issues](https://github.com/Xiiiing/ai-studio/issues) 报告可复现的问题、讨论需求，通过 [Pull requests](https://github.com/Xiiiing/ai-studio/pulls) 提交改进。开发环境、验证命令和提交范围见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
-- CPU 测试覆盖角色路由、连接配置、网络约束、结构化输出、状态恢复、决策重放、镜头返修和 UI 接口。
-- 成功的文本模型目录探测证明该接口可达、模型 ID 对应；`unverified` 和视频的 `configured` 只表示配置状态。生成质量、视觉能力和 schema 兼容性仍由实际调用确认。
-- 不同后端仍需使用实际 schema 和小规模图像输入验收。模型版本、GPU 和服务参数变化时应重新验证。
-- 生产预算目前约束 GPU 时间、制作墙钟时间和尝试次数；外部 API 的 token 用量写入回执，尚未提供按货币金额的硬限额。
-- 默认工作台绑定本机回环地址，定位是单机出品人工具。互联网多人访问需要另外配置认证代理，不能直接把本机接口开放到公网。
-- 权重、私有配置、API 密钥、数据库、生产素材和历史生成回执不在源码仓库中。模型下载与模型许可独立于源码。
+## 使用边界
 
-```bash
-envs/factory/bin/python -m pytest -q tests/test_factory_*.py
-npm test
-npm run build
-python scripts/browser_fixtures.py
-FACTORY_TEST_PYTHON=envs/factory/bin/python npm run test:browser
+- 连接探测和配置预检只证明相应检查完成；真实生成、视觉理解和模型质量需要实际调用验证。
+- 图像、配音与视频的付费批次有授权与费用记录；应用额度不是供应商账单的硬限额，文本 API 也没有货币金额硬限额。
+- 工作台默认只监听本机回环地址，面向单用户制作。远程访问需要 SSH 转发或认证代理。
+- 自动化验收使用隔离数据与模拟提供商；历史测试、特定部署和真实模型验证分开记录，见[文档中心](docs/README.md)。
+
+## 致谢与来源
+
+执行与界面基于 [LangGraph](https://github.com/langchain-ai/langgraph)、[React](https://github.com/facebook/react)、[TanStack Query](https://github.com/TanStack/query)；媒体侧对接 [ComfyUI](https://github.com/Comfy-Org/ComfyUI)、[Qwen3-TTS](https://github.com/QwenLM/Qwen3-TTS)、[FFmpeg](https://ffmpeg.org/) 与 [PyAV](https://github.com/PyAV-Org/PyAV)。
+
+产品与架构设计参考 [Dify](https://github.com/langgenius/dify)、[Langflow](https://github.com/langflow-ai/langflow)、[Toonflow](https://github.com/HBAI-Ltd/Toonflow-app)、[MoneyPrinterTurbo](https://github.com/harry0703/MoneyPrinterTurbo) 和 [Drama Skills](https://github.com/zenstory-ai/drama-skills)。参考项目与运行依赖分别记录，采用范围和来源见[参考架构研究](docs/REFERENCE_ARCHITECTURES.md)与[第三方说明](THIRD_PARTY_NOTICES.md)。
+
+## 引用项目
+
+研究、文章或作品中使用本项目时，可引用仓库，并记录实际使用的 commit。软件元数据见 [CITATION.cff](CITATION.cff)，也可使用 GitHub 的 “Cite this repository” 入口。
+
+```bibtex
+@misc{ai_studio,
+  author       = {Xiiiing},
+  title        = {{AI Studio}: Multi-model short-drama production workflows},
+  howpublished = {\url{https://github.com/Xiiiing/ai-studio}},
+  note         = {Software repository; record the commit used}
+}
 ```
 
-## 文档
+## 许可
 
-- [模型接口与本地运行](docs/MODEL_PROVIDERS.md)
-- [部署、升级和恢复](docs/DEPLOYMENT.md)
-- [API 与工作流配置](docs/API.md)
-- [工作台重构、迁移与验证](docs/STUDIO_UPGRADE_2026-10-15.md)
-- [此前问题、修复与验证范围](docs/AUDIT_2026-10-13.md)
-- [参考架构研究](docs/REFERENCE_ARCHITECTURES.md)
-- [第三方组件说明](THIRD_PARTY_NOTICES.md)
-
-## 使用自己的模型或购买 API
-
-Linux 用户可自行安装，通过“模型与连接”中的平台预设配置自己的服务。普通用户可以使用百炼图像／配音与 MiniMax 视频完成无需本机 GPU 的制作，也可混合使用本地文本、ComfyUI 和 Qwen3-TTS。新安装从空配置开始，不依赖开发者的 Wkp。密钥继续使用私有环境变量。
-
-配置步骤、模型支持范围、工作流导入和费用恢复说明见 [用户模型接入指南](docs/USER_MODELS.md)。纯 API 配置结构参考 `config/factory.api.example.json`；实际模型、地域、工作空间和密钥由使用者准备。
+本仓库目前**尚未指定统一源码许可证**。公开托管不等于授予任意使用、修改或再分发许可；第三方组件、模型权重和服务各自遵循其条款，详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
