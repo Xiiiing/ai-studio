@@ -3834,3 +3834,7 @@ textarea {
 .material-region img { width: 100%; display: block; }
 .material-region svg { position: absolute; inset: 0; width: 100%; height: 100%; cursor: crosshair; touch-action: none; }
 .material-task { padding: 16px 0; border-bottom: 1px solid #ddd; }
+.material-editor-fields { border: 0; padding: 0; margin: 0; min-width: 0; }
+.material-pending-files { padding: 12px; border: 1px solid var(--line); border-radius: 10px; }
+.material-pending-files span { min-width: 0; overflow-wrap: anywhere; }
+.material-pending-files .button { flex-shrink: 0; }
