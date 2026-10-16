@@ -1,19 +1,9 @@
-import { useMemo, useState } from "react";
-import {
-  ReactFlow,
-  Background,
-  Controls,
-  MiniMap,
-  Handle,
-  Position,
-  type NodeProps,
-  type Node,
-  type Edge,
-  MarkerType,
-} from "@xyflow/react";
-import { ArrowRight, Users, FileText, CircleCheck } from "lucide-react";
-import { rows, roleName, mediaUrl, date, text, type RecordData } from "./api";
-import { Badge, Panel, Empty, Readable, Artifact } from "./ui";
+import { useEffect, useMemo, useState } from "react";
+import { ArrowRight, Users, CircleCheck, CornerDownLeft } from "lucide-react";
+import { rows, roleName, date, type RecordData } from "./api";
+import { Badge, Panel, Empty, Artifact } from "./ui";
+import { ExecutionRecord, MaterialCard } from "./DocumentReader";
+
 export function workflowNodes(
   graph: RecordData,
   flow?: RecordData,
@@ -33,192 +23,532 @@ export function workflowNodes(
         ].filter(Boolean),
       ),
     ];
-    return { ...n, members };
+    return {
+      ...n,
+      owner: n.owner || n.role || contract?.owner,
+      reviewer: n.reviewer || contract?.reviewer,
+      members,
+    };
   });
 }
-function StageNode({ data }: NodeProps<Node<RecordData>>) {
+const legacyGroups = [
+  {
+    id: "story",
+    label: "故事策划",
+    node_ids: ["research", "proposals", "story_decision"],
+  },
+  {
+    id: "script",
+    label: "剧本与分镜",
+    node_ids: ["story_resolution", "screenplay", "storyboard", "script_review"],
+  },
+  {
+    id: "visual",
+    label: "视觉确认",
+    node_ids: ["visual_design", "visual_development", "style_decision"],
+  },
+  { id: "production", label: "镜头与后期", node_ids: ["production"] },
+  {
+    id: "delivery",
+    label: "终审交付",
+    node_ids: ["final_decision", "delivery"],
+  },
+];
+export function workflowGroups(graph: RecordData, nodes: RecordData[]) {
+  const ids = new Set(nodes.map((n) => n.id));
+  const supplied = rows(graph.presentation?.stages);
+  const groups: RecordData[] = (supplied.length ? supplied : legacyGroups)
+    .map((g) => ({
+      ...g,
+      node_ids: (g.node_ids || []).filter((id: string) => ids.has(id)),
+    }))
+    .filter((g) => g.node_ids.length);
+  const included = new Set(groups.flatMap((g) => g.node_ids));
+  const other = nodes.filter((n) => n.id !== "revision" && !included.has(n.id));
+  if (other.length)
+    groups.push({
+      id: "other",
+      label: "其他步骤",
+      node_ids: other.map((n) => n.id),
+    });
+  return groups;
+}
+function chooseStep(ids: string[], nodes: RecordData[], active?: string) {
+  const needsAttention = (id: string) =>
+    [
+      "running",
+      "human",
+      "blocked",
+      "waiting",
+      "waiting_remote",
+      "paused",
+    ].includes(nodes.find((n) => n.id === id)?.status);
   return (
-    <div
-      className={"stage-node status-" + data.status}
-      data-flow-node={data.id}
-    >
-      <Handle type="target" position={Position.Left} />
-      <div className="stage-top">
-        <span>{data.order}</span>
-        <small>{roleName(data.owner || data.role || "orchestrator")}</small>
-      </div>
-      <strong>{data.label || data.id}</strong>
-      <Badge status={data.status || "pending"} />
-      <Handle type="source" position={Position.Right} />
-    </div>
+    ids.find((id) => id === active && needsAttention(id)) ||
+    ids.find(needsAttention) ||
+    ids[0]
   );
 }
-const nodeTypes = { stage: StageNode };
+function productTab(id: string) {
+  if (
+    ["story_resolution", "screenplay", "storyboard", "script_review"].includes(
+      id,
+    )
+  )
+    return "script";
+  if (
+    [
+      "proposals",
+      "story_decision",
+      "visual_design",
+      "visual_development",
+      "style_decision",
+      "final_decision",
+    ].includes(id)
+  )
+    return "decisions";
+  return (
+    {
+      production: "shots",
+      delivery: "delivery",
+      revision: "quality",
+    } as Record<string, string>
+  )[id];
+}
+function roleKind(role: string) {
+  return role === "producer"
+    ? "人工决策"
+    : [
+          "image_generator",
+          "video_generator",
+          "speech",
+          "editor",
+          "orchestrator",
+        ].includes(role)
+      ? "制作工具"
+      : "模型角色";
+}
 export function Workflow({
   graph,
   flow,
   attention,
   onDecision,
   onShot,
+  onOpen,
+  selectedNode,
+  onSelectNode,
+  selectedExecution,
 }: {
   graph: RecordData;
   flow?: RecordData;
   attention?: RecordData;
   onDecision?: () => void;
   onShot?: (id: string) => void;
+  onOpen?: (tab: string) => void;
+  selectedNode?: string;
+  onSelectNode?: (id: string) => void;
+  selectedExecution?: string;
 }) {
   const [selection, setSelection] = useState("");
   const stages = useMemo(() => workflowNodes(graph, flow), [graph, flow]);
+  const groups = useMemo(() => workflowGroups(graph, stages), [graph, stages]);
   const selected =
-    stages.find((n) => n.id === selection) ||
+    stages.find((n) => n.id === (selectedNode ?? selection)) ||
     stages.find((n) => n.id === graph.active_node) ||
+    stages.find((n) => n.id === groups[0]?.node_ids[0]) ||
     stages[0];
-  const nodes: Node[] = stages.map((n, i) => ({
-    id: n.id,
-    type: "stage",
-    position: { x: (i % 3) * 300, y: Math.floor(i / 3) * 185 },
-    data: { ...n, order: String(i + 1).padStart(2, "0") },
-    selected: n.id === selected?.id,
-    draggable: false,
-  }));
-  const ids = new Set(nodes.map((n) => n.id));
-  const edges: Edge[] = rows(graph.edges)
-    .filter((e) => ids.has(e.source) && ids.has(e.target))
-    .map((e, i) => ({
-      id: e.id || e.source + "-" + e.target + "-" + i,
-      source: e.source,
-      target: e.target,
-      type: "smoothstep",
-      label: e.loop || e.conditional ? e.label || "返修" : "",
-      animated: graph.active_node === e.source,
-      style: { stroke: e.loop ? "#c59a56" : "#b9c5d6" },
-      markerEnd: { type: MarkerType.ArrowClosed, color: "#a0aec0" },
-    }));
-  if (!stages.length)
+  const group = groups.find((g) => g.node_ids.includes(selected?.id));
+  const select = (id: string) => {
+    setSelection(id);
+    onSelectNode?.(id);
+  };
+  useEffect(() => {
+    if (selectedExecution)
+      Array.from(document.querySelectorAll<HTMLElement>("[data-execution]"))
+        .find((el) => el.dataset.execution === selectedExecution)
+        ?.scrollIntoView({ block: "center" });
+  }, [selectedExecution, selected?.id]);
+  if (!selected)
     return (
       <Empty title="尚未返回执行图">
         流程定义由服务器提供，连接恢复后可查看真实节点。
       </Empty>
     );
-  const productionTasks = rows(
-    graph.production_tasks || flow?.production_tasks,
-  );
+  const material = rows(flow?.steps).find((s) => s.id === selected.id);
   const histories = rows(flow?.nodes).filter(
     (n) => selected.members.includes(n.role) || n.id === selected.id,
   );
+  const records: RecordData[] = rows(flow?.nodes).flatMap((n) =>
+    rows(n.executions)
+      .filter((e) =>
+        e.stage ? e.stage === selected.id : selected.members.includes(n.role),
+      )
+      .map((e) => ({ ...e, role: n.role })),
+  );
+  const stale =
+    flow?.revision != null &&
+    graph.revision != null &&
+    flow.revision < graph.revision;
+  const io = (side: "inputs" | "outputs") => {
+    const items: RecordData[] = material
+      ? rows(material[side])
+      : histories.flatMap((n) =>
+          rows(n[side]).map((v) => ({
+            ...v,
+            source_label: roleName(n.role) + " · 当前项目材料",
+          })),
+        );
+    return items.length ? (
+      items.map((v, i) => (
+        <MaterialCard
+          key={v.key || v.label + ":" + i}
+          item={{
+            ...v,
+            revision: flow?.revision,
+            ...(stale
+              ? { artifact_url: undefined, url: undefined, path: undefined }
+              : {}),
+          }}
+          projectId={graph.project_id || flow?.project_id}
+          onSource={(id) => {
+            if (stages.some((n) => n.id === id)) select(id);
+          }}
+        />
+      ))
+    ) : (
+      <p className="muted">
+        {!graph.project_id
+          ? "进入项目后查看实际材料。"
+          : side === "inputs"
+            ? "未记录输入材料。"
+            : "尚未生成交付内容。"}
+      </p>
+    );
+  };
+  const transitions = rows(graph.edges).filter(
+    (e) =>
+      (e.loop || e.source === "revision" || e.target === "revision") &&
+      (e.source === selected.id || e.target === selected.id),
+  );
+  const returnTarget = graph.presentation?.branches?.find((b: RecordData) =>
+    b.node_ids?.includes(selected.id),
+  )?.return_to;
+  const productionTasks = rows(
+    graph.production_tasks || flow?.production_tasks,
+  );
   return (
-    <section className="flow-workspace" aria-label="制作工作流">
-      <header className="flow-toolbar">
+    <section className="workflow-workspace" aria-label="制作工作流">
+      <header className="workflow-heading">
         <div>
-          <span className="live-dot" />
-          <strong>{graph.current_activity || "制作执行图"}</strong>
-          <small>
-            {graph.revision ? "版本 " + graph.revision : "标准流程 · 只读"}
-          </small>
+          <strong>制作工作流</strong>
+          <p>
+            {graph.current_activity || "按阶段查看制作步骤、参与角色与交付内容"}
+          </p>
         </div>
-        <span className="muted">选择节点查看职责与产物</span>
+        <small>
+          {graph.project_id
+            ? `项目版本 ${graph.revision ?? "—"}`
+            : "标准流程说明"}
+        </small>
       </header>
-      <div className="flow-body">
-        <div className="flow-stage">
-          <ReactFlow
-            nodes={nodes}
-            edges={edges}
-            nodeTypes={nodeTypes}
-            onNodeClick={(_, n) => setSelection(n.id)}
-            fitView
-            minZoom={0.35}
-            maxZoom={1.4}
-            nodesConnectable={false}
-            nodesDraggable={false}
-            proOptions={{ hideAttribution: true }}
-          >
-            <Background color="#d7dee9" gap={20} />
-            <Controls showInteractive={false} />
-            <MiniMap
-              pannable
-              zoomable
-              nodeColor={(n) =>
-                n.data.status === "running"
-                  ? "#436ee0"
-                  : n.data.status === "human"
-                    ? "#daa94c"
-                    : "#d8e0ed"
-              }
-            />
-          </ReactFlow>
-        </div>
-        <aside className="node-inspector" aria-label="节点详情">
-          <div className="eyebrow">NODE DETAIL</div>
-          <h3>{selected.label || selected.id}</h3>
-          <Badge status={selected.status} />
-          <dl className="inspector-fields">
-            <div>
-              <dt>负责人</dt>
-              <dd>
-                {roleName(selected.owner || selected.role || "orchestrator")}
-              </dd>
+      {stale && (
+        <p className="notice">材料正在同步，保留上次记录；文件入口暂时停用。</p>
+      )}
+      <div className="workflow-layout">
+        <nav className="workflow-stages" aria-label="制作阶段">
+          {groups.map((g, i) => {
+            const children = stages.filter((n) => g.node_ids.includes(n.id));
+            const active = children.find((n) => n.id === graph.active_node);
+            const done = children.filter(
+              (n) => n.status === "succeeded",
+            ).length;
+            return (
+              <button
+                key={g.id}
+                className={
+                  "workflow-stage-card " +
+                  (group?.id === g.id ? "selected" : "")
+                }
+                data-stage={g.id}
+                aria-pressed={group?.id === g.id}
+                onClick={() =>
+                  select(chooseStep(g.node_ids, stages, graph.active_node))
+                }
+              >
+                <span className="workflow-stage-number">
+                  {String(i + 1).padStart(2, "0")}
+                </span>
+                <span className="workflow-stage-copy">
+                  <strong>{g.label}</strong>
+                  <small>
+                    {active
+                      ? active.label
+                      : `${children.length} 个步骤 · ${done} 个已完成`}
+                  </small>
+                </span>
+                {active ? (
+                  <Badge status={active.status} />
+                ) : (
+                  <ArrowRight size={16} />
+                )}
+              </button>
+            );
+          })}
+          {stages.some((n) => n.id === "revision") && (
+            <div className="workflow-repair">
+              <small>按需返回制作</small>
+              <button
+                className={
+                  "workflow-stage-card " +
+                  (selected.id === "revision" ? "selected" : "")
+                }
+                aria-pressed={selected.id === "revision"}
+                onClick={() => select("revision")}
+              >
+                <CornerDownLeft size={20} />
+                <span className="workflow-stage-copy">
+                  <strong>定向返修</strong>
+                  <small>修改后返回镜头与后期</small>
+                </span>
+                <Badge
+                  status={stages.find((n) => n.id === "revision")?.status}
+                />
+              </button>
             </div>
+          )}
+        </nav>
+        <aside className="workflow-inspector" aria-label="节点详情">
+          <nav className="workflow-steps" aria-label="阶段内步骤">
+            {stages
+              .filter((n) =>
+                group ? group.node_ids.includes(n.id) : n.id === selected.id,
+              )
+              .sort((a, b) =>
+                group
+                  ? group.node_ids.indexOf(a.id) - group.node_ids.indexOf(b.id)
+                  : 0,
+              )
+              .map((n) => (
+                <button
+                  key={n.id}
+                  data-flow-node={n.id}
+                  aria-pressed={n.id === selected.id}
+                  className={n.id === selected.id ? "active" : ""}
+                  onClick={() => select(n.id)}
+                >
+                  {n.label}
+                  <Badge status={n.status} />
+                  {n.conditional && <small>按需执行</small>}
+                </button>
+              ))}
+          </nav>
+          <header className="workflow-step-heading">
+            <div>
+              <small>{group?.label || "返修分支"}</small>
+              <h3>{selected.label || selected.id}</h3>
+            </div>
+            <Badge status={selected.status} />
+          </header>
+          <p className="workflow-description">
+            {selected.description ||
+              `${roleName(selected.owner || selected.role || "orchestrator")}负责此步骤。`}
+          </p>
+          <dl className="workflow-contract">
             <div>
               <dt>接收</dt>
-              <dd>
-                {text(
-                  selected.input ||
-                    rows(selected.inputs)
-                      .map((i) => i.label)
-                      .join("、"),
-                ) || "查看输入记录"}
-              </dd>
+              <dd>{selected.input || "查看下方输入材料"}</dd>
             </div>
             <div>
               <dt>交付</dt>
-              <dd>
-                {text(
-                  selected.output ||
-                    rows(selected.outputs)
-                      .map((i) => i.label)
-                      .join("、"),
-                ) || "尚未记录"}
-              </dd>
-            </div>
-            <div>
-              <dt>执行次数</dt>
-              <dd>{selected.attempt || "尚未执行"}</dd>
+              <dd>{selected.output || "查看下方交付内容"}</dd>
             </div>
           </dl>
-          <h4>参与成员与审核</h4>
-          <div className="member-chips">
-            {selected.members.map((r: string) => (
-              <span key={r}>
-                <Users size={13} />
-                {roleName(r)}
-              </span>
-            ))}
-          </div>
-          {histories.map((n) => (
-            <details key={n.id}>
-              <summary>{roleName(n.role)} · 输入与交付</summary>
-              {rows(n.inputs).map((v, i) => (
-                <div className="io-item" key={"i" + i}>
-                  <small>接收 · {v.label}</small>
-                  <Readable value={v.value} />
-                </div>
+          <section className="workflow-section">
+            <h4>参与 Agent 与职责</h4>
+            <div className="workflow-members">
+              {selected.members.map((r: string) => (
+                <span key={r}>
+                  <Users size={14} />
+                  <strong>{roleName(r)}</strong>
+                  <small>
+                    {roleKind(r)}
+                    {r === selected.owner
+                      ? " · 负责"
+                      : r === selected.reviewer
+                        ? " · 审核"
+                        : ""}
+                  </small>
+                </span>
               ))}
-              {rows(n.outputs).map((v, i) => (
-                <div className="io-item" key={"o" + i}>
-                  <small>交付 · {v.label}</small>
-                  <Readable value={v.value} />
-                  {v.artifact_url && <Artifact item={v} />}
-                </div>
+            </div>
+          </section>
+          {(transitions.length > 0 || returnTarget) && (
+            <div className="workflow-transitions">
+              <strong>返修与返回</strong>
+              {transitions.map((e, i) => (
+                <p key={i}>
+                  <span>
+                    {stages.find((n) => n.id === e.source)?.label || e.source}
+                  </span>
+                  <ArrowRight size={13} />
+                  <button
+                    className="text-link"
+                    onClick={() => select(e.target)}
+                  >
+                    {stages.find((n) => n.id === e.target)?.label || e.target}
+                  </button>
+                  <small>
+                    {(
+                      {
+                        repair: "审核未通过",
+                        repropose: "重新提案",
+                        restyle: "重新设计",
+                        continue: "按返修要求接续",
+                      } as RecordData
+                    )[e.label] || e.label}
+                  </small>
+                </p>
               ))}
-            </details>
-          ))}
+              {returnTarget &&
+                !transitions.some((e) => e.target === returnTarget) && (
+                  <p>
+                    完成后返回{" "}
+                    <button
+                      className="text-link"
+                      onClick={() => select(returnTarget)}
+                    >
+                      {stages.find((n) => n.id === returnTarget)?.label ||
+                        returnTarget}
+                    </button>
+                  </p>
+                )}
+            </div>
+          )}
           {attention?.blocking && selected.id === graph.active_node && (
-            <button className="button primary full" onClick={onDecision}>
+            <button className="button primary" onClick={onDecision}>
               处理当前事项
               <ArrowRight size={16} />
             </button>
           )}
-          <p className="muted">
+          <section className="workflow-section" aria-label="输入材料">
+            <h4>输入材料</h4>
+            {io("inputs")}
+          </section>
+          <section className="workflow-section" aria-label="交付内容">
+            <h4>交付内容</h4>
+            {io("outputs")}
+          </section>
+          {onOpen && productTab(selected.id) && (
+            <button
+              className="text-link"
+              onClick={() => onOpen(productTab(selected.id))}
+            >
+              打开对应功能
+              <ArrowRight size={14} />
+            </button>
+          )}
+          <section className="workflow-section" aria-label="步骤执行记录">
+            <h4>执行记录</h4>
+            {records.length ? (
+              records.map((e) => (
+                <div
+                  key={e.id}
+                  className={
+                    e.id === selectedExecution ? "execution-record-focus" : ""
+                  }
+                >
+                  <ExecutionRecord
+                    execution={
+                      stale
+                        ? { ...e, artifacts: [], attempts: [], receipt: null }
+                        : e
+                    }
+                    role={e.role}
+                    projectId={graph.project_id || flow?.project_id}
+                  />
+                </div>
+              ))
+            ) : (
+              <p className="muted">
+                尚无此步骤的调用记录。历史角色调用仅在有保存记录时显示。
+              </p>
+            )}
+            {flow?.evidence?.truncated && (
+              <p className="muted">
+                历史记录较多，当前展示最近保存的部分记录。
+              </p>
+            )}
+          </section>
+          {selected.id === "production" && (
+            <section className="workflow-section production-tasks">
+              <h4>镜头与后期实际任务</h4>
+              {productionTasks.length ? (
+                <div className="table-scroll">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>镜头 / 阶段</th>
+                        <th>负责 / 审核</th>
+                        <th>版本 / 尝试</th>
+                        <th>状态</th>
+                        <th>产物</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {productionTasks.map((t, i) => (
+                        <tr key={t.id || i}>
+                          <td>
+                            {t.shot_id ? (
+                              <button
+                                className="text-link"
+                                onClick={() => onShot?.(t.shot_id)}
+                              >
+                                {t.shot_id}
+                                <ArrowRight size={13} />
+                              </button>
+                            ) : (
+                              t.phase || t.stage
+                            )}
+                          </td>
+                          <td>
+                            {roleName(t.owner)} / {roleName(t.reviewer)}
+                          </td>
+                          <td>
+                            {t.production_revision == null
+                              ? "版本未记录"
+                              : `v${t.production_revision}`}{" "}
+                            · {t.attempt || "—"} 次
+                          </td>
+                          <td>
+                            <Badge status={t.status} />
+                          </td>
+                          <td>
+                            {t.artifact && !stale && (
+                              <Artifact
+                                item={{
+                                  url:
+                                    typeof t.artifact === "string"
+                                      ? t.artifact
+                                      : t.artifact.path,
+                                  label: "查看产物",
+                                }}
+                                projectId={graph.project_id}
+                              />
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p className="muted">
+                  尚无实际制作记录，生成后显示镜头、配音、剪辑与质检子任务。
+                </p>
+              )}
+            </section>
+          )}
+          <p className="workflow-evidence">
             状态依据：
             {(
               {
@@ -226,78 +556,15 @@ export function Workflow({
                 decision_receipt: "已保存的决定",
                 current_project_state: "当前项目状态",
                 not_recorded: "尚无记录",
+                producer_approval: "出品人终审通过",
               } as RecordData
             )[selected.evidence] ||
               selected.evidence ||
-              "服务器定义"}
+              "服务器流程定义"}
+            {selected.attempt ? ` · 第 ${selected.attempt} 次执行` : ""}
           </p>
         </aside>
       </div>
-      {selected.id === "production" && (
-        <div className="production-tasks">
-          <h3>镜头与后期实际任务</h3>
-          <div className="table-scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th>镜头 / 阶段</th>
-                  <th>负责 / 审核</th>
-                  <th>版本 / 尝试</th>
-                  <th>状态</th>
-                  <th>产物</th>
-                </tr>
-              </thead>
-              <tbody>
-                {productionTasks.map((t, i) => (
-                  <tr key={t.id || i}>
-                    <td>
-                      {t.shot_id ? (
-                        <button
-                          className="text-link"
-                          onClick={() => onShot?.(t.shot_id)}
-                        >
-                          {t.shot_id}
-                          <ArrowRight size={13} />
-                        </button>
-                      ) : (
-                        t.phase || t.stage
-                      )}
-                    </td>
-                    <td>
-                      {roleName(t.owner)} / {roleName(t.reviewer)}
-                    </td>
-                    <td>
-                      v{t.production_revision} · {t.attempt} 次
-                    </td>
-                    <td>
-                      <Badge status={t.status} />
-                    </td>
-                    <td>
-                      {t.artifact && (
-                        <Artifact
-                          item={{
-                            url:
-                              typeof t.artifact === "string"
-                                ? t.artifact
-                                : t.artifact.path,
-                            label: "查看产物",
-                          }}
-                          projectId={graph.project_id}
-                        />
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          {!productionTasks.length && (
-            <p className="muted">
-              尚无实际制作记录，生成后显示镜头、配音、剪辑与质检子任务。
-            </p>
-          )}
-        </div>
-      )}
     </section>
   );
 }
@@ -307,12 +574,14 @@ export function Team({
   models,
   projectRevision,
   onOpen,
+  onInspect,
 }: {
   flow: RecordData;
   graph: RecordData;
   models?: RecordData;
   projectRevision: number;
   onOpen?: (tab: string) => void;
+  onInspect?: (step: string, execution?: string) => void;
 }) {
   const tasks = rows(flow.task_board?.tasks),
     stale = flow.revision < projectRevision;
@@ -328,7 +597,7 @@ export function Team({
         </div>
       )}
       <Panel
-        title="Agent 指挥中心"
+        title="制作团队与职责"
         description="负责人、独立审核和交接产物共同构成任务闭环。"
       >
         <div className="department-grid">
@@ -373,15 +642,19 @@ export function Team({
               <div className="task-io">
                 <small>接收</small>
                 <span>
-                  {(t.inputs || [])
-                    .map((v: any) => (typeof v === "object" ? v.label : v))
-                    .join(" · ") || "创作需求"}
+                  {rows(graph.nodes).find((n) => n.id === t.id)?.input ||
+                    (t.inputs || [])
+                      .map((v: any) => (typeof v === "object" ? v.label : v))
+                      .join(" · ") ||
+                    "创作需求"}
                 </span>
                 <small>交付</small>
                 <span>
-                  {(t.outputs || [])
-                    .map((v: any) => (typeof v === "object" ? v.label : v))
-                    .join(" · ") || "尚未记录"}
+                  {rows(graph.nodes).find((n) => n.id === t.id)?.output ||
+                    (t.outputs || [])
+                      .map((v: any) => (typeof v === "object" ? v.label : v))
+                      .join(" · ") ||
+                    "尚未记录"}
                 </span>
               </div>
               {t.record && (
@@ -393,15 +666,17 @@ export function Team({
               <button
                 className="text-link"
                 onClick={() =>
-                  onOpen?.(
-                    t.id === "production"
-                      ? "shots"
-                      : t.id === "delivery"
-                        ? "delivery"
-                        : t.id.endsWith("_decision")
-                          ? "decisions"
-                          : "script",
-                  )
+                  onInspect
+                    ? onInspect(t.id)
+                    : onOpen?.(
+                        t.id === "production"
+                          ? "shots"
+                          : t.id === "delivery"
+                            ? "delivery"
+                            : t.id.endsWith("_decision")
+                              ? "decisions"
+                              : "script",
+                      )
                 }
               >
                 打开关联产物
@@ -445,69 +720,51 @@ export function Team({
       )}
       <Panel
         title="实际调用与回执"
-        description="这里展示历史实际模型，调整当前配置不会改写历史。"
+        description="按实际调用查看请求、响应和重试；缺少步骤归属的旧调用保留为角色历史。"
       >
-        <div className="table-scroll">
-          <table>
-            <thead>
-              <tr>
-                <th>成员</th>
-                <th>实际模型</th>
-                <th>状态</th>
-                <th>时间</th>
-                <th>证据</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows(flow.nodes).flatMap((n) =>
-                rows(n.executions).map((e, i) => (
-                  <tr key={n.id + ":" + i}>
-                    <td>{roleName(n.role)}</td>
-                    <td>
-                      {e.model || "未记录"}
-                      <small>
-                        {e.model_source === "response"
-                          ? "服务返回模型"
-                          : "请求记录"}
-                      </small>
-                    </td>
-                    <td>
-                      <Badge status={e.status} />
-                    </td>
-                    <td>{date(e.finished_at || e.started_at)}</td>
-                    <td>
-                      {mediaUrl(e.receipt) && (
-                        <Artifact
-                          item={{ url: e.receipt, label: "查看回执" }}
-                        />
-                      )}
-                    </td>
-                  </tr>
-                )),
-              )}
-            </tbody>
-          </table>
-        </div>
+        {rows(flow.nodes).flatMap((n) =>
+          rows(n.executions).map((e) => (
+            <ExecutionRecord
+              key={n.id + ":" + e.id}
+              execution={
+                stale ? { ...e, artifacts: [], attempts: [], receipt: null } : e
+              }
+              role={n.role}
+              projectId={flow.project_id}
+              onLocate={onInspect}
+            />
+          )),
+        )}
+        {!rows(flow.nodes).some((n) => rows(n.executions).length) && (
+          <p className="muted">尚无保存的执行记录。</p>
+        )}
+        {flow.evidence?.truncated && (
+          <p className="muted">当前展示最近保存的部分历史记录。</p>
+        )}
         <details>
           <summary>输入、交付与依赖</summary>
           {rows(flow.nodes).map((n) => (
             <article className="io-record" key={n.id}>
               <h3>{n.label || roleName(n.role)}</h3>
-              {rows(n.outputs).map((v, i) => (
-                <div key={i}>
-                  <strong>{v.label}</strong>
-                  <Readable value={v.value} />
-                  {v.artifact_url && <Artifact item={v} />}
-                </div>
+              {(["inputs", "outputs"] as const).map((side) => (
+                <section key={side}>
+                  <h4>{side === "inputs" ? "输入材料" : "交付内容"}</h4>
+                  {rows(n[side]).map((item, i) => (
+                    <MaterialCard
+                      key={i}
+                      item={stale ? { ...item, artifact_url: undefined } : item}
+                      projectId={flow.project_id}
+                    />
+                  ))}
+                  {!rows(n[side]).length && (
+                    <p className="muted">
+                      {side === "inputs" ? "未记录" : "尚未生成"}
+                    </p>
+                  )}
+                </section>
               ))}
             </article>
           ))}
-          <p>
-            {rows(flow.edges)
-              .map((e) => e.label)
-              .filter(Boolean)
-              .join(" · ")}
-          </p>
         </details>
       </Panel>
       {flow.delivery_readiness && (

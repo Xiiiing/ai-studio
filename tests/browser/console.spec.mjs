@@ -297,7 +297,7 @@ test("automatic supervisor gate is not a phantom human decision", async ({
   await page.goto("/");
   await expect(page.locator('[data-metric="1"]')).toHaveText("0");
   await page.locator('#project-list [data-id="' + id + '"]').click();
-  await page.getByRole("button", { name: "展开完整工作流" }).click();
+  await page.locator('[data-stage="story"]').click();
   await expect(page.locator('[data-flow-node="story_decision"]')).toContainText(
     "执行中",
   );

@@ -4,7 +4,6 @@ import {
   LayoutDashboard,
   FolderKanban,
   Inbox,
-  Workflow as WorkflowIcon,
   Settings2,
   Activity,
   Plus,
@@ -72,7 +71,7 @@ const links = [
   ["dashboard", "制片总览", LayoutDashboard],
   ["projects", "全部项目", FolderKanban],
   ["inbox", "待办决策", Inbox],
-  ["workflow", "Agent 指挥中心", Bot],
+  ["workflow", "制作流程与团队", Bot],
   ["models", "模型与连接", Settings2],
   ["activity", "运行记录", Activity],
 ] as const;
@@ -314,8 +313,8 @@ export default function App() {
                 ) : (
                   <>
                     <Heading
-                      eyebrow="AGENT COMMAND CENTER"
-                      title="Agent 指挥中心"
+                      eyebrow="PRODUCTION WORKFLOW"
+                      title="制作流程与团队"
                       description="查看团队如何分工、交接与独立审核，进入项目追踪实际执行。"
                     />
                     <Panel title="当前执行任务">
@@ -925,7 +924,8 @@ function Project({
     enabled: !!workspace.data && !workspace.data.flow,
     refetchInterval: 5000,
   });
-  const [showFlow, setShowFlow] = useState(false),
+  const [selectedFlowNode, setSelectedFlowNode] = useState(""),
+    [selectedExecution, setSelectedExecution] = useState(""),
     [selectedShot, setSelectedShot] = useState(""),
     [preview, setPreview] = useState<RecordData | null>(null),
     [control, setControl] = useState<RecordData | null>(null),
@@ -1096,6 +1096,24 @@ function Project({
                 </strong>
               </article>
             </div>
+            <Workflow
+              key={id}
+              graph={graph}
+              flow={actualFlow}
+              attention={attention}
+              selectedNode={selectedFlowNode}
+              onSelectNode={(node) => {
+                setSelectedFlowNode(node);
+                setSelectedExecution("");
+              }}
+              selectedExecution={selectedExecution}
+              onOpen={onTab}
+              onDecision={() => onTab("decisions")}
+              onShot={(shot) => {
+                setSelectedShot(shot);
+                onTab("shots");
+              }}
+            />
             <div className="project-focus">
               <Panel
                 title="当前创作产物"
@@ -1153,49 +1171,6 @@ function Project({
                 </div>
               </Panel>
             </div>
-            <Panel
-              title="制作阶段"
-              action={
-                <button
-                  className="text-link"
-                  onClick={() => setShowFlow(!showFlow)}
-                >
-                  {showFlow ? "收起完整工作流" : "展开完整工作流"}
-                  <WorkflowIcon size={14} />
-                </button>
-              }
-            >
-              <div className="stage-timeline">
-                {rows(graph.nodes).map((n, i) => (
-                  <button
-                    key={n.id}
-                    className={
-                      "timeline-stage " +
-                      (n.id === graph.active_node ? "current" : "")
-                    }
-                    onClick={() => {
-                      setShowFlow(true);
-                    }}
-                  >
-                    <span>{String(i + 1).padStart(2, "0")}</span>
-                    <strong>{n.label}</strong>
-                    <Badge status={n.status} />
-                  </button>
-                ))}
-              </div>
-            </Panel>
-            {showFlow && (
-              <Workflow
-                graph={graph}
-                flow={actualFlow}
-                attention={attention}
-                onDecision={() => onTab("decisions")}
-                onShot={(shot) => {
-                  setSelectedShot(shot);
-                  onTab("shots");
-                }}
-              />
-            )}
             <div className="project-bottom-grid">
               <Panel title="创作任务与当前故事">
                 <p className="brief-text">{p.brief}</p>
@@ -1260,6 +1235,11 @@ function Project({
             />
             <Team
               flow={actualFlow}
+              onInspect={(step, execution) => {
+                setSelectedFlowNode(step);
+                setSelectedExecution(execution || "");
+                onTab("overview");
+              }}
               graph={graph}
               models={models}
               projectRevision={p.revision}

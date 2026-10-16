@@ -44,6 +44,7 @@ def step_materials(project, root, artifact_url):
 
     def material(key, side):
         value = values.get(key)
+        has_value = value is not None and value != "" and value != [] and value != {}
         recorded = artifacts.get(aliases.get(key, key))
         if key in ("delivery", "accepted_delivery"):
             recorded = (project.get("delivery") or {}).get("manifest_url")
@@ -53,8 +54,8 @@ def step_materials(project, root, artifact_url):
             source = "screenplay" if source in ("story_resolution", "storyboard", "script_review") else source
         row = {"key": key, "label": LABELS.get(key, key), "source": "current_project_snapshot",
                "source_label": "当前项目材料", "source_node": source,
-               "state": "available" if value is not None or url else "not_recorded" if side == "inputs" else "not_generated"}
-        if value is not None:
+               "state": "available" if has_value or url else "not_recorded" if side == "inputs" else "not_generated"}
+        if has_value:
             # Full documents remain available through their files; keep the polling snapshot bounded.
             raw = json.dumps(value, ensure_ascii=False, default=str)
             if len(raw.encode("utf-8")) <= 65536:

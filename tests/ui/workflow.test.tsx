@@ -1,111 +1,10 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import {
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-  within,
-} from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import {
-  afterAll,
-  beforeAll,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { Team, Workflow } from "../../ui/factory/src/Workflow";
 import type { RecordData } from "../../ui/factory/src/api";
-
 const ID = "012345abcdef";
-const bboxDescriptor = Object.getOwnPropertyDescriptor(
-  SVGElement.prototype,
-  "getBBox",
-);
-beforeAll(() =>
-  Object.defineProperty(SVGElement.prototype, "getBBox", {
-    configurable: true,
-    value(this: SVGElement) {
-      return {
-        x: 0,
-        y: 0,
-        width: (this.textContent?.length || 1) * 8,
-        height: 16,
-      };
-    },
-  }),
-);
-afterAll(() => {
-  if (bboxDescriptor)
-    Object.defineProperty(SVGElement.prototype, "getBBox", bboxDescriptor);
-  else delete (SVGElement.prototype as any).getBBox;
-});
-beforeEach(() => {
-  vi.stubGlobal(
-    "fetch",
-    vi
-      .fn()
-      .mockRejectedValue(
-        new Error("Workflow must use the supplied server snapshot"),
-      ),
-  );
-  // jsdom has no layout engine. Supply browser measurements to the actual
-  // React Flow renderer so its real SVG edges and click handlers can run.
-  vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockImplementation(
-    function (this: HTMLElement) {
-      return this.classList.contains("react-flow__handle")
-        ? 8
-        : this.classList.contains("react-flow__node")
-          ? 260
-          : 960;
-    },
-  );
-  vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(
-    function (this: HTMLElement) {
-      return this.classList.contains("react-flow__handle")
-        ? 8
-        : this.classList.contains("react-flow__node")
-          ? 120
-          : 640;
-    },
-  );
-  vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(
-    function (this: HTMLElement) {
-      return {
-        width: this.offsetWidth || 960,
-        height: this.offsetHeight || 640,
-        x: 0,
-        y: 0,
-        top: 0,
-        left: 0,
-        right: 960,
-        bottom: 640,
-        toJSON: () => ({}),
-      };
-    },
-  );
-  class MeasuringObserver {
-    constructor(private callback: ResizeObserverCallback) {}
-    observe(target: Element) {
-      queueMicrotask(() =>
-        this.callback(
-          [
-            {
-              target,
-              contentRect: target.getBoundingClientRect(),
-            } as ResizeObserverEntry,
-          ],
-          this as unknown as ResizeObserver,
-        ),
-      );
-    }
-    unobserve() {}
-    disconnect() {}
-  }
-  vi.stubGlobal("ResizeObserver", MeasuringObserver);
-});
 function graph(extra: RecordData = {}): RecordData {
   return {
     project_id: ID,
@@ -172,157 +71,140 @@ function mount(
 }
 
 describe("real server workflow and agent handoffs", () => {
-  it("does not fabricate a workflow while the server has supplied no nodes", () => {
+  it("does not fabricate a workflow before nodes arrive", () => {
     mount({ nodes: [], edges: [] });
     expect(screen.getByText("尚未返回执行图")).toBeVisible();
-    expect(screen.queryByTestId("rf__wrapper")).not.toBeInTheDocument();
-    expect(screen.queryByText("故事提案")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("navigation", { name: "制作阶段" }),
+    ).not.toBeInTheDocument();
   });
-
-  it("renders and updates actual server nodes and edges instead of a hardcoded sequence", async () => {
-    const view = mount(graph());
-    expect(screen.getByTestId("rf__node-write")).toHaveTextContent(
-      "服务器定义的创作步骤",
-    );
-    expect(screen.getByTestId("rf__node-check")).toHaveTextContent(
-      "服务器定义的验收步骤",
-    );
-    await waitFor(() =>
-      expect(screen.getByTestId("rf__edge-review-loop")).toHaveTextContent(
-        "审核未通过返回",
-      ),
-    );
-    view.update(
+  it("uses server groups and exposes conditional and repair transitions", async () => {
+    const view = mount(
       graph({
-        active_node: "check",
+        presentation: {
+          stages: [
+            { id: "write-group", label: "创作大阶段", node_ids: ["write"] },
+            { id: "check-group", label: "验收大阶段", node_ids: ["check"] },
+          ],
+        },
         nodes: [
-          {
-            id: "check",
-            label: "改后的独立验收",
-            owner: "independent_critic",
-            status: "running",
-          },
-          {
-            id: "dispatch",
-            label: "新加入的交付任务",
-            owner: "editor",
-            status: "pending",
-          },
-        ],
-        edges: [
-          {
-            id: "new-server-edge",
-            source: "check",
-            target: "dispatch",
-            conditional: true,
-            label: "新服务交接条件",
-          },
+          ...graph().nodes.map((n: RecordData) => ({
+            ...n,
+            conditional: n.id === "check",
+          })),
         ],
       }),
     );
-    expect(screen.queryByTestId("rf__node-write")).not.toBeInTheDocument();
-    expect(screen.getByTestId("rf__node-dispatch")).toHaveTextContent(
-      "新加入的交付任务",
-    );
-    await waitFor(() =>
-      expect(screen.getByTestId("rf__edge-new-server-edge")).toHaveTextContent(
-        "新服务交接条件",
-      ),
-    );
+    expect(screen.queryByTestId("rf__wrapper")).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /验收大阶段/ }));
     expect(
-      screen.queryByTestId("rf__edge-review-loop"),
-    ).not.toBeInTheDocument();
-    expect(fetch).not.toHaveBeenCalled();
+      screen.getByRole("heading", { name: "服务器定义的验收步骤" }),
+    ).toBeVisible();
+    expect(screen.getByText("按需执行")).toBeVisible();
+    expect(screen.getByText("审核未通过返回")).toBeVisible();
+    view.update(
+      graph({
+        nodes: [{ id: "dispatch", label: "新交付步骤", owner: "editor" }],
+        edges: [],
+      }),
+    );
+    expect(screen.getByRole("heading", { name: "新交付步骤" })).toBeVisible();
+    expect(screen.queryByText("按需执行")).not.toBeInTheDocument();
   });
-
-  it("opens a selected node's inputs, outputs and independently assigned reviewer", async () => {
-    const serverGraph = graph({
-      nodes: [
-        {
-          id: "write",
-          label: "可恢复稿件任务",
-          owner: "screenwriter",
-          reviewer: "independent_critic",
-          members: ["screenwriter"],
-          status: "running",
-          input: "已选故事与反馈",
-          output: "待审核稿件",
-          attempt: 2,
-          evidence: "task_receipt",
-        },
-        {
-          id: "check",
-          label: "审查当前稿件",
-          owner: "independent_critic",
-          status: "pending",
-        },
-      ],
-    });
+  it("selects exact substeps and keeps manual selection when active work changes", async () => {
+    const view = mount(graph());
+    fireEvent.click(document.querySelector('[data-flow-node="check"]')!);
+    view.update(graph({ active_node: "write", revision: 8 }));
+    expect(
+      screen.getByRole("heading", { name: "服务器定义的验收步骤" }),
+    ).toBeVisible();
+  });
+  it("opens both file-only inputs and outputs and keeps reviewer roles visible", async () => {
     const flow = {
+      project_id: ID,
       nodes: [
         {
           id: "independent_critic",
           role: "independent_critic",
-          inputs: [{ label: "当前稿件", value: "需要检查因果链" }],
-          outputs: [
+          inputs: [
             {
-              label: "审核记录",
-              value: "逐镜证据保留",
-              artifact_url: `/media/production/factory-${ID}/planning/review.json`,
+              label: "当前稿件",
+              artifact_url: `/media/production/factory-${ID}/planning/script.md`,
             },
           ],
+          outputs: [{ label: "审核记录", value: "逐镜证据保留" }],
         },
       ],
+      task_board: { tasks: [{ id: "write", reviewer: "independent_critic" }] },
     };
-    mount(serverGraph, flow);
+    mount(graph(), flow);
     const inspector = within(
       screen.getByRole("complementary", { name: "节点详情" }),
     );
-    expect(
-      inspector.getByRole("heading", { name: "可恢复稿件任务" }),
-    ).toBeVisible();
-    expect(inspector.getByText("已选故事与反馈")).toBeVisible();
-    expect(inspector.getByText("待审核稿件")).toBeVisible();
     expect(inspector.getByText("独立审稿")).toBeVisible();
-    await userEvent.click(inspector.getByText("独立审稿 · 输入与交付"));
+    expect(inspector.getByText("当前稿件")).toBeVisible();
+    expect(inspector.getByRole("button", { name: "阅读文件" })).toBeVisible();
     expect(inspector.getByText("逐镜证据保留")).toBeVisible();
-    expect(inspector.getByRole("link", { name: "审核记录" })).toHaveAttribute(
-      "href",
-      expect.stringContaining(`/production/factory-${ID}/planning/review.json`),
-    );
-    fireEvent.click(screen.getByTestId("rf__node-check"));
-    expect(
-      inspector.getByRole("heading", { name: "审查当前稿件" }),
-    ).toBeVisible();
+    expect(inspector.queryByText("尚未生成")).not.toBeInTheDocument();
   });
-
-  it("keeps a contract's independent reviewer visible when the node omits members", () => {
+  it("separates current step evidence from other steps and unassigned history", () => {
     mount(graph(), {
-      task_board: {
-        tasks: [
-          {
-            id: "write",
-            owner: "screenwriter",
-            reviewer: "independent_critic",
-          },
-        ],
-      },
+      nodes: [
+        {
+          id: "screenwriter",
+          role: "screenwriter",
+          executions: [
+            {
+              id: "current",
+              model: "本次模型",
+              stage: "write",
+              scope: "current_run",
+            },
+            {
+              id: "elsewhere",
+              model: "其他步骤模型",
+              stage: "check",
+              scope: "current_run",
+            },
+            { id: "legacy", model: "旧模型", scope: "project_history" },
+          ],
+        },
+      ],
     });
-    expect(
-      within(screen.getByRole("complementary", { name: "节点详情" })).getByText(
-        "独立审稿",
-      ),
-    ).toBeVisible();
+    expect(screen.getByText(/本次模型/)).toBeVisible();
+    expect(screen.queryByText(/其他步骤模型/)).not.toBeInTheDocument();
+    expect(screen.getByText(/未记录步骤归属/)).toBeVisible();
   });
-
-  it("offers the decision handoff only on the active blocking node", async () => {
+  it("offers human decisions only for the active blocking step", async () => {
     const view = mount(graph(), {}, { attention: { blocking: true } });
     await userEvent.click(screen.getByRole("button", { name: "处理当前事项" }));
     expect(view.onDecision).toHaveBeenCalledOnce();
-    fireEvent.click(screen.getByTestId("rf__node-check"));
+    fireEvent.click(document.querySelector('[data-flow-node="check"]')!);
     expect(
       screen.queryByRole("button", { name: "处理当前事项" }),
     ).not.toBeInTheDocument();
+  });
+  it("renders inputs as well as outputs in the team handoff section", async () => {
+    render(
+      <Team
+        graph={{}}
+        projectRevision={1}
+        flow={{
+          revision: 1,
+          nodes: [
+            {
+              id: "writer",
+              role: "screenwriter",
+              inputs: [{ label: "完整输入", value: "故事动机" }],
+              outputs: [{ label: "完整输出", value: "剧本交付" }],
+            },
+          ],
+        }}
+      />,
+    );
+    await userEvent.click(screen.getByText("输入、交付与依赖"));
+    expect(screen.getByText("故事动机")).toBeVisible();
+    expect(screen.getByText("剧本交付")).toBeVisible();
   });
 
   it("shows task owners, reviewers and links users to the relevant product area", async () => {

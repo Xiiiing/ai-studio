@@ -171,18 +171,18 @@ it("实际导航从总览进入具体故事选择，提交绑定当前gate与rev
     expected_revision: 7,
   });
 });
-it("项目首先展示实际创作产物，完整流程图由用户展开", async () => {
+it("项目默认展示可点击工作流，并保留实际创作产物", async () => {
   setup();
   await screen.findByRole("heading", { name: "制片总览" });
   await userEvent.click(document.querySelector("#project-list button")!);
   await screen.findByRole("heading", { name: "当前创作产物" });
   expect(screen.getByText("在雨夜寻找旧时钟的主人")).toBeVisible();
   expect(document.querySelector(".react-flow")).toBeNull();
-  expect(screen.getByRole("button", { name: "展开完整工作流" })).toBeVisible();
+  expect(screen.getByRole("region", { name: "制作工作流" })).toBeVisible();
   expect(
     document
-      .querySelector(".project-focus")!
-      .compareDocumentPosition(document.querySelector(".stage-timeline")!) &
+      .querySelector(".workflow-workspace")!
+      .compareDocumentPosition(document.querySelector(".project-focus")!) &
       Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
 });

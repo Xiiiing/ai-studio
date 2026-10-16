@@ -68,8 +68,13 @@ POST `/api/factory/models`：
 - `project_id`、`revision`、`assignment_mode: "orchestrator"`：对应项目与总控分工方式。
 - `teams`：当前角色及模型绑定，包括编剧、审稿、分镜、视频、配音和剪辑等职责。
 - `nodes`：角色任务状态、`inputs`、`outputs`、`executions`。执行项中的模型、时间和回执均来自已保存记录；缺失证据保持空值。
+- `steps`：实际工作流步骤的当前业务材料。每项包含 `id`、`inputs`、`outputs`；材料包含中文 `label`、可选 `value`、经本项目路径检查的 `artifact_url`、`source_label` 和 `source_node`。材料状态区分 `available`、`not_recorded`、`not_generated`、`too_large`；保存的文件缺失时使用 `artifact_state: "missing"`。
 - `edges`：输入输出交接关系，不替换实际 LangGraph 拓扑。
 - `evidence`：回执读取范围、数量、截断或不可读取的说明。
+
+`workspace.workflow` 和 `/workflow` 的 `production_graph` 增加 `presentation.stages`（五个展示阶段的 `id`、`label`、有序 `node_ids`）及 `presentation.branches`（返修节点与 `return_to`）。节点保留实际执行映射，并增加中文 `description`、`input_keys` / `output_keys`、`display_order` 与 `conditional`；v1 的独立视觉设计仅在重新设计时执行。此分组用于阅读，不改变执行图。
+
+调用项保留已有字段，并增加 `artifacts`（回执/解析结果）和 `attempts[].artifacts`（实际存在的请求/响应）。文件使用 `label`、`kind`、`artifact_url`，只按需通过既有 `/media/production/factory-{id}/…` 接口读取，不把原文加入轮询快照。新图步骤及总制片调用在回执中保存 `execution_context: {project_id, stage, run_id}`；匹配当前有效工单或关卡记录时使用 `scope: "current_run"`，其他记录保留历史范围。缺少响应文件的失败请求仍可查看请求和回执。
 
 当前任务状态取项目阶段和版本完成标记，历史回执标为 `scope: "project_history"`。修改当前模型绑定不会改写旧执行记录；原回执没有记录的 stage/generation 不会被推断出来。客户端刷新项目时同时刷新 flow，并确认 `project_id` 一致。
 

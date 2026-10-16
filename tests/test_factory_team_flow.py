@@ -326,3 +326,12 @@ def test_producer_calls_use_the_saved_gate_run_and_reject_foreign_identity(conte
     assert by_id['current']['scope'] == 'current_run'
     assert by_id['current']['stage'] == 'story_decision'
     assert all(by_id[k]['scope'] == 'project_history' and 'stage' not in by_id[k] for k in ('foreign','unknown'))
+
+
+def test_empty_business_containers_are_not_generated_documents(context):
+    root, project, config = context
+    project.update(workflow_version=2, styles=[], screenplay_draft={}, script={})
+    steps = {s['id']:s for s in team_flow.build_flow(project, config)['steps']}
+    assert steps['screenplay']['outputs'][0]['state'] == 'not_generated'
+    assert 'value' not in steps['screenplay']['outputs'][0]
+    assert steps['style_decision']['inputs'][1]['state'] == 'not_recorded'
