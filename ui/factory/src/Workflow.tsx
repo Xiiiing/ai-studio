@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
-import { ArrowRight, Users, CircleCheck, CornerDownLeft } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ArrowRight, Users, CircleCheck, ArrowUp } from "lucide-react";
 import { rows, roleName, date, type RecordData } from "./api";
 import { Badge, Panel, Empty, Artifact } from "./ui";
 import { ExecutionRecord, MaterialCard } from "./DocumentReader";
+import { WorkflowMap } from "./WorkflowMap";
 
 export function workflowNodes(
   graph: RecordData,
@@ -150,6 +151,8 @@ export function Workflow({
   selectedExecution?: string;
 }) {
   const [selection, setSelection] = useState("");
+  const mapRef = useRef<HTMLDivElement>(null);
+  const inspectorRef = useRef<HTMLElement>(null);
   const stages = useMemo(() => workflowNodes(graph, flow), [graph, flow]);
   const groups = useMemo(() => workflowGroups(graph, stages), [graph, stages]);
   const selected =
@@ -255,69 +258,54 @@ export function Workflow({
         <p className="notice">材料正在同步，保留上次记录；文件入口暂时停用。</p>
       )}
       <div className="workflow-layout">
-        <nav className="workflow-stages" aria-label="制作阶段">
-          {groups.map((g, i) => {
-            const children = stages.filter((n) => g.node_ids.includes(n.id));
-            const active = children.find((n) => n.id === graph.active_node);
-            const done = children.filter(
-              (n) => n.status === "succeeded",
-            ).length;
-            return (
-              <button
-                key={g.id}
-                className={
-                  "workflow-stage-card " +
-                  (group?.id === g.id ? "selected" : "")
-                }
-                data-stage={g.id}
-                aria-pressed={group?.id === g.id}
-                onClick={() =>
-                  select(chooseStep(g.node_ids, stages, graph.active_node))
-                }
-              >
-                <span className="workflow-stage-number">
-                  {String(i + 1).padStart(2, "0")}
-                </span>
-                <span className="workflow-stage-copy">
-                  <strong>{g.label}</strong>
-                  <small>
-                    {active
-                      ? active.label
-                      : `${children.length} 个步骤 · ${done} 个已完成`}
-                  </small>
-                </span>
-                {active ? (
-                  <Badge status={active.status} />
-                ) : (
-                  <ArrowRight size={16} />
-                )}
-              </button>
-            );
-          })}
-          {stages.some((n) => n.id === "revision") && (
-            <div className="workflow-repair">
-              <small>按需返回制作</small>
-              <button
-                className={
-                  "workflow-stage-card " +
-                  (selected.id === "revision" ? "selected" : "")
-                }
-                aria-pressed={selected.id === "revision"}
-                onClick={() => select("revision")}
-              >
-                <CornerDownLeft size={20} />
-                <span className="workflow-stage-copy">
-                  <strong>定向返修</strong>
-                  <small>修改后返回镜头与后期</small>
-                </span>
-                <Badge
-                  status={stages.find((n) => n.id === "revision")?.status}
-                />
-              </button>
-            </div>
-          )}
-        </nav>
-        <aside className="workflow-inspector" aria-label="节点详情">
+        <div ref={mapRef} className="workflow-map-container">
+          <WorkflowMap
+            graph={graph}
+            groups={groups}
+            steps={stages}
+            selectedGroup={group?.id}
+            selectedStep={selected.id}
+            onSelect={(id) => {
+              const selectedGroup = groups.find((g) => g.id === id);
+              select(
+                selectedGroup
+                  ? chooseStep(
+                      selectedGroup.node_ids,
+                      stages,
+                      graph.active_node,
+                    )
+                  : id,
+              );
+              if (window.matchMedia("(max-width: 1200px)").matches)
+                requestAnimationFrame(() =>
+                  inspectorRef.current?.scrollIntoView({
+                    block: "start",
+                    behavior: "smooth",
+                  }),
+                );
+            }}
+          />
+        </div>
+        <aside
+          ref={inspectorRef}
+          className="workflow-inspector"
+          aria-label="节点详情"
+        >
+          <button
+            className="text-link workflow-back-to-map"
+            onClick={() => {
+              mapRef.current?.scrollIntoView({
+                block: "start",
+                behavior: "smooth",
+              });
+              mapRef.current
+                ?.querySelector<HTMLButtonElement>('[aria-pressed="true"]')
+                ?.focus({ preventScroll: true });
+            }}
+          >
+            <ArrowUp size={14} />
+            返回流程图
+          </button>
           <nav className="workflow-steps" aria-label="阶段内步骤">
             {stages
               .filter((n) =>
@@ -328,18 +316,38 @@ export function Workflow({
                   ? group.node_ids.indexOf(a.id) - group.node_ids.indexOf(b.id)
                   : 0,
               )
-              .map((n) => (
-                <button
-                  key={n.id}
-                  data-flow-node={n.id}
-                  aria-pressed={n.id === selected.id}
-                  className={n.id === selected.id ? "active" : ""}
-                  onClick={() => select(n.id)}
-                >
-                  {n.label}
-                  <Badge status={n.status} />
-                  {n.conditional && <small>按需执行</small>}
-                </button>
+              .map((n, index, nodes) => (
+                <span className="workflow-step-segment" key={n.id}>
+                  <button
+                    key={n.id}
+                    data-flow-node={n.id}
+                    aria-pressed={n.id === selected.id}
+                    className={n.id === selected.id ? "active" : ""}
+                    onClick={() => select(n.id)}
+                  >
+                    {n.label}
+                    <Badge status={n.status} />
+                    {n.conditional && <small>按需执行</small>}
+                  </button>
+                  {nodes[index + 1] &&
+                    rows(graph.edges).some(
+                      (e) =>
+                        e.source === n.id &&
+                        e.target === nodes[index + 1].id &&
+                        !e.loop,
+                    ) && (
+                      <ArrowRight
+                        size={15}
+                        aria-hidden="true"
+                        className={
+                          "workflow-step-link " +
+                          (n.id === graph.active_node && n.status === "running"
+                            ? "is-running"
+                            : "")
+                        }
+                      />
+                    )}
+                </span>
               ))}
           </nav>
           <header className="workflow-step-heading">

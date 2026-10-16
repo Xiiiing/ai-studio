@@ -72,7 +72,7 @@ POST `/api/factory/models`：
 - `edges`：输入输出交接关系，不替换实际 LangGraph 拓扑。
 - `evidence`：回执读取范围、数量、截断或不可读取的说明。
 
-`workspace.workflow` 和 `/workflow` 的 `production_graph` 增加 `presentation.stages`（五个展示阶段的 `id`、`label`、有序 `node_ids`）及 `presentation.branches`（返修节点与 `return_to`）。节点保留实际执行映射，并增加中文 `description`、`input_keys` / `output_keys`、`display_order` 与 `conditional`；v1 的独立视觉设计仅在重新设计时执行。此分组用于阅读，不改变执行图。
+`workspace.workflow` 和 `/workflow` 的 `production_graph` 增加 `presentation.stages`（五个展示阶段的 `id`、`label`、有序 `node_ids`）及 `presentation.branches`（返修节点与 `return_to`）。节点保留实际执行映射，并增加中文 `description`、`input_keys` / `output_keys`、`display_order` 与 `conditional`；v1 的独立视觉设计仅在重新设计时执行。此分组用于阅读，不改变执行图。客户端仅根据实际 `edges` 汇总阶段间连线与返修方向，不按排序补造连线；流动效果依据当前实际执行阶段控制，暂停和人工等待停止动效。
 
 调用项保留已有字段，并增加 `artifacts`（回执/解析结果）和 `attempts[].artifacts`（实际存在的请求/响应）。文件使用 `label`、`kind`、`artifact_url`，只按需通过既有 `/media/production/factory-{id}/…` 接口读取，不把原文加入轮询快照。新图步骤及总制片调用在回执中保存 `execution_context: {project_id, stage, run_id}`；匹配当前有效工单或关卡记录时使用 `scope: "current_run"`，其他记录保留历史范围。缺少响应文件的失败请求仍可查看请求和回执。
 

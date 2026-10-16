@@ -72,6 +72,18 @@ export function mockGraph() {
       .map((s, i) => ({ source: s[0], target: stages[i + 1][0] }))
       .concat([
         {
+          source: "production",
+          target: "revision",
+          loop: true,
+          label: "定向返修",
+        },
+        {
+          source: "delivery",
+          target: "revision",
+          loop: true,
+          label: "按审片意见返修",
+        },
+        {
           source: "script_review",
           target: "screenplay",
           loop: true,

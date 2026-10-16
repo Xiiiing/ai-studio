@@ -26,6 +26,44 @@ for (const width of [1440, 1024, 390]) {
         await card.evaluate((el) => el.getBoundingClientRect().height),
       ).toBeLessThan(40);
     }
+    await expect(page.locator(".workflow-flow-line")).toHaveCount(7);
+    const routing = await page.locator(".workflow-map").evaluate((map) => {
+      const bounds = map.getBoundingClientRect();
+      const boxes = [...map.querySelectorAll("[data-map-node]")].map((n) =>
+        n.getBoundingClientRect(),
+      );
+      const nodesFit = boxes.every(
+        (b) =>
+          b.left >= bounds.left &&
+          b.right <= bounds.right &&
+          b.top >= bounds.top &&
+          b.bottom <= bounds.bottom,
+      );
+      const intersections = [];
+      for (const path of map.querySelectorAll(".workflow-flow-line")) {
+        for (
+          let distance = 2;
+          distance < path.getTotalLength() - 2;
+          distance += 4
+        ) {
+          const point = path.getPointAtLength(distance),
+            x = point.x + bounds.left,
+            y = point.y + bounds.top;
+          if (
+            boxes.some(
+              (b) =>
+                x > b.left + 2 &&
+                x < b.right - 2 &&
+                y > b.top + 2 &&
+                y < b.bottom - 2,
+            )
+          )
+            intersections.push(path.parentElement.dataset.flowEdge);
+        }
+      }
+      return { nodesFit, intersections: [...new Set(intersections)] };
+    });
+    expect(routing).toEqual({ nodesFit: true, intersections: [] });
     await expect(page.locator(".react-flow")).toHaveCount(0);
     await expect(
       page.getByRole("button", { name: "展开完整工作流" }),
@@ -88,11 +126,9 @@ for (const width of [1440, 1024, 390]) {
     await page
       .locator(".workflow-workspace")
       .screenshot({ path: `runtime/browser-report/workflow-${width}.png` });
-    await page
-      .locator(".workflow-stages")
-      .screenshot({
-        path: `runtime/browser-report/workflow-stages-${width}.png`,
-      });
+    await page.locator(".workflow-stages").screenshot({
+      path: `runtime/browser-report/workflow-stages-${width}.png`,
+    });
     await page
       .locator(".workflow-workspace")
       .evaluate((el) => el.scrollIntoView({ block: "start" }));
@@ -221,4 +257,92 @@ test("workflow and document controls work with keyboard navigation", async ({
   await expect(page.getByRole("dialog")).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).toHaveCount(0);
+});
+
+test("data flows animate during execution, stop on pause and human gates, and respect reduced motion", async ({
+  page,
+  request,
+}) => {
+  await request.post("/__test/scenario", { data: { kind: "repairing" } });
+  await page.goto(`/#project=${id}&tab=overview`);
+  const edge = page.locator('[data-flow-edge="script:visual:forward"]');
+  await expect(edge).toHaveAttribute("data-flow-state", "running");
+  const packet = edge.locator("circle");
+  const before = await packet.boundingBox();
+  await page.waitForTimeout(180);
+  const after = await packet.boundingBox();
+  expect(
+    Math.abs(after.x - before.x) + Math.abs(after.y - before.y),
+  ).toBeGreaterThan(1);
+  expect(
+    await edge
+      .locator(".workflow-flow-stream")
+      .evaluate((el) => getComputedStyle(el).animationName),
+  ).toBe("workflow-stream");
+  await page
+    .locator(".workflow-map-panel")
+    .screenshot({ path: "runtime/browser-report/workflow-flow-running.png" });
+  const pause = async (route) => {
+    const response = await route.fetch(),
+      body = await response.json();
+    body.project.status = "paused";
+    body.operator.current_activity = "制作已暂停";
+    body.workflow.nodes = body.workflow.nodes.map((n) =>
+      n.id === body.workflow.active_node ? { ...n, status: "paused" } : n,
+    );
+    await route.fulfill({ response, json: body });
+  };
+  await page.route("**/workspace", pause);
+  await page.locator('.topbar [data-action="refresh"]').click();
+  await expect(page.locator('[data-flow-state="running"]')).toHaveCount(0);
+  await expect(page.locator(".workflow-flow-packet")).toHaveCount(0);
+  await page.unroute("**/workspace", pause);
+  await request.post("/__test/scenario", { data: { kind: "final" } });
+  await page.locator('.topbar [data-action="refresh"]').click();
+  await expect(page.locator('[data-stage="delivery"]')).toContainText(
+    "等待你处理",
+  );
+  await expect(page.locator('[data-flow-state="running"]')).toHaveCount(0);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await request.post("/__test/scenario", { data: { kind: "repairing" } });
+  await page.locator('.topbar [data-action="refresh"]').click();
+  await expect(edge).toHaveAttribute("data-flow-state", "running");
+  await expect(edge.locator("circle")).toBeHidden();
+  expect(
+    await page
+      .locator(".workflow-map-node.status-running .badge")
+      .evaluate((el) => getComputedStyle(el).animationName),
+  ).toBe("none");
+  expect(
+    await edge
+      .locator(".workflow-flow-stream")
+      .evaluate((el) => getComputedStyle(el).animationName),
+  ).toBe("none");
+});
+
+test("narrow screens jump directly to details and can return to the flow", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`/#project=${id}&tab=overview`);
+  await page.locator('[data-stage="script"]').click();
+  const inspector = page.locator(".workflow-inspector");
+  await expect
+    .poll(async () =>
+      Math.abs(
+        (await inspector.evaluate((el) => el.getBoundingClientRect().top)) - 16,
+      ),
+    )
+    .toBeLessThan(10);
+  await inspector.getByRole("button", { name: "返回流程图" }).click();
+  await expect(page.locator('[data-stage="script"]')).toBeFocused();
+  await expect
+    .poll(async () =>
+      Math.abs(
+        (await page
+          .locator(".workflow-map-container")
+          .evaluate((el) => el.getBoundingClientRect().top)) - 16,
+      ),
+    )
+    .toBeLessThan(10);
 });
