@@ -165,7 +165,7 @@ def new_configuration(paths):
                        tls_client_key_env="CAMI_WKP_TLS_KEY")
         if vision:
             # review_media resizes inputs to 512x768; leave room for temporal samples.
-            profile["image_token_budget"] = 1536
+            profile["image_token_budget"] = 1024
         profiles[name] = profile
     value["llm_profiles"] = profiles
     value["llm"] = copy.deepcopy(profiles["primary"])

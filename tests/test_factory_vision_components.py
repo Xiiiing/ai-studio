@@ -81,7 +81,7 @@ def test_qwen38_default_context_holds_reference_and_temporal_review():
     from factory.llm import _review_sample_limit, _contract_review_schema
     config = deploy_cami.new_configuration({key: Path('/private') / key for key in deploy_cami.TLS_ENV})
     profile = resolve_llm(config, 'visual_critic', require_vision=True)
-    assert profile['image_token_budget'] == 1536
+    assert profile['image_token_budget'] == 1024
     reference = [{'type': 'text', 'text': '角色参考'},
                  {'type': 'image_url', 'image_url': {'url': 'data:image/jpeg;base64,'}}]
     assert _review_sample_limit(profile, reference, _contract_review_schema(True), 8, 2200) >= 4

@@ -30,7 +30,7 @@ Qwen3.8 已在隔离双 GPU 进程中加载匹配组件。实际模型别名 `ai
 
 - 新安装配置建议 `visual_critic → vision → ai-studio-qwen38-vision`；编剧和文字审稿继续分别使用现有两条 Qwen3.8 服务。
 - 推理服务可用顶层 `model_routes.vision` 指向已配置的 `llm_profiles` 键，例如 `qwen38_vision`。模型名称和端点来自用户配置，客户端仍核对实际目录、模态和响应模型。
-- 16K 视觉窗口配置 `image_token_budget=1536`。应用将审核图缩到 512×768 以内，按窗口选择至少四个视频时间点；不能容纳参考图和最低抽样数量时明确返回不可审核。
+- 16K 视觉窗口配置 `image_token_budget=1024`。应用将审核图缩到 512×768 以内，按窗口选择至少四个视频时间点；不能容纳参考图和最低抽样数量时明确返回不可审核。
 - `scripts/local_vision_smoke.py --config <vision_test JSON> --image <reference> --media <video> --output <isolated-directory>` 使用共享 GPU 租约，启动一个随机 loopback 端口的自有进程，校验模型和视觉能力，执行图片检查和应用的 `visual_critic`，写回执后退出。不安装常驻服务。
 - `configure_wkp_h3.py` 默认要求正式档和精确 Qwen3.8 视觉模型 ID，当前生产路由尚为 Qwen3.6 时会拒绝切换。质量档和所需视觉模型可通过 CLI 显式指定。`--apply` 仍需独立部署授权、无活动任务且 Web/worker 已停止，本阶段未执行。
 
