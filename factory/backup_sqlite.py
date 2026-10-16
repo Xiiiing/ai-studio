@@ -27,6 +27,12 @@ STUDIO = {
     "series_bibles": {"series_key", "version", "document", "sha256", "created"},
     "series_assets": {"asset_id", "version", "series_key", "kind", "entity_id", "status", "revision", "data", "created"},
     "series_dependencies": {"project_id", "shot_id", "asset_id", "version", "sha256", "role"},
+    "material_assets": {"asset_id", "library_key", "kind", "latest_version", "archived"},
+    "material_versions": {"asset_id", "version", "status", "data", "created"},
+    "material_packages": {"library_key", "version", "data"},
+    "material_dependencies": {"project_id", "shot_id", "asset_id", "version", "role"},
+    "material_tasks": {"id", "library_key", "signature", "request_id", "status", "lease", "data", "result", "error", "created", "updated"},
+    "material_submissions": {"intent_id", "task_id", "request_signature", "status", "response", "receipt", "estimated_cost_micros", "currency", "created", "updated"},
     "factory_migrations": {"name", "applied"},
     "sqlite_sequence": {"name", "seq"},
 }
@@ -66,6 +72,10 @@ def schema(db, name):
     entries = list(db.execute("SELECT type,name,sql FROM sqlite_master WHERE type IN ('table','view','trigger') ORDER BY name"))
     if name == "studio.sqlite3" and "cloud_media_receipts" not in {r["name"] for r in entries}:
         expected.pop("cloud_media_receipts", None)  # Backups predating the additive media table.
+    if name == "studio.sqlite3":
+        for table in list(expected):
+            if table.startswith("material_") and table not in {r["name"] for r in entries}:
+                expected.pop(table)  # Existing backups predate the optional material library.
     if any(r["type"] != "table" for r in entries) or {r["name"] for r in entries} != set(expected):
         raise BackupError("Unsupported database schema/table set: " + name)
     for table, columns in expected.items():

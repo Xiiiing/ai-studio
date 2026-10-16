@@ -53,6 +53,7 @@ import { DecisionCenter, ActionForm } from "./Decisions";
 import { ReviewAutomation } from "./ReviewAssistance";
 import { Models } from "./Models";
 import { Shots, Series, Costs } from "./Assets";
+import { MaterialLibrary } from "./MaterialLibrary";
 import {
   CreativeContract,
   creativeChoice,
@@ -71,6 +72,7 @@ function readRoute(): Route {
 const links = [
   ["dashboard", "制片总览", LayoutDashboard],
   ["projects", "全部项目", FolderKanban],
+  ["library", "统一素材库", FolderKanban],
   ["inbox", "待办决策", Inbox],
   ["workflow", "Agent 指挥中心", Bot],
   ["models", "模型与连接", Settings2],
@@ -276,6 +278,8 @@ export default function App() {
               />
             ) : route.view === "models" ? (
               <Models notify={setToast} />
+            ) : route.view === "library" ? (
+              <MaterialLibrary notify={setToast} />
             ) : (
               <>
                 <ErrorNotice error={overview.error} />
@@ -385,8 +389,8 @@ export default function App() {
           onClose={() => setCreate(false)}
           onCreated={(p) => {
             setCreate(false);
-            setToast("制作项目已建立，AI 团队开始策划。");
-            openProject(p.id);
+            setToast(p.material_setup_requested ? "项目已建立，请先准备并确认素材。" : "制作项目已建立，AI 团队开始策划。");
+            openProject(p.id, p.material_setup_requested ? "materials" : "overview");
           }}
         />
       )}
@@ -973,6 +977,7 @@ function Project({
     ["quality", "制作与质检"],
     ["delivery", "成片交付"],
     ["series", "系列资产"],
+    ["materials", "素材与定稿"],
     ["costs", "云任务与费用"],
   ];
   return (
@@ -1354,6 +1359,8 @@ function Project({
           </div>
         ) : tab === "series" ? (
           <Series project={p} notify={notify} />
+        ) : tab === "materials" ? (
+          <MaterialLibrary project={p} notify={notify} />
         ) : tab === "costs" ? (
           <Costs project={p} notify={notify} />
         ) : (
@@ -1545,6 +1552,7 @@ export function CreateProject({
               payload.duration_seconds = Number(values.duration_seconds);
             if (String(values.series_key || "").trim())
               payload.series_key = String(values.series_key).trim();
+            if (values.prepare_materials) payload.prepare_materials = true;
             const result = await request("/projects", payload);
             await client.invalidateQueries();
             onCreated(result.project || result);
@@ -1589,6 +1597,7 @@ export function CreateProject({
             defaultValue={seed?.brief || ""}
           />
         </Field>
+        <label className="check"><input type="checkbox" name="prepare_materials" />先准备人物、场景与画风，再开始制作</label>
         <div className="form-row">
           <Field label="创作方式">
             <select name="creation_mode">

@@ -204,7 +204,7 @@ def _review_expectations(shot):
     fields = ("id", "seconds", "dramatic_beat", "action", "location", "prompt",
               "motion_prompt", "camera_motion", "reference_group", "continuity",
               "lip_sync", "delivery_method", "characters", "character_states", "asset_references",
-              "review_purpose", "visual_direction")
+              "review_purpose", "visual_direction", "material_constraints", "scene_id", "composition_id")
     expected = {key: shot[key] for key in fields if key in shot}
     if isinstance(shot.get("dialogue"), list):
         expected["dialogue"] = [
@@ -294,11 +294,21 @@ def review_media(project, shot, path, references, config=None, *, output_dir=Non
         "project_id":project.get("id"),"production_revision":project.get("production_revision"),
         "production_profile":project.get("production_profile")
     }
+    if shot.get("material_constraints"):
+        context["material_review_rules"] = (
+            "分别检查定稿人物身份、共同画风、场景基础结构及同框人物对应和位置；明确服装/昼夜/动作变化不是身份漂移。"
+            "参考图包含画风、场景和组合，用shot.material_constraints说明判定其用途，不把画风样例中的人物误认为应出镜人物。")
     from .creative_contract import resolve as resolve_contract, style_prompt
     contract = resolve_contract(project)
     is_video = path.suffix.lower() in {".mp4", ".webm", ".mov"}
     require_motion = bool(contract and is_video and contract["motion"] == "generated_video")
     schema = _contract_review_schema(require_motion) if contract else REVIEW_SCHEMA
+    if shot.get("material_constraints"):
+        schema = copy.deepcopy(schema)
+        checks = {key: {"type": "string", "enum": ["match", "mismatch", "uncertain", "not_applicable"]} for key in ("identity", "style", "scene", "correspondence")}
+        checks["evidence"] = {"type": "string"}
+        schema["properties"]["material_alignment"] = {"type": "object", "additionalProperties": False, "properties": checks, "required": list(checks)}
+        schema["required"] = [*schema["required"], "material_alignment"]
     if contract:
         if not is_video and contract["motion"] == "generated_video":
             context["shot"].pop("action", None)
@@ -325,7 +335,8 @@ def review_media(project, shot, path, references, config=None, *, output_dir=Non
                            "纯缩放、平移、镜头抖动不是主体动作，填camera_only。"
                            "motion_alignment的证据须写明实际样本时间和可见变化；无法确定时填uncertain，不得凭文件是视频推断动作合格。"))
     content=[{"type":"text","text":json.dumps(context,ensure_ascii=False)}]
-    for index, reference in enumerate((references or [])[:4]):
+    review_references = (references or []) if shot.get("material_constraints") else (references or [])[:4]
+    for index, reference in enumerate(review_references):
         ref=reference.get("path") if isinstance(reference,dict) else reference
         if ref and Path(ref).is_file():
             content.extend([{"type":"text","text":f"角色或场景参考 {index+1}"},
@@ -360,6 +371,12 @@ def review_media(project, shot, path, references, config=None, *, output_dir=Non
     if errors:
         raise ValueError("VLM result does not match the visual review contract")
     blocking=[issue for issue in result["issues"] if issue["severity"]=="blocking"]
+    if result.get("material_alignment"):
+        alignment = result["material_alignment"]
+        if "mismatch" in alignment.values():
+            result["status"] = "fail"
+        elif "uncertain" in alignment.values():
+            result["status"] = "unavailable"
     if blocking or result["score"] < config.get("quality",{}).get("minimum_score",60):
         result["status"]="fail"
     if contract:
@@ -367,7 +384,7 @@ def review_media(project, shot, path, references, config=None, *, output_dir=Non
     selected_model = resolve_llm(config, "visual_critic", require_vision=True)
     result.update(evaluator="vlm_sampled_frames",model=selected_model["model"],
                   profile=selected_model["profile"],endpoint=selected_model.get("base_url"),
-                  sampled_frames=len(samples),reference_count=min(len(references or []),4), sampling=sampling,
+                  sampled_frames=len(samples),reference_count=len(review_references), sampling=sampling,
                   temporal_scope="sampled_frames_only",human_reviewed=False,
                   project_id=project.get("id"),shot_id=shot.get("id"),config_revision=config_revision(config))
     return result

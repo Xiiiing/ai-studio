@@ -32,6 +32,11 @@ STYLE_SYSTEM = load_prompt("visual_designer")
 
 def _safe_context(project):
     context = project_context(project)
+    if context.get("confirmed_materials"):
+        context["material_reference_policy"] = (
+            "Use confirmed_materials as the pinned character identity, naming, scene structure and visual constraints. "
+            "Character role IDs, not display names, map identities to the production cast. "
+            "Wardrobe, expression, action and time of day remain per-shot story state.")
     if context.get("series_bible"):
         context["series_reference_policy"] = (
             "Use the pinned Series Bible as immutable identity/world constraints. "
@@ -350,6 +355,10 @@ def _revision_visual_style(project, config, checkpoint):
 
 
 def _styles(project, config, episode, checkpoint):
+    from .material_production import styles as material_styles
+    selected = material_styles(project)
+    if selected:
+        return selected
     report(checkpoint, stage="visual_design" if project.get("workflow_version",1)==2 else "visual_development", progress=42, message="美术指导正在形成三套画风方向")
     context=_safe_context(project)
     # Keep the registered top-level contract and byte-identical old cache input
