@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import copy
+import json
 import time
 import wave
 from concurrent.futures import ThreadPoolExecutor
@@ -572,6 +573,52 @@ def test_stage_requirements_reach_transport_and_force_retry_changes_validated_ca
         assert delivered["stage"] == "screenplay" and delivered["requirements"] == command["instruction"]
         assert delivered["revision"] == index
     assert original_payload == {"approved_story": "Two fictional adults return a book."}
+
+
+@pytest.mark.parametrize("profiled", [False, True], ids=["default", "explicit-profile"])
+def test_registered_writer_prompt_accepts_intervention_and_retains_real_receipt_metadata(project, monkeypatch, profiled):
+    from factory import schemas
+    from factory.execution_context import current_execution
+    from factory.production_profiles import normalize
+    from factory.prompt_registry import load_prompt
+    from test_factory_role_routing import routing_config, mock_transport, SCHEMA
+
+    calls, _ = mock_transport(monkeypatch)
+    writer = load_prompt("screenwriter")
+    current = copy.deepcopy(project)
+    if profiled:
+        current["production_profile"] = normalize({"preset": "compact6"})
+        current["duration_seconds"] = current["production_profile"]["duration_seconds"]
+    payload = {"project": {}}
+
+    def call():
+        context = current_execution.set({"project_id": project["id"], "stage": "screenplay"})
+        try:
+            return schemas.cached_json_call(current, routing_config(), "screenwriter", "registered-team-writer",
+                                            writer, payload, SCHEMA)
+        finally:
+            current_execution.reset(context)
+
+    assert call() == {"ok": True}
+    assert call() == {"ok": True} and len(calls) == 1
+    current["team_stage_requirements"] = {"screenplay": "Keep the cast and clarify why the book is returned."}
+    current["team_stage_revisions"] = {"screenplay": 1}
+    assert call() == {"ok": True}
+    assert call() == {"ok": True} and len(calls) == 2
+    assert current["team_stage_requirements"]["screenplay"] in str(calls[-1]["request"]["messages"])
+    folder = schemas.planning_dir(current)
+    receipts = [json.loads(path.read_text()) for path in folder.glob("llm/calls/*/receipt.json")]
+    assert len(receipts) == 2 and all(row["status"] == "succeeded" for row in receipts)
+    assert all(row["prompt"]["status"] == "registered" and row["prompt"]["version"] == writer.spec.version for row in receipts)
+    after = next(row for row in receipts if "producer_intervention" in row["prompt"]["transforms"])
+    before = next(row for row in receipts if "producer_intervention" not in row["prompt"]["transforms"])
+    assert after["prompt"]["template_sha256"] == before["prompt"]["template_sha256"] == writer.spec.template_sha256
+    assert after["prompt"]["input_sha256"] != before["prompt"]["input_sha256"]
+    assert after["prompt"]["rendered_sha256"] != before["prompt"]["rendered_sha256"]
+    assert ("production_profile" in after["prompt"]["transforms"]) is profiled
+    cache_records = [json.loads(path.read_text()) for path in folder.glob("cache/registered-team-writer-*.json")]
+    assert len(cache_records) == 2 and all(row["prompt"]["status"] == "registered" for row in cache_records)
+    assert payload == {"project": {}}
 
 
 def test_same_text_cloud_retake_changes_source_and_intent_only_when_explicit(project):

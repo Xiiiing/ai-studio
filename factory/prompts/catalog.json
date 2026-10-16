@@ -25,7 +25,33 @@
           "production_constraints": {},
           "previous_proposals": {},
           "independent_feedback": {},
-          "rewrite_instruction": {}
+          "rewrite_instruction": {},
+          "producer_task_requirements": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "stage": {
+                "type": "string"
+              },
+              "requirements": {
+                "type": "string",
+                "maxLength": 4000
+              },
+              "revision": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "rule": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "stage",
+              "requirements",
+              "revision",
+              "rule"
+            ]
+          }
         }
       },
       "output_schema_refs": [
@@ -52,7 +78,33 @@
           "producer_feedback": {},
           "proposal_reference_only_where_feedback_does_not_override": {},
           "episode": {},
-          "technical_findings": {}
+          "technical_findings": {},
+          "producer_task_requirements": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "stage": {
+                "type": "string"
+              },
+              "requirements": {
+                "type": "string",
+                "maxLength": 4000
+              },
+              "revision": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "rule": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "stage",
+              "requirements",
+              "revision",
+              "rule"
+            ]
+          }
         }
       },
       "output_schema_refs": [
@@ -83,7 +135,33 @@
           "approved_visual_traits": {},
           "previous_attempt": {},
           "rewrite_instruction": {},
-          "independent_feedback": {}
+          "independent_feedback": {},
+          "producer_task_requirements": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "stage": {
+                "type": "string"
+              },
+              "requirements": {
+                "type": "string",
+                "maxLength": 4000
+              },
+              "revision": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "rule": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "stage",
+              "requirements",
+              "revision",
+              "rule"
+            ]
+          }
         }
       },
       "output_schema_refs": [
@@ -104,7 +182,33 @@
           "title": {},
           "synopsis": {},
           "cast": {},
-          "locations": {}
+          "locations": {},
+          "producer_task_requirements": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "stage": {
+                "type": "string"
+              },
+              "requirements": {
+                "type": "string",
+                "maxLength": 4000
+              },
+              "revision": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "rule": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "stage",
+              "requirements",
+              "revision",
+              "rule"
+            ]
+          }
         }
       },
       "output_schema_refs": [
@@ -129,7 +233,33 @@
           "locked_shot_ids": {},
           "editable_fields": {},
           "model_capabilities": {},
-          "instruction": {}
+          "instruction": {},
+          "producer_task_requirements": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "stage": {
+                "type": "string"
+              },
+              "requirements": {
+                "type": "string",
+                "maxLength": 4000
+              },
+              "revision": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "rule": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "stage",
+              "requirements",
+              "revision",
+              "rule"
+            ]
+          }
         }
       },
       "output_schema_refs": [
@@ -150,7 +280,33 @@
           "gate": {},
           "candidates": {},
           "review_summary": {},
-          "constraints": {}
+          "constraints": {},
+          "producer_task_requirements": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "stage": {
+                "type": "string"
+              },
+              "requirements": {
+                "type": "string",
+                "maxLength": 4000
+              },
+              "revision": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "rule": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "stage",
+              "requirements",
+              "revision",
+              "rule"
+            ]
+          }
         },
         "required": [
           "project",
@@ -183,7 +339,33 @@
           "editable_fields": {},
           "model_capabilities": {},
           "instruction": {},
-          "previous_attempt": {}
+          "previous_attempt": {},
+          "producer_task_requirements": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "stage": {
+                "type": "string"
+              },
+              "requirements": {
+                "type": "string",
+                "maxLength": 4000
+              },
+              "revision": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "rule": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "stage",
+              "requirements",
+              "revision",
+              "rule"
+            ]
+          }
         }
       },
       "output_schema_refs": [
