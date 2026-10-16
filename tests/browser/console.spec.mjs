@@ -12,6 +12,108 @@ async function openDecision(page) {
   await page.goto("/#project=" + id + "&tab=decisions");
   await expect(page.locator(".decision-section")).toBeVisible();
 }
+for (const [style, format, motion] of [
+  ["anime_2d", "animation", "generated_video"],
+  ["stylized_3d", "animation", "generated_video"],
+  ["photorealistic", "live_action", "generated_video"],
+  ["illustrated", "motion_comic", "still_camera"],
+]) {
+  test(`creation separates ${style} from other visual and motion methods`, async ({
+    page,
+    request,
+  }) => {
+    await page.goto("/");
+    await page.locator('[data-action="new-project"]').first().click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog.getByLabel("画面与运动方式")).toHaveValue("anime_2d");
+    await dialog.getByLabel("画面与运动方式").selectOption(style);
+    await dialog.getByLabel("团队协作方式").selectOption("guided");
+    await dialog
+      .getByLabel("创作方向")
+      .fill("成年修表师查清真相，主动行动并完成和解，故事在本片结束。");
+    await expect(dialog).toContainText("单部闭环短剧");
+    await expect(dialog).toContainText(
+      motion === "still_camera"
+        ? "不生成角色动作或同步口型"
+        : "当前流程不承诺同步口型",
+    );
+    await dialog.getByRole("button", { name: "开始自主策划" }).click();
+    await expect(dialog).not.toBeVisible();
+    const calls = await (await request.get("/__test/calls")).json();
+    const creations = calls.filter(
+      (call) => call.method === "POST" && call.path === "/api/factory/projects",
+    );
+    expect(creations).toHaveLength(1);
+    expect(creations[0].body).toMatchObject({
+      format,
+      creative_contract: {
+        schema_version: 1,
+        visual_style: style,
+        motion,
+        story_mode: "standalone",
+        pacing: "short_drama",
+      },
+    });
+  });
+}
+test("remake opens an editable new project without mutating existing media", async ({
+  page,
+  request,
+}) => {
+  const before = await (
+    await request.get("/api/factory/projects/" + id)
+  ).json();
+  await page.goto("/#project=" + id + "&tab=overview");
+  await expect(page.locator(".creative-contract")).toContainText(
+    "实际制作：静帧图片加程序运镜",
+  );
+  await page.getByRole("button", { name: "按新规格重制" }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByLabel("创作方向")).toHaveValue(before.brief);
+  await expect(dialog.getByLabel("项目名称 / 可选")).toHaveValue(
+    before.title + " · 重制",
+  );
+  await expect(dialog.getByLabel("画面与运动方式")).toHaveValue("anime_2d");
+  await expect(dialog).toContainText("原项目的成片、素材与历史记录继续保留");
+  await dialog
+    .getByLabel("创作方向")
+    .fill("调整为2D动漫短剧，冲突和反转在单部作品中完成。");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.locator("body")).toHaveJSProperty("scrollWidth", 390);
+  await page.screenshot({
+    path: "runtime/browser-report/console-remake-mobile.png",
+    fullPage: true,
+  });
+  await dialog.getByRole("button", { name: "取消", exact: true }).click();
+  const after = await (await request.get("/api/factory/projects/" + id)).json();
+  expect(after).toEqual(before);
+  const calls = await (await request.get("/__test/calls")).json();
+  expect(
+    calls.filter(
+      (call) => call.method === "POST" && call.path.startsWith("/api/"),
+    ),
+  ).toEqual([]);
+});
+test("delivery shows the requested anime style separately from recorded generation", async ({
+  page,
+  request,
+}) => {
+  await request.post("/__test/scenario", { data: { kind: "generated_anime" } });
+  await page.goto("/#project=" + id + "&tab=delivery");
+  await expect(page.locator(".creative-contract")).toContainText(
+    "2D 动漫 · 生成角色动作",
+  );
+  await expect(page.locator(".creative-contract")).toContainText(
+    "实际制作：模型生成运动视频",
+  );
+  await expect(page.locator(".creative-contract")).toContainText(
+    "生成视频 1 镜 · 静帧运镜 0 镜 · 未知 0 镜",
+  );
+  await expect(page.locator(".creative-contract")).toContainText(
+    "当前流程不承诺同步口型",
+  );
+  await expect(page.locator("video")).toBeVisible();
+});
 test("human story to visual selection to final review has concrete bounded actions", async ({
   page,
   request,

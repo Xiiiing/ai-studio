@@ -90,6 +90,7 @@ const initial = {
   shots: [
     {
       ...shot,
+      video: { origin: "procedural_camera_motion", diffusion_video: false },
       image_url: "/media/production/factory-" + id + "/frames/frame.png",
       video_url:
         "/media/production/factory-" +
@@ -329,6 +330,8 @@ const server = http.createServer(async (request, response) => {
           );
         project.team_mode = value.team_mode;
         project.brief = value.brief;
+        project.format = value.format;
+        project.creative_contract = value.creative_contract;
         project.revision += 1;
         return json(response, { project }, 201);
       }

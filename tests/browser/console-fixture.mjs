@@ -281,6 +281,30 @@ export function scenario(project, kind) {
   project.review_advice = null;
   project.review_automation = null;
   project.mockAdviceSupported = false;
+  if (kind === "generated_anime") {
+    project.format = "animation";
+    project.creative_contract = {
+      schema_version: 1,
+      visual_style: "anime_2d",
+      story_mode: "standalone",
+      pacing: "short_drama",
+      motion: "generated_video",
+    };
+    project.delivery.motion_provenance = {
+      requested: "generated_video",
+      generated_video_shots: 1,
+      still_camera_shots: 0,
+      unknown_shots: 0,
+      lip_sync: false,
+    };
+    project.shots = project.shots.map((shot) => ({
+      ...shot,
+      video: {
+        motion_method: "generated_video",
+        generation_kind: "local_diffusion_video",
+      },
+    }));
+  }
   if (kind === "story" || kind === "automatic") {
     project.status = "awaiting_story";
     project.stage = "story_decision";

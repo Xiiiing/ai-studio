@@ -53,6 +53,12 @@ import { DecisionCenter, ActionForm } from "./Decisions";
 import { ReviewAutomation } from "./ReviewAssistance";
 import { Models } from "./Models";
 import { Shots, Series, Costs } from "./Assets";
+import {
+  CreativeContract,
+  creativeChoice,
+  projectVisualLabel,
+  visualChoices,
+} from "./CreativeContract";
 type Route = { view: string; project: string; tab: string };
 function readRoute(): Route {
   const p = new URLSearchParams(location.hash.slice(1));
@@ -73,7 +79,7 @@ const links = [
 export default function App() {
   const client = useQueryClient(),
     [route, setRoute] = useState(readRoute),
-    [create, setCreate] = useState(false),
+    [create, setCreate] = useState<boolean | RecordData>(false),
     [mobile, setMobile] = useState(false),
     [toast, setToast] = useState("");
   const overview = useQuery({
@@ -266,6 +272,7 @@ export default function App() {
                 onBack={() => navigate("projects")}
                 notify={setToast}
                 models={models.data}
+                onRemake={(project) => setCreate(project)}
               />
             ) : route.view === "models" ? (
               <Models notify={setToast} />
@@ -374,6 +381,7 @@ export default function App() {
         <CreateProject
           catalog={profiles.data}
           inventory={models.data}
+          seed={typeof create === "object" ? create : undefined}
           onClose={() => setCreate(false)}
           onCreated={(p) => {
             setCreate(false);
@@ -887,6 +895,7 @@ function Project({
   onBack,
   notify,
   models,
+  onRemake,
 }: {
   id: string;
   tab: string;
@@ -894,6 +903,7 @@ function Project({
   onBack: () => void;
   notify: (v: string) => void;
   models?: RecordData;
+  onRemake: (project: RecordData) => void;
 }) {
   const client = useQueryClient(),
     workspace = useQuery({
@@ -976,14 +986,7 @@ function Project({
           <div className="project-meta">
             <Badge status={p.status} />
             <span>
-              {(
-                {
-                  motion_comic: "动态漫剧",
-                  live_action: "真人影视",
-                  animation: "二维动画",
-                } as RecordData
-              )[p.format] || p.format}{" "}
-              · {p.duration_seconds} 秒
+              {projectVisualLabel(p)} · {p.duration_seconds} 秒
             </span>
             <span>
               <Bot size={14} />
@@ -998,6 +1001,9 @@ function Project({
           </div>
         </div>
         <div className="heading-actions">
+          <button className="button small" onClick={() => onRemake(p)}>
+            按新规格重制
+          </button>
           {active.map((a) => (
             <button
               className={
@@ -1064,6 +1070,7 @@ function Project({
       <div className="project-pane">
         {tab === "overview" ? (
           <>
+            <CreativeContract project={p} />
             <div className="project-context">
               <article>
                 <small>当前阶段</small>
@@ -1358,6 +1365,7 @@ function Project({
                 : "当前制作版本，完成终审后正式交付。"
             }
           >
+            <CreativeContract project={p} />
             {ownedMedia(p.id, p.delivery?.video_url) ? (
               <div className="delivery-layout">
                 <video
@@ -1444,20 +1452,29 @@ function Project({
     </>
   );
 }
-function CreateProject({
+export function CreateProject({
   catalog,
   inventory,
   onClose,
   onCreated,
+  seed,
 }: {
   catalog?: RecordData;
   inventory?: RecordData;
   onClose: () => void;
   onCreated: (p: RecordData) => void;
+  seed?: RecordData;
 }) {
   const client = useQueryClient(),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
+    [visualStyle, setVisualStyle] = useState(
+      visualChoices.some(
+        (choice) => choice.id === seed?.creative_contract?.visual_style,
+      )
+        ? seed!.creative_contract.visual_style
+        : "anime_2d",
+    ),
     [preset, setPreset] = useState(
       catalog?.presets?.compact6 ? "compact6" : "legacy15",
     ),
@@ -1467,7 +1484,11 @@ function CreateProject({
     ),
     configured = !!inventory?.role_assignments?.executive_producer;
   return (
-    <Modal id="project-dialog" title="发起一部新制作" onClose={onClose}>
+    <Modal
+      id="project-dialog"
+      title={seed ? "按新规格发起重制" : "发起一部新制作"}
+      onClose={onClose}
+    >
       <form
         onSubmit={async (e) => {
           e.preventDefault();
@@ -1505,7 +1526,7 @@ function CreateProject({
               request_id: requestId,
               title: String(values.title || "").trim(),
               brief: String(values.brief).trim(),
-              format: values.format,
+              ...creativeChoice(visualStyle),
               creation_mode: values.creation_mode,
               team_mode: values.team_mode,
               production_profile: profile,
@@ -1539,11 +1560,21 @@ function CreateProject({
           给团队一个明确的创作目标。AI
           将完成研究、创作与独立审核，你掌握费用授权和最终审片。
         </p>
+        {seed && (
+          <p className="creative-remake-note">
+            已带入原项目的名称与创作方向。提交后建立新项目，原项目的成片、素材与历史记录继续保留。
+          </p>
+        )}
         <Field label="项目名称 / 可选">
           <input
             name="title"
             maxLength={80}
             placeholder="故事选定后也可以命名"
+            defaultValue={
+              seed
+                ? `${String(seed.title || "未命名制作").slice(0, 72)} · 重制`
+                : ""
+            }
           />
         </Field>
         <Field label="创作方向">
@@ -1555,6 +1586,7 @@ function CreateProject({
             maxLength={6000}
             placeholder="题材、受众、核心情绪、人物与结局期待，以及需要避免的内容。"
             autoFocus
+            defaultValue={seed?.brief || ""}
           />
         </Field>
         <div className="form-row">
@@ -1564,11 +1596,17 @@ function CreateProject({
               <option value="adaptation">授权素材改编</option>
             </select>
           </Field>
-          <Field label="制作形式">
-            <select name="format">
-              <option value="motion_comic">动态漫剧</option>
-              <option value="live_action">真人影视</option>
-              <option value="animation">二维动画</option>
+          <Field label="画面与运动方式">
+            <select
+              name="visual_style"
+              value={visualStyle}
+              onChange={(e) => setVisualStyle(e.target.value)}
+            >
+              {visualChoices.map((choice) => (
+                <option key={choice.id} value={choice.id}>
+                  {choice.label}
+                </option>
+              ))}
             </select>
           </Field>
           <Field
@@ -1584,6 +1622,17 @@ function CreateProject({
               <option value="guided">人工把关故事与视觉</option>
             </select>
           </Field>
+        </div>
+        <div className="creative-create-summary">
+          <strong>单部闭环短剧</strong>
+          <p>
+            开场进入冲突，人物主动行动，情节递进反转，结尾兑现主线，不以“下一集”悬念代替结局。
+          </p>
+          <p>
+            {visualStyle === "illustrated"
+              ? "静帧动态漫画使用图片与运镜，不生成角色动作或同步口型。"
+              : "使用视频模型生成角色动作，需逐镜通过质检；当前流程不承诺同步口型，配音可采用画外音。"}
+          </p>
         </div>
         <div className="form-row">
           <Field label="创作规格">
