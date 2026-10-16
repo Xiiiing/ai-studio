@@ -288,3 +288,23 @@ def test_third_goal_round_cannot_bypass_source_or_grounded_evidence_contract(cas
         creative.resolve_story_brief(goal_project(case), case.config)
     assert editors == 3
     assert critics == (2 if defect == "source_quote" else 3)
+
+
+@pytest.mark.parametrize("operation", ["write_screenplay", "direct_screenplay", "review_screenplay"])
+def test_lower_round_limit_blocks_each_runtime_boundary_without_model_calls(case, operation):
+    project = {**case.approved_project(), "creative_round": 3,
+        "screenplay_draft": {"title": "第3轮已有稿", "shots": []},
+        "previous_screenplay_draft": {"title": "第2轮原稿", "shots": []},
+        "creative_review_rounds": [{"round": 1}, {"round": 2}],
+        "script_review_complete_round": [1, 2],
+        "draft_review": {"issues": [fixtures.major_issue()],
+                         "scores": {key: 8 for key in fixtures.schemas.SCORE_KEYS}}}
+    before = copy.deepcopy(project)
+    case.config["creative"] = {"max_review_rounds": 2}
+    result = getattr(creative_runtime, operation)(project, case.config, None)
+    assert result["needs_decision"]["issues"] == [fixtures.major_issue()]
+    assert result["review_automation"]["status"] == "blocked"
+    assert result["review_automation"]["round"] == result["review_automation"]["max_rounds"] == 2
+    assert result["review_automation"]["blocked_round"] == 3
+    assert project == before
+    case.model.assert_not_called()

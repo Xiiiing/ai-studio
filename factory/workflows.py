@@ -433,11 +433,14 @@ def story_resolution(state):
 
 
 def screenplay_v2(state):
-    from .creative_runtime import write_screenplay
+    from .creative_runtime import round_limit_patch, write_screenplay
     p=_project(state)
     if p.get('story_resolution_complete_generation') != p['script_generation']:
         story_resolution(state)
         p=_project(state)
+    blocked=round_limit_patch(p,load_config())
+    if blocked:
+        _apply(p['id'],blocked)
     marker=[p['script_generation'],p.get('creative_round',1)]
     if p.get('screenplay_complete_round') != marker:
         store.update(p['id'],{'status':'scripting','stage':'screenplay','progress':30,
@@ -447,8 +450,11 @@ def screenplay_v2(state):
 
 
 def storyboard(state):
-    from .creative_runtime import direct_screenplay
+    from .creative_runtime import direct_screenplay, round_limit_patch
     p=_project(state)
+    blocked=round_limit_patch(p,load_config())
+    if blocked:
+        _apply(p['id'],blocked)
     marker=[p['script_generation'],p.get('creative_round',1)]
     if p.get('storyboard_complete_round') != marker:
         store.update(p['id'],{'status':'scripting','stage':'storyboard','progress':33,
@@ -458,11 +464,14 @@ def storyboard(state):
 
 
 def script_review(state):
-    from .creative_runtime import review_screenplay
+    from .creative_runtime import review_screenplay, round_limit_patch
     from .review_policy import automation, exhausted_message, max_review_rounds
     p=_project(state)
     if p.get('script_complete_generation') == p['script_generation']:
         return {'route':'continue'}
+    blocked=round_limit_patch(p,load_config())
+    if blocked:
+        _apply(p['id'],blocked)
     if (p.get('script_review_complete_round')==p.get('screenplay_complete_round')
             and p.get('script_review_route') in {'repair','continue'}):
         if p['script_review_route'] == 'repair':

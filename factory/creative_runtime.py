@@ -14,6 +14,34 @@ from . import creative as c
 from .review_policy import automation, exhausted_message, max_review_rounds
 
 
+def round_limit_patch(project, config):
+    """Fence a planned round when a restart loads a lower repair limit."""
+    index = project.get("creative_round", 1)
+    limit = max_review_rounds(config)
+    if index <= limit:
+        return None
+    marker = project.get("script_review_complete_round")
+    completed = (
+        marker[1]
+        if isinstance(marker, list) and len(marker) == 2
+        and marker[0] == project["script_generation"] and type(marker[1]) is int
+        else max(1, index - 1)
+    )
+    message = (
+        "当前自动审核上限为 %d 轮，原计划第 %d 轮已停止。已保留前稿和独立审核问题；"
+        "请人工选择修改方向，或让 AI 辅助分析后继续。" % (limit, index)
+    )
+    review = project.get("draft_review") or (project.get("script_review") or {}).get("review", {})
+    return {
+        "needs_decision": c._gate("script_review", message, c._script_gate_issues(review)),
+        "review_automation": {
+            **automation(config, "script", completed, project["script_generation"],
+                         "blocked", "自动审核上限降低，停止原计划的超限返修"),
+            "blocked_round": index,
+        },
+    }
+
+
 def _revision_scope(project):
     previous = project.get("episode") or project.get("script") or {}
     old_shots = {shot["id"]: shot for shot in previous.get("shots", [])}
@@ -89,7 +117,9 @@ def resolve_target(project, config, checkpoint):
 
 
 def write_screenplay(project, config, checkpoint):
-    max_review_rounds(config)
+    blocked = round_limit_patch(project, config)
+    if blocked:
+        return blocked
     proposal, resolved, goal, reference, scope = _context(project)
     index = project.get("creative_round", 1)
     plan = c.duration_plan(project)
@@ -171,6 +201,9 @@ def write_screenplay(project, config, checkpoint):
 
 
 def direct_screenplay(project, config, checkpoint):
+    blocked = round_limit_patch(project, config)
+    if blocked:
+        return blocked
     _, _, goal, reference, _ = _context(project)
     index = project.get("creative_round", 1)
     value = c.direct_storyboard(
@@ -198,6 +231,9 @@ def direct_screenplay(project, config, checkpoint):
 
 
 def review_screenplay(project, config, checkpoint):
+    blocked = round_limit_patch(project, config)
+    if blocked:
+        return blocked
     proposal, resolved, goal, _, scope = _context(project)
     episode = project["screenplay_draft"]
     index = project.get("creative_round", 1)
