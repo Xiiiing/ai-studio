@@ -84,6 +84,7 @@ def dependencies(profile=None):
         "text_encoder": COMFY / "models/text_encoders" / CLIP,
         "vae": COMFY / "models/vae" / VAE,
         "device_nodes": ROOT / "nodes/pilot_device_loaders/__init__.py",
+        "int8_memory_adapter": ROOT / "nodes/pilot_device_loaders/int8_memory.py",
         "h3_nodes": COMFY / "comfy_extras/nodes_minimax_h3.py",
     }
     if recipe(profile)["quality"] == "preview":

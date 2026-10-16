@@ -100,6 +100,7 @@ def test_h3_launch_preserves_native_quantization_and_existing_lora(monkeypatch, 
         assert argv[argv.index("--reserve-vram") + 1] == str(float(reserve))
         assert not {"--fp16-unet", "--fp16-text-enc", "--fp32-vae"}.intersection(argv)
         assert launch.call_args.kwargs["env"]["CUDA_VISIBLE_DEVICES"] == "4,6"
+        assert launch.call_args.kwargs["env"]["DRAMA_H3_CHUNKED_INT8"] == "1"
         assert str(tmp_path / "existing-loras") in (worker.folder / "models.yaml").read_text()
     finally:
         worker.__exit__(None, None, None)

@@ -278,8 +278,10 @@ class FactoryComfyWorker(ComfyWorker):
                     "--user-directory", str(self.folder / "user"),
                     "--database-url", "sqlite:///" + str(self.folder / "comfyui.db")]
             if self.h3:
+                env["DRAMA_H3_CHUNKED_INT8"] = "1"
                 argv += ["--disable-smart-memory"]
             else:
+                env.pop("DRAMA_H3_CHUNKED_INT8", None)
                 argv += ["--fp16-unet", "--fp16-text-enc", "--fp32-vae"]
             self.log = (self.folder / "comfy.log").open("a")
             self.child = subprocess.Popen(argv, cwd=COMFY, env=env, stdout=self.log,

@@ -3,6 +3,12 @@ import torch
 import folder_paths
 import comfy.sd
 import comfy.utils
+import os
+
+if os.environ.get("DRAMA_H3_CHUNKED_INT8") == "1":
+    from comfy_kitchen.registry import registry
+    from .int8_memory import install
+    install(registry)
 
 class PilotCLIPOnSecondaryGPU:
     @classmethod
