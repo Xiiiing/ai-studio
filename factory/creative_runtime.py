@@ -122,6 +122,9 @@ def write_screenplay(project, config, checkpoint):
         return blocked
     proposal, resolved, goal, reference, scope = _context(project)
     index = project.get("creative_round", 1)
+    c.report(checkpoint, review_automation=automation(
+        config, "script", index, project["script_generation"], "writing",
+        "按独立审核返修原稿" if index > 1 else "编写剧本"))
     plan = c.duration_plan(project)
     previous, old_shots, affected = _revision_scope(project)
     revision_style = (
@@ -206,6 +209,8 @@ def direct_screenplay(project, config, checkpoint):
         return blocked
     _, _, goal, reference, _ = _context(project)
     index = project.get("creative_round", 1)
+    c.report(checkpoint, review_automation=automation(
+        config, "script", index, project["script_generation"], "writing", "分镜导演正在落实当前稿件"))
     value = c.direct_storyboard(
         project,
         config,
@@ -237,6 +242,8 @@ def review_screenplay(project, config, checkpoint):
     proposal, resolved, goal, _, scope = _context(project)
     episode = project["screenplay_draft"]
     index = project.get("creative_round", 1)
+    c.report(checkpoint, review_automation=automation(
+        config, "script", index, project["script_generation"], "reviewing", "独立审稿人正在验收当前稿件"))
     structural = (
         c.technical_issues(episode, project)
         + c._excluded_story_issues(episode, resolved)

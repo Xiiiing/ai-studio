@@ -69,6 +69,34 @@ def assert_repair_inputs(case, rounds):
         assert director["repair_issues"][0]["evidence"] == "第%d轮真实审核证据" % index
 
 
+@pytest.mark.parametrize("boundary,status", [
+    ("write_screenplay", "writing"), ("direct_screenplay", "writing"),
+    ("review_screenplay", "reviewing"),
+])
+def test_current_round_is_visible_before_slow_model_returns(case, boundary, status):
+    project = configure(case, 99)
+    project.update(creative_runtime.resolve_target(project, case.config, None))
+    project.update(creative_runtime.write_screenplay(project, case.config, None))
+    project.update(creative_runtime.direct_screenplay(project, case.config, None))
+    project.update(creative_runtime.review_screenplay(project, case.config, None))
+    assert project["creative_round"] == 2
+    if boundary != "write_screenplay":
+        project.update(creative_runtime.write_screenplay(project, case.config, None))
+    if boundary == "review_screenplay":
+        project.update(creative_runtime.direct_screenplay(project, case.config, None))
+    observed = {}
+
+    def interrupted(**request):
+        assert observed["review_automation"]["round"] == 2
+        assert observed["review_automation"]["status"] == status
+        raise KeyboardInterrupt("model has not returned")
+
+    case.model.side_effect = interrupted
+    with pytest.raises(KeyboardInterrupt):
+        getattr(creative_runtime, boundary)(project, case.config, observed.update)
+    assert project["script_review_complete_round"] == [1, 1]
+
+
 @pytest.mark.parametrize("version", [1, 2])
 @pytest.mark.parametrize("passing_round", [3, 4])
 def test_third_or_fourth_review_passes_without_human_intervention(case, version, passing_round):
