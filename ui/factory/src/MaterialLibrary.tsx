@@ -540,7 +540,7 @@ export function MaterialLibrary({
       )}
       <Panel title="AI 素材任务">
         {tasks.error && (
-          <div role="alert">
+          <div>
             <ErrorNotice error={tasks.error} />
             <button className="button" onClick={() => tasks.refetch()}>
               重新读取素材任务
