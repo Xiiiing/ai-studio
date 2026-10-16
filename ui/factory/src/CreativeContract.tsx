@@ -48,29 +48,55 @@ export function projectVisualLabel(project: RecordData) {
   );
 }
 
+// Keep precedence aligned with factory.media_contract.video_motion.
+function videoMotion(record: RecordData | undefined) {
+  if (
+    record?.origin === "procedural_camera_motion" ||
+    record?.generation_kind === "procedural_camera_motion" ||
+    record?.motion_method === "still_camera" ||
+    record?.diffusion_video === false
+  )
+    return "still_camera";
+  if (
+    ["local_diffusion_video", "cloud_diffusion_video"].includes(
+      record?.generation_kind,
+    )
+  ) {
+    return "generated_video";
+  }
+  return "unknown";
+}
+
 export function CreativeContract({ project }: { project: RecordData }) {
   const contract = project.creative_contract;
-  const methods = rows(project.shots).flatMap((shot) => [
-    shot.video?.motion_method,
-    shot.video?.generation_kind,
-    shot.video?.origin,
-    shot.generation_kind,
-  ]);
-  const provenance = project.delivery?.motion_provenance;
+  const shots = rows(project.shots);
+  const methods = shots.map((shot) => videoMotion(shot.video));
+  const delivered = project.delivery?.motion_provenance;
+  const hasDeliveredProvenance =
+    delivered != null &&
+    typeof delivered === "object" &&
+    !Array.isArray(delivered);
+  const provenance = hasDeliveredProvenance
+    ? delivered
+    : {
+        generated_video_shots: methods.filter(
+          (method) => method === "generated_video",
+        ).length,
+        still_camera_shots: methods.filter(
+          (method) => method === "still_camera",
+        ).length,
+        unknown_shots: methods.filter((method) => method === "unknown").length,
+      };
+  const hasVideoRecords = shots.some(
+    (shot) => shot.video && Object.keys(shot.video).length > 0,
+  );
   const recordedMotion = String(project.delivery?.limitations?.motion || "");
-  const still =
-    Number(provenance?.still_camera_shots) > 0 ||
-    methods.includes("still_camera") ||
-    methods.includes("procedural_camera_motion") ||
+  const historicalCameraOnly =
+    !hasDeliveredProvenance &&
+    !hasVideoRecords &&
     recordedMotion.includes("procedural_camera_motion");
-  const generated =
-    methods.some((method) =>
-      [
-        "local_diffusion_video",
-        "cloud_diffusion_video",
-        "generated_video",
-      ].includes(method),
-    ) || Number(provenance?.generated_video_shots) > 0;
+  const still = Number(provenance.still_camera_shots) > 0;
+  const generated = Number(provenance.generated_video_shots) > 0;
   const unknownShots = Number(provenance?.unknown_shots) || 0;
   const actual =
     still && generated
@@ -79,7 +105,9 @@ export function CreativeContract({ project }: { project: RecordData }) {
         ? "实际制作：静帧图片加程序运镜，未生成角色表演或口型。"
         : generated
           ? "实际制作：模型生成运动视频；动作效果以镜头预览和质检为准。"
-          : "实际制作方式：尚无可确认的镜头制作回执。";
+          : historicalCameraOnly
+            ? "历史交付说明：静帧图片加程序运镜；尚无可确认的逐镜制作回执。"
+            : "实际制作方式：尚无可确认的镜头制作回执。";
   return (
     <section className="creative-contract" aria-label="创作与制作规格">
       <div>
@@ -103,7 +131,7 @@ export function CreativeContract({ project }: { project: RecordData }) {
             仍有 {unknownShots} 镜制作方式尚未确认，不能据此确认全片的制作方式。
           </p>
         )}
-        {provenance && (
+        {(hasDeliveredProvenance || shots.length > 0) && (
           <p>
             生成视频 {provenance.generated_video_shots || 0} 镜 · 静帧运镜{" "}
             {provenance.still_camera_shots || 0} 镜 · 未知{" "}

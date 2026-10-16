@@ -208,3 +208,132 @@ it("shows delivery provenance including unknown shots without hiding camera-only
     screen.getByText("生成视频 3 镜 · 静帧运镜 1 镜 · 未知 2 镜"),
   ).toBeVisible();
 });
+
+it("treats a generated motion method without a diffusion receipt as unknown", () => {
+  render(
+    <CreativeContract
+      project={{
+        format: "animation",
+        shots: [{ video: { motion_method: "generated_video" } }],
+      }}
+    />,
+  );
+  expect(screen.getByText(/尚无可确认的镜头制作回执/)).toBeVisible();
+  expect(
+    screen.getByText("生成视频 0 镜 · 静帧运镜 0 镜 · 未知 1 镜"),
+  ).toBeVisible();
+});
+
+it.each([
+  { origin: "procedural_camera_motion", motion_method: "generated_video" },
+  {
+    generation_kind: "procedural_camera_motion",
+    motion_method: "generated_video",
+  },
+  { motion_method: "still_camera", generation_kind: "local_diffusion_video" },
+  { diffusion_video: false, generation_kind: "cloud_diffusion_video" },
+])(
+  "gives static provenance precedence over contradictory generated fields: %j",
+  (video) => {
+    render(
+      <CreativeContract
+        project={{ format: "animation", shots: [{ video }] }}
+      />,
+    );
+    expect(screen.getByText(/实际制作：静帧图片加程序运镜/)).toBeVisible();
+    expect(
+      screen.getByText("生成视频 0 镜 · 静帧运镜 1 镜 · 未知 0 镜"),
+    ).toBeVisible();
+    expect(screen.queryByText(/混合制作/)).not.toBeInTheDocument();
+  },
+);
+
+it("ignores stale top-level generation markers without a matching video receipt", () => {
+  render(
+    <CreativeContract
+      project={{
+        format: "animation",
+        shots: [
+          {
+            generation_kind: "local_diffusion_video",
+            video_url: "/media/old.mp4",
+          },
+        ],
+      }}
+    />,
+  );
+  expect(screen.getByText(/尚无可确认的镜头制作回执/)).toBeVisible();
+  expect(
+    screen.getByText("生成视频 0 镜 · 静帧运镜 0 镜 · 未知 1 镜"),
+  ).toBeVisible();
+});
+
+it("prefers delivery counts over potentially newer or conflicting project shot records", () => {
+  render(
+    <CreativeContract
+      project={{
+        format: "animation",
+        shots: [{ video: { generation_kind: "local_diffusion_video" } }],
+        delivery: {
+          motion_provenance: {
+            generated_video_shots: 0,
+            still_camera_shots: 1,
+            unknown_shots: 0,
+          },
+        },
+      }}
+    />,
+  );
+  expect(screen.getByText(/实际制作：静帧图片加程序运镜/)).toBeVisible();
+  expect(screen.queryByText(/混合制作/)).not.toBeInTheDocument();
+});
+
+it("derives partially unknown counts from actual per-shot records when delivery provenance is absent", () => {
+  render(
+    <CreativeContract
+      project={{
+        format: "animation",
+        shots: [
+          { video: { generation_kind: "local_diffusion_video" } },
+          { video: { motion_method: "generated_video" } },
+          { video: { origin: "procedural_camera_motion" } },
+        ],
+      }}
+    />,
+  );
+  expect(screen.getByText(/已确认的部分镜头：混合制作/)).toBeVisible();
+  expect(
+    screen.getByText("生成视频 1 镜 · 静帧运镜 1 镜 · 未知 1 镜"),
+  ).toBeVisible();
+});
+
+it("uses historical camera-only wording only when actual receipts and provenance are both absent", () => {
+  const { rerender } = render(
+    <CreativeContract
+      project={{
+        format: "motion_comic",
+        delivery: {
+          limitations: {
+            motion: "procedural_camera_motion; illustrated stills",
+          },
+        },
+      }}
+    />,
+  );
+  expect(screen.getByText(/历史交付说明：静帧图片加程序运镜/)).toBeVisible();
+  rerender(
+    <CreativeContract
+      project={{
+        format: "animation",
+        shots: [{ video: { generation_kind: "local_diffusion_video" } }],
+        delivery: {
+          limitations: {
+            motion: "procedural_camera_motion; illustrated stills",
+          },
+        },
+      }}
+    />,
+  );
+  expect(screen.getByText(/实际制作：模型生成运动视频/)).toBeVisible();
+  expect(screen.queryByText(/混合制作|历史交付说明/)).not.toBeInTheDocument();
+});
