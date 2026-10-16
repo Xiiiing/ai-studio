@@ -100,10 +100,14 @@ python scripts/h3_quality_smoke.py \
 
 2026-10-16 09:31:20 UTC 使用独立 transient 测试单元重试同一 768×1344、124 帧、20 步基础模型配方；其运行时上限为 14500 秒，脚本墙钟／GPU 上限为 14400／28800 秒，并将最终退出状态写入独立目录。单元只存在于 `/run/systemd/transient/`，不安装 `/etc` 单元、不 enable、不重启已有服务。该机制避免测试连接器 RPC 超时中止已授权的模型任务，同时保留进程组的有界清理。
 
+用户随后明确无需等待 GPU 长任务、已有输出即可交付，因此在最后可见 4/20 步（采样 26:19）时停止该重试，测试运行约 1991.08 秒。`user-stop.json` 与最终服务保留核验回执均已保存；自有两个进程退出、GPU 5/6 租约释放、transient 单元已回收。没有正式档视频，**768×1344／20 步完整生成未验收**，不记为通过。已有写实人物预览和 Qwen3.8 实际审核结果作为本次输出验证。
+
 这台 8×TITAN RTX 24 GiB 服务器的共享环境在每张测试卡已有约 7 GiB 占用；12 GiB 保守预留下，21.6 GB UNET 权重全部 CPU offload。TITAN 不支持本任务的原生 BF16，H3 使用 FP32 memory-efficient SDPA。当前单步速度不能当作 H3 的普遍性能，也不能据此宣称已完成正式生产吞吐优化。
 
 ### 本地集成验证
 
-接入主分支的文档与任务台更新，并在团队审核记录中保留 H3 帧数与生成参数后，1583 项 Python 测试、157 项 UI 测试、类型检查与构建通过；随后正式档任务上限和双卡预算修复通过 64 项 H3 回归检查。浏览器 73 项用例分别完成：47 项模拟 API 检查，以及修正测试解释器后的 26 项真实隔离 Python HTTP 检查，覆盖 320–1920px 和浅色／深色。早先浅色及深色各 5 项 H3 设置检查也通过，包含桌面和移动端；截图在 `runtime/h3-ui-merged-browser/`、`runtime/h3-ui-merged-dark-browser/`，最新真实 HTTP 证据在 `runtime/h3-merged-real-browser/`。
+最终集成主分支 `1fd61cf` 的团队控制和 UI 修正后，1668 项 Python 测试、180 项 UI 测试、类型检查与构建通过；最终 83 项浏览器用例通过，包含模拟 API、真实隔离 Python HTTP、320–1920px、浅色／深色和 H3 参数保存／重开。最终证据在隔离 worktree 的 `runtime/browser-report/`。较早 H3 专项的浅色及深色各 5 项桌面／手机检查也通过，截图在 `runtime/h3-ui-merged-browser/` 与 `runtime/h3-ui-merged-dark-browser/`。
 
-只读真实 mTLS 检查确认：线上仍为 `wkp-dualgpu-turbo4-v1` 及 Qwen3.6 视觉服务，新正式档被健康预检阻止，未提交生成。后续隔离正式档生成及审核结果将在验收完成后补充，本阶段不部署。
+最终命令为 `python -m pytest -q tests/test_factory_*.py`、`npm test`、`npm run build`，以及设置 `FACTORY_TEST_PYTHON` 为项目控制环境后执行 `npm run test:browser`。Python 有 4 项已知多线程 fork 弃用警告，无测试失败。此前浏览器测试误用系统解释器、缺少 PyAV 导致 fixture 启动失败，修正环境后受影响用例和最终全套均通过；不将那次未运行的用例记为通过。
+
+只读真实 mTLS 检查确认：线上仍为 `wkp-dualgpu-turbo4-v1` 及 Qwen3.6 视觉服务，新正式档被健康预检阻止，未提交生成。按用户最后要求结束额外正式档长测试，以已有预览输出完成交付；完整正式档生成仍未验收。本阶段未部署，生产 HEAD、原有四项文件修改及推理服务 PID／启动时间均与测试前一致。
