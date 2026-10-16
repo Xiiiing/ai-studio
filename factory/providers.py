@@ -55,6 +55,9 @@ PROVIDERS = {
                           "base_url_example": "http://127.0.0.1:8000/v1",
                           "response_format": "json_object", "context_validation": "conservative_estimate"},
 }
+from .provider_presets import cloud_providers, presets
+PROVIDERS.update(cloud_providers())
+
 PROFILE_FIELDS = frozenset({
     "provider", "enabled", "network_mode", "allowed_hosts", "base_url", "model",
     "context_tokens", "vision", "api_key_env", "api_key_credential", "response_format", "context_validation",
@@ -326,7 +329,7 @@ def normalize_profile(value, *, legacy=False):
     if provider not in PROVIDERS:
         raise ValueError("Unsupported model provider")
     profile["provider"] = provider
-    discovery = profile.setdefault("model_discovery", "skip" if provider == "dashscope" else "required")
+    discovery = profile.setdefault("model_discovery", PROVIDERS[provider].get("model_discovery", "required"))
     if discovery not in ("required", "skip"):
         raise ValueError("model_discovery must be required or skip")
     if discovery == "skip" and provider in ("llama_cpp", "ollama_native"):
@@ -370,6 +373,8 @@ def normalize_profile(value, *, legacy=False):
     fmt = profile.setdefault("response_format", PROVIDERS[provider]["response_format"])
     if fmt not in ("llama_json_schema", "openai_json_schema", "json_object", "prompt"):
         raise ValueError("Unsupported response_format")
+    if provider in ("anthropic", "gemini") and fmt != "prompt":
+        raise ValueError("Native text profiles require prompt output with local schema validation")
     tokenizer = profile.setdefault("context_validation", PROVIDERS[provider]["context_validation"])
     if tokenizer not in ("llama_tokenize", "conservative_estimate"):
         raise ValueError("Unsupported context_validation")
@@ -439,6 +444,9 @@ def model_route(profile, operation):
     if profile.get("provider") == "ollama_native":
         prefix = "" if urlsplit(profile["base_url"]).path.rstrip("/").endswith("/api") else "/api"
         return prefix + ("/tags" if operation == "models" else "/chat")
+    if profile.get("provider") in ("anthropic", "gemini"):
+        from .native_text import route
+        return route(profile, operation)
     return "/models" if operation == "models" else "/chat/completions"
 
 
@@ -584,6 +592,12 @@ def request_json(base, route, payload=None, timeout=30, api_key_env=None, *, pro
         if policy.get("api_key_env"):
             raise ValueError("Conflicting model authentication sources")
         headers["Authorization"] = "Bearer " + _credential_value(policy, required=True)
+    if policy.get("provider") in ("anthropic", "gemini"):
+        bearer = headers.pop("Authorization", "")
+        if bearer:
+            headers["x-api-key" if policy["provider"] == "anthropic" else "x-goog-api-key"] = bearer.removeprefix("Bearer ")
+        if policy["provider"] == "anthropic":
+            headers["anthropic-version"] = "2023-06-01"
     body = None if payload is None else _json_bytes(payload)
     if body is not None and len(body) > MAX_REQUEST_BYTES:
         raise ProviderError("request_too_large", "Model request exceeds its size limit")
@@ -678,6 +692,8 @@ def list_models(profile, *, timeout=10):
                 or not item.get("model", item.get("name")) for item in models):
             raise ProviderError("invalid_models", "Model endpoint returned an invalid model list")
         result = {"data": [{"id": item.get("model", item.get("name"))} for item in models]}
+    if profile.get("provider") == "gemini":
+        result = {"data": [{"id": item["name"].removeprefix("models/")} for item in result.get("models", []) if isinstance(item, dict) and isinstance(item.get("name"), str)]}
     data = result.get("data")
     if not isinstance(data, list) or any(not isinstance(item, dict) or
                                        not isinstance(item.get("id"), str) for item in data):
@@ -814,6 +830,9 @@ def _ollama_messages(messages):
 
 def chat_request(profile, messages, schema, role, parameters):
     """Build one protocol's request; never infer a different endpoint or model."""
+    if profile.get("provider") in ("anthropic", "gemini"):
+        from .native_text import request
+        return request(profile, messages, schema, parameters)
     fmt = response_format(profile, schema, role)
     if profile.get("provider") == "ollama_native":
         options = {"num_predict": parameters["max_tokens"], "num_ctx": profile["context_tokens"]}
@@ -841,6 +860,9 @@ def chat_request(profile, messages, schema, role, parameters):
 
 def chat_response(profile, result):
     """Normalize native Ollama telemetry while keeping the reported model intact."""
+    if profile.get("provider") in ("anthropic", "gemini"):
+        from .native_text import response
+        return response(profile, result)
     if profile.get("provider") != "ollama_native":
         return result
     message = result.get("message")
@@ -862,7 +884,8 @@ def chat_response(profile, result):
 def validate_registry(profiles, roles, base_config=None):
     """Validate a complete registry without connecting to providers or changing files."""
     from .config import ROLE_LABELS, OPTIONAL_ROLES, resolve_llm
-    if not isinstance(profiles, dict) or not 1 <= len(profiles) <= 32:
+    incomplete = (base_config or {}).get("setup_incomplete") is True
+    if not isinstance(profiles, dict) or not (0 if incomplete else 1) <= len(profiles) <= 32:
         raise ValueError("profiles must contain between 1 and 32 named connections")
     if not isinstance(roles, dict) or any(role not in ROLE_LABELS for role in roles):
         raise ValueError("roles contains an unsupported production role")
@@ -884,6 +907,8 @@ def validate_registry(profiles, roles, base_config=None):
         resolve_llm(result, role)
     # Unassigned roles retain the legacy default only when one is present and valid.
     if not (set(ROLE_LABELS) - OPTIONAL_ROLES).issubset(roles):
+        if not isinstance(result.get("llm"), dict) and incomplete:
+            return result
         if not isinstance(result.get("llm"), dict):
             raise ValueError("Assign every role or provide a valid legacy default LLM")
         legacy = normalize_profile(result["llm"], legacy=True)
@@ -910,7 +935,7 @@ def public_inventory(config=None):
                                          or _credential_available(profile)),
                "roles": [role for role, selected in current.get("llm_roles", {}).items() if selected == name]}
         rows.append(row)
-    return {**public_video_inventory(current), "revision": config_revision(current), "profiles": rows,
+    return {**public_video_inventory(current), "presets": presets(PROVIDERS), "setup_incomplete": current.get("setup_incomplete", False), "revision": config_revision(current), "profiles": rows,
             "editable_profiles": {name: redact_secrets(profile, profile) for name, profile in normalized.items()},
             "role_assignments": copy.deepcopy(current.get("llm_roles", {})),
             "roles": list_roles(current),
@@ -935,6 +960,8 @@ def probe_profile(profile_id, config=None, timeout=8):
     try:
         if not profile["enabled"]:
             result["status"] = "disabled"
+        elif profile.get("api_key_env") and not os.environ.get(profile["api_key_env"]):
+            raise ProviderError("missing_auth", "密钥环境变量尚未设置；配置后请重启 Web 与 worker")
         elif profile["model_discovery"] == "skip":
             result.update(status="unverified", message=(
                 "Configuration is valid; endpoint connectivity and model identity have not been checked"))
@@ -976,7 +1003,7 @@ def save_registry(profiles, roles, expected_revision, *, config_path=None,
             updated = validate_video_registry(video_profiles, video_roles, updated)
         else:
             from .video_providers import video_registry
-            video_registry(updated)
+            video_registry(updated, require_enabled=False)
         data = (json.dumps(updated, ensure_ascii=False, indent=2, allow_nan=False) + "\n").encode("utf-8")
         descriptor, temporary = tempfile.mkstemp(prefix="." + target.name + ".", dir=target.parent)
         try:

@@ -24,6 +24,8 @@ it("keeps the client TLS identity on its configured authority only", () => {
 function inventory() {
   return {
     revision: "config-1",
+    providers: [{id: "llama_cpp", label: "llama.cpp"}, {id: "openai_compatible", label: "兼容接口"}, {id: "ollama_native", label: "Ollama 原生"}],
+    presets: {ollama_native: {base_url: "http://127.0.0.1:11434", response_format: "openai_json_schema", model_discovery: "required"}},
     editable_profiles: {
       writer: {
         provider: "llama_cpp",
@@ -135,10 +137,10 @@ describe("实际模型设置页面", () => {
     );
     const dialog = screen.getByRole("dialog");
     await userEvent.clear(
-      within(dialog).getByRole("textbox", { name: "模型标识" }),
+      within(dialog).getByRole("combobox", { name: "模型标识" }),
     );
     await userEvent.type(
-      within(dialog).getByRole("textbox", { name: "模型标识" }),
+      within(dialog).getByRole("combobox", { name: "模型标识" }),
       "writer-b",
     );
     await userEvent.click(

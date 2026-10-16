@@ -6,6 +6,9 @@ import socket
 from http.server import ThreadingHTTPServer
 from urllib.parse import parse_qs,unquote,urlsplit
 
+from .environment import load_environment
+load_environment()
+
 from studio.core import ROOT
 from studio.http_security import HTTPError, validate_bind
 from studio.web import Handler as LocalMediaHandler

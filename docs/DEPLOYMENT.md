@@ -170,3 +170,7 @@ FACTORY_TEST_PYTHON=envs/factory/bin/python npm run test:browser
 ```
 
 Node 用于 UI 构建和开发测试，运行已构建工作台不需要它。CPU/协议测试不代表真实 GPU 视频质量验收；新模型接入后应做小规模结构化文本、视觉输入和镜头生成验证，并检查实际输出回执。
+
+### 首次配置与 API 用户
+
+初始化使用 `config/factory.empty.example.json`，保留旧安装的配置。普通 API 用户不需要安装文本模型；在工作台添加平台预设并配置私有密钥环境变量。`localhost` 始终指运行后端的机器。前台 Web、worker 和 CLI 也会读取权限为 600 的 `config/runtime.env`；已有进程环境优先，修改后重启。示例 `config/factory.example.json` 保留作为完整本地配置参考，不会自动作为新安装的已就绪连接。
