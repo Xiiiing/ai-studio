@@ -24,12 +24,20 @@ def _parent(path):
     path = Path(os.path.abspath(path))
     if any(not hasattr(os, name) for name in ("O_NOFOLLOW", "O_DIRECTORY")):
         raise ValueError("Safe local evidence IO requires POSIX no-follow support")
-    parent = os.open(path.anchor, os.O_RDONLY | os.O_DIRECTORY)
+    # Ancestors only need traversal, not directory listing permission. Ubuntu's
+    # unprivileged user namespaces allow project files but deny reading '/'.
+    traversal = getattr(os, "O_PATH", os.O_RDONLY) | os.O_DIRECTORY | os.O_NOFOLLOW
+    parent = os.open(path.anchor, traversal)
     try:
         for component in path.parts[1:-1]:
-            child = os.open(component, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent)
+            child = os.open(component, traversal, dir_fd=parent)
             os.close(parent)
             parent = child
+        # Callers may fsync this directory after an exclusive evidence write;
+        # an O_PATH descriptor itself cannot be fsynced.
+        readable = os.open(".", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent)
+        os.close(parent)
+        parent = readable
     except OSError as exc:
         os.close(parent)
         raise ValueError("Evidence path missing or contains a symlink") from exc
