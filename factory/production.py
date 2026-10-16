@@ -470,7 +470,7 @@ class _Run(SeriesProductionMixin, VideoProductionMixin, SpeechMixin, AudioEditor
                 if self.mode != "motion_comic":
                     video_review = shot.get("video", {}).get("qa", {}).get("semantic", {})
                     if (video_review.get("style_alignment", {}).get("status") != "match"
-                            or video_review.get("motion_alignment", {}).get("status") != "character_motion"):
+                            or video_review.get("motion_alignment", {}).get("status") not in {"character_motion", "object_motion"}):
                         missing.append({"shot": shot["id"], "stage": "video_style_and_motion"})
         if missing:
             raise ProductionNeedsDecision("Required semantic media reviews are not complete",

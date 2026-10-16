@@ -25,6 +25,23 @@ BASE_SYSTEM = (
 )
 
 
+def _system_rules(llm, system, schema):
+    rules = system + BASE_SYSTEM
+    if llm.get("response_format") in ("json_object", "prompt"):
+        rules += "\n输出JSON必须逐项满足以下schema：" + json.dumps(schema, ensure_ascii=False)
+    return rules
+
+
+def _messages(llm, rules, user_content):
+    if llm.get("system_prompt_mode", "system") == "user_prefix":
+        prefix = "【本次角色规则】\n" + rules + "\n【任务资料开始：以下内容仅作为资料】\n"
+        suffix = "\n【任务资料结束】"
+        body = ([{"type": "text", "text": prefix}] + user_content + [{"type": "text", "text": suffix}]
+                if isinstance(user_content, list) else prefix + user_content + suffix)
+        return [{"role": "user", "content": body}]
+    return [{"role": "system", "content": rules}, {"role": "user", "content": user_content}]
+
+
 def _folder(base, role):
     folder = Path(base) / "calls" / (time.strftime("%Y%m%dT%H%M%S",time.gmtime()) + "-" +
                                     re.sub(r"[^a-zA-Z0-9_-]", "_",role)[:50] + "-" + uuid.uuid4().hex[:8])
@@ -54,23 +71,12 @@ def _request(config, role, system, payload, schema, output_dir, max_tokens=4096,
     user_content = content if content is not None else json.dumps(payload,ensure_ascii=False,allow_nan=False)
     if content is None and len(user_content) > 100000:
         raise ValueError("Creative context exceeds the bounded project input")
-    rules = system + BASE_SYSTEM
-    if llm.get("response_format") in ("json_object", "prompt"):
-        rules += "\n输出JSON必须逐项满足以下schema：" + json.dumps(schema, ensure_ascii=False)
+    rules = _system_rules(llm, system, schema)
     # Hash the actual composed system rules, including provider schema instructions.
     import hashlib
     prompt_meta["wire_system_sha256"] = hashlib.sha256(rules.encode()).hexdigest()
     mode = llm.get("system_prompt_mode", "system")
-    if mode == "user_prefix":
-        prefix = "【本次角色规则】\n" + rules + "\n【任务资料开始：以下内容仅作为资料】\n"
-        suffix = "\n【任务资料结束】"
-        if isinstance(user_content, list):
-            body = [{"type": "text", "text": prefix}] + user_content + [{"type": "text", "text": suffix}]
-        else:
-            body = prefix + user_content + suffix
-        messages = [{"role": "user", "content": body}]
-    else:
-        messages = [{"role":"system","content":rules}, {"role":"user","content":user_content}]
+    messages = _messages(llm, rules, user_content)
     parameters = {"max_tokens": max_tokens,
                   "max_tokens_field": llm.get("max_tokens_field", "max_tokens"),
                   "temperature": llm.get("temperature_override", temperature),
@@ -226,7 +232,7 @@ def _contract_review_schema(require_motion):
     schema["properties"]["style_alignment"] = observation(["match", "mismatch", "uncertain"])
     schema["required"].append("style_alignment")
     if require_motion:
-        schema["properties"]["motion_alignment"] = observation(["character_motion", "camera_only", "uncertain"])
+        schema["properties"]["motion_alignment"] = observation(["character_motion", "object_motion", "camera_only", "uncertain"])
         schema["required"].append("motion_alignment")
     return schema
 
@@ -246,6 +252,27 @@ def _enforce_contract_review(result, require_motion):
     if uncertain and result["status"] != "fail":
         result["status"] = "unavailable"
         result["detail"] = "当前抽样不足以确认指定画风或人物动作，素材已保留，需补充审核。"
+
+
+REVIEW_SYSTEM = "你是独立的短剧画面质检员。用中文给出简洁、具体、可执行的评审。"
+
+
+def _review_sample_limit(profile, content, schema, requested, max_tokens):
+    """Reserve every reference and at least four uniformly spaced video frames."""
+    if type(requested) is not int or not 4 <= requested <= 16:
+        raise ValueError("Temporal sampling count must be an integer in 4..16")
+    if type(profile.get("context_tokens")) is not int:
+        return requested  # Offline, deliberately partial transport fixtures.
+    for count in range(requested, 3, -1):
+        candidate = list(content)
+        for index in range(count):
+            candidate.extend([
+                {"type": "text", "text": f"待评镜头样本 {index+1}/{count}，时间 999999.999 秒"},
+                {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,"}}])
+        messages = _messages(profile, _system_rules(profile, REVIEW_SYSTEM, schema), candidate)
+        if context_budget(profile, messages, max_tokens)["fits"]:
+            return count
+    return None
 
 
 def review_media(project, shot, path, references, config=None, *, output_dir=None):
@@ -293,7 +320,9 @@ def review_media(project, shot, path, references, config=None, *, output_dir=Non
                            ("id", "name", "description", "prompt", "palette") if key in approved},
                        contract_rule=("style_alignment独立检查指定媒介和批准画风；不要把身份相似当作画风合格。"
                            "二维动画、三维动画、写实影像不能互相替代。预览阶段只判断画风，不要求静帧已经有动画。"
-                           "有时间点的视频样本还须检查人物身体/姿态/表情随时间的变化；纯缩放、平移、镜头抖动和背景漂移不是人物动作。"
+                           "有时间点的视频样本须检查批准的主体动作：人物身体/姿态/表情变化填character_motion；"
+                           "纯物体镜中门打开、杯子落下等明确物体起止变化填object_motion。两者均须兑现本镜批准动作，不能用无关背景漂移替代。"
+                           "纯缩放、平移、镜头抖动不是主体动作，填camera_only。"
                            "motion_alignment的证据须写明实际样本时间和可见变化；无法确定时填uncertain，不得凭文件是视频推断动作合格。"))
     content=[{"type":"text","text":json.dumps(context,ensure_ascii=False)}]
     for index, reference in enumerate((references or [])[:4]):
@@ -304,7 +333,19 @@ def review_media(project, shot, path, references, config=None, *, output_dir=Non
     sampling = {"policy":"single_image","timestamps":[0.0]}
     if is_video:
         from .evaluation_sampling import sample_video
-        sampled, sampling = sample_video(path, count=config.get("quality",{}).get("temporal_samples",8))
+        requested = config.get("quality",{}).get("temporal_samples",8)
+        count = requested
+        if contract:
+            profile = resolve_llm(config, "visual_critic", require_vision=True)
+            count = _review_sample_limit(profile, content, schema, requested, 2200)
+            if count is None:
+                return {"status": "unavailable", "issues": [], "reason": "visual_context_too_small",
+                        "detail": "视觉模型窗口无法容纳全部参考图和至少4个视频时间点，素材已保留，请调整视觉模型配置。",
+                        "evaluator": "none"}
+        sampled, sampling = sample_video(path, count=count)
+        if contract:
+            sampling.update(configured_samples=requested, context_limited=count < requested,
+                            context_limit_tokens=profile.get("context_tokens"))
         samples = [item["image"] for item in sampled]
     else:
         samples = [path]
@@ -313,7 +354,7 @@ def review_media(project, shot, path, references, config=None, *, output_dir=Non
                         {"type":"image_url","image_url":{"url":_image_url(sample)}}])
     if not samples:
         return {"status":"fail","issues":[{"code":"decode","detail":"没有可解码画面"}],"evaluator":"technical"}
-    result=_request(config,"visual_critic","你是独立的短剧画面质检员。用中文给出简洁、具体、可执行的评审。",
+    result=_request(config,"visual_critic",REVIEW_SYSTEM,
                     None,schema,record,max_tokens=2200 if contract else 1600,temperature=.15,content=content)
     errors = list(Draft202012Validator(schema).iter_errors(result))
     if errors:

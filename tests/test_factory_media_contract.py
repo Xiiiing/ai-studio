@@ -143,7 +143,7 @@ def test_independent_style_check_receives_contract_and_can_override_high_score(t
     assert result["status"] == expected
 
 
-@pytest.mark.parametrize("observation,expected", [("character_motion", "pass"), ("camera_only", "fail"), ("uncertain", "unavailable")])
+@pytest.mark.parametrize("observation,expected", [("character_motion", "pass"), ("object_motion", "pass"), ("camera_only", "fail"), ("uncertain", "unavailable")])
 def test_video_quality_requires_observed_character_motion_not_only_frame_change(tmp_path, observation, expected):
     project = {"slug": "factory-contract-video", "format": "animation", "creative_contract": contract("anime_2d")}
     answer = {"status": "pass", "score": 99, "summary": "画面清晰", "issues": [],
@@ -208,7 +208,8 @@ def test_keyframes_do_not_need_to_complete_future_video_action(tmp_path, preview
     assert captured["shot"]["prompt"] == shot["prompt"] and result["status"] == "pass"
 
 
-def test_generated_file_and_generic_visual_pass_do_not_certify_motion(case):
+@pytest.mark.parametrize("motion", ["character_motion", "object_motion"])
+def test_generated_file_and_generic_visual_pass_do_not_certify_motion(case, motion):
     case.project.update(format="animation", creative_contract=contract("anime_2d"))
     run = _Run(case.project, case.config, case.save, None, passing_review)
     for shot in run.shots:
@@ -219,5 +220,53 @@ def test_generated_file_and_generic_visual_pass_do_not_certify_motion(case):
     assert caught.value.reason == "semantic_unavailable"
     for shot in run.shots:
         shot["video"]["qa"]["semantic"]["motion_alignment"] = {
-            "status": "character_motion", "evidence": "0到1秒可见抬手动作，与相机运动独立"}
+            "status": motion, "evidence": "0到1秒可见批准主体动作，与相机运动独立"}
     run._assert_semantic_gate()
+
+
+@pytest.mark.parametrize("mode,fmt", [("system", "llama_json_schema"), ("user_prefix", "prompt")])
+def test_temporal_review_reserves_reference_and_output_tokens(mode, fmt):
+    profile = {"context_tokens": 32768, "image_token_budget": 4096,
+               "system_prompt_mode": mode, "response_format": fmt}
+    content = [{"type": "text", "text": "Current frame expectations " * 60},
+               {"type": "image_url", "image_url": {"url": "data:image/png;base64,reference"}}]
+    count = llm._review_sample_limit(profile, content, llm._contract_review_schema(True), 8, 2200)
+    assert 4 <= count < 8
+    assert len(content) == 2 and content[-1]["image_url"]["url"].endswith("reference")
+
+
+def test_small_vision_context_preserves_media_without_a_model_call(tmp_path):
+    project = {"slug": "factory-small-context", "format": "animation", "creative_contract": contract("anime_2d")}
+    profile = {"context_tokens": 8192, "image_token_budget": 4096}
+    with patch.object(llm, "resolve_llm", return_value=profile), \
+         patch.object(llm, "_request", side_effect=AssertionError("Must not submit oversized request")), \
+         patch("factory.evaluation_sampling.sample_video", side_effect=AssertionError("No pointless decoding")):
+        result = llm.review_media(project, {"id": "S01"}, tmp_path / "existing.mp4", [],
+                                  {"quality": {"semantic_enabled": True}}, output_dir=tmp_path / "review")
+    assert result["status"] == "unavailable" and result["reason"] == "visual_context_too_small"
+
+
+def test_context_limited_sampling_is_explicit_and_keeps_uniform_endpoints(tmp_path):
+    project = {"slug": "factory-limited-context", "format": "animation", "creative_contract": contract("anime_2d")}
+    profile = {"context_tokens": 32768, "image_token_budget": 4096, "model": "fixture", "profile": "vision"}
+    reference = tmp_path / "reference.png"
+    reference.write_bytes(b"fixture reference")
+    counts = []
+    def sample(path, count):
+        counts.append(count)
+        timestamps = [3 * index / (count - 1) for index in range(count)]
+        return ([{"image": reference} for _ in timestamps],
+                {"policy": "fixture_uniform_endpoints", "requested_samples": count, "timestamps": timestamps})
+    answer = {"status": "pass", "score": 95, "summary": "动作符合批准分镜", "issues": [],
+              "style_alignment": {"status": "match", "evidence": "所有抽样保持明确的二维动画画风"},
+              "motion_alignment": {"status": "character_motion", "evidence": "0到3秒之间可见手臂抬起和玉佩上移"}}
+    with patch.object(llm, "resolve_llm", return_value=profile), \
+         patch.object(llm, "_image_url", return_value="data:image/png;base64,bW9jaw=="), \
+         patch("factory.evaluation_sampling.sample_video", side_effect=sample), \
+         patch.object(llm, "_request", return_value=answer):
+        result = llm.review_media(project, {"id": "S01"}, tmp_path / "existing.mp4", [reference],
+                                  {"quality": {"semantic_enabled": True}}, output_dir=tmp_path / "review")
+    assert 4 <= counts[0] < 8
+    assert result["sampling"]["configured_samples"] == 8 and result["sampling"]["context_limited"] is True
+    assert result["sampling"]["timestamps"][0] == 0 and result["sampling"]["timestamps"][-1] == 3
+    assert result["reference_count"] == 1 and result["status"] == "pass"
