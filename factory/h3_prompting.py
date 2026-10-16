@@ -153,6 +153,13 @@ def compile_prompt(project, shot, *, config, references, style, seconds,
             raise ValueError("Approved shot duration must be finite and bounded")
         if type(attempt) is not int or not 1 <= attempt <= 5:
             raise ValueError("H3 prompt attempt must use the bounded production attempt")
+        if shot.get("lip_sync") is True:
+            raise ProductionNeedsDecision("当前 H3 自动提示词使用外部配音与自然闭口画面，无法执行已批准的同步口型要求。",
+                                          "h3_prompt_infeasible", {"shot_id": shot.get("id")})
+        if not any(isinstance(shot.get(field), str) and shot[field].strip()
+                   for field in ("action", "motion_prompt")):
+            raise ProductionNeedsDecision("该镜头缺少已批准动作或运动说明，不能自行编造 H3 人物动作。",
+                                          "h3_prompt_infeasible", {"shot_id": shot.get("id")})
         compiler = identity(config)
         fields = ("id", "action", "continuity", "prompt", "motion_prompt", "camera_motion",
                   "characters", "cast", "reference_group", "character_states", "lip_sync",

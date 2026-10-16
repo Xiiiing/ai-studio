@@ -183,6 +183,33 @@ def test_model_identity_uses_actual_task_config_and_disabled_model_fails(monkeyp
         prompting.identity(inputs["config"])
 
 
+@pytest.mark.parametrize("config", [
+    {"llm_roles": {"storyboard_director": "missing"}, "llm_profiles": {}},
+    {"llm_roles": []},
+    {"llm": {"model": "missing-endpoint"}},
+    None,
+])
+def test_identity_invalid_configuration_is_fail_closed(config):
+    with pytest.raises(ProductionNeedsDecision) as caught:
+        prompting.identity(config)
+    assert caught.value.reason == "h3_prompt_unavailable"
+
+
+@pytest.mark.parametrize("mutation", [
+    lambda s: s.update(lip_sync=True),
+    lambda s: (s.pop("action"), s.pop("motion_prompt")),
+    lambda s: s.update(action=" ", motion_prompt=""),
+    lambda s: s.update(action=None, motion_prompt=[]),
+])
+def test_conflicting_lip_sync_or_missing_approved_motion_stops_before_model(monkeypatch, inputs, mutation):
+    mutation(inputs["shot"])
+    monkeypatch.setattr(prompting, "json_call", lambda **kw: pytest.fail("Infeasible shot reached a model"))
+    with pytest.raises(ProductionNeedsDecision) as caught:
+        prompting.compile_prompt(**inputs)
+    assert caught.value.reason == "h3_prompt_infeasible"
+    assert not inputs["output_dir"].exists()
+
+
 def test_repair_discards_negative_diagnosis_and_preserves_approved_facts(monkeypatch, inputs, plan):
     payloads = []
     def call(**kwargs):
