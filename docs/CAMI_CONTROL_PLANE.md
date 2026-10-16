@@ -49,7 +49,7 @@ LAN 入口由独立的 `scripts/wkp_live_gateway.py` 管理，本启动器只管
 
 新建控制层配置绑定 `video_generator → wkp_h3`：`provider: comfyui_h3`、`model: MiniMax-H3`。沿用 Wkp 原有 ComfyUI 双卡 H3 主模型、Qwen3-VL 编码器、视频 VAE 和 turbo4 LoRA，4 步采样，首帧图生视频，24 fps、`17k+5` 帧数。生成画布默认 352×640，保留原模板 640×352 的像素量并适配竖屏；交付仍按项目规格剪辑。生成音频不进入此图，配音继续走 Qwen3-TTS。此连接不调用 MiniMax 云 API、不产生云费用授权，也不自动回退到 Wan。
 
-**已有安装不会由 `prepare/start` 自动改写。** 2026-10-16 核实的 Wkp 运行版本仍只开放 FLUX/Wan 推理图；磁盘上的旧 H3 链路存在，不代表新入口已接通。先部署支持 H3 的推理服务版本，再执行以下只读检查：
+**已有安装不会由 `prepare/start` 自动改写。** 2026-10-16 初次核实时，Wkp 入口仅开放 FLUX/Wan 图；随后经用户授权，已发布 H3 支持、切换 cami 并通过独立真实生成及恢复验收，见 [验收记录](WKP_H3_MODEL_AUDIT.md)。其他安装切换时，先部署支持 H3 的推理服务版本，再执行以下只读检查：
 
 ```bash
 .venv/bin/python scripts/configure_wkp_h3.py
