@@ -153,8 +153,12 @@ def visual_development(state):
     if p.get("style_previews_generation") != p.get("style_generation",p["script_generation"]):
         store.update(p["id"],{"status":"visual_development","stage":"style_previews","progress":40,
                              "message":"美术正在生成三套真实视觉预览，完成后交给出品人选择。"})
-        styles=generate_style_previews(p,production_config(p,load_config()),_checkpoint(p["id"]),
-                                      lambda:store.get(p["id"],False).get("pause_requested",False))
+        config=load_config()
+        from .creative_contract import resolve as resolve_contract
+        review_options=({"semantic_evaluator":lambda proj,shot,path,refs:review_media(proj,shot,path,refs,config)}
+                        if resolve_contract(p) else {})
+        styles=generate_style_previews(p,production_config(p,config),_checkpoint(p["id"]),
+                                      lambda:store.get(p["id"],False).get("pause_requested",False), **review_options)
         patch={"style_previews_generation":p.get("style_generation",p["script_generation"]),"progress":45}
         if isinstance(styles,list):
             patch["styles"]=styles

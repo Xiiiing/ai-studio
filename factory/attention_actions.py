@@ -126,6 +126,10 @@ def validate_gate(project, gate, choice=None):
                 )
             ):
                 raise ValueError("所选方案已失效或未通过审核，请刷新后再选择")
+            if kind == "style" and project.get("creative_contract"):
+                from .media_contract import preview_contract_valid
+                if not preview_contract_valid(project, selected):
+                    raise ValueError("该视觉预览未通过当前画风要求的独立审核，请重新审核后再选择")
     if kind == "final" and project.get("delivery_complete_revision") is not None:
         if project.get("delivery_complete_revision") != version or not project.get(
             "delivery"

@@ -33,6 +33,7 @@ def plan_signature(project, shot, stage):
     return core.fingerprint({"shot": {k: shot.get(k) for k in fields},
                              "series": project.get("series_references", {}).get(shot["id"], []),
                              "style": project.get("selected_style"),
+                             **({"creative_contract": project["creative_contract"]} if "creative_contract" in project else {}),
                              "render_revision": shot.get("render_revisions", {}).get(stage, 0)})
 
 

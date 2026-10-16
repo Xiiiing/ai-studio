@@ -28,6 +28,8 @@ from .production_profiles import explicit as explicit_profile, resolve as resolv
 from .video_providers import LOCAL_PROFILE, normalize_video_profile
 from .minimax_video import video_identity, validate_video_plan
 from .quality import combine, inspect_image, inspect_video, repair_plan, semantic_review
+from .creative_contract import resolve as resolve_contract, style_prompt
+from .media_contract import video_motion
 from .scheduler import (Budget, ProductionBudgetExceeded, ProductionNeedsDecision,
                         ProductionPaused, Scheduler)
 
@@ -251,6 +253,7 @@ class _Run(SeriesProductionMixin, VideoProductionMixin, SpeechMixin, AudioEditor
         self.mode = self.project.get("format", self.project.get("mode", "motion_comic"))
         if self.mode not in ("motion_comic", "animation", "live_action"):
             raise ValueError("Unsupported production format")
+        self.creative_contract = resolve_contract(self.project)
         self.episode = copy.deepcopy(self.project.get("episode") or self.project.get("script") or {})
         if explicit_profile(self.project):
             self.episode["production_profile"] = resolve_profile(self.project)
@@ -292,6 +295,9 @@ class _Run(SeriesProductionMixin, VideoProductionMixin, SpeechMixin, AudioEditor
                                 ("Cinematic illustrated graphic novel, consistent character design, restrained color, expressive faces, vertical composition."
                                  if self.mode == "motion_comic" else
                                  "Cinematic production still, natural skin and anatomy, restrained film color, vertical composition."))
+        if self.creative_contract:
+            self.episode["creative_contract"] = copy.deepcopy(self.creative_contract)
+            self.style_prompt = style_prompt(self.project) + "\n" + self.style_prompt
         current = {s["id"]: s for s in self.project.get("shots", []) if isinstance(s, dict) and "id" in s}
         self.shots = []
         source_shots = self.episode.get("shots") or self.project.get("shots") or []
@@ -399,6 +405,13 @@ class _Run(SeriesProductionMixin, VideoProductionMixin, SpeechMixin, AudioEditor
     def _review_current(self, target, receipt):
         if not self._review_required(target):
             return True
+        if self.creative_contract:
+            if receipt.get("creative_contract_signature") != fingerprint(self.creative_contract):
+                return False
+            if target.get("style"):
+                from .media_contract import visual_direction
+                if receipt.get("visual_direction_signature") != fingerprint(visual_direction(target["style"])):
+                    return False
         return (receipt.get("qa", {}).get("semantic", {}).get("status") == "pass"
                 and receipt.get("review_signature") == target["review_signature"])
 
@@ -419,7 +432,8 @@ class _Run(SeriesProductionMixin, VideoProductionMixin, SpeechMixin, AudioEditor
             self.boundary()
             started = time.monotonic()
             answer = semantic_review(self.evaluator, self.project,
-                                     target.get("shot") or {"id": target["key"], "prompt": target["prompt"]},
+                                     target.get("shot") or target.get("review_context") or
+                                     {"id": target["key"], "prompt": target["prompt"]},
                                      path, target["references"])
             history.append({"attempt": len(history) + 1, "invocation_attempt": number,
                             "review_signature": target["review_signature"],
@@ -432,6 +446,15 @@ class _Run(SeriesProductionMixin, VideoProductionMixin, SpeechMixin, AudioEditor
         return answer
 
     def _assert_semantic_gate(self):
+        if self.creative_contract and self.creative_contract["motion"] == "generated_video":
+            missing = [shot["id"] for shot in self.shots if video_motion(shot.get("video")) != "generated_video"]
+            if missing:
+                raise ProductionNeedsDecision(
+                    "当前制作要求生成人物动作视频，静帧运镜或来源不明的片段不能替代动画。",
+                    "generated_motion_required", {"shots": missing})
+        if self.creative_contract and not self.semantic_enabled:
+            raise ProductionNeedsDecision("当前画风与动作要求需要独立视觉审核，请先启用画面质检。",
+                                          "semantic_unavailable")
         if not self.semantic_enabled:
             return
         missing = []
@@ -440,6 +463,15 @@ class _Run(SeriesProductionMixin, VideoProductionMixin, SpeechMixin, AudioEditor
                 missing.append({"shot": shot["id"], "stage": "image"})
             if self.mode != "motion_comic" and shot.get("video", {}).get("qa", {}).get("semantic", {}).get("status") != "pass":
                 missing.append({"shot": shot["id"], "stage": "video"})
+            if self.creative_contract:
+                image_review = shot.get("image", {}).get("qa", {}).get("semantic", {})
+                if image_review.get("style_alignment", {}).get("status") != "match":
+                    missing.append({"shot": shot["id"], "stage": "image_style"})
+                if self.mode != "motion_comic":
+                    video_review = shot.get("video", {}).get("qa", {}).get("semantic", {})
+                    if (video_review.get("style_alignment", {}).get("status") != "match"
+                            or video_review.get("motion_alignment", {}).get("status") != "character_motion"):
+                        missing.append({"shot": shot["id"], "stage": "video_style_and_motion"})
         if missing:
             raise ProductionNeedsDecision("Required semantic media reviews are not complete",
                                           "semantic_unavailable", {"pending": missing,
@@ -510,10 +542,17 @@ class _Run(SeriesProductionMixin, VideoProductionMixin, SpeechMixin, AudioEditor
                                  **({"render_revision": extra["shot"]["render_revisions"][kind]}
                                     if (extra.get("shot") or {}).get("render_revisions", {}).get(kind) else {}),
                                  **({"production_profile": profile_signature(self.project)} if explicit_profile(self.project) else {})})
-        shot = extra.get("shot") or {}
+        shot = extra.get("shot") or extra.get("review_context") or {}
         expected = {key: shot.get(key) for key in (
             "id", "seconds", "prompt", "motion_prompt", "dialogue", "reference_group",
             "reference_shots", "continuity", "camera_motion", "action", "cast", "characters")}
+        if self.creative_contract:
+            signature = fingerprint({"source_signature": signature, "creative_contract": self.creative_contract})
+            expected.update(creative_contract=self.creative_contract,
+                            approved_visual_style={key: self.selected_style[key] for key in
+                                ("id", "name", "description", "prompt", "palette")
+                                if self.selected_style and key in self.selected_style},
+                            visual_direction=shot.get("visual_direction"))
         review_signature = fingerprint({"source_signature": signature, "policy": self.review_policy,
                                         "expected": expected, "cast": self.cast, "format": self.mode})
         return {"key": key, "folder": folder, "prompt": prompt, "references": refs,
@@ -738,6 +777,13 @@ class _Run(SeriesProductionMixin, VideoProductionMixin, SpeechMixin, AudioEditor
                          "review_signature": target["review_signature"] if required else None,
                          "generation_kind": ("local_diffusion_image" if target["kind"] == "image" else
                                              "cloud_diffusion_video" if self._remote_video(target) else "local_diffusion_video")}
+                if target["kind"] == "video":
+                    saved.update(motion_method="generated_video", diffusion_video=True)
+                if self.creative_contract:
+                    saved["creative_contract_signature"] = fingerprint(self.creative_contract)
+                    if target.get("style"):
+                        from .media_contract import visual_direction
+                        saved["visual_direction_signature"] = fingerprint(visual_direction(target["style"]))
                 if record.get("production_profile_signature"):
                     saved.update(production_profile_signature=record["production_profile_signature"])
                 if record.get("plan_signature"):
@@ -781,6 +827,9 @@ class _Run(SeriesProductionMixin, VideoProductionMixin, SpeechMixin, AudioEditor
         return [target["selected"] for target in targets]
 
     def previews(self):
+        if self.creative_contract and (not self.semantic_enabled or self.evaluator is None):
+            raise ProductionNeedsDecision("视觉候选必须先审核是否符合指定画风，请连接并启用画面质检。",
+                                          "semantic_unavailable")
         if len(self.styles) != 3:
             raise ValueError("Visual development requires exactly three structured style candidates")
         role = resolve_profile(self.project)["characters"][0]["character_id"] if explicit_profile(self.project) else "female" if "female" in self.cast else next(iter(self.cast))
@@ -791,8 +840,16 @@ class _Run(SeriesProductionMixin, VideoProductionMixin, SpeechMixin, AudioEditor
             prompt = (str(style.get("prompt") or style.get("description") or style.get("name")) +
                       "\nHalf-body character design reference, one person, uncluttered background, no written text. " +
                       self.cast[role])
+            if self.creative_contract:
+                prompt = style_prompt(self.project) + "\n" + prompt
             targets.append(self._target("style_" + ident, self.folder / "style_previews" / ident,
-                                        prompt, style=style))
+                                        prompt, style=style,
+                                        **({"review": True, "review_context": {
+                                            "id": "style_" + ident, "prompt": prompt,
+                                            "review_purpose": "visual_direction_preview",
+                                            "visual_direction": {key: style[key] for key in
+                                                ("id", "name", "description", "prompt", "palette") if key in style}}}
+                                           if self.creative_contract else {})))
         self._render_targets(targets, "visual_previews")
         self.emit("visual_previews_complete", styles=self.styles)
         return self.styles
@@ -904,6 +961,10 @@ class _Run(SeriesProductionMixin, VideoProductionMixin, SpeechMixin, AudioEditor
         for shot in self.shots:
             image = _receipt_path(shot["image"])
             prompt = shot["motion_prompt"] + " Preserve the reference character identities, clothing, lighting and composition. Restrained natural motion and a single readable action."
+            if self.creative_contract:
+                prompt = (style_prompt(self.project) + "\n" + prompt +
+                          " Animate the character performing the approved action over time. "
+                          "Character movement must be visible independently of camera movement; do not deliver a pan over a still image.")
             if not shot.get("lip_sync"):
                 prompt += " Visible people keep relaxed closed lips; dialogue may be off-screen voiceover."
             targets.append(self._target(shot["id"], self.folder / "renders" / shot["id"],
@@ -944,8 +1005,8 @@ class _Run(SeriesProductionMixin, VideoProductionMixin, SpeechMixin, AudioEditor
         return self._delivery(mapping)
 
 
-def generate_style_previews(project, config, checkpoint, control=None):
-    run = _Run(project, config, checkpoint, control)
+def generate_style_previews(project, config, checkpoint, control=None, *, semantic_evaluator=None):
+    run = _Run(project, config, checkpoint, control, semantic_evaluator)
     try:
         return run.previews()
     finally:

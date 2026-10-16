@@ -5,6 +5,7 @@ and path helpers. GPU orchestration remains in production/scheduler.
 """
 from __future__ import annotations
 
+import copy
 import json
 import re
 import subprocess
@@ -306,6 +307,9 @@ class AudioEditorMixin:
             self.emit("lip_sync")
 
     def _delivery(self, mapping):
+        from .creative_contract import resolve as resolve_contract
+        from .media_contract import motion_provenance
+        contract = resolve_contract(self.project)
         self.emit("edit")
         revision = int(self.project.get("production_revision", 1))
         if revision < 1:
@@ -321,6 +325,7 @@ class AudioEditorMixin:
                                  "music_gain": self.config.get("music_gain", .12), "editor_version": 2,
                                  "semantic_required": self.semantic_enabled,
                                  "semantic_policy": self.review_policy if self.semantic_enabled else None,
+                                 **({"creative_contract": contract} if contract else {}),
                                  **({"production_profile": profile_signature(self.project)} if explicit_profile(self.project) else {})})
         release = self.folder / "release" / f"v{revision}-{signature[:12]}"
         manifest_file = release / "manifest.json"
@@ -389,6 +394,7 @@ class AudioEditorMixin:
                               "audio": media_receipt(mix), "subtitles": cues,
                               "edit_feedback": self.project.get("edit_feedback"),
                               "edit_plan": self.project.get("edit_plan", {}),
+                              **({"creative_contract": contract} if contract else {}),
                               **({"production_profile": resolve_profile(self.project)} if explicit_profile(self.project) else {})})
         semantics = [s.get("qa", {}).get("semantic", {}) for s in self.shots]
         semantic_status = "pass" if semantics and all(s.get("status") == "pass" for s in semantics) else "review_required"
@@ -406,6 +412,7 @@ class AudioEditorMixin:
                     "duration_seconds": duration, "fps": 24, "resolution": list(self.output_size),
                     "source_image_resolution": list(self.image_size),
                     "artifacts": artifacts, "sources": sources, "technical_qa": technical,
+                    "motion_provenance": motion_provenance(self.shots, contract["motion"] if contract else None),
                     "semantic_status": semantic_status, "budget": self.budget.snapshot(),
                     "capabilities": self.capabilities(),
                     "limitations": {
@@ -417,6 +424,8 @@ class AudioEditorMixin:
                         "subtitles": "Timing follows measured speech spans with proportional text segmentation; no forced-alignment guarantee."}}
         if explicit_profile(self.project):
             delivery.update(production_profile=resolve_profile(self.project), production_profile_signature=profile_signature(self.project))
+        if contract:
+            delivery["creative_contract"] = copy.deepcopy(contract)
         write_json(release / "manifest.json", delivery)
         self.emit("delivery_ready", delivery=delivery)
         return delivery

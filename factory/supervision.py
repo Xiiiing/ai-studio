@@ -39,6 +39,9 @@ def _current(project, complete, generation):
 
 
 def _preview_valid(project, style):
+    from .media_contract import preview_contract_valid
+    if not preview_contract_valid(project, style):
+        return False
     preview = _object(style.get("preview"))
     raw, expected = preview.get("path"), preview.get("sha256")
     if (not isinstance(raw, str) or "\\" in raw or not isinstance(expected, str)
@@ -104,6 +107,10 @@ def context_for(project, gate):
         candidate = {key: item[key][:1800] for key in fields if isinstance(item.get(key), str)}
         if kind == "style":
             candidate["preview_sha256"] = item["preview"]["sha256"]
+            if project.get("creative_contract"):
+                semantic = item["preview"]["qa"]["semantic"]
+                candidate["visual_review"] = {key: copy.deepcopy(semantic[key]) for key in
+                    ("status", "summary", "style_alignment", "issues") if key in semantic}
         candidates.append(candidate)
     if kind != "final" and not candidates:
         raise ValueError("no_verified_candidate")

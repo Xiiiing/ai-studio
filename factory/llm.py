@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import base64
+import copy
 import io
 import json
 import re
@@ -196,7 +197,8 @@ def _review_expectations(shot):
     """Keep prior verdicts and execution metadata out of independent review."""
     fields = ("id", "seconds", "dramatic_beat", "action", "location", "prompt",
               "motion_prompt", "camera_motion", "reference_group", "continuity",
-              "lip_sync", "delivery_method", "characters", "character_states", "asset_references")
+              "lip_sync", "delivery_method", "characters", "character_states", "asset_references",
+              "review_purpose", "visual_direction")
     expected = {key: shot[key] for key in fields if key in shot}
     if isinstance(shot.get("dialogue"), list):
         expected["dialogue"] = [
@@ -214,6 +216,38 @@ def _review_sequence(project):
         for item in episode.get("shots", [])[:80] if isinstance(item, dict)]
 
 
+def _contract_review_schema(require_motion):
+    schema = copy.deepcopy(REVIEW_SCHEMA)
+    def observation(states):
+        return {"type": "object", "additionalProperties": False,
+                "properties": {"status": {"type": "string", "enum": states},
+                               "evidence": {"type": "string", "minLength": 8, "maxLength": 800}},
+                "required": ["status", "evidence"]}
+    schema["properties"]["style_alignment"] = observation(["match", "mismatch", "uncertain"])
+    schema["required"].append("style_alignment")
+    if require_motion:
+        schema["properties"]["motion_alignment"] = observation(["character_motion", "camera_only", "uncertain"])
+        schema["required"].append("motion_alignment")
+    return schema
+
+
+def _enforce_contract_review(result, require_motion):
+    checks = [("style_alignment", "mismatch", "off_prompt", "画风不符合制作要求")]
+    if require_motion:
+        checks.append(("motion_alignment", "camera_only", "action", "只有相机移动，未观察到要求的人物动作"))
+    uncertain = False
+    for field, failed, code, label in checks:
+        observation = result[field]
+        if observation["status"] == failed:
+            result["status"] = "fail"
+            result["issues"].append({"code": code, "severity": "blocking",
+                                     "detail": label + "：" + observation["evidence"]})
+        uncertain |= observation["status"] == "uncertain"
+    if uncertain and result["status"] != "fail":
+        result["status"] = "unavailable"
+        result["detail"] = "当前抽样不足以确认指定画风或人物动作，素材已保留，需补充审核。"
+
+
 def review_media(project, shot, path, references, config=None, *, output_dir=None):
     from .config import load_config
     config=config or load_config()
@@ -221,7 +255,7 @@ def review_media(project, shot, path, references, config=None, *, output_dir=Non
         return {"status":"unavailable","issues":[],"reason":"semantic_review_disabled","evaluator":"none"}
     path=Path(path)
     record=Path(output_dir) if output_dir is not None else ROOT/"production"/project["slug"]/"quality"/"semantic"
-    content=[{"type":"text","text":json.dumps({
+    context={
         "任务":"评估新镜头与分镜的匹配及明确可见的严重瑕疵。先出现的是角色参考，后是带时间点的候选帧；不要把画风差异误判为同一角色身份漂移。score使用0至100整数，不是概率；问题证据应标注实际样本时间。相机运动不等于人物完成动作，有限抽样不可证明全过程正确。",
         "format":project.get("format"),"shot":_review_expectations(shot),
         "approved_sequence":_review_sequence(project),
@@ -232,14 +266,43 @@ def review_media(project, shot, path, references, config=None, *, output_dir=Non
         "note":"这是抽帧视觉语言模型评审，不是VBench，分数是模型判断，不是客观真值。",
         "project_id":project.get("id"),"production_revision":project.get("production_revision"),
         "production_profile":project.get("production_profile")
-    },ensure_ascii=False)}]
+    }
+    from .creative_contract import resolve as resolve_contract, style_prompt
+    contract = resolve_contract(project)
+    is_video = path.suffix.lower() in {".mp4", ".webm", ".mov"}
+    require_motion = bool(contract and is_video and contract["motion"] == "generated_video")
+    schema = _contract_review_schema(require_motion) if contract else REVIEW_SCHEMA
+    if contract:
+        if not is_video and contract["motion"] == "generated_video":
+            context["shot"].pop("action", None)
+            context["shot"].pop("motion_prompt", None)
+            context["任务"] = (
+                "本次只评静态起始关键帧，不是完整视频。根据prompt检查指定画风、人物、衣装、构图和初始道具状态。"
+                "图片不需要已经完成整个动作，不得因为未抬手、未走到终点或没有发生位移而阻断；人物动作将在视频阶段独立审核。")
+        if shot.get("review_purpose") == "visual_direction_preview":
+            context["approved_sequence"] = []
+            context["shot"] = {key: context["shot"][key] for key in
+                ("id", "prompt", "review_purpose", "visual_direction") if key in context["shot"]}
+            context["任务"] = "本次只审核画风候选静帧是否符合指定媒介和候选设计，检查明显画面崩坏；不审核剧情动作是否已完成。"
+        selected = project.get("selected_style")
+        approved = selected if isinstance(selected, dict) else next(
+            (value for value in project.get("styles", []) if value.get("id") == selected), {})
+        approved = shot.get("visual_direction") or approved
+        context.update(creative_contract=contract, requested_art=style_prompt(project),
+                       approved_visual_style={key: approved[key] for key in
+                           ("id", "name", "description", "prompt", "palette") if key in approved},
+                       contract_rule=("style_alignment独立检查指定媒介和批准画风；不要把身份相似当作画风合格。"
+                           "二维动画、三维动画、写实影像不能互相替代。预览阶段只判断画风，不要求静帧已经有动画。"
+                           "有时间点的视频样本还须检查人物身体/姿态/表情随时间的变化；纯缩放、平移、镜头抖动和背景漂移不是人物动作。"
+                           "motion_alignment的证据须写明实际样本时间和可见变化；无法确定时填uncertain，不得凭文件是视频推断动作合格。"))
+    content=[{"type":"text","text":json.dumps(context,ensure_ascii=False)}]
     for index, reference in enumerate((references or [])[:4]):
         ref=reference.get("path") if isinstance(reference,dict) else reference
         if ref and Path(ref).is_file():
             content.extend([{"type":"text","text":f"角色或场景参考 {index+1}"},
                             {"type":"image_url","image_url":{"url":_image_url(ref)}}])
     sampling = {"policy":"single_image","timestamps":[0.0]}
-    if path.suffix.lower() in {".mp4",".webm",".mov"}:
+    if is_video:
         from .evaluation_sampling import sample_video
         sampled, sampling = sample_video(path, count=config.get("quality",{}).get("temporal_samples",8))
         samples = [item["image"] for item in sampled]
@@ -251,13 +314,15 @@ def review_media(project, shot, path, references, config=None, *, output_dir=Non
     if not samples:
         return {"status":"fail","issues":[{"code":"decode","detail":"没有可解码画面"}],"evaluator":"technical"}
     result=_request(config,"visual_critic","你是独立的短剧画面质检员。用中文给出简洁、具体、可执行的评审。",
-                    None,REVIEW_SCHEMA,record,max_tokens=1600,temperature=.15,content=content)
-    errors = list(Draft202012Validator(REVIEW_SCHEMA).iter_errors(result))
+                    None,schema,record,max_tokens=2200 if contract else 1600,temperature=.15,content=content)
+    errors = list(Draft202012Validator(schema).iter_errors(result))
     if errors:
         raise ValueError("VLM result does not match the visual review contract")
     blocking=[issue for issue in result["issues"] if issue["severity"]=="blocking"]
     if blocking or result["score"] < config.get("quality",{}).get("minimum_score",60):
         result["status"]="fail"
+    if contract:
+        _enforce_contract_review(result, require_motion)
     selected_model = resolve_llm(config, "visual_critic", require_vision=True)
     result.update(evaluator="vlm_sampled_frames",model=selected_model["model"],
                   profile=selected_model["profile"],endpoint=selected_model.get("base_url"),
