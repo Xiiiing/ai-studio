@@ -479,11 +479,15 @@ class Scheduler:
                 yield worker
             return
         minimum = self.min_free if min_free is None else int(min_free)
+        reserve_vram = self.config.get("h3_reserve_vram_gib", 8) if h3 else self.config.get("reserve_vram_gib", 1.5)
+        if h3 and (isinstance(reserve_vram, bool) or not isinstance(reserve_vram, (int, float)) or
+                   not math.isfinite(reserve_vram) or not 8 <= reserve_vram <= 20):
+            raise ValueError("H3 reserved VRAM must be a finite number within 8..20 GiB")
         def create(card, probe, check, heartbeat):
             cards = card if h3 else [card]
             return FactoryComfyWorker(cards, self.port + cards[0], tag, min_free=minimum,
                                       startup_timeout=self.budget.timeout(240, len(cards)),
-                                      reserve_vram=8 if h3 else self.config.get("reserve_vram_gib", 1.5),
+                                      reserve_vram=reserve_vram,
                                       resource_probe=probe, resource_check=check,
                                       resource_heartbeat=heartbeat, **({"h3": True} if h3 else {}))
         with self._acquire("comfy_h3" if h3 else "comfy", control, minimum, create,
