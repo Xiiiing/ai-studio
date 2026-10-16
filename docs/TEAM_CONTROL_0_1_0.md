@@ -83,3 +83,17 @@ SQLite 增加 `team_control`、`team_work_items`、`team_unit_attempts`。备份
 ![手机深色部门负责人安排](images/team-0-1-0/leadership-dark-mobile.png)
 
 ![已应用的安排与管理任务证据](images/team-0-1-0/leadership-plan-light-desktop.png)
+
+
+## 最终集成验证
+
+实现沿实时 main 同步已合并的 UI #35 与阶段一 #39；阶段二 #41 以 main 为目标，阶段三以阶段二分支为比较基线，依次合入。未混入 #34，未合并或部署后续 PR。
+
+- 全量 `python -m pytest -q tests/test_factory_*.py`：1570 项通过。之后对规划占用时保存恢复版本的修复，在阶段二分支跑 45 项控制/合成生产测试，在最终集成分支跑 180 项团队/Prompt/模型路由测试，均通过。
+- `npm test`：165 项通过；`npm run build`：类型检查与生产构建通过。
+- `TEST_PORT=18789 npm run test:browser`：73 项 Chromium 场景通过，包含真实 Python loopback HTTP、桌面/手机浅深主题、键盘焦点、错误重试、草稿和媒体播放保持。已实际检查本页截图。
+- 实际模拟生产证明高优先级镜头先完成其依赖，镜头时间线顺序不变；暂停镜头后其余镜头可继续，恢复复用已完成成果。
+- 实际模拟生产证明逐句配音重做保留锁定首帧及视频的路径/SHA，其他配音回执不变，不新增图像生成；相关语义检查允许复查原画面。
+- 已登记的异步任务从持久化供应商日志恢复，只下载原任务；旧成果进入 superseded 尝试，不成为当前选片。规划模型输出缓存之后中断，再恢复不重复请求或应用；解除冲突之后中断也不重复增加任务版本。
+
+以上使用独立数据库、CPU 合成媒体和模拟模型/供应商。真实 Qwen3.8、Qwen3-TTS、MiniMax 与 Wkp 生产服务器验证尚未进行，费用授权、预算增加和终片确认仍由出品人决定。
