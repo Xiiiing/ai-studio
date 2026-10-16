@@ -3,8 +3,10 @@
 Comfy Kitchen 0.2.26 retains a full INT32 GEMM result and all scaled chunks,
 then allocates a second complete output with cat(). On TITAN this can exceed
 VRAM even when every model weight is offloaded. Each activation row is
-independent: invoking the unchanged upstream operation on bounded row slices
-retains ConvRot, quantization, integer accumulation, scaling and bias order.
+independent after preprocessing. Keep activation/ConvRot at their original
+full shape (CUDA half GEMM rounding depends on that shape), then invoke the
+unchanged upstream operation on bounded row slices for integer accumulation,
+scaling and bias.
 Only the owned H3 Comfy subprocess registers this adapter.
 """
 from functools import wraps
@@ -36,6 +38,22 @@ def row_chunked(original, *, max_rows=1024, scratch_bytes=64 * 1024 * 1024):
                   "convrot_groupsize": convrot_groupsize, "input_act": input_act}
         if rows <= chunk_rows:
             return original(x, weight, weight_scale, **kwargs)
+        # ConvRot's half-precision Hadamard GEMM must retain its original shape:
+        # rotating individual chunks can change CUDA accumulation/rounding.
+        # Reuse the helpers referenced by this exact upstream implementation.
+        if convrot or input_act not in (None, "none"):
+            helpers = original.__globals__
+            required = ("_apply_input_act", "_build_hadamard", "_rotate_activation")
+            if any(not callable(helpers.get(name)) for name in required):
+                raise RuntimeError("H3 INT8 adapter requires verified upstream preprocessing helpers")
+            x = helpers["_apply_input_act"](x, input_act)
+            if convrot:
+                if x.shape[-1] % convrot_groupsize:
+                    raise ValueError("ConvRot group size must divide input features")
+                hadamard = helpers["_build_hadamard"](convrot_groupsize, device=x.device, dtype=x.dtype)
+                x = helpers["_rotate_activation"](x, hadamard, convrot_groupsize)
+            flat = x.reshape(-1, x.shape[-1])
+            kwargs.update(convrot=False, input_act=None)
         output = x.new_empty((rows, columns), dtype=out_dtype)
         for start in range(0, rows, chunk_rows):
             stop = min(rows, start + chunk_rows)

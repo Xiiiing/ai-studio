@@ -17,18 +17,32 @@ class Array(np.ndarray):
         return np.empty(shape, dtype=dtype).view(Array)
 
 
+def _apply_input_act(x, input_act):
+    if input_act == "swiglu":
+        gate, up = np.split(x, 2, axis=-1)
+        return ((gate / (1 + np.exp(-gate))) * up).view(Array)
+    return x
+
+
+def _build_hadamard(size, *, device, dtype):
+    h = np.ones((1, 1), dtype=dtype)
+    while len(h) < size:
+        h = np.block([[h, h], [h, -h]])
+    return h
+
+
+def _rotate_activation(x, h, size):
+    return (x.reshape(-1, size) @ h / np.sqrt(size)).reshape(x.shape).view(Array)
+
+
 def reference(x, weight, weight_scale, bias=None, out_dtype=np.float16,
               convrot=False, convrot_groupsize=256, input_act=None):
     """Independent row-local INT8 reference including rotation and fused activation."""
-    x = np.asarray(x)
-    if input_act == "swiglu":
-        gate, up = np.split(x, 2, axis=-1)
-        x = (gate / (1 + np.exp(-gate))) * up
+    x = np.asarray(x).view(Array)
+    x = _apply_input_act(x, input_act)
     if convrot:
-        h = np.ones((1, 1), dtype=x.dtype)
-        while len(h) < convrot_groupsize:
-            h = np.block([[h, h], [h, -h]])
-        x = (x.reshape(-1, convrot_groupsize) @ h / np.sqrt(convrot_groupsize)).reshape(x.shape)
+        h = _build_hadamard(convrot_groupsize, device=x.device, dtype=x.dtype)
+        x = _rotate_activation(x, h, convrot_groupsize)
     scale = np.maximum(np.max(np.abs(x), axis=-1, keepdims=True) / 127, 1e-30)
     q = np.clip(np.rint(x / scale), -128, 127).astype(np.int8)
     accumulated = q.astype(np.int32) @ weight.astype(np.int32).T
@@ -85,6 +99,15 @@ def test_backend_registration_preserves_other_operations_constraints_and_is_idem
     assert registrations[0][1].other is untouched
     assert registrations[0][2] == constraints
     assert implementations["int8_linear"] is not reference
+
+
+def test_convrot_keeps_original_full_shape_before_chunking(monkeypatch):
+    shapes = []
+    rotate = _rotate_activation
+    monkeypatch.setitem(reference.__globals__, "_rotate_activation", lambda x, h, size: shapes.append(x.shape) or rotate(x, h, size))
+    x = np.ones((2, 19, 8), dtype=np.float32).view(Array)
+    adapter.row_chunked(reference, max_rows=7)(x, np.ones((11, 8), dtype=np.int8), np.ones(1), convrot=True, convrot_groupsize=4)
+    assert shapes == [(2, 19, 8)]
 
 
 def test_future_backend_signature_fails_explicitly():
