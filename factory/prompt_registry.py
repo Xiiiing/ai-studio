@@ -87,7 +87,7 @@ def load_prompt(role, version=None, *, root=None):
         raise ValueError("Prompt responsibility is required")
     references = item["output_schema_refs"]
     if (not isinstance(references, list) or not references
-            or any(not isinstance(ref, str) or not re.fullmatch(r"factory\.[a-z_]+:[A-Za-z_]+", ref)
+                or any(not isinstance(ref, str) or not re.fullmatch(r"factory\.[a-z][a-z0-9_]*:[A-Za-z_]+", ref)
                    for ref in references)):
         raise ValueError("Prompt output schema references are required")
     inputs = item["input_schema"]
