@@ -124,17 +124,23 @@ export function Modal({
   onClose: () => void;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
+  const titleId = useId();
   useEffect(() => {
     const d = ref.current;
+    const previous = document.activeElement as HTMLElement | null;
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
     d?.showModal();
     return () => {
       d?.close();
+      document.body.style.overflow = overflow;
+      if (previous?.isConnected) previous.focus({ preventScroll: true });
     };
   }, []);
   return (
-    <dialog ref={ref} id={id} onCancel={onClose}>
+    <dialog ref={ref} id={id} aria-labelledby={titleId} onCancel={onClose}>
       <header className="dialog-head">
-        <h2>{title}</h2>
+        <h2 id={titleId}>{title}</h2>
         <button
           type="button"
           className="icon-button"
