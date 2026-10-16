@@ -126,13 +126,9 @@ def test_prepare_builds_empty_isolated_control_plane_without_migrating_any_old_d
     assert current["production"]["gpu_cards"] == [4, 5, 6, 7]
     assert current["production"]["gpu_service"]["base_url"] == "https://172.20.114.10:8790/inference"
     source = json.loads(EXAMPLE.read_text())
-    for key in ("image_width", "image_height", "output_width", "output_height"):
+    for key in ("image_width", "image_height", "output_width", "output_height", "video_profile"):
         assert current["production"][key] == source["production"][key]
-    assert current["production"]["video_profile"] == "h3_turbo4"
-    assert (current["production"]["video_width"], current["production"]["video_height"]) == (352, 640)
-    assert set(current["video_profiles"]) == {"wkp_h3"}
-    assert current["video_roles"] == {"video_generator": "wkp_h3"}
-    assert current["video_profiles"]["wkp_h3"]["provider"] == "comfyui_h3"
+    assert set(current["video_profiles"]) == {"local_wan"}
     assert current["llm_roles"]["executive_producer"] == "primary"
     assert current["llm_roles"]["independent_critic"] == current["llm_roles"]["story_critic"] == "critic"
     assert current["llm_roles"]["visual_critic"] == "vision"

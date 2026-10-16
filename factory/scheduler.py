@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import contextlib
 import fcntl
-import json
 import math
 import os
 import socket
@@ -226,25 +225,19 @@ class StartupLock:
 class FactoryComfyWorker(ComfyWorker):
     """Existing Comfy API adapter with a configurable, verified free-memory gate."""
     def __init__(self, cards, port, tag, min_free=15000, startup_timeout=240, reserve_vram=1.5,
-                 resource_probe=None, resource_check=None, resource_heartbeat=None, h3=False):
+                 resource_probe=None, resource_check=None, resource_heartbeat=None):
         super().__init__(cards, port, tag, precision="fp16")
         self.min_free = int(min_free)
         self.startup_timeout = float(startup_timeout)
         self.reserve_vram = float(reserve_vram)
         self.resource_probe = resource_probe
         self.resource_check, self.resource_heartbeat = resource_check, resource_heartbeat
-        self.h3 = h3
-        if h3 and len(self.cards) != 2:
-            raise ValueError("MiniMax H3 requires exactly two reserved GPUs")
 
     def __enter__(self):
         with StartupLock(self.startup_timeout, self.resource_check, self.resource_heartbeat):
             return self._start()
 
     def _start(self):
-        if self.h3:
-            from studio.h3 import require_installation
-            require_installation()
         with socket.socket() as sock:
             if sock.connect_ex(("127.0.0.1", self.port)) == 0:
                 raise ProductionPaused("The configured Comfy port is already in use; its service was preserved",
@@ -259,10 +252,6 @@ class FactoryComfyWorker(ComfyWorker):
                              "\n  diffusion_models: diffusion_models\n  text_encoders: text_encoders"
                              "\n  vae: vae\n  loras: loras\n  upscale_models: upscale_models"
                              "\n  custom_nodes: ../nodes\n", encoding="utf-8")
-            if self.h3:
-                from studio.h3 import lora_directory
-                with extra.open("a", encoding="utf-8") as stream:
-                    stream.write("h3_existing_lora:\n  base_path: " + json.dumps(str(lora_directory())) + "\n  loras: .\n")
             env = os.environ.copy()
             env.update(CUDA_VISIBLE_DEVICES=",".join(map(str, self.cards)),
                        OMP_NUM_THREADS="6", MKL_NUM_THREADS="6", PYTHONUNBUFFERED="1")
@@ -276,11 +265,8 @@ class FactoryComfyWorker(ComfyWorker):
                     "--input-directory", str(self.folder / "input"),
                     "--temp-directory", str(self.folder / "temp"),
                     "--user-directory", str(self.folder / "user"),
-                    "--database-url", "sqlite:///" + str(self.folder / "comfyui.db")]
-            if self.h3:
-                argv += ["--disable-smart-memory"]
-            else:
-                argv += ["--fp16-unet", "--fp16-text-enc", "--fp32-vae"]
+                    "--database-url", "sqlite:///" + str(self.folder / "comfyui.db"),
+                    "--fp16-unet", "--fp16-text-enc", "--fp32-vae"]
             self.log = (self.folder / "comfy.log").open("a")
             self.child = subprocess.Popen(argv, cwd=COMFY, env=env, stdout=self.log,
                                           stderr=subprocess.STDOUT)
@@ -408,12 +394,10 @@ class Scheduler:
             time.sleep(min(1.0, max(0, until - time.monotonic()), max(0, self.budget.remaining())))
         self._check(context, control)
 
-    def choose_card(self, min_free=None, control=None, _context=None, count=1):
+    def choose_card(self, min_free=None, control=None, _context=None):
         if self.remote:
             raise ProductionNeedsDecision("GPU card selection belongs to Wkp inference service", "remote_gpu_local_lease_forbidden")
         minimum = self.min_free if min_free is None else int(min_free)
-        if count > len(self.cards):
-            raise ProductionNeedsDecision("MiniMax H3 requires two configured GPU cards", "h3_gpu_pair_missing")
         context = _context or self._context(minimum, "gpu_selection")
         while True:
             self._check(context, control)
@@ -428,12 +412,11 @@ class Scheduler:
             rotated = self.cards[self.cursor:] + self.cards[:self.cursor]
             candidates = [card for card in rotated if card in snapshot and snapshot[card]["free_mib"] >= minimum
                           and snapshot[card]["utilization"] < 10]
-            if len(candidates) >= count:
-                selected = candidates[:count]
-                self.cursor = (self.cards.index(selected[-1]) + 1) % len(self.cards)
-                self._resource_event(context, "ready", "gpu_candidate_ready", force=True,
-                                     selected_gpu=selected[0], selected_gpus=selected)
-                return selected[0] if count == 1 else selected
+            if candidates:
+                card = candidates[0]
+                self.cursor = (self.cards.index(card) + 1) % len(self.cards)
+                self._resource_event(context, "ready", "gpu_candidate_ready", force=True, selected_gpu=card)
+                return card
             self._delay(context, control, "gpu_busy")
 
     @staticmethod
@@ -444,14 +427,14 @@ class Scheduler:
                                                      ("is occupied", "leased by another", "port is already in use"))
 
     @contextlib.contextmanager
-    def _acquire(self, stage, control, minimum, create, gpu_count=1):
+    def _acquire(self, stage, control, minimum, create):
         context = self._context(minimum, stage)
         while True:
             self._check(context, control)
-            card = self.choose_card(minimum, control, _context=context, **({"count": gpu_count} if gpu_count != 1 else {}))
+            card = self.choose_card(minimum, control, _context=context)
             stack = contextlib.ExitStack()
             try:
-                stack.enter_context(self.budget.gpu_operation(gpu_count))
+                stack.enter_context(self.budget.gpu_operation())
                 manager = create(card,
                                  lambda cards: self._probe(context, cards, control, leased=True),
                                  lambda: self._check(context, control),
@@ -472,7 +455,7 @@ class Scheduler:
             return
 
     @contextlib.contextmanager
-    def worker(self, tag, control=None, min_free=None, *, h3=False):
+    def worker(self, tag, control=None, min_free=None):
         if self.config.get("gpu_service"):
             from .gpu_client import RemoteComfyWorker
             with RemoteComfyWorker(self.config["gpu_service"],self.budget,tag,control,self.event_callback) as worker:
@@ -480,14 +463,12 @@ class Scheduler:
             return
         minimum = self.min_free if min_free is None else int(min_free)
         def create(card, probe, check, heartbeat):
-            cards = card if h3 else [card]
-            return FactoryComfyWorker(cards, self.port + cards[0], tag, min_free=minimum,
-                                      startup_timeout=self.budget.timeout(240, len(cards)),
-                                      reserve_vram=8 if h3 else self.config.get("reserve_vram_gib", 1.5),
+            return FactoryComfyWorker([card], self.port + card, tag, min_free=minimum,
+                                      startup_timeout=self.budget.timeout(240, 1),
+                                      reserve_vram=self.config.get("reserve_vram_gib", 1.5),
                                       resource_probe=probe, resource_check=check,
-                                      resource_heartbeat=heartbeat, **({"h3": True} if h3 else {}))
-        with self._acquire("comfy_h3" if h3 else "comfy", control, minimum, create,
-                           **({"gpu_count": 2} if h3 else {})) as (_, worker):
+                                      resource_heartbeat=heartbeat)
+        with self._acquire("comfy", control, minimum, create) as (_, worker):
             yield worker
 
     @contextlib.contextmanager

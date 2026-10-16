@@ -165,7 +165,7 @@ def local_kinds(config):
     video = config.get('video_connection') or resolve_video(config, require_enabled=False)
     remote = bool(production.get('gpu_service'))
     return {kind: bool(p.get('enabled', True)) and (p['provider'] in {'comfyui_local', 'qwen_tts_local'} or
-             (p['provider'] in {'legacy', 'comfyui_wan', 'comfyui_h3'} and not remote))
+             (p['provider'] in {'legacy', 'comfyui_wan'} and not remote))
             for kind, p in [('image', image), ('audio', audio), ('video', video)]}
 
 

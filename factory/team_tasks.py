@@ -168,6 +168,8 @@ def tracked_node(stage, function):
     @wraps(function)
     def execute(state):
         token = begin(state["project_id"], stage)
+        from .team_ledger import begin_unit, finish_unit
+        ledger_token = begin_unit(state["project_id"], "stage", stage, input_version=token["input_signature"])
         from .execution_context import current_execution
         context_token = current_execution.set({"project_id": state["project_id"], "stage": stage,
                                                 "run_id": token["run_id"]})
@@ -181,6 +183,7 @@ def tracked_node(stage, function):
                           "failed" if isinstance(exc, Exception) else "interrupted")
             try:
                 finish(state["project_id"], stage, token["run_id"], status, error_type=type(exc).__name__)
+                finish_unit(ledger_token, status=status if status in {"blocked", "paused", "waiting", "failed"} else "failed", details={"error_type": type(exc).__name__})
             except Exception:
                 logging.getLogger(__name__).exception("Team audit failed; original task error is preserved")
             raise
@@ -188,6 +191,7 @@ def tracked_node(stage, function):
             current_execution.reset(context_token)
         status = "skipped" if isinstance(result,dict) and result.get("skipped") else ("waiting" if stage == "production" and isinstance(result, dict) and result.get("route") == "revision" else "succeeded")
         finish(state["project_id"], stage, token["run_id"], status)
+        finish_unit(ledger_token, status="waiting" if status == "waiting" else "completed", details={"completion_semantics": COMPLETION, "skipped": status == "skipped"})
         return result
     return execute
 

@@ -120,22 +120,3 @@ test("video API presets provide a model ID and environment name", async ({
     page.locator('#model-dialog input[name="api_key_env"]'),
   ).toHaveValue("MINIMAX_API_KEY");
 });
-
-test("ComfyUI H3 saves as a server workflow without cloud API credentials", async ({ page, request }) => {
-  await models(page);
-  await page.locator('[data-model-action="video-add"]').click();
-  await page.locator('#model-dialog input[name="id"]').fill("wkp_h3");
-  await page.locator('#model-dialog select[name="provider"]').selectOption("comfyui_h3");
-  await expect(page.locator('#model-dialog input[name="model"]')).toHaveValue("MiniMax-H3");
-  await expect(page.locator('#model-dialog input[name="api_key_env"]')).toHaveCount(0);
-  await page.locator('#model-dialog button[type="submit"]').click();
-  await page.locator('#role-video-video_generator').selectOption("wkp_h3");
-  await expect(page.getByText(/ComfyUI \/ MiniMax H3 双 GPU 工作流/)).toBeVisible();
-  await page.locator('[data-model-action="save"]').click();
-  const calls = await (await request.get("/__test/calls")).json();
-  const saved = calls.find(c => c.path === "/api/factory/models" && c.method === "POST").body;
-  expect(saved.video_roles.video_generator).toBe("wkp_h3");
-  expect(saved.video_profiles.wkp_h3).toMatchObject({ provider: "comfyui_h3", model: "MiniMax-H3" });
-  expect(saved.video_profiles.wkp_h3).not.toHaveProperty("api_key_env");
-  expect(calls.some(c => c.path.includes("video_generation") || c.path.includes("/inference/jobs"))).toBeFalsy();
-});

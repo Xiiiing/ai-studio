@@ -54,6 +54,7 @@ import {
   Artifact,
 } from "./ui";
 import { Workflow, Team } from "./Workflow";
+import { TeamConsole, TeamOverview } from "./TeamConsole";
 import { DecisionCenter, ActionForm } from "./Decisions";
 import { ReviewAutomation } from "./ReviewAssistance";
 import { Shots, Series, Costs } from "./Assets";
@@ -1269,6 +1270,7 @@ function Project({
           {tab === "overview" ? (
             <>
               <CreativeContract project={p} compact />
+              <TeamOverview projectId={id} onOpen={() => onTab("team")} />
               <div className="project-context">
                 <article>
                   <small>当前阶段</small>
@@ -1444,18 +1446,20 @@ function Project({
                     : null
                 }
               />
-              <Team
-                flow={actualFlow}
-                onInspect={(step, execution) => {
-                  setSelectedFlowNode(step);
-                  setSelectedExecution(execution || "");
-                  onTab("overview");
-                }}
-                graph={graph}
-                models={models}
-                projectRevision={p.revision}
-                onOpen={onTab}
-              />
+              <TeamConsole projectId={id}>
+                <Team
+                  flow={actualFlow}
+                  onInspect={(step, execution) => {
+                    setSelectedFlowNode(step);
+                    setSelectedExecution(execution || "");
+                    onTab("overview");
+                  }}
+                  graph={graph}
+                  models={models}
+                  projectRevision={p.revision}
+                  onOpen={onTab}
+                />
+              </TeamConsole>
             </>
           ) : tab === "shots" ? (
             <Shots project={p} notify={notify} initialShot={selectedShot} />

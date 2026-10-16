@@ -17,10 +17,8 @@ import subprocess
 import tempfile
 import time
 import urllib.request
-import sys
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
 WORKSPACE = ROOT / "runtime/cami-studio"
 TLS_AREA = ROOT / "runtime/wkp-live-gateway"
 UNITS = ("ai-studio-web.service", "ai-studio-worker.service")
@@ -174,11 +172,9 @@ def new_configuration(paths):
     value["production"]["gpu_service"] = {"base_url": WKP, "ca_file": str(paths["CAMI_WKP_TLS_CA"]),
                                           "client_cert": str(paths["CAMI_WKP_TLS_CERT"]),
                                           "client_key": str(paths["CAMI_WKP_TLS_KEY"])}
-    # The original Wkp H3 chain is a ComfyUI graph, not the MiniMax cloud API.
-    from factory.video_providers import H3_PROFILE
-    value["video_profiles"] = {"wkp_h3": copy.deepcopy(H3_PROFILE)}
-    value["video_roles"] = {"video_generator": "wkp_h3"}
-    value["production"].update(video_profile="h3_turbo4", video_width=352, video_height=640)
+    # Keep the existing local-Wan contract; the GPU service owns its actual execution.
+    value["video_profiles"] = {"local_wan": copy.deepcopy(value["video_profiles"]["local_wan"])}
+    value["video_roles"] = {"video_generator": "local_wan"}
     return value
 
 

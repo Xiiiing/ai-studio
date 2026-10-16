@@ -392,18 +392,6 @@ describe("实际模型设置页面", () => {
     ).toBeDisabled();
   });
 
-  it("shows the selected ComfyUI H3 chain and explains the visual-review requirement", async () => {
-    const { update } = setup();
-    await screen.findByText("writer-a");
-    update({
-      video_profiles: { wkp_h3: { provider: "comfyui_h3", model: "MiniMax-H3", enabled: true } },
-      video_roles: { video_generator: "wkp_h3" },
-      video_providers: [{ id: "comfyui_h3", label: "ComfyUI / MiniMax H3" }],
-    });
-    expect(await screen.findByText(/ComfyUI \/ MiniMax H3 双 GPU 工作流/)).toBeVisible();
-    expect(screen.getByText(/视觉审核需要支持图片输入的模型/)).toBeVisible();
-    expect(screen.queryByText("Wan2.2-TI2V-5B")).not.toBeInTheDocument();
-  });
   it("保存连接编辑保留高级参数，保存之前禁用目录检测", async () => {
     const { calls } = setup();
     await screen.findByText("writer-a");

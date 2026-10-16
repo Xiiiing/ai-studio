@@ -13,10 +13,12 @@ import re
 import shutil
 import subprocess
 import time
+from contextlib import nullcontext
 from pathlib import Path
 
 from studio.core import ROOT, fingerprint, media_receipt, read_json, sha256, within, write_json
-from studio.graphs import flux_image, wan_video, h3_video
+from studio.graphs import flux_image, wan_video
+from . import team_ledger
 from .audio_editor import AudioEditorMixin
 from .speech import SpeechMixin
 from .media_profiles import identity as media_identity
@@ -179,9 +181,6 @@ def capabilities(config=None):
         connection = config.get(kind + "_connection", {})
         if connection.get("provider", "legacy") not in {"legacy", "comfyui_wan"}:
             info[key].update(backend=connection.get("model"),provider=connection["provider"],installed=None,configured=connection.get("enabled",True),validation="requires_successful_generation_receipt")
-            if connection["provider"] == "comfyui_h3" and not config.get("gpu_service"):
-                from studio.h3 import installation
-                info[key]["installed"] = installation()["installed"]
     if not any(local.values()): info["scheduler"]["physical_cards"] = []
     return info
 
@@ -490,6 +489,41 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                 records.append(record)
         return records
 
+    def _team_target(self, target):
+        """Map actual renderer targets to stable production work, excluding previews."""
+        if target.get("style") is not None:
+            return None
+        if target.get("character"):
+            return "character", str(target["character"])
+        shot = target.get("shot")
+        if shot is not None:
+            return target["kind"], str(shot["id"])
+        return None
+
+    def _team_begin_target(self, target, record):
+        identity = self._team_target(target)
+        if identity is None:
+            return
+        key = (*identity, record["take"])
+        tokens = self.__dict__.setdefault("_team_generation_tokens", {})
+        if key not in tokens:
+            tokens[key] = team_ledger.begin_unit(
+                self.ident, *identity, input_version=target["signature"],
+                inputs={"prompt": record["prompt"], "references": record.get("references", []),
+                        "parameters": record.get("parameters", {}), "take": record["take"]})
+
+    def _team_review_unit(self, target, record, receipt):
+        identity = self._team_target(target)
+        if identity is None:
+            return nullcontext(None)
+        kind, scope = identity
+        review_kind = "video_review" if kind == "video" else "image_review"
+        return team_ledger.unit(self.ident, review_kind, scope,
+                                input_version=target["review_signature"],
+                                dependencies=[f"{kind}:{scope}"],
+                                inputs={"artifact": receipt, "take": record["take"],
+                                        "semantic_required": self._review_required(target)})
+
     def _save_attempt(self, target, record):
         record = copy.deepcopy(record)
         record.pop("_file", None)
@@ -502,6 +536,14 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
             rows[:] = [r for r in rows if not (r.get("stage") == record["stage"] and
                                                r.get("take") == record["take"])]
             rows.append(public)
+        identity = self._team_target(target)
+        if identity is not None and (record.get("output") or record.get("state") == "failed"):
+            token = self.__dict__.get("_team_generation_tokens", {}).pop((*identity, record["take"]), None)
+            if token:
+                team_ledger.finish_unit(token, status="completed" if record.get("output") else "failed",
+                                        artifact=record.get("output"), model=record.get("model"),
+                                        details={key: record[key] for key in
+                                                 ("error", "elapsed_seconds", "remote_task", "repair") if key in record})
 
     def _attach(self, target, record):
         path = _receipt_path(record)
@@ -539,8 +581,7 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                                  **({"connection": media_identity(self.video_connection)} if kind == "video" and self.video_connection.get("provider") in {"comfyui_local", "comfyui_external"} else {}),
                                  "model": ("FLUX.2-klein-4B" if kind == "image" else
                                            video_identity(self.video_connection) if self.video_connection["provider"] == "minimax"
-                                           else self.video_connection["model"]),
-                                 **({"connection": media_identity(self.video_connection)} if kind == "video" and self.video_connection["provider"] == "comfyui_h3" else {}),
+                                           else "Wan2.2-TI2V-5B"),
                                  "seconds": extra.get("seconds"),
                                  "mode": self.mode, "profile": self.config.get("video_profile", "quality"),
                                  **({"asset_references": extra["asset_references"]} if extra.get("asset_references") else {}),
@@ -645,10 +686,6 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                                  "steps": 4 if target["kind"] == "image" else 20},
                   "references": [media_receipt(p) for p in target["references"]],
                   "started_at": time.time()}
-        if target["kind"] == "video" and self.video_connection["provider"] == "comfyui_h3":
-            from studio.h3 import frame_count, REVISION
-            record.update(provider="comfyui_h3", profile=self.video_connection["profile"], model_revision=REVISION)
-            record["parameters"].update(steps=4, frames=frame_count(target["seconds"]), gpu_count=2)
         if explicit_profile(self.project):
             record["production_profile"] = resolve_profile(self.project)
             record["production_profile_signature"] = profile_signature(self.project)
@@ -664,6 +701,7 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                           parameters={"duration": self.video_connection["duration"],
                                       "resolution": self.video_connection["resolution"],
                                       "timeline_seconds": target.get("seconds"), "timeline_fps": 24})
+        self._team_begin_target(target, record)
         self._save_attempt(target, record)
         return record
 
@@ -674,6 +712,11 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
         for target in targets:
             selected = self._valid_selection(target)
             if selected and self._review_current(target, selected):
+                identity = self._team_target(target)
+                if identity:
+                    team_ledger.mark_reused(self.ident, *identity, artifact=selected,
+                                            input_version=target["signature"],
+                                            review_status=selected.get("qa", {}).get("status"))
                 self._attach(target, selected)
             else:
                 if selected:
@@ -688,6 +731,8 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                 if candidate:
                     ready.append((target, *candidate))
                 else:
+                    if target.get("resume_attempt"):
+                        self._team_begin_target(target, target["resume_attempt"])
                     generate.append(target)
             from .bound_media import uses_bound, render_targets
             bound = [target for target in generate if uses_bound(self, target)]
@@ -700,8 +745,7 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
             generate = [target for target in generate if not self._remote_video(target)]
             if generate:
                 self.boundary(gpu=True)
-                h3 = self.video_connection["provider"] == "comfyui_h3" and any(t["kind"] == "video" for t in generate)
-                with self.scheduler.worker(self.slug + "_" + phase, self.control, **({"h3": True} if h3 else {})) as worker:
+                with self.scheduler.worker(self.slug + "_" + phase, self.control) as worker:
                     for target in generate:
                         self.boundary(gpu=True)
                         record = target.pop("resume_attempt", None) or self._new_attempt(target)
@@ -739,12 +783,11 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                                     record["repair_keyframe"] = media_receipt(repair_path, technical_qa=image_qa)
                                     names[0] = worker.copy_input(repair_path)
                                 profile = None
-                                if not h3 and self.config.get("video_profile") == "fastwan":
+                                if self.config.get("video_profile") == "fastwan":
                                     profile = read_json(ROOT / "workflows/fastwan_profile.json")
-                                builder = h3_video if h3 else wan_video
-                                graph = builder(record["prompt"], record["seed"], names[0],
+                                graph = wan_video(record["prompt"], record["seed"], names[0],
                                                   *self.video_size, seconds=target["seconds"],
-                                                  prefix=self.slug + "/" + target["key"], **({} if h3 else {"profile": profile}))
+                                                  prefix=self.slug + "/" + target["key"], profile=profile)
                             path = worker.execute(graph, target["folder"] / record["take"], target["kind"],
                                                   timeout=self.budget.timeout(1800 if target["kind"] == "image" else 7200, 1))
                             receipt = read_json(path.parent / "result.json")
@@ -764,81 +807,79 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
             # The owned Comfy process and its GPU lease are closed before VLM evaluation.
             semantic_pending = []
             for target, record, receipt in ready:
-                self.boundary()
-                path = _receipt_path(receipt)
-                shot = target.get("shot")
-                if shot is not None:
-                    shot["status"] = "reviewing"
-                self.emit("quality_review")
-                if target["kind"] == "image":
-                    technical = inspect_image(path, self.image_size)
-                else:
-                    if self.video_connection["provider"] == "comfyui_h3":
-                        from studio.h3 import frame_count
-                        frames = frame_count(target["seconds"])
+                with self._team_review_unit(target, record, receipt) as review_token:
+                    self.boundary()
+                    path = _receipt_path(receipt)
+                    shot = target.get("shot")
+                    if shot is not None:
+                        shot["status"] = "reviewing"
+                    self.emit("quality_review")
+                    if target["kind"] == "image":
+                        technical = inspect_image(path, self.image_size)
                     else:
                         frames = round(target["seconds"] * 24)
                         while frames % 4 != 1:
                             frames += 1
-                    expected_seconds = target["seconds"] if self._remote_video(target) or uses_bound(self, target) else frames / 24
-                    technical = inspect_video(path, expected_seconds, self.video_size)
-                required = self._review_required(target)
-                semantic = None
-                if required and technical["status"] == "pass":
-                    semantic = self._semantic_assessment(target, record, path)
-                qa = combine(technical, semantic, semantic_required=required)
-                awaiting_review = qa["technical_passed"] and required and semantic.get("status") not in ("pass", "fail")
-                state = "semantic_pending" if awaiting_review else "passed" if qa["eligible_for_selection"] else "failed"
-                record.update(qa=qa, state=state, finished_at=time.time(),
-                              review_signature=target["review_signature"] if required else None)
-                saved = {**receipt, "source_signature": target["signature"], "qa": qa,
-                         "attempt": record["attempt"], "take": record["take"],
-                         "review_signature": target["review_signature"] if required else None,
-                         "generation_kind": ("local_diffusion_image" if target["kind"] == "image" else
-                                             "cloud_diffusion_video" if self._remote_video(target) else "local_diffusion_video")}
-                if target["kind"] == "video":
-                    saved.update(motion_method="generated_video", diffusion_video=True)
-                    if self.video_connection["provider"] == "comfyui_h3":
-                        from studio.h3 import MODEL, REVISION
-                        saved.update(provider="comfyui_h3", model=MODEL, model_revision=REVISION)
-                if self.creative_contract:
-                    saved["creative_contract_signature"] = fingerprint(self.creative_contract)
-                    if target.get("style"):
-                        from .media_contract import visual_direction
-                        saved["visual_direction_signature"] = fingerprint(visual_direction(target["style"]))
-                if record.get("production_profile_signature"):
-                    saved.update(production_profile_signature=record["production_profile_signature"])
-                if record.get("plan_signature"):
-                    saved.update(plan_signature=record["plan_signature"], shot_revision=record.get("shot_revision"),
-                                 production_revision=record.get("production_revision"))
-                if target.get("asset_references"):
-                    saved["asset_references"] = copy.deepcopy(target["asset_references"])
-                    record["output"] = copy.deepcopy(saved)
-                write_json(path.parent / "result.json", saved)
-                self._save_attempt(target, record)
-                selection_file = target["folder"] / "selected.json"
-                if qa["eligible_for_selection"]:
-                    write_json(selection_file, saved)
-                    self._attach(target, saved)
-                    (target["folder"] / "pending_review.json").unlink(missing_ok=True)
-                else:
-                    # Retain the actual media and its receipt, but withdraw stale automatic approval.
-                    if selection_file.exists() and read_json(selection_file).get("sha256") == saved["sha256"]:
-                        selection_file.unlink()
-                    if receipt.get("producer_selection"):
-                        raise ProductionNeedsDecision("人工选定素材未通过当前复核，请重新审片；原文件保留", "manual_selection_review")
-                    if shot is not None:
-                        shot["qa"] = qa
-                        shot["status"] = "reviewing" if awaiting_review else "retrying"
-                        shot[target["kind"] + "_candidate"] = saved
-                        shot[target["kind"] + "_path"] = saved["path"]
-                        shot[target["kind"] + "_url"] = media_url(path)
-                    if awaiting_review:
-                        write_json(target["folder"] / "pending_review.json", saved)
-                        semantic_pending.append({"asset": target["key"], "stage": target["kind"],
-                                                 "path": saved["path"], "take": saved["take"],
-                                                 "detail": semantic.get("detail")})
-                self.emit(phase)
+                        expected_seconds = target["seconds"] if self._remote_video(target) or uses_bound(self, target) else frames / 24
+                        technical = inspect_video(path, expected_seconds, self.video_size)
+                    required = self._review_required(target)
+                    semantic = None
+                    if required and technical["status"] == "pass":
+                        semantic = self._semantic_assessment(target, record, path)
+                    qa = combine(technical, semantic, semantic_required=required)
+                    awaiting_review = qa["technical_passed"] and required and semantic.get("status") not in ("pass", "fail")
+                    state = "semantic_pending" if awaiting_review else "passed" if qa["eligible_for_selection"] else "failed"
+                    team_ledger.finish_unit(review_token, artifact=receipt,
+                                            review_status=qa["status"],
+                                            model=self.config.get("semantic_model") if required else "technical_checks",
+                                            details={"qa": qa, "semantic_attempts": record.get("semantic_attempts", [])})
+                    record.update(qa=qa, state=state, finished_at=time.time(),
+                                  review_signature=target["review_signature"] if required else None)
+                    saved = {**receipt, "source_signature": target["signature"], "qa": qa,
+                             "attempt": record["attempt"], "take": record["take"],
+                             "review_signature": target["review_signature"] if required else None,
+                             "generation_kind": ("local_diffusion_image" if target["kind"] == "image" else
+                                                 "cloud_diffusion_video" if self._remote_video(target) else "local_diffusion_video")}
+                    if target["kind"] == "video":
+                        saved.update(motion_method="generated_video", diffusion_video=True)
+                    if self.creative_contract:
+                        saved["creative_contract_signature"] = fingerprint(self.creative_contract)
+                        if target.get("style"):
+                            from .media_contract import visual_direction
+                            saved["visual_direction_signature"] = fingerprint(visual_direction(target["style"]))
+                    if record.get("production_profile_signature"):
+                        saved.update(production_profile_signature=record["production_profile_signature"])
+                    if record.get("plan_signature"):
+                        saved.update(plan_signature=record["plan_signature"], shot_revision=record.get("shot_revision"),
+                                     production_revision=record.get("production_revision"))
+                    if target.get("asset_references"):
+                        saved["asset_references"] = copy.deepcopy(target["asset_references"])
+                        record["output"] = copy.deepcopy(saved)
+                    write_json(path.parent / "result.json", saved)
+                    self._save_attempt(target, record)
+                    selection_file = target["folder"] / "selected.json"
+                    if qa["eligible_for_selection"]:
+                        write_json(selection_file, saved)
+                        self._attach(target, saved)
+                        (target["folder"] / "pending_review.json").unlink(missing_ok=True)
+                    else:
+                        # Retain the actual media and its receipt, but withdraw stale automatic approval.
+                        if selection_file.exists() and read_json(selection_file).get("sha256") == saved["sha256"]:
+                            selection_file.unlink()
+                        if receipt.get("producer_selection"):
+                            raise ProductionNeedsDecision("人工选定素材未通过当前复核，请重新审片；原文件保留", "manual_selection_review")
+                        if shot is not None:
+                            shot["qa"] = qa
+                            shot["status"] = "reviewing" if awaiting_review else "retrying"
+                            shot[target["kind"] + "_candidate"] = saved
+                            shot[target["kind"] + "_path"] = saved["path"]
+                            shot[target["kind"] + "_url"] = media_url(path)
+                        if awaiting_review:
+                            write_json(target["folder"] / "pending_review.json", saved)
+                            semantic_pending.append({"asset": target["key"], "stage": target["kind"],
+                                                     "path": saved["path"], "take": saved["take"],
+                                                     "detail": semantic.get("detail")})
+                    self.emit(phase)
             if semantic_pending:
                 self.emit("semantic_review_pending")
                 raise ProductionNeedsDecision("The semantic reviewer is unavailable; generated media is preserved for review-only resume",
@@ -922,6 +963,9 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
             references = [preview] if role == preview_role else []
             approved = self._material_character(role) or self._series_character(role)
             if approved:
+                team_ledger.mark_reused(self.ident, "character", role, artifact=approved,
+                                        input_version=approved.get("source_signature"),
+                                        review_status=approved.get("qa", {}).get("status"))
                 self.assets["characters"][role] = approved
                 continue
             identity = ("Preserve the exact face, age, hairstyle, clothing and visual design of the person in the approved reference image. "
