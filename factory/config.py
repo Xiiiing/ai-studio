@@ -135,7 +135,8 @@ def config_read_path():
     target = config_write_path()
     if target.is_file() or os.environ.get("DRAMA_FACTORY_CONFIG"):
         return target
-    return ROOT / "config/factory.example.json"
+    empty = ROOT / "config/factory.empty.example.json"
+    return empty if empty.is_file() else ROOT / "config/factory.example.json"
 
 
 def load_config():

@@ -9,12 +9,14 @@ MEDIA_PROVIDERS = {
     'legacy': {'label': '沿用现有制作环境'},
     'comfyui_local': {'label': '应用管理的 ComfyUI'},
     'comfyui_external': {'label': '自己的 ComfyUI 服务'},
+    'dashscope_image': {'label': '百炼图像 API'},
+    'dashscope_tts': {'label': '百炼语音 API'},
     'qwen_tts_local': {'label': '本地 Qwen3-TTS'},
 }
 COMMON = {'provider', 'enabled', 'model', 'revision', 'base_url', 'network_mode', 'allowed_hosts',
           'api_key_env', 'tls_ca_file_env', 'tls_client_cert_env', 'tls_client_key_env',
           'workflow_template', 'reference_templates', 'model_files', 'python_path', 'model_dir', 'voices',
-          'request_timeout_seconds', 'pricing', 'download_hosts', 'max_download_bytes'}
+          'default_voice', 'language', 'request_timeout_seconds', 'pricing', 'download_hosts', 'max_download_bytes'}
 
 
 def normalize_media(value, kind):
@@ -22,7 +24,8 @@ def normalize_media(value, kind):
         raise ValueError('制作连接包含不支持的字段')
     _reject_secret_fields(value)
     p = copy.deepcopy(value)
-    valid = {'legacy', 'comfyui_local', 'comfyui_external'} if kind in {'image', 'video'} else {'legacy', 'qwen_tts_local'}
+    valid = {'legacy', 'comfyui_local', 'comfyui_external'} if kind in {'image', 'video'} else {'legacy', 'qwen_tts_local', 'dashscope_tts'}
+    if kind == 'image': valid.add('dashscope_image')
     if p.get('provider') not in valid:
         raise ValueError('不支持的制作供应商')
     p.setdefault('enabled', True)
@@ -31,12 +34,27 @@ def normalize_media(value, kind):
     p.setdefault('request_timeout_seconds', 120)
     if type(p['request_timeout_seconds']) is not int or not 1 <= p['request_timeout_seconds'] <= 600:
         raise ValueError('制作接口超时应为1至600秒')
-    if p['provider'] == 'comfyui_external':
-        p.setdefault('network_mode', 'loopback'); p.setdefault('allowed_hosts', [])
+    if p['provider'] in {'comfyui_external', 'dashscope_image', 'dashscope_tts'}:
+        p.setdefault('network_mode', 'remote' if p['provider'].startswith('dashscope_') else 'loopback'); p.setdefault('allowed_hosts', [])
         p['base_url'] = validate_endpoint(p)
     env = p.get('api_key_env')
     if env and (not isinstance(env, str) or not ENV_RE.fullmatch(env)):
         raise ValueError('请填写密钥环境变量名称')
+    if p['provider'].startswith('dashscope_'):
+        if not env: raise ValueError('云端制作需要密钥环境变量名称')
+        from .cloud_budget import pricing
+        quote = pricing(p.get('pricing'))
+        p['pricing'] = {k:quote[k] for k in ('unit_cost_micros','currency','source')}
+        p.setdefault('download_hosts', [])
+        if not isinstance(p['download_hosts'],list) or len(p['download_hosts'])>16: raise ValueError('下载主机列表无效')
+        from .providers import _canonical_host
+        p['download_hosts'] = [_canonical_host(host) for host in p['download_hosts']]
+        p.setdefault('max_download_bytes',256*1024*1024)
+        if type(p['max_download_bytes']) is not int or not 1 <= p['max_download_bytes'] <= 1024*1024*1024: raise ValueError('下载大小限制无效')
+        if p['provider']=='dashscope_image' and p['model'] not in {'qwen-image-3.0-pro','qwen-image-3.0','qwen-image-2.1-pro','qwen-image-2.1-turbo'}: raise ValueError('该图像适配器支持百炼 Qwen Image 2.1／3.0 系列')
+        if p['provider']=='dashscope_tts':
+            p.setdefault('default_voice','Cherry'); p.setdefault('language','Chinese')
+            _valid_text(p['default_voice'],'voice',128); _valid_text(p['language'],'language',64)
     for field in ('python_path', 'model_dir'):
         if field in p and (not isinstance(p[field], str) or not Path(p[field]).is_absolute()):
             raise ValueError(field + ' 必须是绝对路径')
@@ -96,9 +114,12 @@ def inventory(config):
         'audio': {'qwen_tts_local': {'provider': 'qwen_tts_local', 'model': 'Qwen3-TTS', 'enabled': True}},
         'video': {'comfyui_local': {'provider': 'comfyui_local', 'model': 'Wan2.2-TI2V-5B', 'enabled': True},
                   'comfyui_external': {'provider': 'comfyui_external', 'model': 'Wan2.2-TI2V-5B', 'enabled': True, 'base_url': 'http://127.0.0.1:8188', 'network_mode': 'loopback', 'allowed_hosts': []}}}}
+    result['media_presets']['image']['dashscope_image'] = {'provider':'dashscope_image','model':'qwen-image-2.1-pro','enabled':True,'network_mode':'remote','allowed_hosts':['dashscope.aliyuncs.com'],'base_url':'https://dashscope.aliyuncs.com/compatible-mode/v1','api_key_env':'DASHSCOPE_API_KEY'}
+    result['media_presets']['audio']['dashscope_tts'] = {'provider':'dashscope_tts','model':'qwen3-tts-flash','enabled':True,'network_mode':'remote','allowed_hosts':['dashscope.aliyuncs.com'],'base_url':'https://dashscope.aliyuncs.com/api/v1','api_key_env':'DASHSCOPE_API_KEY','default_voice':'Cherry','language':'Chinese','voices':{'female':'Cherry','male':'Ethan','narrator':'Cherry'}}
     for kind in KINDS:
         profiles, roles = registry(config, kind)
         result.update({kind + '_profiles': profiles, kind + '_roles': roles})
+    result["readiness"] = readiness(config)
     return result
 
 
@@ -133,3 +154,34 @@ def probe(profile, kind):
         if not python.is_file() or not (model / 'download_receipt.json').is_file():
             result.update(status='error', message='缺少本地 TTS 运行环境或模型来源回执')
     return result
+
+
+def local_kinds(config):
+    """Only selected, enabled local engines need local model/GPU discovery."""
+    production = config.get('production', config)
+    image = config.get('image_connection') or resolve(config, 'image')
+    audio = config.get('audio_connection') or resolve(config, 'audio')
+    from .video_providers import resolve_video
+    video = config.get('video_connection') or resolve_video(config, require_enabled=False)
+    remote = bool(production.get('gpu_service'))
+    return {kind: bool(p.get('enabled', True)) and (p['provider'] in {'comfyui_local', 'qwen_tts_local'} or
+             (p['provider'] in {'legacy', 'comfyui_wan'} and not remote))
+            for kind, p in [('image', image), ('audio', audio), ('video', video)]}
+
+
+def readiness(config):
+    import os
+    from .config import ROLE_LABELS, OPTIONAL_ROLES, resolve_llm
+    missing=[]
+    for role,label in ROLE_LABELS.items():
+        if role in OPTIONAL_ROLES: continue
+        try:
+            p=resolve_llm(config,role)
+            if not p.get("enabled",True): missing.append(label+"连接已停用")
+            elif p.get("api_key_env") and not os.environ.get(p["api_key_env"]): missing.append(label+"缺少密钥环境变量 "+p["api_key_env"])
+        except ValueError: missing.append(label+"尚未配置")
+    for kind,label in (("image","图像"),("audio","配音")):
+        p=resolve(config,kind)
+        if not p["enabled"]: missing.append(label+"连接尚未启用")
+        elif p.get("api_key_env") and not os.environ.get(p["api_key_env"]): missing.append(label+"缺少密钥环境变量 "+p["api_key_env"])
+    return {"missing":list(dict.fromkeys(missing)),"generation_verified":False,"message":"配置检查不代表生成能力验收；真人／动画路线还需要视频连接"}

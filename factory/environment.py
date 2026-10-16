@@ -7,8 +7,10 @@ import stat
 
 
 def load_environment(path=None):
-    from studio.core import ROOT
-    target = Path(path) if path is not None else ROOT / "config/runtime.env"
+    # Do not import studio.core here: it resolves model/lock paths from the
+    # environment during import, so the file must be loaded first.
+    root = Path(__file__).resolve().parents[1]
+    target = Path(path) if path is not None else root / "config/runtime.env"
     try:
         fd = os.open(target, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
     except FileNotFoundError:

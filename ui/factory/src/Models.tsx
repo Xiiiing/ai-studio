@@ -19,28 +19,6 @@ import {
   Badge,
   Loading,
 } from "./ui";
-const videoDefaults: RecordData = {
-  comfyui_wan: {
-    provider: "comfyui_wan",
-    enabled: true,
-    model: "Wan2.2-TI2V-5B",
-  },
-  minimax: {
-    provider: "minimax",
-    enabled: true,
-    model: "",
-    base_url: "https://api.minimax.io/v1",
-    network_mode: "remote",
-    api_key_env: "MINIMAX_API_KEY",
-    allowed_hosts: ["api.minimax.io"],
-    download_hosts: [],
-    duration: 6,
-    resolution: "768P",
-    poll_interval_seconds: 5,
-    request_timeout_seconds: 60,
-    max_wait_seconds: 1800,
-  },
-};
 const split = (v: any) =>
   String(v || "")
     .split(",")
@@ -59,6 +37,7 @@ export function normalizeProfile(
     enabled: values.enabled === "on",
   };
   delete out.discovered_models;
+  delete out.id;
   if (video) {
     if (provider === "minimax")
       Object.assign(out, {
@@ -98,10 +77,18 @@ export function normalizeProfile(
   });
   try {
     if (new URL(previous.base_url).origin !== new URL(out.base_url).origin)
-      for (const key of ["tls_ca_file_env", "tls_client_cert_env", "tls_client_key_env"])
+      for (const key of [
+        "tls_ca_file_env",
+        "tls_client_cert_env",
+        "tls_client_key_env",
+      ])
         delete out[key];
   } catch {
-    for (const key of ["tls_ca_file_env", "tls_client_cert_env", "tls_client_key_env"])
+    for (const key of [
+      "tls_ca_file_env",
+      "tls_client_cert_env",
+      "tls_client_key_env",
+    ])
       delete out[key];
   }
   if (values.thinking === "true" || values.thinking === "false")
@@ -120,8 +107,18 @@ export function normalizeProfile(
 function makeDraft(data: RecordData) {
   return {
     profiles: structuredClone(data.editable_profiles || {}),
-    ...(data.image_profiles ? {image_profiles: structuredClone(data.image_profiles), image_roles: {...data.image_roles}} : {}),
-    ...(data.audio_profiles ? {audio_profiles: structuredClone(data.audio_profiles), audio_roles: {...data.audio_roles}} : {}),
+    ...(data.image_profiles
+      ? {
+          image_profiles: structuredClone(data.image_profiles),
+          image_roles: { ...data.image_roles },
+        }
+      : {}),
+    ...(data.audio_profiles
+      ? {
+          audio_profiles: structuredClone(data.audio_profiles),
+          audio_roles: { ...data.audio_roles },
+        }
+      : {}),
     roles: {
       ...Object.fromEntries(
         rows(data.roles).map((r) => [r.role, r.profile || ""]),
@@ -157,9 +154,28 @@ export function Models({ notify }: { notify: (v: string) => void }) {
     ),
     [probes, setProbes] = useState<RecordData>({}),
     [probing, setProbing] = useState("");
+  const [setupMode, setSetupMode] = useState("api");
+  const setupInitialized = useRef(false);
   const generation = useRef(0);
   useEffect(() => {
     if (query.data && !dirty) {
+      if (!setupInitialized.current) {
+        const connections = [
+          ...Object.values(query.data.editable_profiles || {}),
+          ...Object.values(query.data.image_profiles || {}),
+          ...Object.values(query.data.audio_profiles || {}),
+          ...Object.values(query.data.video_profiles || {}),
+        ] as RecordData[];
+        const kinds = new Set(
+          connections
+            .filter((p) => p.enabled !== false)
+            .map((p) => (p.network_mode === "remote" ? "api" : "local")),
+        );
+        setSetupMode(
+          kinds.size > 1 ? "mixed" : kinds.has("local") ? "local" : "api",
+        );
+        setupInitialized.current = true;
+      }
       setDraft(makeDraft(query.data));
       setBase(query.data.revision);
       setProbes({});
@@ -186,7 +202,9 @@ export function Models({ notify }: { notify: (v: string) => void }) {
     setSaving(true);
     setError("");
     try {
-      const roles = Object.fromEntries(Object.entries(draft.roles).filter(([, value]) => value !== ""));
+      const roles = Object.fromEntries(
+        Object.entries(draft.roles).filter(([, value]) => value !== ""),
+      );
       if (roles.executive_producer === "") delete roles.executive_producer;
       const result = await request("/models", {
         ...draft,
@@ -227,8 +245,9 @@ export function Models({ notify }: { notify: (v: string) => void }) {
     }
   }
   const inventory = query.data;
-  const providers = Object.fromEntries(rows(inventory?.providers).map((p) => [p.id, p.label]));
-  const [setupMode, setSetupMode] = useState("api");
+  const providers = Object.fromEntries(
+    rows(inventory?.providers).map((p) => [p.id, p.label]),
+  );
   if (!draft || !inventory)
     return (
       <>
@@ -238,8 +257,12 @@ export function Models({ notify }: { notify: (v: string) => void }) {
       </>
     );
   const profileCards = (video: boolean) =>
-    Object.entries(video ? draft.video_profiles || {} : draft.profiles).filter(([, p]: [string, any]) => !video || !["comfyui_local", "comfyui_external"].includes(p.provider)).map(
-      ([id, p]: [string, any]) => {
+    Object.entries(video ? draft.video_profiles || {} : draft.profiles)
+      .filter(
+        ([, p]: [string, any]) =>
+          !video || !["comfyui_local", "comfyui_external"].includes(p.provider),
+      )
+      .map(([id, p]: [string, any]) => {
         const result = probes[(video ? "video:" : "") + id];
         const observed = !video
           ? rows(inventory.profiles).find((entry) => entry.id === id)
@@ -338,8 +361,7 @@ export function Models({ notify }: { notify: (v: string) => void }) {
             </div>
           </article>
         );
-      },
-    );
+      });
   const assignments = (video: boolean) =>
     Object.entries(video ? draft.video_roles || {} : draft.roles).map(
       ([r, value]) => {
@@ -420,18 +442,62 @@ export function Models({ notify }: { notify: (v: string) => void }) {
           与视频服务在已配置的服务器运行。这里登记接口和环境变量名称；连接测试不会生成素材。
         </p>
       </div>
-      <Panel title="接入向导" description="连接使用你自己的模型或购买的 API。密钥保存在 config/runtime.env，修改后重启 Web 和 worker。">
-        <Field label="使用方式"><select value={setupMode} onChange={(e) => setSetupMode(e.target.value)}>
-          <option value="api">购买 API（无需 GPU）</option><option value="local">本地模型</option><option value="mixed">混合使用</option>
-        </select></Field>
-        <p>先添加连接，再分配下方角色并保存。{setupMode !== "api" && "localhost 指运行 AI Studio 后端的机器。"}</p>
-        <p role="status">尚未分配：{rows(inventory.roles).filter((r) => !r.optional && !draft.roles[r.role]).map((r) => r.label || roleName(r.role)).join("、") || "文本角色已分配；请测试连接并检查制作能力"}</p>
-        <div className="button-row"><button className="button" onClick={() => {
-          const entries = Object.entries(draft.profiles) as [string, any][];
-          const text = entries.find(([, p]) => p.enabled !== false);
-          const vision = entries.find(([, p]) => p.enabled !== false && p.vision);
-          change((d) => ({...d, roles: {...d.roles, ...Object.fromEntries(rows(inventory.roles).filter((r) => !r.optional).map((r) => [r.role, (r.requires_vision ? vision : text)?.[0] || ""]))}}));
-        }}>应用基础角色分工</button></div>
+      <Panel
+        title="接入向导"
+        description="连接使用你自己的模型或购买的 API。密钥保存在 config/runtime.env，修改后重启 Web 和 worker。"
+      >
+        <Field label="使用方式">
+          <select
+            value={setupMode}
+            onChange={(e) => setSetupMode(e.target.value)}
+          >
+            <option value="api">购买 API（无需 GPU）</option>
+            <option value="local">本地模型</option>
+            <option value="mixed">混合使用</option>
+          </select>
+        </Field>
+        <p>
+          选择引导方式后添加连接，再分配角色并保存；制作按下方分工执行。
+          {setupMode !== "api" && "localhost 指运行 AI Studio 后端的机器。"}
+        </p>
+        <p role="status">
+          尚未分配：
+          {rows(inventory.roles)
+            .filter((r) => !r.optional && !draft.roles[r.role])
+            .map((r) => r.label || roleName(r.role))
+            .join("、") || "文本角色已分配；请测试连接并检查制作能力"}
+        </p>
+        {(inventory.readiness?.missing || []).length > 0 && (
+          <p role="status">{inventory.readiness.missing.join("；")}</p>
+        )}
+        <div className="button-row">
+          <button
+            className="button"
+            onClick={() => {
+              const entries = Object.entries(draft.profiles) as [string, any][];
+              const text = entries.find(([, p]) => p.enabled !== false);
+              const vision = entries.find(
+                ([, p]) => p.enabled !== false && p.vision,
+              );
+              change((d) => ({
+                ...d,
+                roles: {
+                  ...d.roles,
+                  ...Object.fromEntries(
+                    rows(inventory.roles)
+                      .filter((r) => !r.optional)
+                      .map((r) => [
+                        r.role,
+                        (r.requires_vision ? vision : text)?.[0] || "",
+                      ]),
+                  ),
+                },
+              }));
+            }}
+          >
+            应用基础角色分工
+          </button>
+        </div>
       </Panel>
       <Panel
         title="文本与视觉理解"
@@ -498,18 +564,35 @@ export function Models({ notify }: { notify: (v: string) => void }) {
           </button>
         </div>
       </div>
-      <MediaSettings draft={draft} inventory={inventory} onChange={change} notify={notify} />
+      <MediaSettings
+        mode={setupMode}
+        draft={draft}
+        inventory={inventory}
+        onChange={change}
+        notify={notify}
+      />
       {editing && (
         <ProfileEditor
           key={(editing.video ? "v:" : "t:") + editing.id}
           id={editing.id}
           video={editing.video}
           providerDefaults={inventory.presets || {}}
+          videoDefaults={inventory.video_presets || {}}
+          videoProviders={Object.fromEntries(
+            rows(inventory.video_providers).map((p) => [p.id, p.label]),
+          )}
           providers={providers}
           profile={
             (editing.video ? draft.video_profiles : draft.profiles)?.[
               editing.id
-            ] ? {...(editing.video ? draft.video_profiles : draft.profiles)[editing.id], discovered_models: probes[editing.id]?.models || []} : {}
+            ]
+              ? {
+                  ...(editing.video ? draft.video_profiles : draft.profiles)[
+                    editing.id
+                  ],
+                  discovered_models: probes[editing.id]?.models || [],
+                }
+              : {}
           }
           onClose={() => setEditing(null)}
           onSave={(id, p) => {
@@ -532,8 +615,12 @@ function ProfileEditor({
   onSave,
   providerDefaults,
   providers,
+  videoDefaults,
+  videoProviders,
 }: {
   providerDefaults: RecordData;
+  videoDefaults: RecordData;
+  videoProviders: Record<string, string>;
   providers: Record<string, string>;
   id: string;
   profile: RecordData;
@@ -572,7 +659,13 @@ function ProfileEditor({
   );
   function switchProvider(next: string) {
     const defaults = video ? videoDefaults[next] : providerDefaults[next];
-    setCurrent({...defaults, model: defaults?.model || current.model || "", enabled: true});
+    const enteredId = form.current ? new FormData(form.current).get("id") : id;
+    setCurrent({
+      ...defaults,
+      id: enteredId,
+      model: defaults?.model || current.model || "",
+      enabled: true,
+    });
     setProvider(next);
   }
 
@@ -602,10 +695,16 @@ function ProfileEditor({
         }}
       >
         <ErrorNotice error={error} />
-        <datalist id="provider-models">{[current.model, ...(profile.discovered_models || [])].filter(Boolean).map((m: string) => <option key={m} value={m} />)}</datalist>
+        <datalist id="provider-models">
+          {[current.model, ...(profile.discovered_models || [])]
+            .filter(Boolean)
+            .map((m: string) => (
+              <option key={m} value={m} />
+            ))}
+        </datalist>
         <div className="form-row">
           {field("id", "连接编号", {
-            value: id,
+            value: current.id ?? id,
             required: true,
             readOnly: !!id,
             pattern: "[A-Za-z0-9][A-Za-z0-9_.-]{0,63}",
@@ -616,15 +715,13 @@ function ProfileEditor({
               value={provider}
               onChange={(e) => switchProvider(e.target.value)}
             >
-              {Object.entries(
-                video
-                  ? { minimax: "MiniMax 视频", comfyui_wan: "ComfyUI / Wan" }
-                  : providers,
-              ).map(([v, label]) => (
-                <option key={v} value={v}>
-                  {label}
-                </option>
-              ))}
+              {Object.entries(video ? videoProviders : providers).map(
+                ([v, label]) => (
+                  <option key={v} value={v}>
+                    {label}
+                  </option>
+                ),
+              )}
             </select>
           </Field>
         </div>

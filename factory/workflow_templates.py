@@ -96,3 +96,8 @@ def check_nodes(template, info):
         if not isinstance(spec, dict): raise ValueError('ComfyUI 缺少节点：' + node['class_type'])
         required = spec.get('input', {}).get('required', {})
         if set(required) - node['inputs'].keys(): raise ValueError('工作流缺少节点必填输入：' + node['class_type'])
+        fields={**required, **spec.get('input',{}).get('optional',{})}
+        for name, definition in fields.items():
+            value=node['inputs'].get(name)
+            if name in node['inputs'] and not isinstance(value,list) and isinstance(definition,list) and definition and isinstance(definition[0],list) and value not in definition[0]:
+                raise ValueError('节点模型文件或选项不兼容：' + node['class_type'] + '.' + name)

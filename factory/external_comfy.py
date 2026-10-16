@@ -76,13 +76,22 @@ class ExternalComfy:
         if journal.exists():
             state = read_json(journal)
             if state.get('graph_sha256') != signature: raise ValueError('已有提交的工作流发生变化')
-            if not state.get('prompt_id'): raise ProductionNeedsDecision('上次 ComfyUI 提交结果不确定，请核对后处理', 'comfy_submission_unresolved')
             if state.get('state') == 'failed': raise ProductionNeedsDecision('上次 ComfyUI 任务已失败', 'comfy_task_failed')
+            if not state.get('prompt_id'): raise ProductionNeedsDecision('上次 ComfyUI 提交结果不确定，请核对后处理', 'comfy_submission_unresolved')
         else:
             if check: check()
             state = {'state': 'dispatching', 'graph_sha256': signature, 'created': time.time()}
             write_json(journal, state)
-            answer = self.request('/prompt', {'prompt': graph, 'client_id': uuid.uuid4().hex})
+            try:
+                answer = self.request('/prompt', {'prompt': graph, 'client_id': uuid.uuid4().hex})
+            except ProviderError as exc:
+                if exc.code.startswith('http_4'):
+                    state['state']='failed'; write_json(journal,state)
+                    raise ProductionNeedsDecision('ComfyUI 拒绝了工作流，请检查配置', 'comfy_task_failed') from None
+                raise
+            if answer.get('error') or answer.get('node_errors'):
+                state['state']='failed'; write_json(journal,state)
+                raise ProductionNeedsDecision('ComfyUI 工作流校验未通过', 'comfy_task_failed')
             ident = answer.get('prompt_id')
             if not isinstance(ident, str) or not ident or len(ident) > 128: raise ValueError('ComfyUI 未返回任务编号')
             state.update(state='accepted', prompt_id=ident); write_json(journal, state)
@@ -97,6 +106,9 @@ class ExternalComfy:
                 if history.get('status', {}).get('completed') or history.get('status', {}).get('status_str') == 'success': break
             time.sleep(.25)
         else: raise ProductionNeedsDecision('ComfyUI 任务仍在执行，可恢复查询', 'comfy_task_pending')
+        write_json(dest / "history.json", history)
+        state["state"] = "completed"
+        write_json(journal, state)
         outputs = history.get('outputs', {})
         if output:
             files = outputs.get(output['node'], {}).get(output['field'], [])

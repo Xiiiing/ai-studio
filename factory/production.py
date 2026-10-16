@@ -142,16 +142,18 @@ def _grounded_repair_plan(assessment, stage, attempt, expected=None, reference_r
 
 def capabilities(config=None):
     config = config or {}
+    from .media_profiles import local_kinds
+    local = local_kinds(config)
     info = {
         "image": {"backend": "ComfyUI / FLUX.2 klein 4B",
-                  "installed": (ROOT / "models/diffusion_models/flux-2-klein-4b.safetensors").is_file()},
+                  "installed": local["image"] and (ROOT / "models/diffusion_models/flux-2-klein-4b.safetensors").is_file()},
         "motion_comic": {"backend": "FLUX.2 images + FFmpeg procedural_camera_motion",
                          "diffusion_video": False, "lip_sync": False},
         "diffusion_video": {"backend": "Wan2.2 TI2V 5B fp16",
-                            "installed": (ROOT / "models/diffusion_models/wan2.2_ti2v_5B_fp16.safetensors").is_file(),
+                            "installed": local["video"] and (ROOT / "models/diffusion_models/wan2.2_ti2v_5B_fp16.safetensors").is_file(),
                             "validation": "requires_a_successful_project_render"},
         "tts": {"backend": "local Qwen3-TTS 1.7B CustomVoice",
-                "installed": (ROOT / "envs/tts/bin/python").is_file()},
+                "installed": local["audio"] and (ROOT / "envs/tts/bin/python").is_file()},
         "lip_sync": {"backend": "existing LatentSync adapter", "physical_gpu": 5,
                      "minimum_free_mib": 21500, "automatic_for_motion_comic": False,
                      "validation": "legacy_adapter_requires_its_original_gpu_gate"},
@@ -170,6 +172,11 @@ def capabilities(config=None):
                              validation="requires_remote_service_and_generation_receipts")
         info["scheduler"]["execution_host"] = host
         info["lip_sync"].update(available=False, validation="not_supported_by_remote_inference_api")
+    for kind,key in (("image","image"),("audio","tts"),("video","diffusion_video")):
+        connection = config.get(kind + "_connection", {})
+        if connection.get("provider", "legacy") not in {"legacy", "comfyui_wan"}:
+            info[key].update(backend=connection.get("model"),provider=connection["provider"],installed=None,configured=connection.get("enabled",True),validation="requires_successful_generation_receipt")
+    if not any(local.values()): info["scheduler"]["physical_cards"] = []
     return info
 
 

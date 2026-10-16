@@ -495,3 +495,12 @@ def test_disabled_assigned_video_can_be_inspected_but_cannot_execute(monkeypatch
         video_providers.resolve_video(cfg)
     with pytest.raises(ValueError, match="must be enabled"):
         video_providers.validate_video_registry(cfg["video_profiles"], cfg["video_roles"], cfg)
+
+
+def test_video_defaults_are_server_owned_and_do_not_load_keys():
+    from factory.video_providers import video_presets, normalize_video_profile
+    preset=video_presets()['minimax']
+    assert preset['model']=='MiniMax-Hailuo-2.3' and preset['api_key_env']=='MINIMAX_API_KEY'
+    assert normalize_video_profile(preset)==preset
+    preset['model']='caller mutation'
+    assert video_presets()['minimax']['model']=='MiniMax-Hailuo-2.3'

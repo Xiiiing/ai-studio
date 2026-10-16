@@ -180,3 +180,9 @@ FACTORY_TEST_PYTHON=envs/factory/bin/python npm run test:browser
 - [此前问题、修复与验证范围](docs/AUDIT_2026-10-13.md)
 - [参考架构研究](docs/REFERENCE_ARCHITECTURES.md)
 - [第三方组件说明](THIRD_PARTY_NOTICES.md)
+
+## 使用自己的模型或购买 API
+
+Linux 用户可自行安装，通过“模型与连接”中的平台预设配置自己的服务。普通用户可以使用百炼图像／配音与 MiniMax 视频完成无需本机 GPU 的制作，也可混合使用本地文本、ComfyUI 和 Qwen3-TTS。新安装从空配置开始，不依赖开发者的 Wkp。密钥继续使用私有环境变量。
+
+配置步骤、模型支持范围、工作流导入和费用恢复说明见 [用户模型接入指南](docs/USER_MODELS.md)。纯 API 配置结构参考 `config/factory.api.example.json`；实际模型、地域、工作空间和密钥由使用者准备。

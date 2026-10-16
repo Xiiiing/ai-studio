@@ -20,6 +20,13 @@ class VideoProductionMixin:
         return target["kind"] == "video" and self.video_connection.get("provider") == "minimax"
 
     def _guard_remote_submissions(self, target):
+        for path in target["folder"].glob("take_*/submission.json"):
+            attempt=path.parent/"attempt.json"
+            if attempt.exists() and read_json(attempt).get("source_signature") != target["signature"] and not (path.parent/"result.json").exists():
+                state=read_json(path)
+                history=read_json(path.parent/"history.json") if (path.parent/"history.json").exists() else {}
+                if state.get("state") not in {"failed", "completed"} and history.get("status",{}).get("status_str") != "error" and not (path.parent/"submission_error.json").exists():
+                    raise ProductionNeedsDecision("旧 ComfyUI 请求尚未确认完成，不能用新配置绕过恢复", "unresolved_submission")
         if self.config.get("gpu_service"):
             from .gpu_client import guard_remote_submissions
             guard_remote_submissions(self.config, target["folder"], self.budget, self.control,
@@ -41,6 +48,14 @@ class VideoProductionMixin:
         if not record.get("repair", {}).get("regenerate_keyframe"):
             return frame
         if record.get("repair_keyframe"):
+            return self.receipt_path(record["repair_keyframe"])
+        if self.config.get("image_connection", {}).get("provider", "legacy") != "legacy":
+            refs=list(target["references"]) + [self.receipt_path(v) for v in self.assets.get("characters", {}).values()]
+            repair=self._target("repair_"+target["key"],target["folder"]/record["take"]/"repair_keyframe",
+                                record["repair"].get("prompt_prefix", "") + "\n" + self.style_prompt + " " + target["shot"]["prompt"],refs[:4])
+            self._render_targets([repair], "keyframe_repair")
+            record["repair_keyframe"]=repair["selected"]
+            self._save_attempt(target,record)
             return self.receipt_path(record["repair_keyframe"])
         # A diagnosed action/identity issue may require a new first frame. This is
         # the only local GPU lease in the cloud route; remote polling holds none.

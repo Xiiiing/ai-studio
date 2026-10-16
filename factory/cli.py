@@ -97,7 +97,7 @@ def parser():
     models.add_argument("--file", help="导出或导入的 UTF-8 JSON 文件")
     models.add_argument("--expected-revision", help="apply 的 CAS 配置版本；省略则使用导出文件内的 revision")
     models.add_argument("--json", action="store_true")
-    models.add_argument("--kind", choices=["text", "video"], default="text", help="probe 的连接类型")
+    models.add_argument("--kind", choices=["text", "video", "image", "audio"], default="text", help="probe 的连接类型")
     workflow = sub.add_parser("workflow", help="导出实际执行图、角色与制作接口说明")
     workflow.add_argument("--json", action="store_true")
     workflow.add_argument("--workflow-version", type=int, choices=[1, 2], default=2,
@@ -265,6 +265,12 @@ def execute(args):
                 from .config import load_config
                 from .video_providers import probe_video_profile
                 return probe_video_profile(args.profile, load_config())
+            if getattr(args, "kind", "text") in ("image", "audio"):
+                from .config import load_config
+                from .media_profiles import registry, probe
+                connections,_=registry(load_config(),args.kind)
+                if args.profile not in connections: raise ValueError("未知制作连接")
+                return probe(connections[args.profile],args.kind)
             return probe_profile(args.profile)
         inventory = public_inventory()
         if args.operation == "list":
@@ -275,6 +281,9 @@ def execute(args):
                      "llm_roles": inventory["role_assignments"]}
             if "video_profiles" in inventory:
                 value.update(video_profiles=inventory["video_profiles"], video_roles=inventory["video_roles"])
+            for kind in ("image", "audio"):
+                if kind + "_profiles" in inventory:
+                    value.update({kind + "_profiles":inventory[kind + "_profiles"],kind + "_roles":inventory[kind + "_roles"]})
             if args.file:
                 from studio.core import write_json
                 target = Path(args.file).expanduser().resolve()
@@ -301,6 +310,10 @@ def execute(args):
             if not isinstance(value.get("video_profiles"), dict) or not isinstance(value.get("video_roles"), dict):
                 raise ValueError("视频连接导入需要完整的 video_profiles 和 video_roles 对象")
             video = {"video_profiles": value["video_profiles"], "video_roles": value["video_roles"]}
+        for kind in ("image", "audio"):
+            if {kind + "_profiles",kind + "_roles"} & value.keys():
+                if not isinstance(value.get(kind + "_profiles"),dict) or not isinstance(value.get(kind + "_roles"),dict): raise ValueError("制作连接与分工必须完整导入")
+                video.update({kind + "_profiles":value[kind + "_profiles"],kind + "_roles":value[kind + "_roles"]})
         return save_registry(value.get("llm_profiles"), value.get("llm_roles"), revision, **video)
     if command == "workflow":
         from .workflow_spec import export_spec

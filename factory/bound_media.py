@@ -14,7 +14,7 @@ def connection(engine, kind):
 
 
 def uses_bound(engine, target):
-    return connection(engine, target['kind']).get('provider') in {'comfyui_local', 'comfyui_external'}
+    return connection(engine, target['kind']).get('provider') in {'comfyui_local', 'comfyui_external', 'dashscope_image'}
 
 
 def render(engine, target, record, phase):
@@ -35,7 +35,11 @@ def render(engine, target, record, phase):
         record['repair_keyframe'] = media_receipt(path)
         target = {**target, 'references': [path] + list(target['references'][1:])}
     external = profile['provider'] == 'comfyui_external'
-    scope = nullcontext(None) if external else engine.scheduler.worker(engine.slug + '_' + phase, engine.control)
+    if not external and engine.config.get('gpu_service'):
+        from .scheduler import Scheduler
+        scheduler = Scheduler({k:v for k,v in engine.config.items() if k != 'gpu_service'}, engine.budget)
+    else: scheduler = None if external else engine.scheduler
+    scope = nullcontext(None) if external else scheduler.worker(engine.slug + '_' + phase, engine.control)
     with scope as owned:
         from .external_comfy import ExternalComfy
         selected = profile if external else {'provider': 'comfyui_external', 'base_url': owned.base, 'network_mode': 'loopback', 'enabled': True,
@@ -70,13 +74,17 @@ def render(engine, target, record, phase):
 
 
 def render_targets(engine, targets, phase):
+    from . import cloud_media
+    cloud_targets = [t for t in targets if connection(engine,t["kind"])["provider"] == "dashscope_image"]
+    prepared = cloud_media.prepare_images(engine,cloud_targets) if cloud_targets else None
     ready = []
     for target in targets:
         engine.boundary()
-        record = target.pop('resume_attempt', None) or engine._new_attempt(target)
+        cloud = target in cloud_targets
+        record = prepared[1][target['key']][0] if cloud else target.pop('resume_attempt', None) or engine._new_attempt(target)
         started = time.monotonic()
         try:
-            receipt = render(engine, target, record, phase)
+            receipt = cloud_media.render_image(engine,target,record,prepared) if cloud else render(engine, target, record, phase)
             record.update(state='generated', output=receipt, elapsed_seconds=round(time.monotonic()-started, 3))
             ready.append((target, record, receipt))
         except (ProductionNeedsDecision, ProductionPaused):

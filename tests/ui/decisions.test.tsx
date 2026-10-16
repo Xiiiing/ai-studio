@@ -492,3 +492,13 @@ describe("server-driven producer decisions", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });
+
+it("allows paid image preview authorization before any shots exist", async () => {
+  mount(project({stage:"style_previews", needs_decision:{code:"cloud_authorization_required"},
+    cloud_quote:{id:"image-batch",media_kind:"image",estimated_submissions:3,estimated_total_micros:null,pricing:{currency:"CNY",unit_cost_micros:null}}}));
+  fireEvent.click(screen.getByRole("checkbox",{name:"我已了解单价未确认，仍授权此批请求"}));
+  fireEvent.click(screen.getByRole("button",{name:"明确授权本批次"}));
+  await waitFor(()=>expect(fetchMock).toHaveBeenCalled());
+  expect(fetchMock.mock.calls[0][0]).toContain("/cloud-authorize");
+  expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({batch_id:"image-batch",expected_revision:3,max_submissions:3,confirm_unknown_cost:true});
+});

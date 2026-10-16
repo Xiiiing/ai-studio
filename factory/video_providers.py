@@ -118,9 +118,19 @@ def resolve_video(config, *, require_enabled=True):
     return {"profile": ident, **copy.deepcopy(profiles[ident])}
 
 
+def video_presets():
+    """Editable defaults shared by the UI and configuration examples."""
+    properties=VIDEO_PROVIDERS["minimax"]
+    return {"comfyui_wan":copy.deepcopy(LOCAL_PROFILE),
+            "minimax":normalize_video_profile({"provider":"minimax","enabled":True,
+                "model":properties["model_example"],"base_url":properties["base_url_example"],
+                "network_mode":"remote","allowed_hosts":["api.minimax.io"],"api_key_env":"MINIMAX_API_KEY"})}
+
+
 def public_video_inventory(config):
     profiles, roles = video_registry(config, require_enabled=False)
     return {
+        "video_presets": video_presets(),
         "video_profiles": {name: redact_secrets(value, value) for name, value in profiles.items()},
         "video_roles": roles,
         "video_providers": [{"id": name, **value} for name, value in VIDEO_PROVIDERS.items()],

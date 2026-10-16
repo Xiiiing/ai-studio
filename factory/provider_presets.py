@@ -19,7 +19,7 @@ CLOUD = {
 
 def cloud_providers():
     return {ident: {"label": label, "protocol": protocol, "base_url_example": base,
-                    "response_format": "prompt" if protocol != "openai" else "json_object",
+                    "response_format": "prompt" if protocol != "openai" or ident == "minimax_text" else "json_object",
                     "context_validation": "conservative_estimate", "model_discovery": "skip"}
             for ident, (label, base, model, env, vision, protocol) in CLOUD.items()}
 
@@ -38,6 +38,12 @@ def presets(providers):
             label, base, model, env, vision, protocol = CLOUD[ident]
             value.update(model=model, api_key_env=env, vision=vision, network_mode="remote",
                          allowed_hosts=[urlsplit(base).hostname], context_tokens=65536)
+        if ident == "openai":
+            value.update(max_tokens_field="max_completion_tokens", send_sampling_parameters=False)
+        if ident in {"moonshot", "minimax_text", "zhipu"}:
+            value["send_sampling_parameters"] = False
+        if ident == "minimax_text":
+            value["response_format"] = "prompt"
         if ident == "llama_cpp":
             value["chat_template_kwargs"] = {"enable_thinking": False}
         if ident == "dashscope":

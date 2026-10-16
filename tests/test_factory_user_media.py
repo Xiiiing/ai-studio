@@ -94,3 +94,30 @@ def test_legacy_and_explicit_media_connections_do_not_change_each_other():
     assert media_profiles.resolve(saved,'image')['provider']=='comfyui_external'
     assert media_profiles.resolve(saved,'audio')['provider']=='legacy'
     with pytest.raises(ValueError):media_profiles.normalize_media({'provider':'qwen_tts_local','model':'tts','model_dir':'../private'},'audio')
+
+
+def test_positive_comfy_rejection_is_terminal_not_an_unknown_post(comfy,tmp_path,monkeypatch):
+    client,calls=comfy
+    original=client.request
+    def reject(route,*args,**kwargs):
+        if route=='/prompt':return {'error':{'type':'prompt_outputs_failed_validation'}}
+        return original(route,*args,**kwargs)
+    monkeypatch.setattr(client,'request',reject)
+    with pytest.raises(ProductionNeedsDecision) as exc:client.execute(template()['graph'],tmp_path/'take','image')
+    assert exc.value.reason=='comfy_task_failed'
+    with pytest.raises(ProductionNeedsDecision) as exc:client.execute(template()['graph'],tmp_path/'take','image')
+    assert exc.value.reason=='comfy_task_failed'
+
+
+def test_node_model_enum_is_checked_before_submission():
+    t=template();t['graph']['1']['inputs']['model']='not-installed'
+    with pytest.raises(ValueError,match='不兼容'):
+        wt.check_nodes(t,{'Prompt':{'input':{'required':{'text':['STRING',{}],'model':[['installed']]}}},'SaveImage':{}})
+
+
+def test_completed_comfy_job_with_bad_output_mapping_keeps_terminal_evidence(comfy,tmp_path):
+    client,_=comfy
+    t=template();t['output']['index']=9
+    with pytest.raises(ValueError,match='输出文件不存在'):client.execute(t['graph'],tmp_path/'take','image',t['output'])
+    assert json.loads((tmp_path/'take/submission.json').read_text())['state']=='completed'
+    assert json.loads((tmp_path/'take/history.json').read_text())['status']['status_str']=='success'

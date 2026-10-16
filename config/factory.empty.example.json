@@ -3,8 +3,45 @@
   "setup_incomplete": true,
   "llm_profiles": {},
   "llm_roles": {},
-  "video_profiles": {"unconfigured": {"provider": "comfyui_wan", "enabled": false, "model": "Wan2.2-TI2V-5B"}},
-  "video_roles": {"video_generator": "unconfigured"},
-  "production": {"gpu_cards": [0], "max_parallel": 1, "max_gpu_workers": 1},
-  "web": {"host": "127.0.0.1", "port": 8787}
+  "video_profiles": {
+    "unconfigured": {
+      "provider": "comfyui_wan",
+      "enabled": false,
+      "model": "Wan2.2-TI2V-5B"
+    }
+  },
+  "video_roles": {
+    "video_generator": "unconfigured"
+  },
+  "production": {
+    "gpu_cards": [
+      0
+    ],
+    "max_parallel": 1,
+    "max_gpu_workers": 1
+  },
+  "web": {
+    "host": "127.0.0.1",
+    "port": 8787
+  },
+  "image_profiles": {
+    "unconfigured": {
+      "provider": "legacy",
+      "enabled": false,
+      "model": "未配置图像模型"
+    }
+  },
+  "image_roles": {
+    "image_generator": "unconfigured"
+  },
+  "audio_profiles": {
+    "unconfigured": {
+      "provider": "legacy",
+      "enabled": false,
+      "model": "未配置配音模型"
+    }
+  },
+  "audio_roles": {
+    "speech_generator": "unconfigured"
+  }
 }

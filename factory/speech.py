@@ -30,6 +30,9 @@ class SpeechMixin:
         """Match the installed driver's real per-line source digest, without loading a model."""
         if self.config.get("audio_connection", {}).get("enabled") is False:
             raise ProductionNeedsDecision("请先配置并启用配音连接", "audio_unconfigured")
+        if self.config.get("audio_connection", {}).get("provider") == "dashscope_tts":
+            from .cloud_media import speech_sources
+            return speech_sources(self, lines, voices)
         if self.config.get("gpu_service") and self.config.get("audio_connection", {}).get("provider", "legacy") == "legacy":
             from .gpu_client import GPUClient
             voices=self._remote_voice_subset(lines,voices)
@@ -97,7 +100,7 @@ class SpeechMixin:
                     "source_sha256": expected["source_sha256"], "source": expected["source"],
                     "model_state": expected["model_state"],
                     "metadata_path": str(meta_path.relative_to(ROOT)),
-                    **{key:meta[key] for key in ("execution_host","gpu_service_job_id") if key in meta}}
+                    **{key:meta[key] for key in ("execution_host","gpu_service_job_id","provider","model","cloud_intent_id","usage") if key in meta}}
         except (ValueError, KeyError, TypeError, OSError):
             return None
 
@@ -143,6 +146,9 @@ class SpeechMixin:
                                                            "oom": any(line["oom"] for line in blocked)})
 
     def _speech_batch(self, lines, voices, expected):
+        if self.config.get("audio_connection", {}).get("provider") == "dashscope_tts":
+            from .cloud_media import speech_batch
+            return speech_batch(self,lines,voices,expected)
         if self.config.get("gpu_service") and self.config.get("audio_connection", {}).get("provider", "legacy") == "legacy":
             return self._remote_speech_batch(lines,voices,expected)
         signature = fingerprint([{"id": line["id"], "key": expected[line["id"]]["key"]} for line in lines])
@@ -373,7 +379,7 @@ class SpeechMixin:
             self.assets["audio"] = {"lines": [], "speech": "no_dialogue_in_script"}
             self.emit()
             return {}
-        voices = read_json(ROOT / "audio/voices.json")
+        voices = {} if self.config.get("audio_connection", {}).get("provider") == "dashscope_tts" else read_json(ROOT / "audio/voices.json")
         voices.update(self.episode.get("voices") or {})
         voices.update(self.config.get("audio_connection", {}).get("voices", {}))
         if explicit_profile(self.project):
