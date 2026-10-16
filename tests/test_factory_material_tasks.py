@@ -209,3 +209,20 @@ def test_failed_local_generation_keeps_cumulative_resource_accounting(project, m
     tasks.run(tasks.claim())
     with store.connection() as db: retried = tasks.read(db, task["id"])
     assert retried["result"]["production"]["gpu_seconds"] >= 20
+
+
+def test_backup_rejects_changed_metadata_behind_a_confirmed_material_version(project, tmp_path):
+    from factory import backup
+    from langgraph.checkpoint.sqlite import SqliteSaver
+    import sqlite3
+    value = material(); select(project, value); confirm(project)
+    with sqlite3.connect(store.DATA / "checkpoints.sqlite3") as db: SqliteSaver(db).setup()
+    (store.DATA / "worker.lock").touch()
+    with store.connection() as db:
+        data = library.get(db, value["asset_id"], value["version"])["data"]
+        data["document"]["name"] = "unexpected identity replacement"
+        db.execute("UPDATE material_versions SET data=? WHERE asset_id=? AND version=?", (store.encoded(data), value["asset_id"], value["version"]))
+    destination = tmp_path.parent / ("bad-material-backup-" + uuid.uuid4().hex)
+    with pytest.raises(backup.BackupError, match="material metadata"):
+        backup.create(core.ROOT, destination, maintenance_confirmed=True, data_dir=store.DATA)
+    assert not destination.exists()

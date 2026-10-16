@@ -82,8 +82,20 @@ def inspect(root, readers, media):
     for row in rows(db, "SELECT scope FROM cloud_batches"):
         references += receipt_references(files.decode_json(row[0]), catalog)
     if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='material_versions'").fetchone():
-        for row in rows(db, "SELECT data FROM material_versions"):
-            references += receipt_references(files.decode_json(row[0]), catalog)
+        materials = {}
+        for row in rows(db, "SELECT asset_id,version,status,data FROM material_versions"):
+            data = files.decode_json(row["data"])
+            references += receipt_references(data, catalog)
+            materials[(row["asset_id"], row["version"])] = (row["status"], data)
+        for row in rows(db, "SELECT snapshot FROM projects"):
+            project = files.decode_json(row[0])
+            package = project.get("material_package", {})
+            if package and files.digest(package["references"]) != package.get("signature"):
+                raise BackupError("Material package signature differs from its fixed references")
+            for ref in package.get("references", []):
+                status, data = materials.get((ref["asset_id"], ref["version"]), (None, {}))
+                if status != "approved" or files.digest({"document": data.get("document"), "images": data.get("images")}) != ref["sha256"]:
+                    raise BackupError("Pinned material metadata differs from its approved version")
         for row in rows(db, "SELECT d.asset_id,d.version,v.status FROM material_dependencies d LEFT JOIN material_versions v ON v.asset_id=d.asset_id AND v.version=d.version"):
             if row["status"] != "approved":
                 raise BackupError("Pinned material dependency is missing or unapproved")
