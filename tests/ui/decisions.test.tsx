@@ -22,6 +22,41 @@ beforeEach(() => {
   );
   vi.stubGlobal("fetch", fetchMock);
 });
+it("opens the exact shot referenced by a review issue", async () => {
+  const onShot = vi.fn(),
+    onTab = vi.fn();
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  render(
+    <QueryClientProvider client={client}>
+      <DecisionCenter
+        project={project({
+          operator: {
+            attention: {
+              blocking: true,
+              kind: "creative",
+              actions: [],
+              issues: [
+                {
+                  severity: "major",
+                  description: "补齐动作",
+                  shot_ids: ["S03"],
+                },
+              ],
+            },
+          },
+        })}
+        onNotify={vi.fn()}
+        onTab={onTab}
+        onShot={onShot}
+      />
+    </QueryClientProvider>,
+  );
+  await userEvent.click(screen.getByRole("button", { name: "S03" }));
+  expect(onShot).toHaveBeenCalledWith("S03");
+  expect(onTab).not.toHaveBeenCalled();
+});
 function project(extra: RecordData = {}): RecordData {
   return {
     id: ID,

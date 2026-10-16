@@ -1,4 +1,5 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import { useShotDraft } from "./SessionDraft";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Image, Film, Save, Play, ArrowUpRight } from "lucide-react";
 import {
@@ -38,13 +39,22 @@ export function Shots({
       refetchInterval: 5000,
     }),
     [selected, setSelected] = useState(initialShot || "");
+  useEffect(() => {
+    if (initialShot) setSelected(initialShot);
+  }, [initialShot]);
   const shots = rows(query.data?.shots),
     shot = shots.find((s) => s.id === selected) || shots[0];
   if (!query.data)
     return (
       <>
         <ErrorNotice error={query.error} />
-        <Loading />
+        {query.error ? (
+          <button className="button" onClick={() => query.refetch()}>
+            重新读取镜头
+          </button>
+        ) : (
+          <Loading />
+        )}
       </>
     );
   if (!shot)
@@ -96,18 +106,20 @@ function ShotDetail({
   notify: (v: string) => void;
 }) {
   const client = useQueryClient(),
-    [draft, setDraft] = useState<RecordData | null>(null),
-    [busy, setBusy] = useState(false),
     [failure, setFailure] = useState("");
+  const { draft, setDraft, busy, begin, finish } = useShotDraft(
+    project.id,
+    shot.id,
+  );
   const revision = draft?.revision ?? board.revision,
     stale = !!draft && revision !== board.revision,
     disabled = busy || !board.editable || !!error;
   async function mutate(body: RecordData) {
-    setBusy(true);
+    if (disabled || stale || !begin()) return;
     setFailure("");
     try {
       await request("/projects/" + project.id + "/shots/" + shot.id, body);
-      setDraft(null);
+      if (body.action === "edit") setDraft(null);
       notify(
         body.action === "select"
           ? "选片已记录，原素材继续保留。"
@@ -117,7 +129,7 @@ function ShotDetail({
     } catch (e) {
       setFailure((e as Error).message);
     } finally {
-      setBusy(false);
+      finish();
     }
   }
   const edit = (name: string, value: any) =>
@@ -166,66 +178,68 @@ function ShotDetail({
             });
           }}
         >
-          <Field label="首帧提示词">
-            <textarea
-              name="prompt"
-              rows={4}
-              maxLength={1600}
-              required
-              value={values.prompt || ""}
-              onChange={(e) => edit("prompt", e.target.value)}
-            />
-          </Field>
-          <Field label="视频提示词">
-            <textarea
-              name="motion_prompt"
-              rows={3}
-              maxLength={800}
-              required
-              value={values.motion_prompt || values.prompt || ""}
-              onChange={(e) => edit("motion_prompt", e.target.value)}
-            />
-          </Field>
-          <div className="form-row">
-            <Field label="程序运镜">
-              <select
-                name="camera_motion"
-                value={values.camera_motion || "hold"}
-                onChange={(e) => edit("camera_motion", e.target.value)}
-              >
-                {Object.entries({
-                  hold: "静止",
-                  push_in: "推进",
-                  pull_out: "拉远",
-                  pan_left: "左移",
-                  pan_right: "右移",
-                }).map(([v, l]) => (
-                  <option value={v} key={v}>
-                    {l}
-                  </option>
-                ))}
-              </select>
+          <fieldset className="editor-fields" disabled={disabled}>
+            <Field label="首帧提示词">
+              <textarea
+                name="prompt"
+                rows={4}
+                maxLength={1600}
+                required
+                value={values.prompt || ""}
+                onChange={(e) => edit("prompt", e.target.value)}
+              />
             </Field>
-            <Field label="重制范围">
-              <select
-                name="stage"
-                value={values.stage || "image"}
-                onChange={(e) => edit("stage", e.target.value)}
-              >
-                <option value="image">首帧与依赖视频</option>
-                <option value="video">仅视频</option>
-              </select>
+            <Field label="视频提示词">
+              <textarea
+                name="motion_prompt"
+                rows={3}
+                maxLength={800}
+                required
+                value={values.motion_prompt || values.prompt || ""}
+                onChange={(e) => edit("motion_prompt", e.target.value)}
+              />
             </Field>
-          </div>
-          <label className="check">
-            <input
-              name="regenerate"
-              type="checkbox"
-              checked={!!values.regenerate}
-              onChange={(e) => edit("regenerate", e.target.checked)}
-            />
-            明确创建新的生成版本
-          </label>
+            <div className="form-row">
+              <Field label="程序运镜">
+                <select
+                  name="camera_motion"
+                  value={values.camera_motion || "hold"}
+                  onChange={(e) => edit("camera_motion", e.target.value)}
+                >
+                  {Object.entries({
+                    hold: "静止",
+                    push_in: "推进",
+                    pull_out: "拉远",
+                    pan_left: "左移",
+                    pan_right: "右移",
+                  }).map(([v, l]) => (
+                    <option value={v} key={v}>
+                      {l}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="重制范围">
+                <select
+                  name="stage"
+                  value={values.stage || "image"}
+                  onChange={(e) => edit("stage", e.target.value)}
+                >
+                  <option value="image">首帧与依赖视频</option>
+                  <option value="video">仅视频</option>
+                </select>
+              </Field>
+            </div>
+            <label className="check">
+              <input
+                name="regenerate"
+                type="checkbox"
+                checked={!!values.regenerate}
+                onChange={(e) => edit("regenerate", e.target.checked)}
+              />
+              明确创建新的生成版本
+            </label>
+          </fieldset>
           {stale && (
             <div className="notice">
               项目已更新，草稿仍绑定旧版本。
@@ -265,7 +279,7 @@ function ShotDetail({
             key={c.id || c.stage + ":" + c.take}
             candidate={c}
             revision={board.revision}
-            disabled={disabled || !c.selectable}
+            disabled={disabled || stale || !c.selectable}
             onSubmit={mutate}
           />
         ))}
@@ -399,7 +413,13 @@ export function Series({
     return (
       <>
         <ErrorNotice error={query.error} />
-        <Loading />
+        {query.error ? (
+          <button className="button" onClick={() => query.refetch()}>
+            重新读取系列资产
+          </button>
+        ) : (
+          <Loading />
+        )}
       </>
     );
   const library = query.data,
@@ -819,7 +839,13 @@ export function Costs({
     return (
       <>
         <ErrorNotice error={query.error} />
-        <Loading />
+        {query.error ? (
+          <button className="button" onClick={() => query.refetch()}>
+            重新读取费用记录
+          </button>
+        ) : (
+          <Loading />
+        )}
       </>
     );
   const unknown = quote?.pricing?.unit_cost_micros == null,

@@ -1,25 +1,12 @@
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import Markdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import { Download, Maximize2, FileText, RotateCcw } from "lucide-react";
-import { ownedMedia, rows, text, roleName, date, type RecordData } from "./api";
+import { rows, text, roleName, date, type RecordData } from "./api";
+import { documentUrl } from "./DocumentPath";
+export { documentUrl } from "./DocumentPath";
 import { Badge, Modal, Readable } from "./ui";
 
 export const MAX_PREVIEW_BYTES = 2 * 1024 * 1024;
-export function documentUrl(projectId: string | undefined, raw: unknown) {
-  if (!projectId || typeof raw !== "string") return "";
-  try {
-    // Saved receipts may carry a production-relative path rather than a media URL.
-    const path = raw.startsWith("production/") ? "/media/" + raw : raw;
-    const url = new URL(path, window.location.origin);
-    if (url.origin !== window.location.origin || url.search || url.hash)
-      return "";
-    return ownedMedia(projectId, decodeURIComponent(url.pathname));
-  } catch {
-    return "";
-  }
-}
 class PreviewError extends Error {
   constructor(
     message: string,
@@ -69,67 +56,7 @@ export async function readDocument(url: string, signal?: AbortSignal) {
     reader.releaseLock();
   }
 }
-function MarkdownBody({
-  value,
-  projectId,
-  baseUrl,
-}: {
-  value: string;
-  projectId?: string;
-  baseUrl?: string;
-}) {
-  return (
-    <div className="document-markdown">
-      <Markdown
-        remarkPlugins={[remarkGfm]}
-        skipHtml
-        components={{
-          a: ({ href, children }) => {
-            if (!href) return <span>{children}</span>;
-            let safe = "";
-            try {
-              const url = new URL(
-                href || "",
-                new URL(baseUrl || "/", window.location.origin),
-              );
-              if (["http:", "https:"].includes(url.protocol)) safe = url.href;
-            } catch {
-              /* Invalid links remain readable text. */
-            }
-            return safe ? (
-              <a href={safe} target="_blank" rel="noopener noreferrer">
-                {children}
-              </a>
-            ) : (
-              <span>{children}</span>
-            );
-          },
-          img: ({ src, alt }) => {
-            if (typeof src !== "string" || !src)
-              return <span>{alt || "图片未提供项目文件"}</span>;
-            let raw = "";
-            try {
-              raw = new URL(
-                typeof src === "string" ? src : "",
-                new URL(baseUrl || "/", window.location.origin),
-              ).href;
-            } catch {
-              /* No image request. */
-            }
-            const safe = documentUrl(projectId, raw);
-            return safe ? (
-              <img src={safe} alt={alt || "文档插图"} loading="lazy" />
-            ) : (
-              <span>{alt || "图片未提供项目文件"}</span>
-            );
-          },
-        }}
-      >
-        {value}
-      </Markdown>
-    </div>
-  );
-}
+const MarkdownBody = lazy(() => import("./MarkdownBody"));
 export function DocumentValue({
   value,
   projectId,
@@ -144,7 +71,9 @@ export function DocumentValue({
   if (raw) return <pre className="document-raw">{text(value)}</pre>;
   if (typeof value === "string")
     return (
-      <MarkdownBody value={value} projectId={projectId} baseUrl={baseUrl} />
+      <Suspense fallback={<p role="status">正在准备文档排版…</p>}>
+        <MarkdownBody value={value} projectId={projectId} baseUrl={baseUrl} />
+      </Suspense>
     );
   // Execution JSON deliberately retains prompt/messages fields hidden by the business summary component.
   if (value && typeof value === "object")

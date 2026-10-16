@@ -1,10 +1,16 @@
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { once } from "node:events";
+import { existsSync } from "node:fs";
+import path from "node:path";
 
 export async function startRealServer() {
   const child = spawn(
-    process.env.FACTORY_TEST_PYTHON || "python",
+    process.env.FACTORY_TEST_PYTHON ||
+      [".venv/bin/python", "envs/factory/bin/python"]
+        .map((p) => path.resolve(p))
+        .find(existsSync) ||
+      "python3",
     ["scripts/browser_http_fixture.py"],
     {
       stdio: ["ignore", "pipe", "pipe"],
