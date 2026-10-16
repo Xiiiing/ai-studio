@@ -149,7 +149,7 @@ def compile_prompt(project, shot, *, config, references, style, seconds,
     """Return a validated prompt plus receipt; never fall back on compiler error."""
     try:
         if (isinstance(seconds, bool) or not isinstance(seconds, (int, float)) or
-                not math.isfinite(seconds) or not .5 <= seconds <= 15):
+                not math.isfinite(seconds) or not 1 <= seconds <= 15):
             raise ValueError("Approved shot duration must be finite and bounded")
         if type(attempt) is not int or not 1 <= attempt <= 5:
             raise ValueError("H3 prompt attempt must use the bounded production attempt")

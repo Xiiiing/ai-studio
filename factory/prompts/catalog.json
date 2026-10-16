@@ -562,7 +562,7 @@
       "version": "3.0.0",
       "responsibility": "将批准镜头编译为 H3 单镜英文动作与摄影视听提示词；不改剧情、不生成媒体、不判定质量。",
       "path": "storyboard_director/3.0.0.txt",
-      "sha256": "b5935e4ecad0551da93e3ff48b603712e8f17b444d108ad95fd8ffa81686a704",
+      "sha256": "3128b622e59b03ef0a2426fd50c3fedb2d9637c482a8b6679710f119ed9572ac",
       "input_schema": {
         "type": "object",
         "additionalProperties": false,

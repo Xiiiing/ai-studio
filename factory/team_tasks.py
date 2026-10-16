@@ -33,7 +33,7 @@ TASKS = MappingProxyType({
                            "members": ["image_generator", "visual_critic"], "depends_on": ["screenplay"],
                            "inputs": ["script", "styles"], "outputs": ["style_previews"]},
     "production": {"label": "镜头制作与后期交付", "owner": "editor", "reviewer": "visual_critic",
-                   "members": ["image_generator", "video_generator", "visual_critic", "speech", "dialogue_editor", "editor"],
+                   "members": ["image_generator", "storyboard_director", "video_generator", "visual_critic", "speech", "dialogue_editor", "editor"],
                    "depends_on": ["visual_development"], "inputs": ["selected_style", "script", "cloud_authorization"],
                    "outputs": ["shots", "audio", "delivery", "technical_checks"]},
     "revision": {"label": "定向返修", "owner": "story_editor", "reviewer": "independent_critic",

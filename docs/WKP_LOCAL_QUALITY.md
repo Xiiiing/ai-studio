@@ -24,6 +24,8 @@ python scripts/verify_local_vision.py \
 
 Qwen3.8 已在隔离双 GPU 进程中加载匹配组件。实际模型别名 `ai-studio-qwen38-vision`，`/props` 返回 vision/video 为 true、audio 为 false。单张写实人物参考审核用时 28.054 秒，输入 1109、输出 127 tokens；识别出蓝衬衫、咖啡桌、白杯，并指出手指可能融合。该证据证明图像推理可用，不证明所有视觉判断正确。
 
+自动编写 H3 提示词及基于审核的有界返修见 [H3 自动提示词](H3_AUTOMATIC_PROMPTS.md)。新功能另由依赖本阶段的 PR 交付，未改变本页历史样片的生成方式。
+
 ## 分工和配置
 
 [配置片段](../config/wkp-local-quality.example.json) 分别列出临时视觉测试、推理路由、服务器视觉 profile、H3 参数和画布尺寸，不能把整个片段当作完整应用配置直接覆盖生产文件。

@@ -23,6 +23,7 @@ PHASES = {
     "storyboard_direction": "编排镜头与运镜", "story_resolution": "落实创作修改意见",
     "visual_development": "设计人物与画风", "style_previews": "生成视觉预览", "style_decision": "确定视觉方向",
     "character_references": "生成人物参考", "story_frames": "制作镜头关键帧", "diffusion_video": "生成视频镜头",
+    "h3_prompt_preparation": "自动编写视频镜头提示词",
     "voice": "合成角色对白", "voice_rendering": "合成角色对白", "dialogue_rewriting": "调整对白时长",
     "camera_motion": "制作动态运镜", "sound_edit": "混音与声音编辑", "edit": "剪辑与字幕合成",
     "quality_review": "检查画面与连续性", "semantic_review_pending": "等待视觉审核", "waiting_resources": "等待可用 GPU",

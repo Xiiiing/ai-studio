@@ -228,7 +228,7 @@ def test_repair_discards_negative_diagnosis_and_preserves_approved_facts(monkeyp
     assert "untrusted_existing_qa" in payloads[0]["first_frame_references"][0]
 
 
-@pytest.mark.parametrize("seconds", [True, 0, 16, float("nan"), float("inf")])
+@pytest.mark.parametrize("seconds", [True, 0, .5, 16, float("nan"), float("inf")])
 def test_bad_duration_fails_before_model(monkeypatch, inputs, seconds):
     monkeypatch.setattr(prompting, "json_call", lambda **kw: pytest.fail("Invalid duration called model"))
     inputs["seconds"] = seconds

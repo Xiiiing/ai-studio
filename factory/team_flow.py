@@ -71,6 +71,7 @@ STAGE_ROLES = {
 PHASE_ROLES = {
     "visual_previews": "image_generator", "character_references": "image_generator",
     "story_frames": "image_generator", "diffusion_video": "video_generator",
+    "h3_prompt_preparation": "storyboard_director",
     "quality_review": "visual_critic", "semantic_review_pending": "visual_critic",
     "voice": "speech", "voice_rendering": "speech", "voice_review": "speech",
     "dialogue_timing_review": "dialogue_editor", "dialogue_rewriting": "dialogue_editor",

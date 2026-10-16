@@ -36,6 +36,7 @@
     "sampler": "euler"
   },
   "h3_reserve_vram_gib": 12,
+  "h3_prompting": "automatic",
   "h3_int8_scratch_mib": 512,
   "production_geometry": {"video_width": 768, "video_height": 1344}
 }
