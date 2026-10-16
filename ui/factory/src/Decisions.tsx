@@ -174,10 +174,12 @@ export function DecisionCenter({
   project,
   onNotify,
   onTab,
+  onShot,
 }: {
   project: RecordData;
   onNotify: (message: string) => void;
   onTab: (tab: string) => void;
+  onShot?: (id: string) => void;
 }) {
   const client = useQueryClient(),
     gate = pendingGate(project),
@@ -393,7 +395,7 @@ export function DecisionCenter({
                       <button
                         className="shot-tag"
                         type="button"
-                        onClick={() => onTab("shots")}
+                        onClick={() => (onShot ? onShot(id) : onTab("shots"))}
                         key={id}
                       >
                         {id}

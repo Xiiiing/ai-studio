@@ -16,3 +16,7 @@
 | HTTP准入、旧接口退休、跨域拒绝、媒体Range播放 | `browser/http-boundary.spec.mjs`、后端 `test_factory_http_security.py`      |
 
 `backend-contract.test.ts` 调用真实 Python provider normalizer；它只校验本地 payload，不探测网络或读取密钥。本地优先使用 `.venv/bin/python`，可用 `FACTORY_TEST_PYTHON` 显式指定隔离 Python 环境。
+
+0.0.2 补充主题、草稿、保存并发、检测失效、审核镜头定位与素材坐标输入检查。`browser/ui-redesign.spec.mjs` 使用真实隔离 Python HTTP，在 320 / 390 / 768 / 1024 / 1440 / 1920 宽度和浅深主题覆盖全部 17 个页面，共 204 个组合，生成截图并检查导航可达、触控尺寸和页面溢出。主题首屏、导航与弹窗焦点、减少动态效果由 `browser/ui-foundation.spec.mjs` 验证。
+
+真实 HTTP 浏览器夹具优先使用 `FACTORY_TEST_PYTHON`，其次选择本机 `.venv` 或 `envs/factory`，最后使用 `python3`。截图和 traces 仅保存在忽略的 `runtime/browser-report/` 并由 CI 上传。

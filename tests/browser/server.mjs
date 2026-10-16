@@ -221,8 +221,38 @@ const server = http.createServer(async (request, response) => {
         return json(response, { error: "模拟服务暂时不可用" }, 503);
       if (
         ["/api/factory/overview", "/api/factory/console"].includes(url.pathname)
-      )
-        return json(response, overviewFor(project));
+      ) {
+        const snapshot = overviewFor(project);
+        const search = (url.searchParams.get("q") || "").trim().toLowerCase();
+        const filter = url.searchParams.get("filter") || "all";
+        const matches = snapshot.projects.filter(
+          (p) =>
+            (!search ||
+              [p.title, p.id, p.brief].some((value) =>
+                String(value || "")
+                  .toLowerCase()
+                  .includes(search),
+              )) &&
+            (filter === "all" ||
+              (filter === "attention" && p.attention?.blocking) ||
+              (filter === "delivered" && p.status === "approved") ||
+              (filter === "active" &&
+                !["approved", "cancelled", "blocked", "paused"].includes(
+                  p.status,
+                ))),
+        );
+        const offset = Number(url.searchParams.get("offset") || 0),
+          limit = Number(url.searchParams.get("limit") || 100);
+        snapshot.projects = matches.slice(offset, offset + limit);
+        snapshot.pagination = {
+          offset,
+          limit,
+          total: matches.length,
+          has_more: offset + limit < matches.length,
+          next_offset: offset + limit < matches.length ? offset + limit : null,
+        };
+        return json(response, snapshot);
+      }
       if (url.pathname === "/api/factory/projects/" + id + "/workspace")
         return json(response, workspaceFor(project));
       if (url.pathname === "/api/factory/workflow")

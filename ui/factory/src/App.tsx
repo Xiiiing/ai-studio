@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   LayoutDashboard,
@@ -20,7 +20,12 @@ import {
   Play,
   Pause,
   Hand,
+  X,
 } from "lucide-react";
+import { ThemeControl } from "./Theme";
+import { ProjectNavigation } from "./ProjectNavigation";
+import { useUnsavedShotGuard } from "./SessionDraft";
+import { Models, MaterialLibrary } from "./LazyViews";
 import {
   request,
   keys,
@@ -50,9 +55,7 @@ import {
 import { Workflow, Team } from "./Workflow";
 import { DecisionCenter, ActionForm } from "./Decisions";
 import { ReviewAutomation } from "./ReviewAssistance";
-import { Models } from "./Models";
 import { Shots, Series, Costs } from "./Assets";
-import { MaterialLibrary } from "./MaterialLibrary";
 import {
   CreativeContract,
   creativeChoice,
@@ -78,11 +81,43 @@ const links = [
   ["activity", "运行记录", Activity],
 ] as const;
 export default function App() {
+  useUnsavedShotGuard();
   const client = useQueryClient(),
     [route, setRoute] = useState(readRoute),
     [create, setCreate] = useState<boolean | RecordData>(false),
     [mobile, setMobile] = useState(false),
+    [narrow, setNarrow] = useState(
+      () => window.matchMedia("(max-width: 760px)").matches,
+    ),
     [toast, setToast] = useState("");
+  const navigationRef = useRef<HTMLElement>(null);
+  const navigationTrigger = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 760px)");
+    const update = () => {
+      setNarrow(media.matches);
+      if (!media.matches) setMobile(false);
+    };
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
+  useEffect(() => {
+    if (!mobile || !narrow) return;
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    let focusFrame = requestAnimationFrame(() => {
+      focusFrame = requestAnimationFrame(() =>
+        navigationRef.current
+          ?.querySelector<HTMLButtonElement>(".navigation-close")
+          ?.focus(),
+      );
+    });
+    return () => {
+      cancelAnimationFrame(focusFrame);
+      document.body.style.overflow = overflow;
+      navigationTrigger.current?.focus({ preventScroll: true });
+    };
+  }, [mobile, narrow]);
   const overview = useQuery({
       queryKey: keys.overview,
       queryFn: () => request("/console"),
@@ -104,7 +139,10 @@ export default function App() {
       staleTime: 60000,
     });
   useEffect(() => {
-    const listener = () => setRoute(readRoute());
+    const listener = () => {
+      setRoute(readRoute());
+      setMobile(false);
+    };
     window.addEventListener("hashchange", listener);
     return () => window.removeEventListener("hashchange", listener);
   }, []);
@@ -133,23 +171,85 @@ export default function App() {
     navigate("dashboard", id, tab);
   return (
     <>
-      <a className="skip-link" href="#workspace">
+      <a
+        className="skip-link"
+        href="#workspace"
+        onClick={(event) => {
+          event.preventDefault();
+          document.getElementById("workspace")?.focus({ preventScroll: true });
+          document
+            .getElementById("workspace")
+            ?.scrollIntoView({ block: "start" });
+        }}
+      >
         跳至工作区
       </a>
       <div className={"app-shell " + (mobile ? "navigation-open" : "")}>
-        <aside className="sidebar" aria-label="工作室导航">
-          <a className="brand" href="#" onClick={() => navigate("dashboard")}>
-            <span className="brand-mark">
-              <Clapperboard size={22} />
-            </span>
-            <span>
-              映序<small>AI PRODUCTION STUDIO</small>
-            </span>
-          </a>
+        {mobile && narrow && (
+          <button
+            className="navigation-backdrop"
+            aria-label="关闭导航遮罩"
+            onClick={() => setMobile(false)}
+            tabIndex={-1}
+          />
+        )}
+        <aside
+          ref={navigationRef}
+          id="studio-navigation"
+          className="sidebar"
+          aria-label="工作室导航"
+          inert={narrow && !mobile ? true : undefined}
+          aria-hidden={narrow && !mobile ? true : undefined}
+          onKeyDown={(event) => {
+            if (!mobile || !narrow) return;
+            if (event.key === "Escape") {
+              event.preventDefault();
+              setMobile(false);
+            }
+            if (event.key === "Tab") {
+              const items = Array.from(
+                navigationRef.current?.querySelectorAll<HTMLElement>(
+                  "a[href],button:not(:disabled),select",
+                ) || [],
+              ).filter((el) => el.getClientRects().length > 0);
+              const first = items[0],
+                last = items[items.length - 1];
+              if (event.shiftKey && document.activeElement === first) {
+                event.preventDefault();
+                last?.focus();
+              }
+              if (!event.shiftKey && document.activeElement === last) {
+                event.preventDefault();
+                first?.focus();
+              }
+            }
+          }}
+        >
+          <div className="sidebar-header">
+            <a className="brand" href="#" onClick={() => navigate("dashboard")}>
+              <span className="brand-mark">
+                <Clapperboard size={22} />
+              </span>
+              <span>
+                映序<small>AI PRODUCTION STUDIO</small>
+              </span>
+            </a>
+            <button
+              type="button"
+              className="icon-button navigation-close"
+              aria-label="关闭导航"
+              onClick={() => setMobile(false)}
+            >
+              <X size={20} />
+            </button>
+          </div>
           <button
             className="button primary new-project"
             data-action="new-project"
-            onClick={() => setCreate(true)}
+            onClick={() => {
+              setMobile(false);
+              setCreate(true);
+            }}
           >
             <Plus size={16} />
             新建制作
@@ -221,13 +321,16 @@ export default function App() {
             </div>
           </div>
         </aside>
-        <div className="main-shell">
+        <div className="main-shell" inert={mobile && narrow ? true : undefined}>
           <header className="topbar">
             <div className="topbar-context">
               <button
+                ref={navigationTrigger}
                 className="icon-button mobile-navigation"
                 data-action="toggle-navigation"
-                aria-label="展开导航"
+                aria-label={mobile ? "关闭导航" : "展开导航"}
+                aria-expanded={mobile}
+                aria-controls="studio-navigation"
                 onClick={() => setMobile(!mobile)}
               >
                 <Menu size={20} />
@@ -240,6 +343,7 @@ export default function App() {
               </span>
             </div>
             <div className="topbar-right">
+              <ThemeControl />
               <span
                 className={
                   "sync-state " + (overview.isError ? "error-text" : "")
@@ -283,7 +387,16 @@ export default function App() {
               <>
                 <ErrorNotice error={overview.error} />
                 {!overview.data ? (
-                  <Loading />
+                  overview.error ? (
+                    <button
+                      className="button"
+                      onClick={() => overview.refetch()}
+                    >
+                      重新读取工作室
+                    </button>
+                  ) : (
+                    <Loading />
+                  )
                 ) : route.view === "dashboard" ? (
                   <Dashboard
                     overview={overview.data}
@@ -331,15 +444,30 @@ export default function App() {
                       title="标准制作流程"
                       description="读取服务器工作流定义；项目中的实际运行和返修记录分别展示。"
                     >
-                      <Workflow
-                        graph={
-                          spec.data?.production_graph ||
-                          spec.data?.workflow || {
-                            nodes: rows(spec.data?.nodes),
-                            edges: rows(spec.data?.edges),
-                          }
-                        }
-                      />
+                      <ErrorNotice error={spec.error} />
+                      {spec.error && (
+                        <button
+                          className="button"
+                          onClick={() => spec.refetch()}
+                        >
+                          重新读取制作流程
+                        </button>
+                      )}
+                      {spec.isPending ? (
+                        <Loading />
+                      ) : (
+                        !spec.error && (
+                          <Workflow
+                            graph={
+                              spec.data?.production_graph ||
+                              spec.data?.workflow || {
+                                nodes: rows(spec.data?.nodes),
+                                edges: rows(spec.data?.edges),
+                              }
+                            }
+                          />
+                        )
+                      )}
                     </Panel>
                     <Panel title="已配置的 Agent">
                       <div className="agent-grid">
@@ -388,8 +516,15 @@ export default function App() {
           onClose={() => setCreate(false)}
           onCreated={(p) => {
             setCreate(false);
-            setToast(p.material_setup_requested ? "项目已建立，请先准备并确认素材。" : "制作项目已建立，AI 团队开始策划。");
-            openProject(p.id, p.material_setup_requested ? "materials" : "overview");
+            setToast(
+              p.material_setup_requested
+                ? "项目已建立，请先准备并确认素材。"
+                : "制作项目已建立，AI 团队开始策划。",
+            );
+            openProject(
+              p.id,
+              p.material_setup_requested ? "materials" : "overview",
+            );
           }}
         />
       )}
@@ -669,28 +804,32 @@ function Projects({
 }) {
   const [filter, setFilter] = useState("all"),
     [search, setSearch] = useState(""),
+    [query, setQuery] = useState(""),
     [offset, setOffset] = useState(0);
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setQuery(search.trim());
+      setOffset(0);
+    }, 200);
+    return () => clearTimeout(timer);
+  }, [search]);
   const page = useQuery({
-    queryKey: ["project-page", offset],
-    queryFn: () => request("/console?offset=" + offset + "&limit=100"),
+    queryKey: ["project-page", offset, query, filter],
+    queryFn: () =>
+      request(
+        "/console?" +
+          new URLSearchParams({
+            offset: String(offset),
+            limit: "100",
+            q: query,
+            filter,
+          }),
+      ),
   });
-  const snapshot = page.data || overview;
-  const projects = rows(snapshot.projects).filter(
-    (p) =>
-      (filter === "all" ||
-        (filter === "attention" && p.attention?.blocking) ||
-        (filter === "delivered" && p.status === "approved") ||
-        (filter === "active" &&
-          !["approved", "cancelled", "blocked", "paused"].includes(
-            p.status,
-          ))) &&
-      (!search ||
-        [p.title, p.id, p.brief].some((v) =>
-          String(v || "")
-            .toLowerCase()
-            .includes(search.toLowerCase()),
-        )),
-  );
+  const snapshot =
+    page.data ||
+    (!query && filter === "all" && offset === 0 ? overview : undefined);
+  const projects = rows(snapshot?.projects);
   return (
     <>
       <Heading
@@ -716,7 +855,11 @@ function Projects({
               <button
                 key={v}
                 className={filter === v ? "selected" : ""}
-                onClick={() => setFilter(v)}
+                aria-pressed={filter === v}
+                onClick={() => {
+                  setFilter(v);
+                  setOffset(0);
+                }}
               >
                 {l}
               </button>
@@ -729,26 +872,45 @@ function Projects({
               aria-label="搜索项目"
               placeholder="搜索名称或需求"
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              maxLength={200}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setOffset(0);
+              }}
             />
           </label>
         </div>
-        {projects.length ? (
+        {(query !== search.trim() || page.isFetching) && (
+          <p className="muted" role="status">
+            正在搜索全部项目…
+          </p>
+        )}
+        {page.isPending && !snapshot ? (
+          <Loading />
+        ) : projects.length ? (
           <ProjectTable projects={projects} openProject={openProject} />
         ) : (
           <div>
             <table className="console-project-table">
               <tbody />
             </table>
-            <Empty title={search ? "没有匹配的项目" : "暂无此类项目"} />
+            {!page.error && (
+              <Empty title={search ? "没有匹配的项目" : "暂无此类项目"} />
+            )}
           </div>
         )}
         <Pagination
-          pagination={snapshot.pagination}
+          pagination={snapshot?.pagination}
           offset={offset}
           onOffset={setOffset}
+          disabled={query !== search.trim() || page.isFetching}
         />
         <ErrorNotice error={page.error} />
+        {page.error && (
+          <button className="button" onClick={() => page.refetch()}>
+            重新读取项目
+          </button>
+        )}
       </Panel>
     </>
   );
@@ -940,7 +1102,13 @@ function Project({
     return (
       <>
         <ErrorNotice error={workspace.error} />
-        <Loading />
+        {workspace.error ? (
+          <button className="button" onClick={() => workspace.refetch()}>
+            重新读取项目
+          </button>
+        ) : (
+          <Loading />
+        )}
       </>
     );
   const p = { ...w.project, operator: w.operator },
@@ -968,18 +1136,6 @@ function Project({
       setBusy(false);
     }
   }
-  const tabs = [
-    ["overview", "制作工作流"],
-    ["decisions", "待办决策"],
-    ["team", "团队与回执"],
-    ["shots", "镜头制作台"],
-    ["script", "剧本与分镜"],
-    ["quality", "制作与质检"],
-    ["delivery", "成片交付"],
-    ["series", "系列资产"],
-    ["materials", "素材与定稿"],
-    ["costs", "云任务与费用"],
-  ];
   return (
     <>
       <header className="project-heading">
@@ -1058,348 +1214,354 @@ function Project({
           </button>
         </div>
       )}
-      <nav className="tabbar" aria-label="项目内容">
-        {tabs.map(([v, l]) => (
-          <button
-            key={v}
-            data-tab={v}
-            className={v === tab ? "active" : ""}
-            aria-current={v === tab ? "page" : undefined}
-            onClick={() => onTab(v)}
-          >
-            {l}
-            {v === "decisions" && attention?.blocking && <i />}
-          </button>
-        ))}
-      </nav>
-      <div className="project-pane">
-        {tab === "overview" ? (
-          <>
-            <CreativeContract project={p} />
-            <div className="project-context">
-              <article>
-                <small>当前阶段</small>
-                <strong>
-                  {w.operator?.current_activity || names[p.status] || p.status}
-                </strong>
-              </article>
-              <article>
-                <small>制作进度</small>
-                <strong>
-                  {
-                    rows(p.shots).filter((s) => s.video_url || s.video?.path)
-                      .length
+      <div className="project-content-layout">
+        <ProjectNavigation
+          tab={tab}
+          onTab={onTab}
+          attention={attention?.blocking}
+        />
+        <div className="project-pane">
+          {tab === "overview" ? (
+            <>
+              <CreativeContract project={p} />
+              <div className="project-context">
+                <article>
+                  <small>当前阶段</small>
+                  <strong>
+                    {w.operator?.current_activity ||
+                      names[p.status] ||
+                      p.status}
+                  </strong>
+                </article>
+                <article>
+                  <small>制作进度</small>
+                  <strong>
+                    {
+                      rows(p.shots).filter((s) => s.video_url || s.video?.path)
+                        .length
+                    }
+                    <small> / {rows(p.shots).length} 镜视频</small>
+                  </strong>
+                </article>
+                <article>
+                  <small>预算用量</small>
+                  <strong>
+                    {number(p.budget?.spent_gpu_minutes).toFixed(1)}
+                    <small> / {p.budget?.gpu_minutes || "—"} GPU 分钟</small>
+                  </strong>
+                </article>
+              </div>
+              <Workflow
+                key={id}
+                graph={graph}
+                flow={actualFlow}
+                attention={attention}
+                selectedNode={selectedFlowNode}
+                onSelectNode={(node) => {
+                  setSelectedFlowNode(node);
+                  setSelectedExecution("");
+                }}
+                selectedExecution={selectedExecution}
+                onOpen={onTab}
+                onDecision={() => onTab("decisions")}
+                onShot={(shot) => {
+                  setSelectedShot(shot);
+                  onTab("shots");
+                }}
+              />
+              <div className="project-focus">
+                <Panel
+                  title="当前创作产物"
+                  action={
+                    <button
+                      className="text-link"
+                      onClick={() =>
+                        onTab(
+                          p.delivery?.video_url
+                            ? "delivery"
+                            : p.styles?.length
+                              ? "decisions"
+                              : "script",
+                        )
+                      }
+                    >
+                      打开详情
+                      <ArrowUpRight size={14} />
+                    </button>
                   }
-                  <small> / {rows(p.shots).length} 镜视频</small>
-                </strong>
-              </article>
-              <article>
-                <small>预算用量</small>
-                <strong>
-                  {number(p.budget?.spent_gpu_minutes).toFixed(1)}
-                  <small> / {p.budget?.gpu_minutes || "—"} GPU 分钟</small>
-                </strong>
-              </article>
-            </div>
-            <Workflow
-              key={id}
-              graph={graph}
-              flow={actualFlow}
-              attention={attention}
-              selectedNode={selectedFlowNode}
-              onSelectNode={(node) => {
-                setSelectedFlowNode(node);
-                setSelectedExecution("");
-              }}
-              selectedExecution={selectedExecution}
-              onOpen={onTab}
-              onDecision={() => onTab("decisions")}
+                >
+                  <CurrentOutput project={p} />
+                </Panel>
+                <Panel title="当前任务与下一步">
+                  <ReviewAutomation project={p} />
+                  <div className="current-task">
+                    <Badge status={p.status} />
+                    <h3>{w.operator?.current_activity || names[p.status]}</h3>
+                    <p>
+                      {attention?.summary ||
+                        "团队按工作流继续推进，实际产物与审核结果会持续更新。"}
+                    </p>
+                    <div className="member-chips">
+                      {(
+                        rows(graph.nodes).find(
+                          (n) => n.id === graph.active_node,
+                        )?.members || []
+                      ).map((r: string) => (
+                        <span key={r}>{roleName(r)}</span>
+                      ))}
+                    </div>
+                    {attention?.blocking ? (
+                      <button
+                        className="button primary"
+                        onClick={() =>
+                          onTab(attention.target_tab || "decisions")
+                        }
+                      >
+                        {attention.action_label || "处理当前待办"}
+                        <ArrowRight size={15} />
+                      </button>
+                    ) : (
+                      <button className="button" onClick={() => onTab("team")}>
+                        查看任务与交接
+                        <ArrowRight size={15} />
+                      </button>
+                    )}
+                  </div>
+                </Panel>
+              </div>
+              <div className="project-bottom-grid">
+                <Panel title="创作任务与当前故事">
+                  <p className="brief-text">{p.brief}</p>
+                  {p.selected_story && (
+                    <div className="selected-story">
+                      <small>
+                        已选故事 ·{" "}
+                        {p.script_review?.passed
+                          ? "当前已通过剧本"
+                          : "选题方向"}
+                      </small>
+                      <h3>
+                        {p.script?.title ||
+                          rows(p.proposals).find(
+                            (s) => s.id === p.selected_story,
+                          )?.title ||
+                          p.title}
+                      </h3>
+                      <p>
+                        {p.script?.logline ||
+                          p.script?.summary ||
+                          rows(p.proposals).find(
+                            (s) => s.id === p.selected_story,
+                          )?.logline}
+                      </p>
+                    </div>
+                  )}
+                  <details>
+                    <summary>研究资料与使用范围</summary>
+                    {rows(p.sources || p.research?.sources).map((s, i) => (
+                      <div className="source-item" key={i}>
+                        <Artifact
+                          item={{ url: s.url, label: s.title || s.url }}
+                        />
+                        <Badge label={s.rights || "仅研究"} status="pending" />
+                      </div>
+                    ))}
+                  </details>
+                </Panel>
+                <Panel title="最近项目事件">
+                  <ActivityList
+                    events={rows(p.events)
+                      .slice(-5)
+                      .reverse()
+                      .map((e) => ({ ...e, project_id: id, title: p.title }))}
+                    openProject={(_, t) => onTab(t || "quality")}
+                  />
+                </Panel>
+              </div>
+            </>
+          ) : tab === "decisions" ? (
+            <DecisionCenter
+              key={id + ":" + (pendingGate(p)?.id || attention?.kind || "none")}
+              project={p}
+              onNotify={notify}
+              onTab={onTab}
               onShot={(shot) => {
                 setSelectedShot(shot);
                 onTab("shots");
               }}
             />
-            <div className="project-focus">
-              <Panel
-                title="当前创作产物"
-                action={
-                  <button
-                    className="text-link"
-                    onClick={() =>
-                      onTab(
-                        p.delivery?.video_url
-                          ? "delivery"
-                          : p.styles?.length
-                            ? "decisions"
-                            : "script",
-                      )
-                    }
-                  >
-                    打开详情
-                    <ArrowUpRight size={14} />
-                  </button>
+          ) : tab === "team" ? (
+            <>
+              <ErrorNotice
+                error={
+                  flow.error
+                    ? new Error("历史回执读取失败：" + flow.error.message)
+                    : null
                 }
-              >
-                <CurrentOutput project={p} />
+              />
+              <Team
+                flow={actualFlow}
+                onInspect={(step, execution) => {
+                  setSelectedFlowNode(step);
+                  setSelectedExecution(execution || "");
+                  onTab("overview");
+                }}
+                graph={graph}
+                models={models}
+                projectRevision={p.revision}
+                onOpen={onTab}
+              />
+            </>
+          ) : tab === "shots" ? (
+            <Shots project={p} notify={notify} initialShot={selectedShot} />
+          ) : tab === "script" ? (
+            <div className="stack">
+              <Panel title="剧本与人物设定">
+                <Readable value={p.script} />
               </Panel>
-              <Panel title="当前任务与下一步">
-                <ReviewAutomation project={p} />
-                <div className="current-task">
-                  <Badge status={p.status} />
-                  <h3>{w.operator?.current_activity || names[p.status]}</h3>
-                  <p>
-                    {attention?.summary ||
-                      "团队按工作流继续推进，实际产物与审核结果会持续更新。"}
-                  </p>
-                  <div className="member-chips">
-                    {(
-                      rows(graph.nodes).find((n) => n.id === graph.active_node)
-                        ?.members || []
-                    ).map((r: string) => (
-                      <span key={r}>{roleName(r)}</span>
-                    ))}
-                  </div>
-                  {attention?.blocking ? (
-                    <button
-                      className="button primary"
-                      onClick={() => onTab(attention.target_tab || "decisions")}
-                    >
-                      {attention.action_label || "处理当前待办"}
-                      <ArrowRight size={15} />
-                    </button>
-                  ) : (
-                    <button className="button" onClick={() => onTab("team")}>
-                      查看任务与交接
-                      <ArrowRight size={15} />
-                    </button>
-                  )}
+              <Panel title="逐镜分镜">
+                <div className="shot-story-grid">
+                  {rows(p.shots).map((s) => (
+                    <article className="shot-story-card" key={s.id}>
+                      <button
+                        className="shot-preview"
+                        data-action="preview"
+                        data-shot={s.id}
+                        onClick={() => setPreview(s)}
+                      >
+                        {mediaUrl(s.image_url) ? (
+                          <img src={mediaUrl(s.image_url)} alt={s.id} />
+                        ) : (
+                          <Clapperboard size={32} />
+                        )}
+                        <span>
+                          <Play size={17} />
+                        </span>
+                      </button>
+                      <div>
+                        <div className="row-between">
+                          <h3>
+                            {s.id} · {s.seconds} 秒
+                          </h3>
+                          <Badge status={s.status} />
+                        </div>
+                        <p>{s.dramatic_beat || s.action || s.description}</p>
+                        <Readable value={s.dialogue} />
+                      </div>
+                    </article>
+                  ))}
                 </div>
               </Panel>
             </div>
-            <div className="project-bottom-grid">
-              <Panel title="创作任务与当前故事">
-                <p className="brief-text">{p.brief}</p>
-                {p.selected_story && (
-                  <div className="selected-story">
-                    <small>
-                      已选故事 ·{" "}
-                      {p.script_review?.passed ? "当前已通过剧本" : "选题方向"}
-                    </small>
-                    <h3>
-                      {p.script?.title ||
-                        rows(p.proposals).find((s) => s.id === p.selected_story)
-                          ?.title ||
-                        p.title}
-                    </h3>
-                    <p>
-                      {p.script?.logline ||
-                        p.script?.summary ||
-                        rows(p.proposals).find((s) => s.id === p.selected_story)
-                          ?.logline}
-                    </p>
-                  </div>
-                )}
-                <details>
-                  <summary>研究资料与使用范围</summary>
-                  {rows(p.sources || p.research?.sources).map((s, i) => (
-                    <div className="source-item" key={i}>
-                      <Artifact
-                        item={{ url: s.url, label: s.title || s.url }}
-                      />
-                      <Badge label={s.rights || "仅研究"} status="pending" />
-                    </div>
-                  ))}
-                </details>
+          ) : tab === "quality" ? (
+            <div className="stack">
+              <Panel title="镜头质检与返修">
+                <div className="table-scroll">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>镜头</th>
+                        <th>状态</th>
+                        <th>尝试</th>
+                        <th>审核结果与问题</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows(p.shots).map((s) => (
+                        <tr key={s.id}>
+                          <td>{s.id}</td>
+                          <td>
+                            <Badge status={s.status} />
+                          </td>
+                          <td>
+                            {rows(s.attempts).length || s.attempt_count || 0}
+                          </td>
+                          <td>
+                            <Readable value={s.qa || s.quality || s.review} />
+                            <details>
+                              <summary>素材尝试记录</summary>
+                              <Readable value={s.attempts} />
+                            </details>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </Panel>
-              <Panel title="最近项目事件">
+              <Panel title="生产事件">
                 <ActivityList
                   events={rows(p.events)
-                    .slice(-5)
-                    .reverse()
-                    .map((e) => ({ ...e, project_id: id, title: p.title }))}
+                    .map((e) => ({ ...e, project_id: id, title: p.title }))
+                    .reverse()}
                   openProject={(_, t) => onTab(t || "quality")}
                 />
               </Panel>
             </div>
-          </>
-        ) : tab === "decisions" ? (
-          <DecisionCenter
-            key={id + ":" + (pendingGate(p)?.id || attention?.kind || "none")}
-            project={p}
-            onNotify={notify}
-            onTab={onTab}
-          />
-        ) : tab === "team" ? (
-          <>
-            <ErrorNotice
-              error={
-                flow.error
-                  ? new Error("历史回执读取失败：" + flow.error.message)
-                  : null
+          ) : tab === "series" ? (
+            <Series project={p} notify={notify} />
+          ) : tab === "materials" ? (
+            <MaterialLibrary project={p} notify={notify} />
+          ) : tab === "costs" ? (
+            <Costs project={p} notify={notify} />
+          ) : (
+            <Panel
+              title="成片交付"
+              description={
+                p.status === "approved"
+                  ? "此版本已由出品人确认。"
+                  : "当前制作版本，完成终审后正式交付。"
               }
-            />
-            <Team
-              flow={actualFlow}
-              onInspect={(step, execution) => {
-                setSelectedFlowNode(step);
-                setSelectedExecution(execution || "");
-                onTab("overview");
-              }}
-              graph={graph}
-              models={models}
-              projectRevision={p.revision}
-              onOpen={onTab}
-            />
-          </>
-        ) : tab === "shots" ? (
-          <Shots project={p} notify={notify} initialShot={selectedShot} />
-        ) : tab === "script" ? (
-          <div className="stack">
-            <Panel title="剧本与人物设定">
-              <Readable value={p.script} />
-            </Panel>
-            <Panel title="逐镜分镜">
-              <div className="shot-story-grid">
-                {rows(p.shots).map((s) => (
-                  <article className="shot-story-card" key={s.id}>
-                    <button
-                      className="shot-preview"
-                      data-action="preview"
-                      data-shot={s.id}
-                      onClick={() => setPreview(s)}
+            >
+              <CreativeContract project={p} />
+              {ownedMedia(p.id, p.delivery?.video_url) ? (
+                <div className="delivery-layout">
+                  <video
+                    className="delivery-video"
+                    src={ownedMedia(p.id, p.delivery.video_url)}
+                    controls
+                    playsInline
+                    preload="metadata"
+                  />
+                  <div>
+                    <h3>{p.title}</h3>
+                    <p>
+                      {p.duration_seconds} 秒 · 制作版本{" "}
+                      {p.production_revision || 1}
+                    </p>
+                    <a
+                      className="button primary"
+                      href={ownedMedia(p.id, p.delivery.video_url)}
+                      download
                     >
-                      {mediaUrl(s.image_url) ? (
-                        <img src={mediaUrl(s.image_url)} alt={s.id} />
-                      ) : (
-                        <Clapperboard size={32} />
-                      )}
-                      <span>
-                        <Play size={17} />
-                      </span>
-                    </button>
-                    <div>
-                      <div className="row-between">
-                        <h3>
-                          {s.id} · {s.seconds} 秒
-                        </h3>
-                        <Badge status={s.status} />
-                      </div>
-                      <p>{s.dramatic_beat || s.action || s.description}</p>
-                      <Readable value={s.dialogue} />
+                      下载完整 MP4
+                      <ArrowUpRight size={15} />
+                    </a>
+                    <div className="artifact-grid">
+                      {[
+                        ...rows(p.delivery.files),
+                        ...rows(p.delivery.artifacts),
+                        ...(p.delivery.manifest_url
+                          ? [{ url: p.delivery.manifest_url, name: "制作清单" }]
+                          : []),
+                      ].map((f, i) => (
+                        <Artifact
+                          key={i}
+                          item={typeof f === "string" ? { path: f } : f}
+                          projectId={p.id}
+                        />
+                      ))}
                     </div>
-                  </article>
-                ))}
-              </div>
-            </Panel>
-          </div>
-        ) : tab === "quality" ? (
-          <div className="stack">
-            <Panel title="镜头质检与返修">
-              <div className="table-scroll">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>镜头</th>
-                      <th>状态</th>
-                      <th>尝试</th>
-                      <th>审核结果与问题</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rows(p.shots).map((s) => (
-                      <tr key={s.id}>
-                        <td>{s.id}</td>
-                        <td>
-                          <Badge status={s.status} />
-                        </td>
-                        <td>
-                          {rows(s.attempts).length || s.attempt_count || 0}
-                        </td>
-                        <td>
-                          <Readable value={s.qa || s.quality || s.review} />
-                          <details>
-                            <summary>素材尝试记录</summary>
-                            <Readable value={s.attempts} />
-                          </details>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </Panel>
-            <Panel title="生产事件">
-              <ActivityList
-                events={rows(p.events)
-                  .map((e) => ({ ...e, project_id: id, title: p.title }))
-                  .reverse()}
-                openProject={(_, t) => onTab(t || "quality")}
-              />
-            </Panel>
-          </div>
-        ) : tab === "series" ? (
-          <Series project={p} notify={notify} />
-        ) : tab === "materials" ? (
-          <MaterialLibrary project={p} notify={notify} />
-        ) : tab === "costs" ? (
-          <Costs project={p} notify={notify} />
-        ) : (
-          <Panel
-            title="成片交付"
-            description={
-              p.status === "approved"
-                ? "此版本已由出品人确认。"
-                : "当前制作版本，完成终审后正式交付。"
-            }
-          >
-            <CreativeContract project={p} />
-            {ownedMedia(p.id, p.delivery?.video_url) ? (
-              <div className="delivery-layout">
-                <video
-                  className="delivery-video"
-                  src={ownedMedia(p.id, p.delivery.video_url)}
-                  controls
-                  playsInline
-                  preload="metadata"
-                />
-                <div>
-                  <h3>{p.title}</h3>
-                  <p>
-                    {p.duration_seconds} 秒 · 制作版本{" "}
-                    {p.production_revision || 1}
-                  </p>
-                  <a
-                    className="button primary"
-                    href={ownedMedia(p.id, p.delivery.video_url)}
-                    download
-                  >
-                    下载完整 MP4
-                    <ArrowUpRight size={15} />
-                  </a>
-                  <div className="artifact-grid">
-                    {[
-                      ...rows(p.delivery.files),
-                      ...rows(p.delivery.artifacts),
-                      ...(p.delivery.manifest_url
-                        ? [{ url: p.delivery.manifest_url, name: "制作清单" }]
-                        : []),
-                    ].map((f, i) => (
-                      <Artifact
-                        key={i}
-                        item={typeof f === "string" ? { path: f } : f}
-                        projectId={p.id}
-                      />
-                    ))}
                   </div>
                 </div>
-              </div>
-            ) : (
-              <Empty title="完整成片尚未交付">
-                镜头、配音、字幕与剪辑完成后，成片将显示在这里。
-              </Empty>
-            )}
-          </Panel>
-        )}
+              ) : (
+                <Empty title="完整成片尚未交付">
+                  镜头、配音、字幕与剪辑完成后，成片将显示在这里。
+                </Empty>
+              )}
+            </Panel>
+          )}
+        </div>
       </div>
       {preview && (
         <Modal
@@ -1577,7 +1739,10 @@ export function CreateProject({
             defaultValue={seed?.brief || ""}
           />
         </Field>
-        <label className="check"><input type="checkbox" name="prepare_materials" />先准备人物、场景与画风，再开始制作</label>
+        <label className="check">
+          <input type="checkbox" name="prepare_materials" />
+          先准备人物、场景与画风，再开始制作
+        </label>
         <div className="form-row">
           <Field label="创作方式">
             <select name="creation_mode">
@@ -1731,10 +1896,12 @@ function Pagination({
   pagination,
   offset,
   onOffset,
+  disabled = false,
 }: {
   pagination?: RecordData;
   offset: number;
   onOffset: (n: number) => void;
+  disabled?: boolean;
 }) {
   if (!pagination || (!offset && !pagination.has_more)) return null;
   return (
@@ -1746,14 +1913,14 @@ function Pagination({
       <div className="button-row">
         <button
           className="button small"
-          disabled={!offset}
+          disabled={!offset || disabled}
           onClick={() => onOffset(Math.max(0, offset - pagination.limit))}
         >
           上一页
         </button>
         <button
           className="button small"
-          disabled={!pagination.has_more}
+          disabled={!pagination.has_more || disabled}
           onClick={() =>
             onOffset(pagination.next_offset ?? offset + pagination.limit)
           }
