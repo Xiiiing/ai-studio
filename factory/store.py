@@ -81,6 +81,8 @@ def initialize():
         migrate_remote_tasks(db)
         from .team_ledger import initialize as initialize_team
         initialize_team(db)
+        from .team_control import initialize as initialize_team_control
+        initialize_team_control(db)
 
 
 def _read(db, pid):
@@ -94,6 +96,8 @@ def _read(db, pid):
 
 
 def _write(db, project):
+    from .team_control import guard_project_write
+    guard_project_write(db, project)
     project["updated_at"] = now()
     project["revision"] = int(project.get("revision", 0)) + 1
     db.execute("UPDATE projects SET updated=?,revision=?,snapshot=? WHERE id=?",

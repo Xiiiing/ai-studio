@@ -80,9 +80,11 @@ def render_targets(engine, targets, phase):
     prepared = cloud_media.prepare_images(engine,cloud_targets) if cloud_targets else None
     ready = []
     for target in targets:
+        engine._team_admit_target(target)
         engine.boundary()
         cloud = target in cloud_targets
         record = prepared[1][target['key']][0] if cloud else target.pop('resume_attempt', None) or engine._new_attempt(target)
+        engine._team_begin_target(target, record)
         started = time.monotonic()
         try:
             receipt = cloud_media.render_image(engine,target,record,prepared) if cloud else render(engine, target, record, phase)
@@ -94,4 +96,5 @@ def render_targets(engine, targets, phase):
             record.update(state='failed', error=str(exc)[:500], qa={'status': 'fail', 'issues': [{'code': 'generation', 'detail': type(exc).__name__}]})
         finally:
             engine._save_attempt(target, record); engine.emit(phase)
+        engine._team_after_target(target)
     return ready

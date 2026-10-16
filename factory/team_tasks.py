@@ -167,6 +167,8 @@ def tracked_node(stage, function):
         raise ValueError("Unknown team task")
     @wraps(function)
     def execute(state):
+        from .team_control import admit
+        admit(state["project_id"], "stage", stage)
         token = begin(state["project_id"], stage)
         from .team_ledger import begin_unit, finish_unit
         ledger_token = begin_unit(state["project_id"], "stage", stage, input_version=token["input_signature"])
@@ -176,7 +178,7 @@ def tracked_node(stage, function):
         try:
             result = function(state)
         except BaseException as exc:
-            status = {"ReviewBlocked": "blocked", "CreativeReviewError": "blocked",
+            status = {"ReviewBlocked": "blocked", "CreativeReviewError": "blocked", "TeamInterventionPending": "paused",
                       "ProjectPaused": "paused", "ProductionPaused": "paused",
                       "ProductionDeferred": "waiting", "ProductionNeedsDecision": "blocked",
                       "ProductionBudgetExceeded": "blocked"}.get(type(exc).__name__,

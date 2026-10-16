@@ -101,6 +101,8 @@ class VideoProductionMixin:
         ready = []
         prepared, batch = self._prepare_cloud_targets(targets)
         for target, record, frame, line in prepared:
+            self._team_admit_target(target)
+            self._team_begin_target(target, record)
             self.boundary()
             shot = target.get("shot")
             if shot is not None:
@@ -165,4 +167,5 @@ class VideoProductionMixin:
             finally:
                 self._save_attempt(target, record)
                 self.emit(phase)
+            self._team_after_target(target)
         return ready
