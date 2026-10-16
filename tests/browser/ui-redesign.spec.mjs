@@ -139,6 +139,7 @@ test("model and shot drafts survive navigating away while keeping their original
     page.getByRole("button", { name: "保存配置", exact: true }),
   ).toBeEnabled();
   await page.goto("/#project=012345abcdef&tab=shots");
+  await page.getByText("单镜精修", { exact: true }).click();
   await page.getByLabel("首帧提示词").fill("A retained shot draft");
   await openProjectPage(page, "team");
   await openProjectPage(page, "shots");

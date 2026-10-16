@@ -416,7 +416,70 @@ function shotBoard(): RecordData {
     ],
   };
 }
+async function openShotEditor(user: ReturnType<typeof userEvent.setup>) {
+  const summary = screen.getByText("单镜精修").closest("summary")!;
+  if (!summary.closest("details")!.open) await user.click(summary);
+}
 describe("the actual shot workbench submits the Python mutation contract", () => {
+  it("shows videos before image candidates and keeps playback and selection through editor toggles and polling", async () => {
+    const user = userEvent.setup();
+    let board = shotBoard();
+    board.shots[0].candidates.unshift({
+      id: "image:take_001",
+      stage: "image",
+      take: "take_001",
+      status: "passed",
+      selectable: true,
+      media_url:
+        "/media/production/" +
+        project.slug +
+        "/assets/images/S01/take_001/frame.png",
+    });
+    captureRequests(() => board);
+    const { client, wrapper } = queryWrapper();
+    client.setQueryData(keys.shots(project.id), board);
+    const view = render(<Shots project={project} notify={vi.fn()} />, {
+      wrapper,
+    });
+    await waitFor(() =>
+      expect(client.isFetching({ queryKey: keys.shots(project.id) })).toBe(0),
+    );
+    const video = view.container.querySelector("video")!;
+    const editor = screen.getByText("单镜精修").closest("details")!;
+    expect(editor).not.toHaveAttribute("open");
+    expect(
+      video.compareDocumentPosition(editor) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(view.container.querySelector(".candidate-card video")).toBe(
+      view.container.querySelector(".candidate-card")!.querySelector("video"),
+    );
+    expect(screen.getByLabelText("首帧提示词")).not.toBeVisible();
+    video.currentTime = 1.25;
+    const consent = screen.getAllByRole("checkbox", {
+      name: /确认采用此候选/,
+    })[0];
+    await user.click(consent);
+    await openShotEditor(user);
+    fireEvent.change(screen.getByLabelText("首帧提示词"), {
+      target: { value: "Draft remains while comparing candidates" },
+    });
+    await user.click(screen.getByText("单镜精修"));
+    board = {
+      ...board,
+      shots: [{ ...board.shots[0], prompt: "Background refresh" }],
+    };
+    await act(async () => {
+      client.setQueryData(keys.shots(project.id), board);
+    });
+    expect(view.container.querySelector("video")).toBe(video);
+    expect(video.currentTime).toBe(1.25);
+    expect(consent).toBeChecked();
+    await openShotEditor(user);
+    expect(screen.getByLabelText("首帧提示词")).toHaveValue(
+      "Draft remains while comparing candidates",
+    );
+  });
+
   it("retains separate shot drafts across shot selection and route remounts", async () => {
     const user = userEvent.setup(),
       board = shotBoard();
@@ -435,15 +498,20 @@ describe("the actual shot workbench submits the Python mutation contract", () =>
     await waitFor(() =>
       expect(client.isFetching({ queryKey: keys.shots(project.id) })).toBe(0),
     );
+    await openShotEditor(user);
     fireEvent.change(screen.getByLabelText("首帧提示词"), {
       target: { value: "First shot draft" },
     });
+    await user.click(screen.getByText("单镜精修"));
+    expect(screen.getByLabelText("首帧提示词")).not.toBeVisible();
     await user.click(screen.getByRole("button", { name: /S02 4 秒/ }));
+    await openShotEditor(user);
     fireEvent.change(screen.getByLabelText("首帧提示词"), {
       target: { value: "Second shot draft" },
     });
     await user.click(screen.getByRole("button", { name: /S01 4 秒/ }));
     expect(screen.getByLabelText("首帧提示词")).toHaveValue("First shot draft");
+    expect(screen.getByLabelText("首帧提示词")).toBeVisible();
     view.unmount();
     render(<Shots project={project} initialShot="S02" notify={vi.fn()} />, {
       wrapper,
@@ -475,6 +543,7 @@ describe("the actual shot workbench submits the Python mutation contract", () =>
     await waitFor(() =>
       expect(client.isFetching({ queryKey: keys.shots(project.id) })).toBe(0),
     );
+    await openShotEditor(user);
     fireEvent.change(screen.getByLabelText("首帧提示词"), {
       target: { value: "Saved shot draft" },
     });
@@ -498,12 +567,21 @@ describe("the actual shot workbench submits the Python mutation contract", () =>
     expect(screen.getByLabelText("首帧提示词")).toHaveValue("Saved shot draft");
   });
 
-  it("makes shot fields read-only while production is not editable", async () => {
+  it("keeps previews available and editing and selection read-only during production", async () => {
+    const user = userEvent.setup();
     const board = { ...shotBoard(), editable: false };
     captureRequests(() => board);
     const { client, wrapper } = queryWrapper();
     client.setQueryData(keys.shots(project.id), board);
-    render(<Shots project={project} notify={vi.fn()} />, { wrapper });
+    const view = render(<Shots project={project} notify={vi.fn()} />, {
+      wrapper,
+    });
+    expect(screen.getByText("当前只读")).toBeVisible();
+    expect(view.container.querySelector("video")).toHaveAttribute("controls");
+    expect(
+      screen.getByRole("checkbox", { name: /确认采用此候选/ }),
+    ).toBeDisabled();
+    await openShotEditor(user);
     expect(screen.getByLabelText("首帧提示词")).toBeDisabled();
     expect(screen.getByLabelText("程序运镜")).toBeDisabled();
   });
@@ -518,6 +596,7 @@ describe("the actual shot workbench submits the Python mutation contract", () =>
     await waitFor(() =>
       expect(client.isFetching({ queryKey: keys.shots(project.id) })).toBe(0),
     );
+    await openShotEditor(user);
     fireEvent.change(screen.getByLabelText("视频提示词"), {
       target: { value: "A gentler camera movement" },
     });
@@ -553,6 +632,7 @@ describe("the actual shot workbench submits the Python mutation contract", () =>
     await waitFor(() =>
       expect(client.isFetching({ queryKey: keys.shots(project.id) })).toBe(0),
     );
+    await openShotEditor(user);
     fireEvent.change(screen.getByLabelText("首帧提示词"), {
       target: { value: "Producer draft awaiting review" },
     });

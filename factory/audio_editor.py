@@ -18,7 +18,7 @@ from PIL import Image, ImageDraw
 
 from studio.core import ROOT, fingerprint, media_receipt, read_json, sha256, write_json
 from studio.media import SR, chunks, font, piano, stamp, write_wav
-from . import team_ledger
+from . import team_control, team_ledger
 from .quality import combine, inspect_video, semantic_review
 from .scheduler import ProductionNeedsDecision
 from .shot_workbench import plan_signature
@@ -57,6 +57,7 @@ class AudioEditorMixin:
             if pin["plan_signature"] != plan_signature(self.project, shot, "video") or pin["receipt"].get("source_signature") != signature:
                 raise ProductionNeedsDecision("人工运镜选片参数已变化，请重新确认", "manual_selection_stale")
             self.receipt_path(pin["receipt"])
+            team_control.assert_publishable(self.ident, "video", shot["id"], input_version=signature)
             team_ledger.mark_reused(self.ident, "video", shot["id"], artifact=pin["receipt"],
                                     input_version=signature, review_status=pin["receipt"].get("qa", {}).get("status"))
             return {**pin["receipt"], "producer_selection": {k: v for k, v in pin.items() if k != "receipt"}}
@@ -66,6 +67,7 @@ class AudioEditorMixin:
         if receipt_path.exists():
             record = read_json(receipt_path)
             self.receipt_path(record)
+            team_control.assert_publishable(self.ident, "video", shot["id"], input_version=signature)
             team_ledger.mark_reused(self.ident, "video", shot["id"], artifact=record,
                                     input_version=signature, review_status=record.get("qa", {}).get("status"))
             return record
@@ -91,6 +93,7 @@ class AudioEditorMixin:
                          "-crf", "18", "-pix_fmt", "yuv420p", "-movflags", "+faststart", target])
             team_ledger.finish_unit(token, artifact=media_receipt(target), model="ffmpeg_zoompan_v1",
                                     details={"motion": motion, "diffusion_video": False})
+            team_control.assert_publishable(self.ident, "video", shot["id"], input_version=signature)
             with team_ledger.unit(self.ident, "video_review", shot["id"], input_version=signature,
                                   dependencies=["video:" + shot["id"]],
                                   inputs={"source": str(target.relative_to(ROOT)), "scope": "technical_camera_clip"}) as review_token:
@@ -110,6 +113,8 @@ class AudioEditorMixin:
             if explicit_profile(self.project):
                 record["production_profile_signature"] = profile_signature(self.project)
             write_json(receipt_path, record)
+            team_control.assert_publishable(self.ident, "video", shot["id"], input_version=signature)
+            team_control.assert_publishable(self.ident, "video_review", shot["id"], input_version=signature)
             return record
 
     def _read_audio(self, path):
@@ -287,6 +292,7 @@ class AudioEditorMixin:
                     team_ledger.finish_unit(token, artifact=media_receipt(target), model="LatentSync-1.6",
                                             details={"origin": "local_lipsync", "input_video": shot["video"],
                                                      "input_audio": shot["lipsync_audio"]})
+                    team_control.assert_publishable(self.ident, "video", shot["id"], input_version=signature)
                     with team_ledger.unit(self.ident, "video_review", shot["id"], input_version=review_signature,
                                           dependencies=["video:" + shot["id"]],
                                           inputs={"artifact": media_receipt(target), "scope": "technical_lipsync"}) as review_token:
@@ -334,9 +340,13 @@ class AudioEditorMixin:
                                               "semantic_unavailable",
                                               {"shot": shot["id"], "stage": "lip_sync",
                                                "resume_action": "review_existing_assets_only"})
+            team_control.assert_publishable(self.ident, "video", shot["id"])
+            team_control.assert_publishable(self.ident, "video_review", shot["id"])
             shot.update(video=record, video_path=record["path"], video_url=self.media_url(self.receipt_path(record)),
                         lip_sync_status="generated_requires_final_review", qa=qa, status="passed")
             self.emit("lip_sync")
+            team_control.after_unit(self.ident, "video", shot["id"])
+            team_control.after_unit(self.ident, "video_review", shot["id"])
 
     def _delivery(self, mapping):
         from .creative_contract import resolve as resolve_contract
@@ -366,6 +376,8 @@ class AudioEditorMixin:
             if cached.get("source_signature") == signature:
                 for artifact in cached["artifacts"]:
                     self.receipt_path(artifact)
+                team_control.assert_publishable(self.ident, "edit", "delivery", input_version=signature)
+                team_control.assert_publishable(self.ident, "technical_review", "delivery", input_version=signature)
                 team_ledger.mark_reused(self.ident, "edit", "delivery", artifact=cached,
                                         input_version=signature)
                 team_ledger.mark_reused(self.ident, "technical_review", "delivery",
@@ -412,6 +424,7 @@ class AudioEditorMixin:
                          "-c:a", "copy", "-movflags", "+faststart", final])
             team_ledger.finish_unit(edit_token, artifact={"final": media_receipt(final), "clean": media_receipt(clean)},
                                     model="ffmpeg_editor", details={"duration_seconds": duration})
+            team_control.assert_publishable(self.ident, "edit", "delivery", input_version=signature)
             self.emit("final_technical_review")
             with team_ledger.unit(self.ident, "technical_review", "delivery", input_version=signature,
                                   dependencies=["edit:delivery"],
@@ -476,6 +489,10 @@ class AudioEditorMixin:
             if contract:
                 delivery["creative_contract"] = copy.deepcopy(contract)
             write_json(release / "manifest.json", delivery)
+            team_control.assert_publishable(self.ident, "edit", "delivery", input_version=signature)
+            team_control.assert_publishable(self.ident, "technical_review", "delivery", input_version=signature)
             self.emit("delivery_ready", delivery=delivery)
+            team_control.after_unit(self.ident, "edit", "delivery")
+            team_control.after_unit(self.ident, "technical_review", "delivery")
             return delivery
 

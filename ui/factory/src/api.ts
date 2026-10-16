@@ -228,11 +228,18 @@ export const names: Record<string, string> = {
   planned: "已计划",
   not_run: "未检查",
   human_required: "人工核验",
+  needs_attention: "需要处理",
+  advisory: "建议",
+  selected: "已采纳",
+  waiting_resources: "等待资源",
+  resources_ready: "资源已就绪",
   ready: "可用",
   configured: "已配置",
   unverified: "未验证",
   error: "异常",
 };
+export const activityName = (value?: string, fallback = "等待调度") =>
+  names[value || ""] || value || fallback;
 export const roles: Record<string, string> = {
   researcher: "选题研究",
   creator: "故事策划",

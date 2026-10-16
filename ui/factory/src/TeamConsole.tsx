@@ -30,6 +30,14 @@ import {
   Panel,
 } from "./ui";
 import { MaterialCard } from "./DocumentReader";
+import {
+  EnableTeamControl,
+  LeaderEntry,
+  InterventionComposer,
+  TaskControlActions,
+  TeamInstructions,
+  useInterventionTarget,
+} from "./TeamControls";
 
 const statusLabels: Record<string, string> = {
   pending: "待执行",
@@ -140,6 +148,9 @@ export function TeamConsole({
 }) {
   const teamQuery = useTeam(projectId);
   const team = teamQuery.data;
+  const [interventionTarget, setInterventionTarget] =
+    useInterventionTarget(projectId);
+  const [controlNotice, setControlNotice] = useState("");
   const [department, setDepartment] = useState("");
   const [status, setStatus] = useState("");
   const [shot, setShot] = useState("");
@@ -210,6 +221,12 @@ export function TeamConsole({
   return (
     <div className="stack team-console">
       <ErrorNotice error={teamQuery.error} />
+      {controlNotice && (
+        <div className="notice team-control-notice" role="status">
+          {controlNotice}
+        </div>
+      )}
+      <EnableTeamControl projectId={projectId} team={team} />
       {!team.enabled && (
         <div className="notice">
           当前为团队观察模式，保留项目既有流程。
@@ -222,6 +239,37 @@ export function TeamConsole({
         title="团队指挥台"
         description="查看部门分工、实际任务和成果交接。"
       >
+        {rows(team.actions).some((action) => action.id === "replan") && (
+          <div className="team-leadership-toolbar">
+            <div>
+              <strong>总制片统筹</strong>
+              <p className="muted">明确选择任务，由总制片协调跨部门安排。</p>
+            </div>
+            <LeaderEntry
+              label="向总制片下达要求"
+              enabled={
+                team.enabled &&
+                rows(team.actions).find((action) => action.id === "replan")
+                  ?.enabled !== false &&
+                members.find((member) => member.id === "executive_producer")
+                  ?.leader_available !== false
+              }
+              reason={
+                members.find((member) => member.id === "executive_producer")
+                  ?.leader_unavailable_reason ||
+                rows(team.actions).find((action) => action.id === "replan")
+                  ?.disabled_reason
+              }
+              onOpen={() =>
+                setInterventionTarget({
+                  type: "leader",
+                  id: "executive_producer",
+                  label: "总制片",
+                })
+              }
+            />
+          </div>
+        )}
         <div className="team-departments">
           {rows(team.departments).map((item, index) => {
             const Icon = icons[index % icons.length] || Users;
@@ -254,6 +302,35 @@ export function TeamConsole({
                 <h3>{item.label}</h3>
                 <p>{item.responsibility}</p>
                 <small>负责人：{memberName(item.lead)}</small>
+                {rows(team.actions).some(
+                  (action) => action.id === "replan",
+                ) && (
+                  <LeaderEntry
+                    label={"请" + item.label + "负责人安排"}
+                    enabled={
+                      team.enabled &&
+                      item.management_available === true &&
+                      members.find((member) => member.id === item.lead)
+                        ?.leader_available !== false
+                    }
+                    reason={
+                      !team.enabled
+                        ? "请先启用团队控制"
+                        : item.management_unavailable_reason ||
+                          item.management_reason ||
+                          members.find((member) => member.id === item.lead)
+                            ?.leader_unavailable_reason
+                    }
+                    onOpen={() =>
+                      setInterventionTarget({
+                        type: "leader",
+                        id: item.lead,
+                        label: memberName(item.lead),
+                        department: item.id,
+                      })
+                    }
+                  />
+                )}
                 <div className="team-members">
                   {departmentMembers.map((member) => (
                     <div className="team-member" key={member.id}>
@@ -271,6 +348,32 @@ export function TeamConsole({
                           "未记录"
                         }
                       />
+                      {rows(team.actions).some(
+                        (action) => action.id === "intervene",
+                      ) && (
+                        <button
+                          className="text-link team-member-task"
+                          disabled={
+                            rows(team.actions).find(
+                              (action) => action.id === "intervene",
+                            )?.enabled === false
+                          }
+                          title={
+                            rows(team.actions).find(
+                              (action) => action.id === "intervene",
+                            )?.disabled_reason
+                          }
+                          onClick={() =>
+                            setInterventionTarget({
+                              type: "member",
+                              id: member.id,
+                              label: member.label || roleName(member.role),
+                            })
+                          }
+                        >
+                          介入成员任务
+                        </button>
+                      )}
                       {Array.isArray(member.current_tasks) &&
                         member.current_tasks.map((taskId: string) => (
                           <button
@@ -410,6 +513,25 @@ export function TeamConsole({
               projectId={projectId}
               memberName={memberName}
               onTask={selectTask}
+              controls={
+                <TaskControlActions
+                  projectId={projectId}
+                  task={detail}
+                  controlRevision={Math.max(
+                    team.control_revision ?? 0,
+                    detailQuery.data?.control_revision ?? 0,
+                    tasksQuery.data?.control_revision ?? 0,
+                  )}
+                  onIntervene={() =>
+                    setInterventionTarget({
+                      type: "task",
+                      id: detail.id,
+                      label: detail.label,
+                      task: detail,
+                    })
+                  }
+                />
+              }
             />
           ) : selected && detailQuery.isPending ? (
             <Loading />
@@ -456,6 +578,23 @@ export function TeamConsole({
           <p className="muted">尚无任务交接事件。</p>
         )}
       </Panel>
+      <TeamInstructions
+        projectId={projectId}
+        instructions={rows(team.instructions)}
+        controlRevision={team.control_revision ?? 0}
+        team={team}
+        onTask={selectTask}
+      />
+      {interventionTarget && (
+        <InterventionComposer
+          key={interventionTarget.type + ":" + interventionTarget.id}
+          projectId={projectId}
+          target={interventionTarget}
+          team={team}
+          onClose={() => setInterventionTarget(null)}
+          onRegistered={setControlNotice}
+        />
+      )}
       {children && (
         <details className="team-legacy-receipts">
           <summary>工作流与历史执行回执</summary>
@@ -470,11 +609,13 @@ function TaskDetail({
   projectId,
   memberName,
   onTask,
+  controls,
 }: {
   task: RecordData;
   projectId: string;
   memberName: (id: string) => string;
   onTask: (id: string) => void;
+  controls?: ReactNode;
 }) {
   return (
     <>
@@ -485,6 +626,7 @@ function TaskDetail({
         </div>
         {taskStatus(task)}
       </header>
+      {controls}
       <dl className="team-task-meta">
         <div>
           <dt>负责人</dt>
@@ -507,6 +649,22 @@ function TaskDetail({
             第 {task.generation ?? 1} 版 · 第 {task.attempt ?? 0} 次
           </dd>
         </div>
+        {Array.isArray(task.allowed_owners) && (
+          <div>
+            <dt>可接手成员</dt>
+            <dd>
+              {task.allowed_owners
+                .map((id: string) => memberName(id))
+                .join("、") || "暂无其他合格成员"}
+            </dd>
+          </div>
+        )}
+        {task.default_owner && (
+          <div>
+            <dt>默认职责</dt>
+            <dd>{memberName(task.default_owner)}</dd>
+          </div>
+        )}
         <div>
           <dt>实际模型</dt>
           <dd>{task.model || "未记录"}</dd>

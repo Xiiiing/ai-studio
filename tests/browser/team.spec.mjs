@@ -1,3 +1,4 @@
+import { openProjectPage } from "./navigation.mjs";
 import { test, expect } from "@playwright/test";
 
 const id = "012345abcdef";
@@ -33,7 +34,7 @@ test("workflow is navigable and team roles remain separate from approval", async
     path: "runtime/browser-report/console-workflow.png",
     fullPage: true,
   });
-  await page.locator('.tabbar [data-tab="team"]').click();
+  await openProjectPage(page, "team");
   await expect(page.locator(".department-card")).toHaveCount(4);
   await expect(page.locator('[data-team-task="screenplay"]')).toContainText(
     "独立审稿",
@@ -103,7 +104,7 @@ test("saved optional producer binding enables delegated creation but not final a
   await expect(page.locator(".project-attention-banner")).toContainText(
     "审看并确认终片",
   );
-  await page.locator('.tabbar [data-tab="decisions"]').click();
+  await openProjectPage(page, "decisions");
   await expect(page.locator('form[data-form="final"]')).toBeVisible();
   const calls = await (await request.get("/__test/calls")).json();
   expect(

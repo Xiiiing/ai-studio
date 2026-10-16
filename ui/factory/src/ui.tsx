@@ -189,6 +189,22 @@ const labels: Record<string, string> = {
   identity_constraints: "身份约束",
   default_wardrobe: "默认服装",
   technical: "技术检查",
+  semantic: "画面审核",
+  character_names: "人物姓名",
+  char_lead: "主角",
+  char_partner: "搭档",
+  story_structure: "故事结构",
+  setup: "开场设定",
+  inciting_incident: "诱发事件",
+  turning_point: "剧情转折",
+  climax: "高潮",
+  resolution: "结局落点",
+  width: "画面宽度",
+  height: "画面高度",
+  fps: "帧率",
+  duration_seconds: "时长",
+  severity: "严重程度",
+  detail: "问题说明",
 };
 export function Readable({ value, depth = 0 }: { value: any; depth?: number }) {
   if (value == null || value === "")

@@ -137,7 +137,7 @@ def begin(pid, stage):
             store._event(db, pid, "恢复前的任务未记录完成", "team_task", _public(interrupted))
         signature = _signature(project, stage)
         row = {"run_id": uuid.uuid4().hex, "task_id": stage + ":" + signature,
-               "stage": stage, "owner": definition(stage,project)["owner"], "reviewer": definition(stage,project)["reviewer"],
+               "stage": stage, "owner": project.get("team_assignments", {}).get("stage:" + stage, definition(stage,project)["owner"]), "reviewer": definition(stage,project)["reviewer"],
                "status": "running", "attempt": attempt + 1, "input_signature": signature,
                "started_at": store.now(), "finished_at": None, "error_type": None,
                "model": None, "completion_semantics": COMPLETION}
@@ -167,6 +167,8 @@ def tracked_node(stage, function):
         raise ValueError("Unknown team task")
     @wraps(function)
     def execute(state):
+        from .team_control import admit
+        admit(state["project_id"], "stage", stage)
         token = begin(state["project_id"], stage)
         from .team_ledger import begin_unit, finish_unit
         ledger_token = begin_unit(state["project_id"], "stage", stage, input_version=token["input_signature"])
@@ -176,7 +178,7 @@ def tracked_node(stage, function):
         try:
             result = function(state)
         except BaseException as exc:
-            status = {"ReviewBlocked": "blocked", "CreativeReviewError": "blocked",
+            status = {"ReviewBlocked": "blocked", "CreativeReviewError": "blocked", "TeamInterventionPending": "paused",
                       "ProjectPaused": "paused", "ProductionPaused": "paused",
                       "ProductionDeferred": "waiting", "ProductionNeedsDecision": "blocked",
                       "ProductionBudgetExceeded": "blocked"}.get(type(exc).__name__,

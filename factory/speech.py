@@ -13,12 +13,12 @@ import os
 import re
 import subprocess
 import time
-from contextlib import ExitStack
+from contextlib import contextmanager
 from pathlib import Path
 
 from studio.core import ROOT, fingerprint, media_receipt, read_json, sha256, within, write_json
 from studio.media import SR
-from . import team_ledger
+from . import team_control, team_ledger
 from .scheduler import ProductionNeedsDecision, ProductionPaused
 from .production_profiles import explicit as explicit_profile, voices_for, profile_signature
 
@@ -28,7 +28,32 @@ def spoken_length(text):
 
 
 class SpeechMixin:
+    @contextmanager
+    def _speech_line_settings(self, line):
+        """Keep retries/source digests consistent with the installed TTS seed API."""
+        revision = line.get("team_revision", 0)
+        if type(revision) is not int or not 0 <= revision <= 1000000:
+            raise ValueError("Invalid bounded speech task revision")
+        original = self.config
+        self.config = {**original, "tts_seed": (int(original.get("tts_seed", 20261012)) + revision * 1013) % (2**31)}
+        try:
+            yield {key: value for key, value in line.items() if key != "team_revision"}
+        finally:
+            self.config = original
+
     def _speech_sources(self, lines, voices):
+        if not team_ledger.enabled(self.project):
+            return self._speech_sources_impl(lines, voices)
+        expected = {}
+        for line in lines:
+            with self._speech_line_settings(line) as sanitized:
+                # Cloud source identity handles its revision independently from
+                # local/Wkp's seed. Never send studio-only keys to the GPU API.
+                values = [line] if self.config.get("audio_connection", {}).get("provider") == "dashscope_tts" else [sanitized]
+                expected.update(self._speech_sources_impl(values, voices))
+        return expected
+
+    def _speech_sources_impl(self, lines, voices):
         """Match the installed driver's real per-line source digest, without loading a model."""
         if self.config.get("audio_connection", {}).get("enabled") is False:
             raise ProductionNeedsDecision("请先配置并启用配音连接", "audio_unconfigured")
@@ -109,6 +134,10 @@ class SpeechMixin:
     def _speech_index(self, expected, record=None):
         index = self.folder / "audio/tts/lines" / expected["key"] / "selected.json"
         if record is not None:
+            if self.__dict__.get("_team_defer_speech_selection"):
+                return record
+            team_control.assert_publishable(self.project.get("id"), "speech", record["id"],
+                                            input_version=expected["key"])
             write_json(index, record)
             return record
         if index.exists():
@@ -148,49 +177,41 @@ class SpeechMixin:
                                                            "oom": any(line["oom"] for line in blocked)})
 
     def _speech_batch(self, lines, voices, expected):
-        """Track each missing line at the real shared adapter batch boundary.
-
-        The installed driver owns its per-line timings. These task attempts cover
-        a shared batch, and explicitly say so rather than inventing serial work.
-        """
+        """Controlled projects admit and drain real per-line adapter calls."""
         if not team_ledger.enabled(self.project):
             return self._speech_batch_impl(lines, voices, expected)
-        signature = fingerprint([{"id": line["id"], "key": expected[line["id"]]["key"]} for line in lines])
-        folder = self.folder / "audio/tts/batches" / signature[:24]
-        cached = {line["id"]: self._speech_receipt(folder / (line["id"] + ".wav"), expected[line["id"]])
-                  for line in lines}
-        with ExitStack() as stack:
-            tokens = {}
-            for line in lines:
-                ident = line["id"]
-                if cached[ident]:
-                    team_ledger.mark_reused(self.project.get("id"), "speech", ident, artifact=cached[ident],
-                                            input_version=expected[ident]["key"])
-                else:
-                    tokens[ident] = stack.enter_context(team_ledger.unit(
-                        self.project.get("id"), "speech", ident, input_version=expected[ident]["key"],
-                        inputs={"line": line, "voice": voices.get(line.get("role")),
-                                "batch_signature": signature, "batch_line_ids": [row["id"] for row in lines],
-                                "execution_boundary": "shared_speech_batch"}))
-            try:
-                records = self._speech_batch_impl(lines, voices, expected)
-            except BaseException:
-                # A failed batch may still have delivered verified lines.
-                for ident, token in tokens.items():
-                    record = self._speech_index(expected[ident])
-                    if record:
-                        team_ledger.finish_unit(token, artifact=record,
-                                                model=record.get("model") or record.get("source", {}).get("settings", {}).get("model_id"),
-                                                details={"batch_signature": signature, "partial_batch": True})
-                raise
-            for ident, token in tokens.items():
-                record = records[ident]
+        pid = self.project.get("id")
+        records = {}
+        for line in team_control.ordered(pid, "speech", lines, key=lambda value: value["id"]):
+            ident = line["id"]
+            team_control.admit(pid, "speech", ident)
+            signature = fingerprint([{"id": ident, "key": expected[ident]["key"]}])
+            folder = self.folder / "audio/tts/batches" / signature[:24]
+            cached = self._speech_receipt(folder / (ident + ".wav"), expected[ident])
+            if cached:
+                team_control.assert_publishable(pid, "speech", ident, input_version=expected[ident]["key"])
+                records[ident] = self._speech_index(expected[ident], cached)
+                team_ledger.mark_reused(pid, "speech", ident, artifact=cached, input_version=expected[ident]["key"])
+                continue
+            with team_ledger.unit(pid, "speech", ident, input_version=expected[ident]["key"],
+                                  inputs={"line": line, "voice": voices.get(line.get("role")),
+                                          "execution_boundary": "per_line_speech_call"}) as token:
+                previous_defer = self.__dict__.get("_team_defer_speech_selection", False)
+                self._team_defer_speech_selection = True
+                try:
+                    with self._speech_line_settings(line) as sanitized:
+                        result = self._speech_batch_impl([sanitized], voices, expected)
+                finally:
+                    self._team_defer_speech_selection = previous_defer
+                record = result[ident]
                 team_ledger.finish_unit(token, artifact=record,
                                         model=record.get("model") or record.get("source", {}).get("settings", {}).get("model_id"),
-                                        details={"batch_signature": signature,
-                                                 "execution_boundary": "shared_speech_batch",
+                                        details={"execution_boundary": "per_line_speech_call",
                                                  "attempt_receipts": self.production.get("voice_attempts", [])})
-            return records
+                team_control.assert_publishable(pid, "speech", ident, input_version=expected[ident]["key"])
+                records[ident] = self._speech_index(expected[ident], record)
+                team_control.after_unit(pid, "speech", ident)
+        return records
 
     def _speech_batch_impl(self, lines, voices, expected):
         if self.config.get("audio_connection", {}).get("provider") == "dashscope_tts":
@@ -419,12 +440,14 @@ class SpeechMixin:
                 if not terminal.exists() or read_json(terminal).get("status")!="failed":
                     raise
 
-    def _voice(self):
+    def _voice(self, line_ids=None):
         self.emit("voice")
-        lines = [copy.deepcopy(line) for shot in self.shots for line in shot.get("dialogue", [])]
+        all_lines = [copy.deepcopy(line) for shot in self.shots for line in shot.get("dialogue", [])]
+        lines = [line for line in all_lines if line_ids is None or line["id"] in line_ids]
         if not lines:
-            self.assets["audio"] = {"lines": [], "speech": "no_dialogue_in_script"}
-            self.emit()
+            if not all_lines:
+                self.assets["audio"] = {"lines": [], "speech": "no_dialogue_in_script"}
+                self.emit()
             return {}
         voices = {} if self.config.get("audio_connection", {}).get("provider") == "dashscope_tts" else read_json(ROOT / "audio/voices.json")
         voices.update(self.episode.get("voices") or {})
@@ -446,6 +469,8 @@ class SpeechMixin:
                 if record:
                     self._speech_index(expected[ident], record)
             if record:
+                team_control.assert_publishable(self.project.get("id"), "speech", ident,
+                                                input_version=expected[ident]["key"])
                 team_ledger.mark_reused(self.project.get("id"), "speech", ident, artifact=record,
                                         input_version=expected[ident]["key"])
                 records[ident] = record
@@ -453,8 +478,13 @@ class SpeechMixin:
                 missing.append(line)
         if missing:
             records.update(self._speech_batch(missing, voices, expected))
-        self.assets["audio"] = {"source_signature": fingerprint([expected[line["id"]]["key"] for line in lines]),
-                                "lines": [records[line["id"]] for line in lines],
+        for line in lines:
+            team_control.assert_publishable(self.project.get("id"), "speech", line["id"],
+                                            input_version=expected[line["id"]]["key"])
+        merged = {**previous, **records} if line_ids is not None else records
+        audio_lines = [merged[line["id"]] for line in all_lines if line["id"] in merged]
+        self.assets["audio"] = {"source_signature": fingerprint([record.get("source_signature") or record.get("sha256") for record in audio_lines]),
+                                "lines": audio_lines,
                                 "model": "Wkp Qwen3-TTS CustomVoice" if self.config.get("gpu_service") else "local Qwen3-TTS CustomVoice", "cache": "verified_per_line_source_v2"}
         if explicit_profile(self.project):
             self.assets["audio"]["production_profile_signature"] = profile_signature(self.project)
@@ -519,11 +549,12 @@ class SpeechMixin:
         write_json(path, artifact)
         self.emit("dialogue_repaired", episode=copy.deepcopy(self.episode), script=copy.deepcopy(self.episode))
 
-    def _fit_dialogue(self, mapping):
+    def _fit_dialogue(self, mapping, shot_ids=None):
         maximum = int(self.config.get("dialogue_repair_attempts", 2))
         if not 0 <= maximum <= 2:
             raise ValueError("dialogue_repair_attempts must be between zero and two")
-        for shot in self.shots:
+        shots = [shot for shot in self.shots if shot_ids is None or shot["id"] in shot_ids]
+        for shot in team_control.ordered(self.project.get("id"), "dialogue", shots, key=lambda value: value["id"]):
             if not shot.get("dialogue"):
                 continue
             while True:
@@ -538,11 +569,13 @@ class SpeechMixin:
                         line["sha256"] = sha256(mapping[line["id"]])
                     repairs = shot.setdefault("dialogue_repairs", [])
                     measurement.update(repair_attempt=len(repairs) + 1, max_repair_attempts=maximum)
-                    shot["audio_timing"] = measurement
                     team_ledger.finish_unit(token, artifact=measurement,
                                             review_status="pass" if measurement["fits"] else "fail",
                                             model="measured_speech_timing", details={"measurement": measurement})
+                    team_control.assert_publishable(self.project.get("id"), "dialogue", shot["id"])
+                    shot["audio_timing"] = measurement
                 self.emit("dialogue_timing_review")
+                team_control.after_unit(self.project.get("id"), "dialogue", shot["id"])
                 if measurement["fits"]:
                     break
                 if not self.dialogue_rewriter or len(repairs) >= maximum:
@@ -557,6 +590,7 @@ class SpeechMixin:
                 write_json(audit_path, receipt)
                 self.emit("dialogue_rewriting")
                 try:
+                    team_control.admit(self.project.get("id"), "dialogue", shot["id"])
                     result = self.dialogue_rewriter(copy.deepcopy(self.project), copy.deepcopy(shot),
                                                     copy.deepcopy(measurement))
                     if not isinstance(result, dict) or not isinstance(result.get("line_updates"), list) or not result["line_updates"]:
@@ -580,6 +614,7 @@ class SpeechMixin:
                             raise ValueError("Dialogue emotion must remain a string")
                         changes.append({**old, "text": text,
                                         **({"emotion": update["emotion"]} if "emotion" in update else {})})
+                    team_control.assert_publishable(self.project.get("id"), "dialogue", shot["id"])
                     for change in changes:
                         lines[change["id"]].update(change)
                     receipt.update(state="applied", finished_at=time.time(),
@@ -603,5 +638,8 @@ class SpeechMixin:
                                                        "attempts": repairs}) from exc
                     continue
                 # Only changed source digests miss the line cache; all other WAV files stay identical.
-                mapping = self._voice()
+                if shot_ids is None:
+                    mapping = self._voice()
+                else:
+                    mapping.update(self._voice(line_ids=[line["id"] for line in shot["dialogue"]]))
         return mapping

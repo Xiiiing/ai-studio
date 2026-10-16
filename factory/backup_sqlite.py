@@ -37,6 +37,9 @@ STUDIO = {
     "team_control": {"project_id", "revision", "enabled"},
     "team_work_items": {"project_id", "id", "ordinal", "generation", "kind", "scope", "owner", "department", "status", "priority", "hold_after", "data"},
     "team_unit_attempts": {"run_id", "project_id", "task_id", "generation", "attempt", "status", "data"},
+    "team_instructions": {"id", "project_id", "request_id", "request_hash", "status", "created_at", "data"},
+    "team_locks": {"project_id", "task_id", "generation", "signature", "data", "created_at"},
+    "team_control_requests": {"project_id", "request_id", "request_hash", "result"},
     "sqlite_sequence": {"name", "seq"},
 }
 CHECKPOINTS = {
@@ -79,6 +82,10 @@ def schema(db, name):
         team_tables = {"team_control", "team_work_items", "team_unit_attempts"}
         if not team_tables & {r["name"] for r in entries}:
             for table in team_tables:
+                expected.pop(table)
+        control_tables = {"team_instructions", "team_locks", "team_control_requests"}
+        if not control_tables & {r["name"] for r in entries}:
+            for table in control_tables:
                 expected.pop(table)
         for table in list(expected):
             if table.startswith("material_") and table not in {r["name"] for r in entries}:

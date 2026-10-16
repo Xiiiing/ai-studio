@@ -27,6 +27,8 @@ It is designed for creators assembling a complete short-drama pipeline and devel
 
 **Workspace iteration 0.0.2** adds light/dark/system themes, grouped desktop navigation, a mobile page picker, and search across all projects. Model and shot editing drafts remain available within the current app session, with conflict checks and recovery after failed saves. See the [workspace UX and validation notes](docs/UI_REDESIGN_0_0_2.md) (Chinese; this is an iteration label, not a tagged release).
 
+**Production team iteration 0.1.0** adds seven departments, a persistent task ledger, scoped instructions to leaders and members, dependency-aware scheduling, targeted retries, and output locks. Existing calls drain before new instructions apply; fees and final approval remain with the producer. See [team control and validation](docs/TEAM_CONTROL_0_1_0.md) (Chinese).
+
 ## Preview
 
 ![AI Studio production overview with projects, progress and pending actions](docs/assets/workbench.png)

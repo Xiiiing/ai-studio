@@ -27,6 +27,8 @@ AI Studio（工作台名称「映序」）将策划、编剧、独立审稿、�
 
 **工作台 0.0.2 迭代：** 支持浅色、深色与跟随系统外观；桌面分组导航、手机项目页面选择器与完整项目搜索；模型和逐镜编辑草稿在当前应用会话内保留，提交失败仍可核对后重试。详情见[主题、多屏与编辑体验说明](docs/UI_REDESIGN_0_0_2.md)。
 
+**制作团队 0.1.0 迭代：** 七部门指挥台与真实任务账本支持向负责人或成员下达要求、按依赖重排执行、定向返工和成果锁定。当前调用收尾后切换新安排，费用与终片继续由出品人确认。详见[团队控制与验证说明](docs/TEAM_CONTROL_0_1_0.md)。
+
 ## 界面预览
 
 ![AI Studio 制片总览：项目、当前进度与待办](docs/assets/workbench.png)
@@ -166,6 +168,7 @@ flowchart TD
 | --- | --- |
 | 第一次使用 | [首次使用](docs/GETTING_STARTED.md) · [模型接入](docs/USER_MODELS.md) |
 | 制作与返修 | [短剧规格](docs/SHORT_DRAMA_CONTRACT.md) · [素材库](docs/MATERIAL_LIBRARY.md) · [镜头工作台](docs/SHOT_WORKBENCH.md) |
+| 工作台 0.0.3 界面修复 | [质检、布局与手机操作](docs/UI_DEPLOYED_REFINEMENT.md) |
 | 开发与扩展 | [架构导览](docs/ARCHITECTURE.md) · [API](docs/API.md) · [贡献与验证](CONTRIBUTING.md) |
 | 部署与数据保护 | [部署](docs/DEPLOYMENT.md) · [一致备份](docs/CONSISTENT_BACKUP.md) · [HTTP 边界](docs/HTTP_SECURITY.md) |
 | 查看全部资料 | [中文文档中心](docs/README.md) · [English documentation index](docs/README.en.md) |

@@ -363,8 +363,16 @@ def _active_role(project):
             phase = production.get("resource_resume_phase")
         return PHASE_ROLES.get(phase, "orchestrator")
     if stage == "revision":
-        return "edit_director" if _object(project.get("revision_request")).get("choice") == "reedit" else "story_editor"
-    return STAGE_ROLES.get(stage, "orchestrator")
+        role = "edit_director" if _object(project.get("revision_request")).get("choice") == "reedit" else "story_editor"
+    else:
+        role = STAGE_ROLES.get(stage, "orchestrator")
+    if project.get("workflow_version", 1) == 2 and project.get("team_control_version") == 1:
+        from .team_tasks import V2_TASKS
+        canonical = {"story_creation": "proposals", "script_creation": "screenplay", "storyboard_direction": "storyboard", "style_previews": "visual_development"}.get(stage, stage)
+        assigned = _object(project.get("team_assignments")).get("stage:" + str(canonical))
+        if role == V2_TASKS.get(canonical, {}).get("owner") and assigned in ROLE_LABELS:
+            return assigned
+    return role
 
 
 def build_flow(project, config=None):

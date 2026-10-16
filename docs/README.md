@@ -26,6 +26,7 @@
 | [Series Bible 与版本化资产](SERIES_BIBLE.md) | 系列设定、稳定角色、视觉资产与镜头依赖 |
 | [逐镜制作工作台](SHOT_WORKBENCH.md) | 镜头候选、选片、局部修改与版本冲突 |
 | [制作规格](PRODUCTION_PROFILES.md) | 镜长、节奏、声线和制作预设 |
+| [可介入的 AI 制作团队（0.1.0）](TEAM_CONTROL_0_1_0.md) | 任务账本、部门指挥、定向介入、成果保护和实际调度 |
 | [团队指挥台](TEAM_COCKPIT.md) | 团队分工、状态与制作入口 |
 | [团队工单](TEAM_TASKS.md) | 实际任务、产物和执行证据 |
 | [总制片代理](TEAM_SUPERVISOR.md) | 有界委托、自动选择、人工接管与终审 |

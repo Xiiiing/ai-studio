@@ -1,3 +1,4 @@
+import { openProjectPage } from "./navigation.mjs";
 import { test, expect } from "@playwright/test";
 const id = "012345abcdef";
 test.beforeEach(async ({ page, request }) => {
@@ -302,7 +303,7 @@ test("automatic supervisor gate is not a phantom human decision", async ({
     "执行中",
   );
   await expect(page.locator(".project-attention-banner")).toHaveCount(0);
-  await page.locator('.tabbar [data-tab="decisions"]').click();
+  await openProjectPage(page, "decisions");
   await expect(page.locator("#workspace")).toContainText("当前没有人工待办");
   await expect(page.locator('[data-action="decide"]')).toHaveCount(0);
 });

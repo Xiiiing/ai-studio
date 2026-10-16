@@ -57,6 +57,8 @@ def _request(config, role, system, payload, schema, output_dir, max_tokens=4096,
         for part in content)
     if has_images and role in TEXT_CRITIC_ROLES:
         raise ValueError("Text critic roles cannot receive images")
+    from .team_planning import task_config
+    config = task_config(config, role)
     llm = resolve_llm(config, role, require_vision=has_images)
     if not llm.get("enabled", True):
         raise ValueError("The selected model profile is disabled")
@@ -95,7 +97,7 @@ def _request(config, role, system, payload, schema, output_dir, max_tokens=4096,
                   "model_discovery": llm.get("model_discovery", "required")}
     if llm.get("provider") == "ollama_native":
         parameters["max_tokens_field"] = "options.num_predict"
-    receipt = {"role":role,"profile":llm["profile"], "call_id": folder.name,
+    receipt = {"role":role,"actual_member":config.get("_team_actual_members", {}).get(role, role),"profile":llm["profile"], "call_id": folder.name,
                "provider":llm.get("provider", "llama_cpp"),
                "model":llm["model"],"configured_model":llm["model"],
                "response_model":None,"endpoint":llm["base_url"],

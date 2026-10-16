@@ -37,6 +37,11 @@ def handle(job):
         return  # A completed/recovered claim is not permission to execute again.
     pid=job["project_id"]
     try:
+        if job.get("kind") == "team_instruction":
+            from .team_control import process_pending
+            process_pending(pid)
+            store.finish_job(job["id"], lease=job["lease"])
+            return
         if job.get("kind") == "review_advice":
             from .review_advice import run
             try:
@@ -48,12 +53,22 @@ def handle(job):
             return
         advance(pid)
         store.finish_job(job["id"], lease=job["lease"])
+        from .team_control import process_pending
+        process_pending(pid)
     except ProductionDeferred as deferred:
         defer_job(job, deferred)
+        from .team_control import process_pending
+        process_pending(pid)
     except ProjectPaused as exc:
         store.update(pid,{"status":"paused","error":None,"message":str(exc)})
         store.finish_job(job["id"], lease=job["lease"])
     except Exception as exc:
+        from .team_control import TeamInterventionPending, process_pending
+        if isinstance(exc, TeamInterventionPending):
+            store.update(pid, {"status": "paused", "team_wait": "boundary", "error": None, "message": str(exc)})
+            store.finish_job(job["id"], lease=job["lease"])
+            process_pending(pid)
+            return
         name=type(exc).__name__
         details=getattr(exc,"details",None) or getattr(exc,"reason",None)
         if isinstance(exc, CreativeReviewError):

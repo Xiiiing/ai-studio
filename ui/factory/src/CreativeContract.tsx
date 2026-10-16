@@ -67,7 +67,13 @@ function videoMotion(record: RecordData | undefined) {
   return "unknown";
 }
 
-export function CreativeContract({ project }: { project: RecordData }) {
+export function CreativeContract({
+  project,
+  compact = false,
+}: {
+  project: RecordData;
+  compact?: boolean;
+}) {
   const contract = project.creative_contract;
   const shots = rows(project.shots);
   const methods = shots.map((shot) => videoMotion(shot.video));
@@ -108,7 +114,7 @@ export function CreativeContract({ project }: { project: RecordData }) {
           : historicalCameraOnly
             ? "历史交付说明：静帧图片加程序运镜；尚无可确认的逐镜制作回执。"
             : "实际制作方式：尚无可确认的镜头制作回执。";
-  return (
+  const specification = (
     <section className="creative-contract" aria-label="创作与制作规格">
       <div>
         <small>目标画面与叙事规格</small>
@@ -142,6 +148,28 @@ export function CreativeContract({ project }: { project: RecordData }) {
           <p>目标为角色动作视频；当前流程不承诺同步口型，配音可采用画外音。</p>
         )}
       </div>
+    </section>
+  );
+  if (!compact) return specification;
+  return (
+    <section
+      className="creative-contract-summary"
+      aria-label="创作与制作规格摘要"
+    >
+      <div>
+        <small>制作规格</small>
+        <strong>{projectVisualLabel(project)}</strong>
+      </div>
+      <p>
+        {unknownShots > 0 && (still || generated)
+          ? "已确认的部分镜头：" + actual.replace(/^实际制作：/, "")
+          : actual}
+        {unknownShots > 0 ? ` 仍有 ${unknownShots} 镜方式待确认。` : ""}
+      </p>
+      <details>
+        <summary>规格与回执依据</summary>
+        {specification}
+      </details>
     </section>
   );
 }
