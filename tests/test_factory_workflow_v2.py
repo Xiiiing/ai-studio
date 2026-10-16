@@ -580,3 +580,116 @@ def test_old_attempt_without_recorded_execution_version_is_not_relabelled(runtim
     task = store.get(p["id"], False)["production_tasks"]["S01:image:vunknown:take_01"]
     assert task["production_revision"] is None and task["referenced_by_revision"] == 2
     assert task["status"] == "unknown" and task["started_at"] == 100
+
+
+def test_old_two_round_ceiling_resumes_third_round_without_replaying_calls(runtime, monkeypatch):
+    p, calls = runtime
+    configuration = {"creative": {"max_review_rounds": 2}}
+    monkeypatch.setattr(wf, "load_config", lambda: configuration)
+    reviewed = []
+
+    def review(project, config, callback):
+        from factory.review_policy import max_review_rounds
+        n = project["creative_round"]
+        reviewed.append(n)
+        passed = n == 4
+        record = {"passed": passed, "issues": [{"severity": "major", "code": "causality",
+            "description": "动作缺少因果", "evidence": "第%d轮证据" % n,
+            "suggestion": "补齐动作", "shot_ids": ["S01"]}], "scores": {}}
+        history = project.get("creative_review_rounds", []) + [{"round": n, "review": record}]
+        result = {"script_review": {"passed": passed, "rounds": history, "review": record},
+                  "creative_review_rounds": history, "draft_review": record,
+                  "script_review_complete_round": [1, n],
+                  "script_review_route": "continue" if passed else "repair"}
+        if passed:
+            result.update(script_complete_generation=1, needs_decision=None)
+        elif n < max_review_rounds(config):
+            result.update(creative_round=n + 1, needs_decision=None)
+        else:
+            result["needs_decision"] = {"kind": "script_review", "message": "旧上限阻断", "issues": record["issues"]}
+        return result
+
+    monkeypatch.setattr(creative_runtime, "review_screenplay", review)
+    wf.advance(p["id"])
+    decide(p["id"], "A")
+    with pytest.raises(wf.ReviewBlocked):
+        wf.advance(p["id"])
+    blocked = store.get(p["id"], False)
+    assert blocked["creative_round"] == 2
+    assert blocked["script_review_complete_round"] == [1, 2]
+    assert reviewed == [1, 2]
+    configuration["creative"]["max_review_rounds"] = 4
+    # Reopen the same LangGraph SQLite checkpoint, as a restarted worker does.
+    wf.advance(p["id"])
+    saved = store.get(p["id"], False)
+    assert reviewed == [1, 2, 3, 4]
+    assert calls.count("screenplay") == calls.count("storyboard") == 4
+    assert saved["status"] == "awaiting_style"
+    assert saved["script_review"]["passed"] is True
+    assert [row["round"] for row in saved["creative_review_rounds"]] == [1, 2, 3, 4]
+    wf.advance(p["id"])
+    assert reviewed == [1, 2, 3, 4]
+
+
+def test_persisted_exhausted_review_blocks_again_without_infinite_repair(runtime, monkeypatch):
+    p, _ = runtime
+    monkeypatch.setattr(wf, "load_config", lambda: {"creative": {"max_review_rounds": 4}})
+    store.update(p["id"], {"creative_round": 4,
+        "screenplay_complete_round": [1, 4], "script_review_complete_round": [1, 4],
+        "script_review_route": "repair", "draft_review": {"scores": {}, "issues": []}})
+    for _ in range(2):
+        with pytest.raises(wf.ReviewBlocked):
+            wf.script_review({"project_id": p["id"]})
+    saved = store.get(p["id"], False)
+    assert saved["creative_round"] == 4
+    assert saved["review_automation"]["status"] == "blocked"
+    assert "自动返修 3 次" in saved["needs_decision"]["message"]
+
+
+@pytest.mark.parametrize("boundary", ["screenplay", "storyboard", "script_review"])
+def test_lowered_limit_after_restart_preserves_draft_and_stops_pending_round(runtime, monkeypatch, boundary):
+    p, calls = runtime
+    configuration = {"creative": {"max_review_rounds": 4}}
+    monkeypatch.setattr(wf, "load_config", lambda: configuration)
+    reviewed = []
+    class Paused(RuntimeError):
+        pass
+
+    def review(project, config, callback):
+        n = project["creative_round"]
+        reviewed.append(n)
+        record = {"passed": False, "scores": {key: 8 for key in creative.SCORE_KEYS},
+            "issues": [{"severity": "major", "code": "causality", "description": "缺少因果",
+                        "evidence": "第%d轮真实证据" % n, "suggestion": "补齐因果", "shot_ids": ["S01"]}]}
+        return {"script_review": {"passed": False, "review": record}, "draft_review": record,
+                "creative_review_rounds": project.get("creative_review_rounds", []) + [{"round": n, "review": record}],
+                "creative_round": n + 1, "script_review_complete_round": [1, n], "script_review_route": "repair"}
+    monkeypatch.setattr(creative_runtime, "review_screenplay", review)
+    name = {"screenplay": "write_screenplay", "storyboard": "direct_screenplay",
+            "script_review": "review_screenplay"}[boundary]
+    original = getattr(creative_runtime, name)
+    def pause_third(project, config, callback):
+        if project["creative_round"] == 3:
+            raise Paused()
+        return original(project, config, callback)
+    monkeypatch.setattr(creative_runtime, name, pause_third)
+    wf.advance(p["id"])
+    decide(p["id"], "A")
+    with pytest.raises(Paused):
+        wf.advance(p["id"])
+    before = store.get(p["id"], False)
+    assert before["creative_round"] == 3
+    assert before["script_review_complete_round"] == [1, 2]
+    call_count = len(calls)
+    configuration["creative"]["max_review_rounds"] = 2
+    with pytest.raises(wf.ReviewBlocked):
+        wf.advance(p["id"])
+    after = store.get(p["id"], False)
+    assert len(calls) == call_count and reviewed == [1, 2]
+    for key in ("screenplay_draft", "creative_review_rounds", "draft_review", "screenplay_complete_round",
+                "script_review_complete_round"):
+        assert after[key] == before[key]
+    assert after["review_automation"]["status"] == "blocked"
+    assert after["review_automation"]["round"] == 2
+    assert after["review_automation"]["blocked_round"] == 3
+    assert after["needs_decision"]["issues"][0]["evidence"] == "第2轮真实证据"

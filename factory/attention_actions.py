@@ -9,6 +9,8 @@ from __future__ import annotations
 import copy
 from urllib.parse import urlsplit
 
+from .review_feedback import feedback_choices
+
 GENERATIONS = {
     "story": "proposal_generation",
     "style": "style_generation",
@@ -124,6 +126,10 @@ def validate_gate(project, gate, choice=None):
                 )
             ):
                 raise ValueError("所选方案已失效或未通过审核，请刷新后再选择")
+            if kind == "style" and project.get("creative_contract"):
+                from .media_contract import preview_contract_valid
+                if not preview_contract_valid(project, selected):
+                    raise ValueError("该视觉预览未通过当前画风要求的独立审核，请重新审核后再选择")
     if kind == "final" and project.get("delivery_complete_revision") is not None:
         if project.get("delivery_complete_revision") != version or not project.get(
             "delivery"
@@ -168,7 +174,7 @@ def _editable(project):
 
 
 def _feedback_fields(project):
-    return [_field("feedback", "修改要求", maxlength=4000)]
+    return [_field("feedback", "修改要求", maxlength=4000, choices=feedback_choices(project))]
 
 
 def _retry_fields(project):
@@ -478,6 +484,7 @@ REGISTRY = {
                 "新方案要求",
                 required=p.get("status") == "awaiting_style",
                 maxlength=4000,
+                choices=feedback_choices(p),
             )
         ],
         "impact": "生成新版本并重新审核；视觉方案会重新生成预览",
@@ -490,6 +497,18 @@ REGISTRY = {
         ),
         "handler": _regenerate,
     },
+    "continue_auto_review": {
+        "label": "继续自动返修",
+        "inputs": lambda p: [],
+        "impact": "保留当前剧本版本和已完成审核轮次，从原检查点继续剩余自动返修，不提高上限",
+        "when": lambda p: _can_continue_auto_review(p),
+    },
+    "request_review_advice": {
+        "label": "请 AI 分析并推荐",
+        "inputs": lambda p: [],
+        "impact": "总制片根据当前审核问题给出返修建议，由你决定是否采纳",
+        "when": lambda p: _advice_eligible(p),
+    },
     "provide_feedback": {
         "label": "提交意见并重新审核",
         "inputs": _feedback_fields,
@@ -500,6 +519,16 @@ REGISTRY = {
         "handler": _feedback,
     },
 }
+
+
+def _can_continue_auto_review(project):
+    from .review_advice import can_continue_auto_review
+    return can_continue_auto_review(project)
+
+
+def _advice_eligible(project):
+    from .review_advice import eligible
+    return eligible(project)
 
 
 def descriptors(project, *, job_running=False):
@@ -524,6 +553,12 @@ def descriptors(project, *, job_running=False):
                 if isinstance(record, dict)
             ):
                 disabled_reason = "此前总制片调用结果尚未确认，请先人工处理当前方案"
+        if ident == "request_review_advice":
+            from .review_advice import snapshot as advice_snapshot, retry_unconfigured
+            advice = advice_snapshot(project)
+            if advice and advice.get("current") and not retry_unconfigured(advice):
+                disabled_reason = {"queued": "AI 建议已排队", "requested": "此前 AI 请求结果尚未确认，请使用人工处理入口",
+                                   "ready": "已有当前审核的 AI 建议", "manual": "本次 AI 分析未完成，可直接人工处理"}.get(advice.get("status"))
         label = (
             "调整预算并继续"
             if ident == "retry" and _need(project).get("type") == "budget"

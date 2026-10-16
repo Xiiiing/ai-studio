@@ -11,6 +11,35 @@ import copy
 from studio.core import write_json
 from studio.planning import export_storyboard
 from . import creative as c
+from .review_policy import automation, exhausted_message, max_review_rounds
+
+
+def round_limit_patch(project, config):
+    """Fence a planned round when a restart loads a lower repair limit."""
+    index = project.get("creative_round", 1)
+    limit = max_review_rounds(config)
+    if index <= limit:
+        return None
+    marker = project.get("script_review_complete_round")
+    completed = (
+        marker[1]
+        if isinstance(marker, list) and len(marker) == 2
+        and marker[0] == project["script_generation"] and type(marker[1]) is int
+        else max(1, index - 1)
+    )
+    message = (
+        "当前自动审核上限为 %d 轮，原计划第 %d 轮已停止。已保留前稿和独立审核问题；"
+        "请人工选择修改方向，或让 AI 辅助分析后继续。" % (limit, index)
+    )
+    review = project.get("draft_review") or (project.get("script_review") or {}).get("review", {})
+    return {
+        "needs_decision": c._gate("script_review", message, c._script_gate_issues(review)),
+        "review_automation": {
+            **automation(config, "script", completed, project["script_generation"],
+                         "blocked", "自动审核上限降低，停止原计划的超限返修"),
+            "blocked_round": index,
+        },
+    }
 
 
 def _revision_scope(project):
@@ -82,12 +111,20 @@ def resolve_target(project, config, checkpoint):
         "story_resolution_skipped": value is None or bool(affected),
         "script_review_complete_round": None,
         "script_review_route": None,
+        "review_automation": automation(config, "script", 1, project["script_generation"],
+                                        "writing", "准备编写剧本"),
     }
 
 
 def write_screenplay(project, config, checkpoint):
+    blocked = round_limit_patch(project, config)
+    if blocked:
+        return blocked
     proposal, resolved, goal, reference, scope = _context(project)
     index = project.get("creative_round", 1)
+    c.report(checkpoint, review_automation=automation(
+        config, "script", index, project["script_generation"], "writing",
+        "按独立审核返修原稿" if index > 1 else "编写剧本"))
     plan = c.duration_plan(project)
     previous, old_shots, affected = _revision_scope(project)
     revision_style = (
@@ -111,9 +148,8 @@ def write_screenplay(project, config, checkpoint):
     }
     if index > 1:
         request["independent_feedback"] = project.get("draft_review")
-        if not resolved or affected:
-            request["previous_attempt"] = project.get("screenplay_draft")
-        else:
+        request["previous_attempt"] = copy.deepcopy(project.get("screenplay_draft"))
+        if resolved and not affected:
             request["rewrite_instruction"] = (
                 "保留requirements和删除项，在已选主题内重构AI工作方案；用实际setup/choice/payoff解决评审证据，不恢复旧提案或已删除支线。"
             )
@@ -155,7 +191,10 @@ def write_screenplay(project, config, checkpoint):
     )
     write_json(path, episode)
     return {
+        "previous_screenplay_draft": copy.deepcopy(project.get("screenplay_draft")) if index > 1 else None,
         "screenplay_draft": episode,
+        "review_automation": automation(config, "script", index, project["script_generation"],
+                                        "writing", "按独立审核返修原稿" if index > 1 else "编写剧本"),
         "screenplay_complete_round": [project["script_generation"], index],
         "planning_artifacts": {
             **project.get("planning_artifacts", {}),
@@ -165,8 +204,13 @@ def write_screenplay(project, config, checkpoint):
 
 
 def direct_screenplay(project, config, checkpoint):
+    blocked = round_limit_patch(project, config)
+    if blocked:
+        return blocked
     _, _, goal, reference, _ = _context(project)
     index = project.get("creative_round", 1)
+    c.report(checkpoint, review_automation=automation(
+        config, "script", index, project["script_generation"], "writing", "分镜导演正在落实当前稿件"))
     value = c.direct_storyboard(
         project,
         config,
@@ -177,6 +221,7 @@ def direct_screenplay(project, config, checkpoint):
         shot_ids=_revision_scope(project)[2] or None,
         producer_feedback=c._producer_feedback(project),
         repair_issues=(project.get("draft_review") or {}).get("issues", []),
+        previous_attempt=project.get("previous_screenplay_draft"),
     )
     return {
         "screenplay_draft": value["episode"],
@@ -191,9 +236,14 @@ def direct_screenplay(project, config, checkpoint):
 
 
 def review_screenplay(project, config, checkpoint):
+    blocked = round_limit_patch(project, config)
+    if blocked:
+        return blocked
     proposal, resolved, goal, _, scope = _context(project)
     episode = project["screenplay_draft"]
     index = project.get("creative_round", 1)
+    c.report(checkpoint, review_automation=automation(
+        config, "script", index, project["script_generation"], "reviewing", "独立审稿人正在验收当前稿件"))
     structural = (
         c.technical_issues(episode, project)
         + c._excluded_story_issues(episode, resolved)
@@ -258,6 +308,12 @@ def review_screenplay(project, config, checkpoint):
     c.atomic_text(folder / "script.md", c._script_doc(episode, review))
     export_storyboard(episode, folder / "storyboard.csv")
     patch = {
+        "review_automation": automation(config, "script", index, project["script_generation"],
+                                        "passed" if review["passed"] else
+                                        "repairing" if index < max_review_rounds(config) else "blocked",
+                                        "独立审核已通过" if review["passed"] else
+                                        "按本轮独立审核问题继续自动返修" if index < max_review_rounds(config) else
+                                        "自动返修轮次已用尽"),
         "script_review_complete_round": [project["script_generation"], index],
         "script_review_route": "continue" if review["passed"] else "repair",
         "draft_review": review,
@@ -279,12 +335,13 @@ def review_screenplay(project, config, checkpoint):
         patch.update(
             script_complete_generation=project["script_generation"], needs_decision=None
         )
-    elif index < 2:
+    elif index < max_review_rounds(config):
         patch["creative_round"] = index + 1
+        patch["needs_decision"] = None
     else:
         patch["needs_decision"] = c._gate(
             "script_review",
-            "剧本经过一次自动返修后仍有阻断项，请补充创作反馈后再继续。",
+            exhausted_message("剧本", index),
             c._script_gate_issues(review),
         )
     return patch

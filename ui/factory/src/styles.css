@@ -1433,6 +1433,166 @@ td > strong {
   margin: 6px 0 0;
   font-size: 12px;
 }
+.review-feedback {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  margin: 18px 0;
+}
+.review-choice-group {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.review-choice-group legend {
+  font-size: 14px;
+  font-weight: 600;
+  padding: 0;
+  margin-bottom: 6px;
+}
+.review-choice-group > p {
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 12px;
+}
+.review-choices {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr));
+  gap: 10px;
+}
+.review-choice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  border-radius: 8px;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.review-choice[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: #edf2ff;
+  color: #244bb5;
+}
+.review-choice-check {
+  display: grid;
+  place-items: center;
+  flex: 0 0 18px;
+  height: 18px;
+  border: 1px solid #bdc8da;
+  border-radius: 5px;
+}
+.review-choice-check svg {
+  opacity: 0;
+}
+.review-choice[aria-pressed="true"] .review-choice-check {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.review-choice[aria-pressed="true"] .review-choice-check svg {
+  opacity: 1;
+}
+.review-selected {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 12px;
+  background: #f8faff;
+  overflow-wrap: anywhere;
+}
+.review-selected p {
+  margin: 12px 0;
+}
+.review-selected span {
+  display: block;
+  white-space: pre-line;
+  margin-top: 4px;
+  color: var(--muted);
+}
+.review-primary-action {
+  margin: 22px 0;
+}
+.review-other-actions {
+  margin-top: 20px;
+}
+.review-other-actions > summary {
+  color: var(--muted);
+  font-size: 13px;
+}
+.review-automation {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 15px;
+  margin: 14px 0;
+  border: 1px solid #dce5fb;
+  border-radius: 9px;
+  background: #f5f8ff;
+  overflow-wrap: anywhere;
+}
+.review-automation > svg {
+  margin-top: 3px;
+  color: var(--accent);
+}
+.review-automation p {
+  margin: 4px 0;
+  font-size: 13px;
+}
+.review-automation small {
+  display: block;
+}
+.review-advisor {
+  margin-top: 18px;
+  border-color: #dce5fb;
+}
+.review-advisor-heading {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.review-advisor-heading > svg {
+  color: var(--accent);
+}
+.review-advisor-heading small {
+  overflow-wrap: anywhere;
+}
+.review-advisor h3 {
+  margin-bottom: 10px;
+}
+.review-advisor h4 {
+  margin-top: 14px;
+}
+.review-advisor ul {
+  padding-left: 20px;
+  margin: 8px 0;
+}
+.review-advisor-plan {
+  border: 1px solid var(--line);
+  padding: 10px 14px;
+  border-radius: 7px;
+  margin-bottom: 14px;
+}
+.review-advisor-plan p {
+  margin: 12px 0 0;
+}
+.review-advisor > small {
+  display: block;
+  margin-top: 10px;
+}
+.review-continue {
+  margin-bottom: 16px;
+}
+.review-continue small {
+  display: block;
+  margin-top: 8px;
+}
 .shot-tag {
   border: 1px solid #e1d7c4;
   background: #fffdf8;
@@ -3040,4 +3200,46 @@ textarea {
 .activity-list p,
 .attention-row p {
   color: #66758e;
+}
+/* Explicit creative intent and recorded generation methods. */
+.creative-contract {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 20px;
+  margin: 0 0 22px;
+  padding: 20px;
+  border: 1px solid var(--border, #e3e6ed);
+  border-radius: 12px;
+  background: var(--surface, #fff);
+}
+.creative-contract small {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--muted, #657085);
+}
+.creative-contract strong {
+  display: block;
+}
+.creative-contract p,
+.creative-create-summary p,
+.creative-remake-note {
+  margin: 8px 0 0;
+  color: var(--muted, #657085);
+  font-size: 13px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+.creative-create-summary,
+.creative-remake-note {
+  padding: 14px 16px;
+  margin-bottom: 18px;
+  border-radius: 10px;
+  background: #f4f6fa;
+}
+@media (max-width: 700px) {
+  .creative-contract {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 14px;
+    padding: 16px;
+  }
 }

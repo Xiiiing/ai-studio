@@ -247,12 +247,12 @@ def test_unrepresentable_action_retains_writer_fields_and_produces_blocking_evid
 
 
 @pytest.mark.parametrize("always_block", [False, True])
-def test_creative_handoff_runs_between_writer_and_critic_with_same_two_draft_limit(always_block):
+def test_creative_handoff_runs_between_writer_and_critic_with_shared_round_limit(always_block):
     case = creative_fixtures.CreativeContractTests(
         "test_approved_compact_target_reused_only_with_same_sources_policy_and_body")
     case.setUp()
     try:
-        case.config["creative"] = {"separate_storyboard": True}
+        case.config["creative"] = {"separate_storyboard": True, "max_review_rounds": 2}
         director_calls = []
         def reply(**request):
             if request["role"] != "storyboard_director":

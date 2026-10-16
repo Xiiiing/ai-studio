@@ -10,13 +10,19 @@ import {
   workspaceFor,
   scenario,
   mockGraph,
+  mockReviewAdvice,
 } from "./console-fixture.mjs";
 
 const root = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "../..",
 );
-const catalog = JSON.parse(await readFile(path.join(root,"runtime/browser-fixtures/model-catalog.json"),"utf8"));
+const catalog = JSON.parse(
+  await readFile(
+    path.join(root, "runtime/browser-fixtures/model-catalog.json"),
+    "utf8",
+  ),
+);
 const templateStore = new Map();
 const port = Number(process.env.TEST_PORT || 18787);
 const id = "012345abcdef";
@@ -84,6 +90,7 @@ const initial = {
   shots: [
     {
       ...shot,
+      video: { origin: "procedural_camera_motion", diffusion_video: false },
       image_url: "/media/production/factory-" + id + "/frames/frame.png",
       video_url:
         "/media/production/factory-" +
@@ -136,7 +143,7 @@ function reset() {
   templateStore.clear();
   inventory = {
     ...catalog,
-    readiness: {missing: [], generation_verified: false},
+    readiness: { missing: [], generation_verified: false },
     revision: "config-1",
     editable_profiles: structuredClone(profiles),
     profiles: Object.entries(profiles).map(([id, value]) => ({ id, ...value })),
@@ -233,15 +240,26 @@ const server = http.createServer(async (request, response) => {
             compact6: { label: "紧凑短片 · 6 镜 / 30 秒" },
           },
         });
-      if (url.pathname === "/api/factory/workflow-templates" && request.method === "POST") {
-        const ident=createHash("sha256").update(JSON.stringify(value)).digest("hex");
-        templateStore.set(ident,value);return json(response,{id:ident,...value});
+      if (
+        url.pathname === "/api/factory/workflow-templates" &&
+        request.method === "POST"
+      ) {
+        const ident = createHash("sha256")
+          .update(JSON.stringify(value))
+          .digest("hex");
+        templateStore.set(ident, value);
+        return json(response, { id: ident, ...value });
       }
       if (url.pathname.startsWith("/api/factory/workflow-templates/")) {
-        const saved=templateStore.get(url.pathname.split("/").at(-1));
-        return json(response,saved || {error:"Unknown fixture template"},saved?200:404);
+        const saved = templateStore.get(url.pathname.split("/").at(-1));
+        return json(
+          response,
+          saved || { error: "Unknown fixture template" },
+          saved ? 200 : 404,
+        );
       }
-      if (url.pathname === "/api/factory/workflow-templates") return json(response,{templates:[]});
+      if (url.pathname === "/api/factory/workflow-templates")
+        return json(response, { templates: [] });
       if (url.pathname === "/api/factory/models/test")
         return json(response, {
           status: "unverified",
@@ -255,7 +273,18 @@ const server = http.createServer(async (request, response) => {
           inventory = {
             ...inventory,
             revision: "config-2",
-            ...Object.fromEntries(["image_profiles","image_roles","audio_profiles","audio_roles","video_profiles","video_roles"].filter(k=>k in value).map(k=>[k,value[k]])),
+            ...Object.fromEntries(
+              [
+                "image_profiles",
+                "image_roles",
+                "audio_profiles",
+                "audio_roles",
+                "video_profiles",
+                "video_roles",
+              ]
+                .filter((k) => k in value)
+                .map((k) => [k, value[k]]),
+            ),
             editable_profiles: value.profiles,
             role_assignments: value.roles,
             profiles: Object.entries(value.profiles).map(([id, v]) => ({
@@ -301,6 +330,8 @@ const server = http.createServer(async (request, response) => {
           );
         project.team_mode = value.team_mode;
         project.brief = value.brief;
+        project.format = value.format;
+        project.creative_contract = value.creative_contract;
         project.revision += 1;
         return json(response, { project }, 201);
       }
@@ -336,6 +367,10 @@ const server = http.createServer(async (request, response) => {
           project.mockRunning = false;
           project.team_mode = "guided";
           project.status = "paused";
+          project.revision += 1;
+        }
+        if (value.action === "request_review_advice") {
+          project.review_advice = mockReviewAdvice();
           project.revision += 1;
         }
         if (["retry", "provide_feedback"].includes(value.action)) {

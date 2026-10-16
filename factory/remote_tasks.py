@@ -34,7 +34,7 @@ def migrate(db):
     db.execute("BEGIN IMMEDIATE")
     additions = {
         "jobs": {"next_poll_at": "REAL NOT NULL DEFAULT 0", "phase": "TEXT NOT NULL DEFAULT 'local_render'",
-                 "lease": "INTEGER NOT NULL DEFAULT 0"},
+                 "lease": "INTEGER NOT NULL DEFAULT 0", "kind": "TEXT NOT NULL DEFAULT 'workflow'"},
         "cloud_tasks": {"next_poll_at": "REAL", "phase": "TEXT NOT NULL DEFAULT 'remote_submit'",
                         "poll_failures": "INTEGER NOT NULL DEFAULT 0"},
     }
@@ -98,7 +98,9 @@ def claim_job(project_id=None):
             if project_id is not None and row["project_id"] != project_id:
                 continue
             project = store._read(db, row["project_id"])
-            if (project.get("pause_requested") or project["status"] in store.TERMINAL | {"paused", "blocked", "failed"}
+            from .review_advice import eligible as advice_eligible
+            advice = row["kind"] == "review_advice" and advice_eligible(project)
+            if ((row["kind"] == "review_advice" and not advice) or project.get("pause_requested") or (project["status"] in store.TERMINAL | {"paused", "blocked", "failed"} and not advice)
                     or project["status"].startswith("awaiting_")):
                 db.execute("UPDATE jobs SET status='cancelled',finished=? WHERE id=?", (timestamp, row["id"]))
                 continue

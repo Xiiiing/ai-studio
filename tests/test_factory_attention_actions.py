@@ -525,3 +525,23 @@ def test_queue_and_resource_waits_are_distinct_from_a_running_worker(project):
         result["metrics"]["waiting_resources"] == 1
         and result["metrics"]["waiting_remote"] == 0
     )
+
+
+def test_review_shortcut_is_plain_feedback_and_uses_existing_revision_boundary(project):
+    p = update(project, status="blocked", stage="script_review", selected_story="A",
+               needs_decision={"type": "script_review", "issues": [
+                   {"description": "镜头之间缺少行动因果", "suggestion": "补齐取回道具动作", "shot_ids": ["S03"]}]})
+    attention = console.attention(p)
+    shortcut = attention["feedback_choices"][0]
+    before = copy.deepcopy(p)
+    with pytest.raises(ValueError, match="已更新"):
+        store.action(p["id"], {"action": "provide_feedback", "expected_revision": p["revision"] - 1,
+                               "feedback": shortcut["feedback"]})
+    assert store.get(p["id"], False) == before
+    result = store.action(p["id"], {"action": "provide_feedback", "expected_revision": p["revision"],
+                                   "feedback": shortcut["feedback"]})
+    assert result["script_feedback"] == shortcut["feedback"]
+    assert result["script_generation"] == p["script_generation"] + 1
+    assert result["workflow_restart_from"] == "story_resolution"
+    assert result["selected_story"] == "A"
+    assert result["status"] == "queued"

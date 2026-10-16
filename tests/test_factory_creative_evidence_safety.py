@@ -1,6 +1,7 @@
 """Adversarial synthetic evidence; successful imports are not real-model runs."""
 import copy
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -8,6 +9,27 @@ import pytest
 from tests.test_factory_creative_experiment import (
     experiment, no_external_work, imported_values, import_reviews, write,
 )
+
+
+@pytest.mark.skipif(not hasattr(os, "O_PATH"), reason="Linux traversal descriptors")
+def test_evidence_read_write_and_prompt_loading_without_root_listing(tmp_path, monkeypatch):
+    from factory.creative_evidence_io import read_json, write_new, new_directory
+    from factory.prompt_registry import load_prompt
+    original_open = os.open
+
+    def restricted_open(path, flags, *args, **kwargs):
+        # Match AppArmor's unprivileged_userns boundary, used by PrivateTmp
+        # user services: project files are readable, root listing is denied.
+        if os.fspath(path) == "/" and not flags & os.O_PATH:
+            raise PermissionError(13, "Permission denied", "/")
+        return original_open(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(os, "open", restricted_open)
+    folder = new_directory(tmp_path / "evidence")
+    write_new(folder / "record.json", {"ok": True})
+    assert read_json(folder / "record.json") == {"ok": True}
+    for role in ("creator", "screenwriter", "independent_critic", "storyboard_director", "visual_designer"):
+        assert load_prompt(role).spec.role == role
 
 
 @pytest.mark.parametrize("raw", [b'{"a":1,"a":2}', b'{"n":NaN}', b'{"n":1e999}', b'[]'])

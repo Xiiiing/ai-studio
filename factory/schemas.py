@@ -372,6 +372,9 @@ def project_context(project):
     if project.get("production_profile") is not None:
         from .production_profiles import resolve
         context["production_profile"] = resolve(project)
+    if "creative_contract" in project:
+        from .creative_contract import resolve as resolve_contract
+        context["creative_contract"] = resolve_contract(project)
     if project.get("series_bible"):
         context["series_bible"] = copy.deepcopy(project["series_bible"])
     return context

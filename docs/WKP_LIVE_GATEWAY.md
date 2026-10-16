@@ -21,7 +21,13 @@ npm run build
 .venv/bin/python scripts/wkp_live_gateway.py start
 ```
 
-登录账号为 `studio`，密码与浏览器证书指纹保存在 Git 忽略的 `runtime/wkp-live-gateway/ACCESS.txt`。已有登录身份保留，客户端私钥只留在 cami，Wkp 模型凭据只留在 Wkp。
+默认使用账号 `studio`；密码与浏览器证书指纹保存在 Git 忽略的 `runtime/wkp-live-gateway/ACCESS.txt`。本次 cami 内网测试按用户要求免登录，启动命令为：
+
+```bash
+.venv/bin/python scripts/wkp_live_gateway.py start --auth-mode none
+```
+
+此模式直接打开工作台，保留 LAN 绑定、Host/Origin 和跨站请求检查，cami 到 Wkp 的 mTLS 不变。systemd 重启沿用已生成的入口配置。重新运行启动器时指定上述选项可继续免登录；恢复账号密码使用 `--auth-mode basic`。原账号凭据文件保留，免登录不读取或轮换它。客户端私钥只留在 cami，Wkp 模型凭据只留在 Wkp。
 
 推理任务具有持久 ID 和结果哈希。cami 负责保存请求、恢复续查、校验并保存产物与实际 GPU 用量；Wkp 的持久记录只用于推理去重和故障恢复，不包含项目决策或 LangGraph 状态。首次新生成前需核对项目内旧任务，不能把尚未确认的生成当作失败后再次提交。
 

@@ -125,3 +125,90 @@ def test_optional_cas_blocks_stale_pause_without_side_effect(project):
 def test_pending_safe_pause_is_not_a_resume_button_until_job_yields(project):
     a = console.attention({**project, "pause_requested": True}, job_running=True)
     assert a["kind"] == "paused" and not a["can_resume"]
+
+
+def test_review_choices_use_current_issues_and_preserve_all_blockers(project):
+    p = {**project, "status": "blocked", "selected_story": "A", "needs_decision": {
+        "type": "review", "kind": "script_review", "issues": [
+            {"code": "cause", "description": "道具来历未交代", "suggestion": "补拍取回道具的动作", "shot_ids": ["S03", "S04"], "severity": "blocking", "private": "NOT_FOR_UI"},
+            {"code": "goal", "description": "人物目标未明确", "suggestion": "交代行动理由", "shot_ids": ["S05"], "severity": "major"},
+        ]}}
+    before = copy.deepcopy(p)
+    a = console.attention(p)
+    choices = a["feedback_choices"]
+    assert choices[0]["label"] == "按全部审核建议修改"
+    assert "补拍取回道具的动作" in choices[0]["feedback"]
+    assert "人物目标未明确" in choices[0]["feedback"]
+    issue_choices = [item for item in choices if item["kind"] == "issue"]
+    assert len(issue_choices) == 2
+    assert "S03、S04" in issue_choices[0]["label"]
+    assert "道具来历未交代" in issue_choices[0]["feedback"]
+    assert "补拍取回道具的动作" in issue_choices[0]["feedback"]
+    assert "其余阻塞问题" in issue_choices[0]["feedback"]
+    assert "重新独立审核" in issue_choices[0]["feedback"]
+    assert "NOT_FOR_UI" not in json.dumps(choices)
+    assert all(set(item) == {"id", "label", "feedback", "kind"} for item in choices)
+    assert len({item["id"] for item in choices}) == len(choices)
+    assert p == before
+    assert console.attention(p)["feedback_choices"] == choices
+    for command in a["actions"]:
+        for field in command["inputs"]:
+            if field["name"] == "feedback":
+                assert field["type"] == "textarea" and field["maxlength"] == 4000
+                assert field["choices"] == choices
+
+
+@pytest.mark.parametrize("need", [
+    {"type": "runtime", "issues": [{"description": "连接失败"}]},
+    {"type": "budget", "issues": [{"description": "预算不足"}]},
+    {"type": "review", "kind": "source_rights", "issues": [{"description": "权限不清楚"}]},
+    {"type": "review", "code": "cloud_submission_unknown", "issues": [{"description": "费用待核对"}]},
+])
+def test_operational_or_rights_blockers_do_not_get_creative_shortcuts(project, need):
+    p = {**project, "status": "blocked", "needs_decision": need,
+         "script_review": {"issues": [{"description": "历史剧本问题"}]}}
+    assert console.attention(p)["feedback_choices"] == []
+    for command in console.attention(p)["actions"]:
+        for field in command["inputs"]:
+            if field["name"] == "feedback":
+                assert field["choices"] == []
+
+
+@pytest.mark.parametrize("kind,expected_id", [("story", "story_motivation"), ("style", "style_identity"), ("final", "final_pacing")])
+def test_gates_offer_relevant_shortcuts_without_historic_failed_reviews(project, kind, expected_id):
+    from factory.review_feedback import feedback_choices
+
+    p = {**project, "status": "awaiting_" + kind,
+         "script_review": {"issues": [{"description": "已经修复的旧问题"}]}}
+    choices = feedback_choices(p)
+    assert expected_id in {item["id"] for item in choices}
+    assert all(item["kind"] == "direction" for item in choices)
+    assert "已经修复的旧问题" not in json.dumps(choices)
+
+
+def test_actual_pending_gate_attention_exposes_feedback_choices(project):
+    gate(project)
+    p = store.get(project["id"], False)
+    a = console.attention(p)
+    assert a["kind"] == "story"
+    assert a["feedback_choices"]
+    action = next(item for item in a["actions"] if item["id"] == "repropose")
+    assert action["inputs"][0]["choices"] == a["feedback_choices"]
+
+
+def test_feedback_menu_is_bounded_for_large_reviews_and_filters_duplicate_issues(project):
+    from factory.review_feedback import feedback_choices
+
+    issues = [{"code": f"issue_{i}", "description": f"问题{i}：" + "详细问题" * 500,
+               "suggestion": "很长的修改要求" * 500, "shot_ids": ["S01", "invalid"], "severity": "blocking"}
+              for i in range(30)]
+    p = {**project, "status": "blocked", "selected_story": "A", "needs_decision": {
+        "type": "script_review", "issues": issues, "details": {"issues": issues}}}
+    choices = feedback_choices(p)
+    assert len(choices) <= 12
+    assert len(choices[0]["feedback"]) <= 3000
+    assert len([item for item in choices if item["kind"] == "issue"]) == 8
+    assert all(len(item["feedback"]) <= 800 for item in choices[1:])
+    assert all(len(item["label"]) <= 140 for item in choices)
+    assert "invalid" not in json.dumps(choices)
+    assert len({item["id"] for item in choices}) == len(choices)

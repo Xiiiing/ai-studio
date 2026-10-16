@@ -118,6 +118,238 @@ const sourceAction = {
   ],
 };
 
+const reviewChoices = [
+  {
+    id: "all",
+    label: "按全部审核建议修改",
+    kind: "all_issues",
+    feedback: "修复全部审核问题，保留其他设定。",
+  },
+  {
+    id: "issue-one",
+    label: "S03 · 补齐救助动机",
+    kind: "issue",
+    feedback: "S03 补齐救助动机，修改后重新独立审核。",
+  },
+  {
+    id: "dialogue",
+    label: "让对白更自然精炼",
+    kind: "direction",
+    feedback: "精简重复对白，保持人物语气。",
+  },
+];
+function selectableAction(choices = reviewChoices) {
+  return {
+    id: "provide_feedback",
+    label: "提交意见并重新审核",
+    enabled: true,
+    inputs: [
+      {
+        name: "feedback",
+        label: "修改要求",
+        type: "textarea",
+        required: true,
+        maxlength: 4000,
+        choices,
+      },
+    ],
+  };
+}
+
+describe("review choice buttons", () => {
+  it("submits selected review instructions without requiring typed notes", async () => {
+    const submit = vi.fn(),
+      user = userEvent.setup();
+    render(
+      <ActionForm
+        action={selectableAction()}
+        project={project()}
+        busy={false}
+        onSubmit={submit}
+      />,
+    );
+    const notes = screen.getByRole("textbox", { name: "修改要求" });
+    await user.click(
+      screen.getByRole("button", { name: "按全部审核建议修改" }),
+    );
+    expect(notes).toHaveValue("");
+    expect(notes).not.toBeRequired();
+    expect(submit).not.toHaveBeenCalled();
+    await user.click(
+      screen.getByRole("button", { name: "提交意见并重新审核" }),
+    );
+    expect(submit).toHaveBeenCalledWith({
+      action: "provide_feedback",
+      feedback: reviewChoices[0].feedback,
+      expected_revision: 3,
+    });
+  });
+
+  it("switches between all issues and individual issues while keeping optional notes", async () => {
+    const submit = vi.fn(),
+      user = userEvent.setup();
+    render(
+      <ActionForm
+        action={selectableAction()}
+        project={project()}
+        busy={false}
+        onSubmit={submit}
+      />,
+    );
+    const all = screen.getByRole("button", { name: "按全部审核建议修改" });
+    const issue = screen.getByRole("button", { name: "S03 · 补齐救助动机" });
+    await user.click(all);
+    await user.click(issue);
+    expect(all).toHaveAttribute("aria-pressed", "false");
+    expect(issue).toHaveAttribute("aria-pressed", "true");
+    await user.click(screen.getByRole("button", { name: "让对白更自然精炼" }));
+    await user.type(
+      screen.getByRole("textbox", { name: "修改要求" }),
+      "保留当前结局",
+    );
+    await user.click(issue);
+    await user.click(
+      screen.getByRole("button", { name: "提交意见并重新审核" }),
+    );
+    expect(submit).toHaveBeenLastCalledWith({
+      action: "provide_feedback",
+      feedback: reviewChoices[2].feedback + "\n\n保留当前结局",
+      expected_revision: 3,
+    });
+  });
+
+  it("retains the selected wording across polling and requires revision confirmation", async () => {
+    const submit = vi.fn(),
+      user = userEvent.setup();
+    const view = render(
+      <ActionForm
+        action={selectableAction()}
+        project={project()}
+        busy={false}
+        onSubmit={submit}
+      />,
+    );
+    await user.click(
+      screen.getByRole("button", { name: "按全部审核建议修改" }),
+    );
+    view.rerender(
+      <ActionForm
+        action={selectableAction(
+          reviewChoices.map((c) => ({ ...c, feedback: "新版本审核要求" })),
+        )}
+        project={project({ revision: 4 })}
+        busy={false}
+        onSubmit={submit}
+      />,
+    );
+    expect(
+      screen.getByRole("button", { name: "提交意见并重新审核" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "按全部审核建议修改" }),
+    ).toHaveAttribute("aria-pressed", "true");
+    await user.click(screen.getByRole("button", { name: "已核对当前状态" }));
+    await user.click(
+      screen.getByRole("button", { name: "提交意见并重新审核" }),
+    );
+    expect(submit).toHaveBeenLastCalledWith({
+      action: "provide_feedback",
+      feedback: reviewChoices[0].feedback,
+      expected_revision: 4,
+    });
+  });
+
+  it("supports visual regeneration using a selected direction alone", async () => {
+    const user = userEvent.setup(),
+      p = gateProject("style", { styles: [{ id: "ink", name: "水墨方案" }] });
+    p.operator.attention.feedback_choices = [
+      {
+        id: "warm",
+        label: "改用暖色自然光",
+        kind: "direction",
+        feedback: "保留人物设定，改用暖色自然光重新生成视觉方案。",
+      },
+    ];
+    mount(p);
+    await user.click(screen.getByText("重新调整视觉方向"));
+    await user.click(screen.getByRole("button", { name: "改用暖色自然光" }));
+    await user.click(
+      screen.getByRole("button", { name: "提交新方向并重新生成" }),
+    );
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect(sent().body).toEqual({
+      type: "style",
+      choice: "__restyle__",
+      feedback: p.operator.attention.feedback_choices[0].feedback,
+      decision_id: `${ID}:style:1`,
+      expected_revision: 3,
+    });
+  });
+
+  it("retains selected final review instructions after a rejected submission", async () => {
+    const user = userEvent.setup(),
+      p = gateProject("final", {
+        delivery: { video_url: `/media/production/factory-${ID}/final.mp4` },
+      });
+    p.operator.attention.feedback_choices = [
+      {
+        id: "pacing",
+        label: "调整剪辑节奏",
+        kind: "direction",
+        feedback: "缩短重复空镜，保留完整对白。",
+      },
+    ];
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ error: "项目已更新，请核对当前版本" }), {
+        status: 409,
+      }),
+    );
+    mount(p);
+    const choice = screen.getByRole("button", { name: "调整剪辑节奏" });
+    await user.click(choice);
+    await user.click(screen.getByRole("button", { name: "重新剪辑" }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect(sent().body.choice).toBe("reedit");
+    expect(sent().body.feedback).toBe(
+      p.operator.attention.feedback_choices[0].feedback,
+    );
+    await waitFor(() =>
+      expect(
+        screen.getAllByText("项目已更新，请核对当前版本").length,
+      ).toBeGreaterThan(0),
+    );
+    expect(choice).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("textbox", { name: "你的处理意见" })).toHaveValue(
+      "",
+    );
+  });
+
+  it("rejects oversized composed feedback without silently truncating selected requirements", async () => {
+    const user = userEvent.setup(),
+      submit = vi.fn(),
+      action = selectableAction([
+        { ...reviewChoices[0], feedback: "完整要求超过五字" },
+      ]);
+    action.inputs[0].maxlength = 5;
+    render(
+      <ActionForm
+        action={action}
+        project={project()}
+        busy={false}
+        onSubmit={submit}
+      />,
+    );
+    await user.click(
+      screen.getByRole("button", { name: "按全部审核建议修改" }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "提交意见并重新审核" }),
+    );
+    expect(submit).not.toHaveBeenCalled();
+    expect(screen.getByText(/修改要求超过 5 字/)).toBeVisible();
+  });
+});
+
 describe("server-driven producer decisions", () => {
   it("does not invent retry actions when the server supplies none, and respects unavailable actions", async () => {
     const p = project();
@@ -402,9 +634,9 @@ describe("server-driven producer decisions", () => {
       screen.getByRole("button", { name: "提交新方向并重新生成" }),
     );
     expect(fetchMock).not.toHaveBeenCalled();
-    expect(screen.getAllByText("请填写新的创作方向。").length).toBeGreaterThan(
-      0,
-    );
+    expect(
+      screen.getAllByText("请选择修改方向，或填写新的创作方向。").length,
+    ).toBeGreaterThan(0);
     await user.type(
       screen.getByRole("textbox", { name: "你的处理意见" }),
       "全部不满意，改用暖色细线",
@@ -453,9 +685,9 @@ describe("server-driven producer decisions", () => {
     );
     await user.click(screen.getByRole("button", { name: "局部修改" }));
     expect(fetchMock).not.toHaveBeenCalled();
-    expect(screen.getAllByText("请填写具体修改意见。").length).toBeGreaterThan(
-      0,
-    );
+    expect(
+      screen.getAllByText("请选择修改要求，或填写具体修改意见。").length,
+    ).toBeGreaterThan(0);
     await user.type(
       screen.getByRole("textbox", { name: "你的处理意见" }),
       "S03对白提前半秒",
@@ -494,11 +726,31 @@ describe("server-driven producer decisions", () => {
 });
 
 it("allows paid image preview authorization before any shots exist", async () => {
-  mount(project({stage:"style_previews", needs_decision:{code:"cloud_authorization_required"},
-    cloud_quote:{id:"image-batch",media_kind:"image",estimated_submissions:3,estimated_total_micros:null,pricing:{currency:"CNY",unit_cost_micros:null}}}));
-  fireEvent.click(screen.getByRole("checkbox",{name:"我已了解单价未确认，仍授权此批请求"}));
-  fireEvent.click(screen.getByRole("button",{name:"明确授权本批次"}));
-  await waitFor(()=>expect(fetchMock).toHaveBeenCalled());
+  mount(
+    project({
+      stage: "style_previews",
+      needs_decision: { code: "cloud_authorization_required" },
+      cloud_quote: {
+        id: "image-batch",
+        media_kind: "image",
+        estimated_submissions: 3,
+        estimated_total_micros: null,
+        pricing: { currency: "CNY", unit_cost_micros: null },
+      },
+    }),
+  );
+  fireEvent.click(
+    screen.getByRole("checkbox", {
+      name: "我已了解单价未确认，仍授权此批请求",
+    }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "明确授权本批次" }));
+  await waitFor(() => expect(fetchMock).toHaveBeenCalled());
   expect(fetchMock.mock.calls[0][0]).toContain("/cloud-authorize");
-  expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({batch_id:"image-batch",expected_revision:3,max_submissions:3,confirm_unknown_cost:true});
+  expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({
+    batch_id: "image-batch",
+    expected_revision: 3,
+    max_submissions: 3,
+    confirm_unknown_cost: true,
+  });
 });

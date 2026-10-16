@@ -71,6 +71,8 @@ def schema(db, name):
     for table, columns in expected.items():
         actual = {r["name"] for r in db.execute('PRAGMA table_info("' + table + '")')}
         supported = [columns, columns | {"task_path"}] if table == "writes" else [columns]
+        if table == "jobs":
+            supported.append(columns | {"kind"})  # Additive advice jobs; old backups remain valid.
         if actual not in supported: raise BackupError("Unsupported schema columns: " + table)
     if db.execute("PRAGMA quick_check").fetchone()[0] != "ok" or db.execute("PRAGMA foreign_key_check").fetchone():
         raise BackupError("SQLite integrity/foreign key check failed: " + name)

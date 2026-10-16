@@ -153,8 +153,12 @@ def visual_development(state):
     if p.get("style_previews_generation") != p.get("style_generation",p["script_generation"]):
         store.update(p["id"],{"status":"visual_development","stage":"style_previews","progress":40,
                              "message":"美术正在生成三套真实视觉预览，完成后交给出品人选择。"})
-        styles=generate_style_previews(p,production_config(p,load_config()),_checkpoint(p["id"]),
-                                      lambda:store.get(p["id"],False).get("pause_requested",False))
+        config=load_config()
+        from .creative_contract import resolve as resolve_contract
+        review_options=({"semantic_evaluator":lambda proj,shot,path,refs:review_media(proj,shot,path,refs,config)}
+                        if resolve_contract(p) else {})
+        styles=generate_style_previews(p,production_config(p,config),_checkpoint(p["id"]),
+                                      lambda:store.get(p["id"],False).get("pause_requested",False), **review_options)
         patch={"style_previews_generation":p.get("style_generation",p["script_generation"]),"progress":45}
         if isinstance(styles,list):
             patch["styles"]=styles
@@ -433,11 +437,14 @@ def story_resolution(state):
 
 
 def screenplay_v2(state):
-    from .creative_runtime import write_screenplay
+    from .creative_runtime import round_limit_patch, write_screenplay
     p=_project(state)
     if p.get('story_resolution_complete_generation') != p['script_generation']:
         story_resolution(state)
         p=_project(state)
+    blocked=round_limit_patch(p,load_config())
+    if blocked:
+        _apply(p['id'],blocked)
     marker=[p['script_generation'],p.get('creative_round',1)]
     if p.get('screenplay_complete_round') != marker:
         store.update(p['id'],{'status':'scripting','stage':'screenplay','progress':30,
@@ -447,8 +454,11 @@ def screenplay_v2(state):
 
 
 def storyboard(state):
-    from .creative_runtime import direct_screenplay
+    from .creative_runtime import direct_screenplay, round_limit_patch
     p=_project(state)
+    blocked=round_limit_patch(p,load_config())
+    if blocked:
+        _apply(p['id'],blocked)
     marker=[p['script_generation'],p.get('creative_round',1)]
     if p.get('storyboard_complete_round') != marker:
         store.update(p['id'],{'status':'scripting','stage':'storyboard','progress':33,
@@ -458,12 +468,35 @@ def storyboard(state):
 
 
 def script_review(state):
-    from .creative_runtime import review_screenplay
+    from .creative_runtime import review_screenplay, round_limit_patch
+    from .review_policy import automation, exhausted_message, max_review_rounds
     p=_project(state)
     if p.get('script_complete_generation') == p['script_generation']:
         return {'route':'continue'}
+    blocked=round_limit_patch(p,load_config())
+    if blocked:
+        _apply(p['id'],blocked)
     if (p.get('script_review_complete_round')==p.get('screenplay_complete_round')
             and p.get('script_review_route') in {'repair','continue'}):
+        if p['script_review_route'] == 'repair':
+            # A legacy checkpoint can contain the failed review at its former
+            # two-round ceiling. Move forward once, without reviewing it again.
+            reviewed_generation,index=p['script_review_complete_round']
+            if reviewed_generation != p['script_generation']:
+                raise ReviewBlocked('审核版本与当前剧本不匹配，请刷新项目')
+            limit=max_review_rounds(load_config())
+            if p.get('creative_round',1) == index:
+                status='repairing' if index < limit else 'blocked'
+                patch={'review_automation':automation(load_config(),'script',index,
+                    reviewed_generation,status,
+                    '按已保存的独立审核问题继续自动返修' if index < limit else '自动返修轮次已用尽')}
+                if index < limit:
+                    patch.update(creative_round=index+1,needs_decision=None)
+                else:
+                    from .creative import _gate, _script_gate_issues
+                    patch['needs_decision']=_gate('script_review',exhausted_message('剧本',index),
+                        _script_gate_issues(p.get('draft_review') or p.get('script_review',{}).get('review',{})))
+                _apply(p['id'],patch)
         return {'route':p['script_review_route']}
     store.update(p['id'],{'status':'scripting','stage':'script_review','progress':36,
                           'message':'独立审稿人正在检查剧本与分镜，未通过则定向返修。'})

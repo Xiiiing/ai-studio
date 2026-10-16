@@ -37,7 +37,7 @@ def storyboard_schema(shot_ids, project=None):
 def model_capabilities(project, config, episode):
     production = config.get("production", {})
     mode = project.get("format", episode.get("format", "motion_comic"))
-    return {
+    capabilities = {
         "format": mode,
         "image_engine": "FLUX.2 Klein 4B keyframes through the existing ComfyUI workflow",
         "video_engine": ("No diffusion video; generated still plus FFmpeg camera movement"
@@ -58,13 +58,23 @@ def model_capabilities(project, config, episode):
             "Production feasibility remains provisional until actual media is evaluated.",
         ],
     }
+    if "creative_contract" in project:
+        from .creative_contract import resolve as resolve_contract, style_prompt
+        capabilities["creative_contract"] = resolve_contract(project)
+        capabilities["visual_constraints"] = style_prompt(project)
+        capabilities["continuous_character_action_required"] = mode != "motion_comic"
+        if mode != "motion_comic":
+            capabilities["constraints"].append(
+                "Every video shot needs one simple continuous character/object action; "
+                "camera movement alone does not satisfy animation or live-action delivery.")
+    return capabilities
 
 
 def _episode_context(episode):
     keys = tuple(episode_schema()["properties"])
     value = {key: copy.deepcopy(episode[key]) for key in keys if key in episode and key != "shots"}
     value.update({key: copy.deepcopy(episode[key]) for key in (
-        "format", "total_seconds", "fps", "width", "height", "production_profile", "characters") if key in episode})
+        "format", "total_seconds", "fps", "width", "height", "production_profile", "characters", "creative_contract") if key in episode})
     shot_keys = tuple(episode_schema()["properties"]["shots"]["items"]["properties"]) + (
         "id", "seconds", "lip_sync", "delivery_method", "render_style_prompt", "characters", "character_states")
     value["shots"] = [{key: copy.deepcopy(shot[key]) for key in shot_keys if key in shot}
@@ -74,10 +84,11 @@ def _episode_context(episode):
 
 def direct_storyboard(project, config, episode, checkpoint=None, *,
                       approved_story, shot_ids=None, round_index=1,
-                      producer_feedback=None, repair_issues=None):
+                      producer_feedback=None, repair_issues=None, previous_attempt=None):
     """Direct one draft; immutable story fields and unselected shots survive verbatim."""
-    if round_index not in (1, 2):
-        raise CreativeReviewError("分镜导演沿用至多两版剧本的评审边界")
+    from .review_policy import max_review_rounds
+    if type(round_index) is not int or not 1 <= round_index <= max_review_rounds(config):
+        raise CreativeReviewError("分镜导演轮次超出配置的有界自动返修范围")
     shots = episode.get("shots", [])
     ordered = [shot.get("id") for shot in shots]
     if not ordered or any(not isinstance(sid, str) or not re.fullmatch(r"S\d{2,3}", sid)
@@ -106,6 +117,8 @@ def direct_storyboard(project, config, episode, checkpoint=None, *,
         "model_capabilities": model_capabilities(project, config, episode),
         "instruction": "只编排指定镜头的四个制作字段；完整剧情与未指定镜头保持原样。",
     }
+    if previous_attempt is not None:
+        payload["previous_attempt"] = _episode_context(previous_attempt)
     stage = "storyboard-direction-%d" % round_index
     report(checkpoint, stage="storyboard_direction", progress=32 + round_index,
            message="独立分镜导演正在编排%d镜的构图、运镜和人物参考（第%d版）" %

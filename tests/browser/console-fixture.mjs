@@ -78,6 +78,23 @@ export function operatorFor(project) {
       action_label: "查看问题并修改",
       target_tab: "decisions",
       suggested_feedback: "请在 S03 补齐救人的原因，并保留已确认的人物设定。",
+      feedback_choices: issues.length
+        ? [
+            {
+              id: "all_review_issues",
+              label: "按全部审核建议修改",
+              kind: "all_issues",
+              feedback: "请在 S03 补齐救人的原因，并保留已确认的人物设定。",
+            },
+            {
+              id: "issue_motivation",
+              label: "S03 · 补齐人物动机",
+              kind: "issue",
+              feedback:
+                "S03 补充人物此前的承诺，让救助行为有明确动机，修改后重新独立审核。",
+            },
+          ]
+        : [],
     };
   else if (gate && !automatic && project.status !== "approved")
     attention = {
@@ -93,6 +110,17 @@ export function operatorFor(project) {
       issues: [],
       action_label: "处理待办",
       target_tab: "decisions",
+      feedback_choices:
+        gate.type === "final"
+          ? [
+              {
+                id: "final_pacing",
+                label: "调整剪辑节奏",
+                kind: "direction",
+                feedback: "缩短重复空镜，保留完整对白，调整镜头衔接。",
+              },
+            ]
+          : [],
     };
   if (attention)
     attention.actions =
@@ -115,6 +143,15 @@ export function operatorFor(project) {
             },
           ]
         : [];
+  if (attention && project.mockAdviceSupported) {
+    attention.review_advice = project.review_advice;
+    attention.actions.push({
+      id: "request_review_advice",
+      label: "请 AI 分析并推荐",
+      enabled: !project.review_advice,
+      inputs: [],
+    });
+  }
   const actions = project.mockRunning
     ? [
         {
@@ -241,6 +278,33 @@ export function scenario(project, kind) {
   project.mockRunning = false;
   project.team_mode = "guided";
   project.needs_decision = null;
+  project.review_advice = null;
+  project.review_automation = null;
+  project.mockAdviceSupported = false;
+  if (kind === "generated_anime") {
+    project.format = "animation";
+    project.creative_contract = {
+      schema_version: 1,
+      visual_style: "anime_2d",
+      story_mode: "standalone",
+      pacing: "short_drama",
+      motion: "generated_video",
+    };
+    project.delivery.motion_provenance = {
+      requested: "generated_video",
+      generated_video_shots: 1,
+      still_camera_shots: 0,
+      unknown_shots: 0,
+      lip_sync: false,
+    };
+    project.shots = project.shots.map((shot) => ({
+      ...shot,
+      video: {
+        motion_method: "generated_video",
+        generation_kind: "local_diffusion_video",
+      },
+    }));
+  }
   if (kind === "story" || kind === "automatic") {
     project.status = "awaiting_story";
     project.stage = "story_decision";
@@ -307,7 +371,7 @@ export function scenario(project, kind) {
         options: [{ id: "ink" }, { id: "film" }],
       },
     ];
-  } else if (kind === "creative") {
+  } else if (["creative", "review_assist", "repairing"].includes(kind)) {
     project.status = "blocked";
     project.stage = "script_review";
     project.decisions = [];
@@ -329,6 +393,28 @@ export function scenario(project, kind) {
         },
       ],
     };
+    if (kind === "review_assist") {
+      project.mockAdviceSupported = true;
+      project.review_automation = {
+        phase: "script",
+        status: "blocked",
+        round: 4,
+        max_rounds: 4,
+        automatic_repairs: 3,
+      };
+    }
+    if (kind === "repairing") {
+      project.status = "scripting";
+      project.stage = "screenplay";
+      project.needs_decision = null;
+      project.review_automation = {
+        phase: "script",
+        status: "writing",
+        round: 3,
+        max_rounds: 4,
+        automatic_repairs: 2,
+      };
+    }
   } else if (kind === "final") {
     project.status = "awaiting_final";
     project.stage = "final_decision";
@@ -341,4 +427,19 @@ export function scenario(project, kind) {
       },
     ];
   }
+}
+
+export function mockReviewAdvice() {
+  return {
+    status: "ready",
+    current: true,
+    requested_model: "mock-producer",
+    proposal: {
+      recommendation: "repair",
+      rationale: "缺少救助动机，建议保留故事方向补齐过渡。",
+      feedback: "在 S03 前增加人物发现危险的动作，保留其他镜头，再交独立审核。",
+      risks: ["补充过渡时保持原镜头时长"],
+      decisions: [],
+    },
+  };
 }

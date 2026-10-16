@@ -39,6 +39,9 @@ def _current(project, complete, generation):
 
 
 def _preview_valid(project, style):
+    from .media_contract import preview_contract_valid
+    if not preview_contract_valid(project, style):
+        return False
     preview = _object(style.get("preview"))
     raw, expected = preview.get("path"), preview.get("sha256")
     if (not isinstance(raw, str) or "\\" in raw or not isinstance(expected, str)
@@ -104,6 +107,10 @@ def context_for(project, gate):
         candidate = {key: item[key][:1800] for key in fields if isinstance(item.get(key), str)}
         if kind == "style":
             candidate["preview_sha256"] = item["preview"]["sha256"]
+            if project.get("creative_contract"):
+                semantic = item["preview"]["qa"]["semantic"]
+                candidate["visual_review"] = {key: copy.deepcopy(semantic[key]) for key in
+                    ("status", "summary", "style_alignment", "issues") if key in semantic}
         candidates.append(candidate)
     if kind != "final" and not candidates:
         raise ValueError("no_verified_candidate")
@@ -111,7 +118,7 @@ def context_for(project, gate):
         raise ValueError("duplicate_candidate")
     shots = project.get("shots", [])
     shots = shots if isinstance(shots, list) else []
-    return {
+    context = {
         "project": {key: copy.deepcopy(project.get(key)) for key in (
             "id", "brief", "format", "duration_seconds", "creation_mode", "production_profile")},
         "gate": {"id": gate["id"], "type": kind}, "candidates": candidates,
@@ -123,6 +130,10 @@ def context_for(project, gate):
         "constraints": {"basis": BASIS, "allowed_actions": ["escalate"] if kind == "final" else ["select", "escalate"],
             "forbidden": ["approve_final", "authorize_cost", "change_budget", "override_reviews", "publish", "unbounded_retry"]},
     }
+    if "creative_contract" in project:
+        from .creative_contract import resolve as resolve_contract
+        context["project"]["creative_contract"] = resolve_contract(project)
+    return context
 
 
 def _save(db, project, record):

@@ -29,6 +29,45 @@ def test_gateway_origin_rewrite_matches_loopback_http_boundary():
         check_origin(handler)
 
 
+@pytest.mark.parametrize("password_hash", [None, "$2a$test-hash"])
+def test_optional_login_keeps_lan_and_browser_boundaries(password_hash):
+    config = gateway.caddyfile("172.20.12.202", 8789, password_hash)
+    assert ("basic_auth" in config) == (password_hash is not None)
+    assert "remote_ip private_ranges" in config
+    assert "bind 172.20.12.202" in config
+    assert "respond @wrong_host" in config
+    assert "respond @wrong_origin" in config
+    assert "respond @missing_origin" in config
+    assert "respond @cross_site" in config
+    assert "header_up -Authorization" in config
+
+
+def test_prepare_without_login_preserves_existing_credentials(tmp_path, monkeypatch):
+    monkeypatch.setattr(gateway, "AREA", tmp_path)
+    credentials = tmp_path / "credentials.json"
+    original = b"existing credentials are not needed by this mode"
+    credentials.write_bytes(original)
+    credentials.chmod(0o600)
+    monkeypatch.setattr(gateway, "fetch_server_certificate", lambda: "pinned public certificate")
+    monkeypatch.setattr(gateway, "certificate_pair", lambda *args: None)
+    monkeypatch.setattr(gateway, "read_credentials", lambda: pytest.fail("No-login mode must not read passwords"))
+    monkeypatch.setattr(gateway, "run", lambda *args: SimpleNamespace(stdout="public certificate fingerprint"))
+    monkeypatch.setattr(gateway, "metadata", lambda *args, **kwargs: {"auth_mode": kwargs["auth_mode"]})
+    result = gateway.prepare("172.20.12.202", 8789, auth_mode="none")
+    assert result["auth_mode"] == "none"
+    assert credentials.read_bytes() == original
+    access = (tmp_path / "ACCESS.txt").read_text()
+    assert "内网测试免登录" in access
+    assert "密码" not in access
+
+
+@pytest.mark.parametrize("operation", [gateway.prepare, gateway.start])
+def test_invalid_auth_mode_is_rejected_before_changes(operation, monkeypatch):
+    monkeypatch.setattr(gateway, "safe_path", lambda *args: pytest.fail("Must validate before filesystem access"))
+    with pytest.raises(ValueError, match="Authentication mode"):
+        operation("172.20.12.202", 8789, auth_mode="invalid")
+
+
 @pytest.mark.parametrize("host", ["0.0.0.0", "8.8.8.8", "127.0.0.1", "100.82.71.126", "::1", "example.com", "172.20.114.10", "172.20.12.202\nrespond 200"])
 def test_gateway_rejects_non_lan_and_wkp_bind(host):
     with pytest.raises(ValueError):
