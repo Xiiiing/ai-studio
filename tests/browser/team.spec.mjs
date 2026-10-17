@@ -60,7 +60,9 @@ test("workflow is navigable and team roles remain separate from approval", async
   });
   await request.post("/__test/failure", { data: { route: "/workspace" } });
   await page.locator('.topbar [data-action="refresh"]').click();
-  await expect(page.locator("#workspace")).toContainText("模拟服务暂时不可用");
+  await expect(page.locator('.feedback-region [role="alert"]')).toContainText(
+    "模拟服务暂时不可用",
+  );
   const calls = await (await request.get("/__test/calls")).json();
   expect(
     calls.filter((c) => c.method === "POST" && c.path.startsWith("/api/")),

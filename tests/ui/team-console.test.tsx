@@ -1,9 +1,52 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, within, waitFor } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  within,
+  waitFor,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { TeamConsole, TeamOverview } from "../../ui/factory/src/TeamConsole";
 import type { RecordData } from "../../ui/factory/src/api";
+import { useInterventionTarget } from "../../ui/factory/src/TeamControls";
+
+it("team draft controls update synchronously and retain selection after reopening", () => {
+  const client = new QueryClient();
+  function Choice() {
+    const [target, setTarget] = useInterventionTarget("draft-controls");
+    return (
+      <label>
+        选择介入对象
+        <input
+          type="checkbox"
+          checked={!!target}
+          onChange={(event) =>
+            setTarget(
+              event.target.checked
+                ? { type: "task", id: "video:S01", label: "第 1 镜视频" }
+                : null,
+            )
+          }
+        />
+      </label>
+    );
+  }
+  const harness = (
+    <QueryClientProvider client={client}>
+      <Choice />
+    </QueryClientProvider>
+  );
+  const view = render(harness);
+  fireEvent.click(screen.getByRole("checkbox", { name: "选择介入对象" }));
+  expect(screen.getByRole("checkbox")).toBeChecked();
+  view.unmount();
+  render(harness);
+  expect(screen.getByRole("checkbox")).toBeChecked();
+  fireEvent.click(screen.getByRole("checkbox"));
+  expect(screen.getByRole("checkbox")).not.toBeChecked();
+});
 
 const id = "012345abcdef";
 const task = (overrides: RecordData = {}) => ({

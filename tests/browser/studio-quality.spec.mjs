@@ -336,7 +336,9 @@ test("real project creation, partial image recovery, full-size preview and visua
   await expect(
     page.getByRole("button", { name: "确认本批视觉定稿" }),
   ).toBeEnabled();
-  await page.locator("#toast").waitFor({ state: "hidden", timeout: 10000 });
+  await page
+    .locator('.feedback-region [role="status"]')
+    .waitFor({ state: "hidden", timeout: 10000 });
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({
     path: "runtime/browser-report/studio-real-materials-390.png",

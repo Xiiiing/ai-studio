@@ -18,6 +18,7 @@ import {
   Empty,
   Badge,
   ErrorNotice,
+  FloatingErrorNotice,
   Field,
   Readable,
   Artifact,
@@ -47,7 +48,7 @@ export function Shots({
   if (!query.data)
     return (
       <>
-        <ErrorNotice error={query.error} />
+        <FloatingErrorNotice error={query.error} />
         {query.error ? (
           <button className="button" onClick={() => query.refetch()}>
             重新读取镜头
@@ -106,7 +107,8 @@ function ShotDetail({
   notify: (v: string) => void;
 }) {
   const client = useQueryClient(),
-    [failure, setFailure] = useState("");
+    [failure, setFailure] = useState(""),
+    [failedAction, setFailedAction] = useState("");
   const { draft, setDraft, busy, begin, finish } = useShotDraft(
     project.id,
     shot.id,
@@ -118,6 +120,7 @@ function ShotDetail({
   async function mutate(body: RecordData) {
     if (disabled || stale || !begin()) return;
     setFailure("");
+    setFailedAction(String(body.action));
     try {
       await request("/projects/" + project.id + "/shots/" + shot.id, body);
       if (body.action === "edit") setDraft(null);
@@ -150,7 +153,9 @@ function ShotDetail({
           {board.production_revision} · {shot.seconds} 秒
         </p>
       </header>
-      <ErrorNotice error={error || failure} />
+      <FloatingErrorNotice
+        error={error || (failedAction !== "edit" ? failure : "")}
+      />
       {!board.editable && (
         <div className="notice">
           先暂停制作，等待当前安全步骤结束后，即可精修或选片。
@@ -280,6 +285,10 @@ function ShotDetail({
               </button>
             </div>
           )}
+          <ErrorNotice
+            error={failedAction === "edit" ? failure : ""}
+            reserveSpace
+          />
           <button
             type="submit"
             className="button primary"
@@ -316,7 +325,7 @@ export function Series({
   if (!query.data)
     return (
       <>
-        <ErrorNotice error={query.error} />
+        <FloatingErrorNotice error={query.error} />
         {query.error ? (
           <button className="button" onClick={() => query.refetch()}>
             重新读取系列资产
@@ -375,7 +384,7 @@ export function Series({
   );
   return (
     <div className="stack">
-      <ErrorNotice error={query.error} />
+      <FloatingErrorNotice error={query.error} />
       <Panel
         title={"系列设定 · " + project.series_key}
         description={
@@ -612,7 +621,7 @@ export function SeriesOperation({
         }
       }}
     >
-      <ErrorNotice error={error} />
+      <ErrorNotice error={error} reserveSpace />
       {base.action === "save_bible" && (
         <Field label="正式设定 JSON">
           <textarea
@@ -742,7 +751,7 @@ export function Costs({
   if (!ledger)
     return (
       <>
-        <ErrorNotice error={query.error} />
+        <FloatingErrorNotice error={query.error} />
         {query.error ? (
           <button className="button" onClick={() => query.refetch()}>
             重新读取费用记录
@@ -762,7 +771,8 @@ export function Costs({
         String(project.needs_decision?.code || "").startsWith("cloud_"));
   return (
     <div className="stack">
-      <ErrorNotice error={error || query.error} />
+      <FloatingErrorNotice error={query.error} />
+      <ErrorNotice error={error} reserveSpace />
       <Panel
         title="云媒体费用与授权"
         description="每批请求按模型、参数和生产版本绑定授权，累计用量不会因返修清零。"
@@ -928,7 +938,7 @@ export function CloudAuthorization({
         }
       }}
     >
-      <ErrorNotice error={error} />
+      <ErrorNotice error={error} reserveSpace />
       <div className="form-row">
         <Field label="本批次累计最多提交次数">
           <input
@@ -1036,7 +1046,7 @@ export function FeeConfirmation({
           }
         }}
       >
-        <ErrorNotice error={error} />
+        <ErrorNotice error={error} reserveSpace />
         <Field label="任务">
           <select
             name="intent_id"

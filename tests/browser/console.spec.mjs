@@ -83,12 +83,24 @@ test("remake opens an editable new project without mutating existing media", asy
     .getByLabel("创作方向")
     .fill("调整为2D动漫短剧，冲突和反转在单部作品中完成。");
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect(page.locator("body")).toHaveJSProperty("scrollWidth", 390);
+  // The stable scrollbar gutter reserves space even while the modal locks scrolling.
+  const lockedBodyWidth = await page
+    .locator("body")
+    .evaluate((element) => element.scrollWidth);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth + 1,
+    ),
+  ).toBe(true);
   await page.screenshot({
     path: "runtime/browser-report/console-remake-mobile.png",
     fullPage: true,
   });
   await dialog.getByRole("button", { name: "取消", exact: true }).click();
+  await expect(page.locator("body")).toHaveJSProperty(
+    "scrollWidth",
+    lockedBodyWidth,
+  );
   const after = await (await request.get("/api/factory/projects/" + id)).json();
   expect(after).toEqual(before);
   const calls = await (await request.get("/__test/calls")).json();

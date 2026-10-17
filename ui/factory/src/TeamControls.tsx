@@ -2,6 +2,7 @@ import {
   useEffect,
   useRef,
   useState,
+  useSyncExternalStore,
   type Dispatch,
   type SetStateAction,
 } from "react";
@@ -11,7 +12,14 @@ import {
   type QueryClient,
 } from "@tanstack/react-query";
 import { date, request, roleName, rows, type RecordData } from "./api";
-import { Badge, ErrorNotice, Field, Loading, Modal } from "./ui";
+import {
+  Badge,
+  ErrorNotice,
+  FloatingErrorNotice,
+  Field,
+  Loading,
+  Modal,
+} from "./ui";
 
 export type InterventionTarget = {
   type: "task" | "member" | "department" | "leader";
@@ -40,7 +48,7 @@ function useMemory<T>(
   initial: T,
 ): [T, Dispatch<SetStateAction<T>>] {
   const client = useQueryClient();
-  const query = useQuery<T>({
+  useQuery<T>({
     queryKey: key,
     queryFn: () => initial,
     initialData: initial,
@@ -48,8 +56,22 @@ function useMemory<T>(
     staleTime: Infinity,
     gcTime: Infinity,
   });
+  // Controlled inputs need the current cache value during the native change event.
+  // Query observer notifications are batched and can briefly restore an old value.
+  const value = useSyncExternalStore(
+    (listener) =>
+      client.getQueryCache().subscribe((event) => {
+        const candidate = event.query.queryKey;
+        if (
+          candidate.length === key.length &&
+          key.every((part, index) => part === candidate[index])
+        )
+          listener();
+      }),
+    () => client.getQueryData<T>(key) as T,
+  );
   return [
-    query.data as T,
+    value,
     (next) =>
       client.setQueryData<T>(key, (previous) =>
         typeof next === "function"
@@ -236,7 +258,7 @@ export function TaskControlActions({
             {action.label}：{action.disabled_reason}
           </p>
         ))}
-      <ErrorNotice error={error} />
+      <ErrorNotice error={error} reserveSpace />
       {notice && (
         <p className="team-control-notice" role="status">
           {notice}
@@ -293,7 +315,7 @@ export function EnableTeamControl({
       {action.disabled_reason && (
         <p className="muted">{action.disabled_reason}</p>
       )}
-      <ErrorNotice error={error} />
+      <ErrorNotice error={error} reserveSpace />
     </div>
   );
 }
@@ -728,7 +750,7 @@ export function InterventionComposer({
             重新读取基线（保留要求）
           </button>
         )}
-        <ErrorNotice error={error} />
+        <ErrorNotice error={error} reserveSpace />
         {preview && (
           <section className="team-impact-preview" aria-label="返工影响预览">
             <h3>返工影响</h3>
@@ -951,7 +973,8 @@ export function TeamInstructions({
     <section className="panel team-instructions" aria-label="已登记的制作指令">
       <h2>制作指令与负责人汇报</h2>
       {history.isPending && offset > 0 && <Loading />}
-      <ErrorNotice error={error || history.error} />
+      <FloatingErrorNotice error={history.error} />
+      <ErrorNotice error={error} reserveSpace />
       {history.error && (
         <button className="button small" onClick={() => history.refetch()}>
           重新读取制作指令

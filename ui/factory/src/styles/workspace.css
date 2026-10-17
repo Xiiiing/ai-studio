@@ -32,8 +32,9 @@
   border-bottom: 2px solid transparent;
   background: transparent;
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--text-ui);
   white-space: nowrap;
+  line-height: var(--leading-ui);
 }
 .project-primary-navigation button:hover,
 .project-subnavigation button:hover {
@@ -52,6 +53,7 @@
   margin: 0;
 }
 .project-more > summary {
+  min-width: var(--target-size);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -101,8 +103,9 @@
   border-radius: var(--control-radius);
   background: transparent;
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--text-ui);
   text-align: left;
+  line-height: var(--leading-ui);
 }
 .project-navigation-menu button:hover,
 .project-navigation-menu button.active,
@@ -123,7 +126,7 @@
   border-top: 1px solid var(--line);
 }
 .project-subnavigation button {
-  min-height: 36px;
+  min-height: var(--target-size);
   padding: 6px 12px;
   border-radius: var(--control-radius);
 }
@@ -131,7 +134,7 @@
 .project-subnavigation button[aria-current="page"] {
   color: var(--ink);
   background: var(--surface-strong);
-  font-weight: 550;
+  font-weight: 500;
 }
 @media (max-width: 1023px) {
   .project-navigation-bar {
@@ -150,15 +153,24 @@
   .project-primary-navigation button {
     flex: 1;
     padding-inline: 4px;
-    font-size: 12px;
   }
   .project-more > summary {
     padding-inline: 4px;
-    font-size: 12px;
   }
   .project-more > summary svg {
     width: 12px;
     height: 12px;
+  }
+}
+
+/* Six primary actions and More retain full touch targets on the narrowest screen. */
+@media (max-width: 380px) {
+  .project-navigation-bar {
+    margin-inline: -12px;
+    padding-inline: 4px;
+  }
+  .project-more > summary svg {
+    display: none;
   }
 }
 .project-heading {
@@ -211,17 +223,19 @@
   gap: 3px;
 }
 .project-download-pending small {
-  font-size: 11px;
+  font-size: var(--text-caption);
+  line-height: var(--leading-caption);
 }
 .project-actions-menu {
   position: relative;
 }
 .project-actions-menu > summary {
-  min-height: 32px;
+  min-height: var(--target-size);
   padding: 4px 8px;
   cursor: pointer;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--text-ui);
+  line-height: var(--leading-ui);
 }
 .project-actions-list {
   position: absolute;
@@ -261,8 +275,9 @@
 .project-context strong,
 .project-context strong small {
   display: inline;
-  font-size: 12px;
+  font-size: var(--text-caption);
   font-weight: 400;
+  line-height: var(--leading-caption);
 }
 .project-context strong {
   color: var(--ink);
@@ -298,8 +313,9 @@
   background: var(--media);
 }
 .current-output-video h3 {
-  font-size: 16px;
+  font-size: var(--text-subheading);
   margin: 6px 0;
+  line-height: var(--leading-subheading);
 }
 .current-task {
   gap: 10px;
@@ -357,13 +373,14 @@
   min-height: 48px;
   padding: 12px 0;
   cursor: pointer;
-  font-weight: 550;
+  font-weight: 500;
 }
 .project-process > summary span {
   margin-left: 12px;
   color: var(--muted);
   font-weight: 400;
-  font-size: 12px;
+  font-size: var(--text-ui);
+  line-height: var(--leading-ui);
 }
 .project-process[open] > summary,
 .project-background[open] > summary {
@@ -371,22 +388,6 @@
 }
 .project-background .creative-contract-summary {
   margin-top: 0;
-}
-.project-attention-banner {
-  background: var(--panel);
-  border-color: var(--line);
-  border-left: 3px solid var(--warning);
-  padding: 12px 16px;
-  margin-bottom: 16px;
-}
-.project-attention-banner strong {
-  color: var(--ink);
-}
-.project-attention-banner span:not(.attention-icon) {
-  color: var(--muted);
-}
-.project-attention-banner .attention-icon {
-  color: var(--warning);
 }
 .workflow-map-node.workflow-stage-card {
   background: var(--panel);
@@ -463,9 +464,6 @@
     padding: 8px 4px;
     white-space: nowrap;
   }
-  .project-meta {
-    font-size: 12px;
-  }
   .project-heading .breadcrumb-link {
     min-height: 28px;
   }
@@ -506,7 +504,6 @@
     min-width: 0;
   }
   .current-output-video h3 {
-    font-size: 14px;
     overflow-wrap: anywhere;
   }
   .current-output-video p {
@@ -518,11 +515,5 @@
   .project-process > summary span {
     display: block;
     margin: 4px 0 0;
-  }
-  .project-attention-banner {
-    flex-wrap: wrap;
-  }
-  .project-attention-banner > .button {
-    margin-left: 0;
   }
 }
