@@ -325,6 +325,8 @@ def review_media(project, shot, path, references, config=None, *, output_dir=Non
         schema = copy.deepcopy(schema)
         schema["properties"]["temporal_concerns"] = concern_schema()
         context["temporal_rule"] = RULE
+        from .review_contracts import APPROVED_ACTION_RULE
+        context["approved_action_rule"] = APPROVED_ACTION_RULE
     if shot.get("material_constraints"):
         schema = copy.deepcopy(schema)
         checks = {key: {"type": "string", "enum": ["match", "mismatch", "uncertain", "not_applicable"]} for key in ("identity", "style", "scene", "correspondence")}
@@ -333,15 +335,8 @@ def review_media(project, shot, path, references, config=None, *, output_dir=Non
         schema["required"] = [*schema["required"], "material_alignment"]
     if contract:
         if not is_video and contract["motion"] == "generated_video":
-            context["shot"].pop("action", None)
-            context["shot"].pop("motion_prompt", None)
-            context["shot"].pop("continuity", None)
-            context["shot"].pop("dramatic_beat", None)
-            states = context["shot"].get("character_states")
-            if isinstance(states, dict):
-                for state in states.values():
-                    if isinstance(state, dict):
-                        state.pop("story_state", None)
+            from .review_contracts import starting_frame
+            context["shot"] = starting_frame(context["shot"])
             # The current shot's sequence entry can repeat the future action
             # ("opens her eyes") as continuity. Do not leak it back into the
             # static-frame gate after excluding action/motion_prompt above.

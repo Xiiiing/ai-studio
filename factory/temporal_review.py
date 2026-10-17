@@ -16,7 +16,7 @@ import numpy as np
 from PIL import Image, ImageDraw
 from jsonschema import validate
 
-POLICY = "continuous-frame-challenge.v1"
+POLICY = "continuous-frame-challenge.v2"
 TEMPORAL_CODES = {"action", "continuity", "low_quality"}
 RULE = (
     "时间样本是间隔抽帧，不是视频全部连续帧。两个样本之间没有展示中间帧，不等于原视频缺帧、"
@@ -53,7 +53,7 @@ def concern_schema():
         "required": ["from_sample", "to_sample", "detail"]}}
 
 
-def continuous_windows(path, sampled, concerns=()):
+def continuous_windows(path, sampled, concerns=(), *, cover_full_clip=False):
     """At most two sheets of twelve actually consecutive decoded frames."""
     stamps = [float(row["timestamp"]) for row in sampled]
     pairs, previous = [], None
@@ -84,6 +84,13 @@ def continuous_windows(path, sampled, concerns=()):
             if values:
                 ranked.append((max(values), start, end))
         intervals = [(a, b) for _, a, b in sorted(ranked, reverse=True)[:2]]
+    if cover_full_clip:
+        # Camera/effect motion can dominate the late maximum. An absence claim
+        # needs evidence in both halves, including any subtle early action.
+        first = pairs[0][1]
+        last = pairs[-1][1]
+        middle = (first + last) / 2
+        intervals = [(0.0, middle), (middle, last)]
     ranges = []
     for start, end in intervals:
         choices = [row for row in pairs if start < row[1] <= end]
@@ -146,7 +153,8 @@ def verify_temporal(config, schema, context, reference_content, sampled, samplin
         return result
 
     try:
-        windows = continuous_windows(path, sampled, initial.get("temporal_concerns", []))
+        windows = continuous_windows(path, sampled, initial.get("temporal_concerns", []),
+                                     cover_full_clip=motion in {"camera_only", "uncertain"})
         audit["windows"] = [{k: v for k, v in window.items() if k != "image"} for window in windows]
         ids = [frame["id"] for window in windows for frame in window["frames"]]
         finding = {"type": "object", "additionalProperties": False, "properties": {

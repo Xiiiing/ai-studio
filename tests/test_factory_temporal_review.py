@@ -119,3 +119,15 @@ def test_small_context_does_not_drop_references_or_approve(video,tmp_path,monkey
     result,calls=review(video,tmp_path,monkeypatch)
     assert len(calls)==1 and result['status']=='unavailable'
     assert result['temporal_verification']['reason']=='continuous_review_context_too_small'
+
+
+def test_absence_claim_checks_early_action_even_when_claims_point_only_to_late_frames(video):
+    samples,_=sample_video(video,count=8)
+    late=[{'from_sample':6,'to_sample':8,'detail':'Claim that the whole shot is static'}]
+    windows=temporal_review.continuous_windows(video,samples,late,cover_full_clip=True)
+    assert len(windows)==2
+    assert windows[0]['frames'][0]['timestamp']<1.0
+    assert windows[1]['frames'][-1]['timestamp']>=1.0
+    for window in windows:
+        frames=window['frames']
+        assert [f['frame_index'] for f in frames]==list(range(frames[0]['frame_index'],frames[-1]['frame_index']+1))

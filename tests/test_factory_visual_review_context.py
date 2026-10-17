@@ -139,3 +139,48 @@ def test_keyframe_excludes_future_story_beat_without_mutating_physical_state(tmp
     assert result['status']=='pass' and shot==original
     assert 'FUTURE_' not in json.dumps(seen['context'])
     assert seen['context']['shot']['character_states']['female']=={'position':'Kneeling, head lowered','held_props':[]}
+
+
+def test_image_review_and_repair_share_the_approved_starting_state(tmp_path,monkeypatch):
+    from factory.production import _grounded_repair_plan
+    shot={'id':'S14','prompt':'Man starts on one knee, holding the standing woman\'s empty hand.',
+          'action':'FUTURE_ACTION stand all the way up','motion_prompt':'FUTURE_MOTION rise',
+          'continuity':'FUTURE_CONTINUITY standing together',
+          'character_states':{'male':{'position':'One knee down, free hand on bent knee.',
+                                    'held_props':[],'story_state':'FUTURE_STORY grateful after standing'}}}
+    calls=[]
+    monkeypatch.setattr(llm,'_image_url',lambda p:'data:image/png;base64,bW9jaw==')
+    monkeypatch.setattr(llm,'_request',lambda *a,**kw:calls.append(json.loads(kw['content'][0]['text'])) or {
+      'status':'pass','score':90,'summary':'Starting position is visible','issues':[],
+      'style_alignment':{'status':'match','evidence':'Cel shaded drawn characters'}})
+    project={'slug':'factory-starting-state','format':'animation','script':{'shots':[shot]},
+             'creative_contract':{'schema_version':1,'visual_style':'anime_2d','story_mode':'standalone',
+                                  'pacing':'short_drama','motion':'generated_video'}}
+    result=llm.review_media(project,shot,tmp_path/'image.png',[],{'llm':{'model':'fixture'}})
+    assert result['status']=='pass'
+    context=calls[0]
+    assert 'FUTURE_' not in json.dumps(context)
+    repair=_grounded_repair_plan({'issues':[{'code':'action','severity':'blocking'}]},'image',2,shot)
+    assert context['shot']['character_states']==json.loads(repair['positive_constraints'][1]['text'])
+    assert context['shot']['prompt']==repair['positive_constraints'][0]['text']
+
+
+def test_video_reassessment_uses_original_approved_action_without_amplifying_motion(tmp_path,monkeypatch):
+    calls=[]
+    monkeypatch.setattr(llm,'_image_url',lambda p:'data:image/png;base64,bW9jaw==')
+    monkeypatch.setattr('factory.evaluation_sampling.sample_video',lambda *a,**kw:(
+      [{'timestamp':i,'image':tmp_path/'frame.png'} for i in range(4)],{'timestamps':[0,1,2,3]}))
+    monkeypatch.setattr(llm,'_request',lambda *a,**kw:calls.append(json.loads(kw['content'][0]['text'])) or {
+      'status':'pass','score':90,'summary':'Original subtle hand action is visible','issues':[],
+      'style_alignment':{'status':'match','evidence':'Drawn cel shaded figures'},
+      'motion_alignment':{'status':'character_motion','evidence':'Hands tighten slightly between actual timestamps'}})
+    shot={'id':'S01','action':'Hold the cultivation seal while bracing against the vortex.',
+          'motion_prompt':'The fingers tighten slightly and the aura pulses; the background man stays still.'}
+    project={'slug':'factory-original-motion','format':'animation','creative_contract':{
+       'schema_version':1,'visual_style':'anime_2d','story_mode':'standalone','pacing':'short_drama','motion':'generated_video'}}
+    result=llm.review_media(project,shot,tmp_path/'unchanged.mp4',[],{'llm':{'model':'fixture'}})
+    assert result['status']=='pass'
+    assert calls[0]['shot']['action']==shot['action']
+    assert calls[0]['shot']['motion_prompt']==shot['motion_prompt']
+    assert '不得额外要求' in calls[0]['approved_action_rule']
+    assert '特效变化不能冒充人物运动' in calls[0]['approved_action_rule']

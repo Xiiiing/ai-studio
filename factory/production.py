@@ -109,17 +109,22 @@ def _grounded_repair_plan(assessment, stage, attempt, expected=None, reference_r
     if not isinstance(expected, dict) or technical:
         return repair
 
-    fields = ("action", "continuity", "prompt")
-    if stage == "video":
-        fields += ("motion_prompt",)
+    if stage == "image":
+        from .review_contracts import starting_frame
+        expected = starting_frame(expected)
+        fields = ("prompt", "character_states")
+    else:
+        fields = ("action", "continuity", "prompt", "motion_prompt")
     for field in fields:
         value = expected.get(field)
         if value is not None and value != "" and value != [] and value != {}:
             text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False, sort_keys=True)
             repair["positive_constraints"].append({"field": field, "text": text})
     if route in ("continuity", "action"):
-        focus = ("Render the approved action and the exact approved object placement and state "
-                 "as visibly readable facts in the frame.")
+        focus = (("Render the exact approved starting pose, object placement and state "
+                  if stage == "image" else
+                  "Render the approved action and the exact approved object placement and state ")
+                 + "as visibly readable facts in the frame.")
     elif route == "identity":
         focus = ("Preserve each approved character's exact face, age, hairstyle and clothing "
                  "from the corresponding identity reference while keeping the characters distinct "
@@ -130,8 +135,11 @@ def _grounded_repair_plan(assessment, stage, attempt, expected=None, reference_r
         focus = "Use readable lighting and sharp visible detail while preserving the approved scene."
     else:
         focus = "Render the approved scene facts, cast and composition faithfully."
+    if stage == "image":
+        focus = ("Render only the approved static STARTING frame and starting character positions. "
+                 "Do not advance to an action endpoint or combine multiple action phases. " + focus)
     constraints = [focus]
-    labels = {"action": "Approved action and object state", "continuity": "Approved continuity",
+    labels = {"character_states": "Approved starting character states", "action": "Approved action and object state", "continuity": "Approved continuity",
               "prompt": "Approved visual scene", "motion_prompt": "Approved motion"}
     constraints.extend(labels[item["field"]] + ": " + item["text"]
                        for item in repair["positive_constraints"])
@@ -240,7 +248,7 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                if self.config.get("semantic_model_identity") is not None else {}),
             "implementation": {} if explicit_policy else {
                 name: sha256(ROOT / "factory" / name)
-                for name in ("llm.py", "quality.py", "evaluation_sampling.py", "temporal_review.py", "spatial_review.py") if (ROOT / "factory" / name).is_file()},
+                for name in ("llm.py", "quality.py", "evaluation_sampling.py", "temporal_review.py", "spatial_review.py", "review_contracts.py") if (ROOT / "factory" / name).is_file()},
             "evaluator": (getattr(evaluator, "__module__", "") + "." +
                           getattr(evaluator, "__qualname__", type(evaluator).__name__)) if evaluator else None,
         })
