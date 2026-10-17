@@ -54,7 +54,8 @@
   margin-bottom: 16px;
 }
 .service-sidebar-heading strong {
-  font-size: 14px;
+  font-size: var(--text-ui);
+  line-height: var(--leading-ui);
 }
 .service-sidebar-heading strong span,
 .service-models-heading h3 span {
@@ -95,17 +96,18 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 12px;
+  font-size: var(--text-caption);
   color: var(--muted);
   padding: 0 9px 5px;
   letter-spacing: 0;
+  line-height: var(--leading-caption);
 }
 .service-list-label .icon-button {
   padding: 3px;
-  min-height: 28px;
-  min-width: 28px;
-  width: 28px;
-  height: 28px;
+  min-height: var(--target-size);
+  min-width: var(--target-size);
+  width: var(--target-size);
+  height: var(--target-size);
 }
 .service-list-item {
   width: 100%;
@@ -129,14 +131,16 @@
   box-shadow: inset 2px 0 var(--accent);
 }
 .service-list-item .model-symbol {
-  width: 34px;
-  height: 34px;
-  flex: 0 0 34px;
+  width: var(--logo-list-size);
+  height: var(--logo-list-size);
+  flex: 0 0 var(--logo-list-size);
   border-radius: 8px;
 }
 .service-list-item .model-symbol img {
   max-width: 25px;
   max-height: 25px;
+  width: 24px;
+  height: 24px;
 }
 .service-list-item > span:not(.model-symbol) {
   flex: 1;
@@ -145,20 +149,23 @@
   gap: 4px;
 }
 .service-list-item strong {
-  font-size: 13px;
+  font-size: var(--text-ui);
+  line-height: var(--leading-ui);
 }
 .service-list-item small {
   display: block;
-  font-size: 12px;
+  font-size: var(--text-caption);
   color: var(--muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  line-height: var(--leading-caption);
 }
 .service-list-item b {
   color: var(--muted);
   font-weight: 400;
-  font-size: 12px;
+  font-size: var(--text-caption);
+  line-height: var(--leading-caption);
 }
 .service-detail {
   padding: 24px;
@@ -183,14 +190,16 @@
 }
 .service-editor-brand strong,
 .service-editor-brand h2 {
-  font-size: 20px;
+  font-size: var(--text-section);
   margin: 0 0 5px;
   display: block;
+  line-height: var(--leading-section);
 }
 .service-editor-brand small {
   display: block;
-  font-size: 11px;
+  font-size: var(--text-caption);
   color: var(--muted);
+  line-height: var(--leading-caption);
 }
 .service-connection-summary {
   padding-bottom: 24px;
@@ -199,13 +208,14 @@
   gap: 10px;
 }
 .service-connection-summary > span {
-  font-size: 12px;
+  font-size: var(--text-ui);
   color: var(--muted);
+  line-height: var(--leading-ui);
 }
 .service-connection-summary code {
-  font-size: 12px;
+  font-size: var(--text-ui);
   overflow-wrap: anywhere;
-  line-height: 1.6;
+  line-height: var(--leading-ui);
 }
 .service-connection-summary > div {
   display: flex;
@@ -214,14 +224,16 @@
   gap: 10px;
 }
 .service-connection-summary small {
-  font-size: 11px;
+  font-size: var(--text-caption);
   color: var(--muted);
+  line-height: var(--leading-caption);
 }
 .service-connection-summary a {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font-size: 11px;
+  font-size: var(--text-ui);
+  line-height: var(--leading-ui);
 }
 .service-models-heading {
   display: flex;
@@ -231,7 +243,8 @@
 }
 .service-models-heading h3 {
   margin: 0;
-  font-size: 14px;
+  font-size: var(--text-subheading);
+  line-height: var(--leading-subheading);
 }
 .service-model-list {
   display: grid;
@@ -251,15 +264,17 @@
   gap: 9px;
 }
 .service-model-info .model-name {
-  font-size: 14px;
+  font-size: var(--text-ui);
   overflow-wrap: anywhere;
+  line-height: var(--leading-ui);
 }
 .service-model-tags {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  font-size: 10px;
+  font-size: var(--text-caption);
   color: var(--muted);
+  line-height: var(--leading-caption);
 }
 .service-model-tags span {
   border: 1px solid var(--border);
@@ -270,8 +285,8 @@
 }
 .service-model-uses {
   color: var(--muted);
-  font-size: 11px;
-  line-height: 1.7;
+  font-size: var(--text-caption);
+  line-height: var(--leading-caption);
 }
 .service-model-actions {
   display: flex;
@@ -281,8 +296,8 @@
 .service-detail-footnote {
   margin-top: 22px;
   color: var(--muted);
-  font-size: 11px;
-  line-height: 1.8;
+  font-size: var(--text-caption);
+  line-height: var(--leading-caption);
 }
 .service-probe-result {
   width: 100%;
@@ -290,9 +305,9 @@
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 7px;
-  font-size: 12px;
+  font-size: var(--text-caption);
   overflow-wrap: anywhere;
-  line-height: 1.8;
+  line-height: var(--leading-caption);
 }
 .service-probe-result small {
   display: block;
@@ -316,13 +331,14 @@
 }
 .service-picker > p {
   color: var(--muted);
-  font-size: 13px;
-  line-height: 1.8;
+  font-size: var(--text-ui);
+  line-height: var(--leading-ui);
 }
 .service-picker h3 {
-  font-size: 12px;
+  font-size: var(--text-subheading);
   color: var(--muted);
   margin: 22px 0 12px;
+  line-height: var(--leading-subheading);
 }
 .provider-picker-grid {
   display: grid;
@@ -348,18 +364,19 @@
 }
 .provider-pick span:not(.model-symbol) {
   flex: 1;
-  font-size: 13px;
+  font-size: var(--text-ui);
   overflow-wrap: anywhere;
+  line-height: var(--leading-ui);
 }
 .provider-pick .model-symbol {
-  width: 32px;
-  height: 32px;
-  flex: 0 0 32px;
+  width: var(--logo-size);
+  height: var(--logo-size);
+  flex: 0 0 var(--logo-size);
   border-radius: 8px;
 }
 .provider-pick .model-symbol img {
-  max-width: 25px;
-  max-height: 25px;
+  max-width: 28px;
+  max-height: 28px;
 }
 .service-form > fieldset > .service-editor-brand {
   padding: 0 0 20px;
@@ -374,25 +391,28 @@
   border-bottom: 1px solid var(--border);
 }
 .service-form-section h3 {
-  font-size: 14px;
+  font-size: var(--text-subheading);
   margin: 14px 0;
+  line-height: var(--leading-subheading);
 }
 .service-form-section h3 > span {
   display: inline-grid;
   place-items: center;
   width: 21px;
   height: 21px;
-  font-size: 11px;
+  font-size: var(--text-caption);
   margin-right: 6px;
   border: 1px solid var(--border);
   border-radius: 50%;
   color: var(--muted);
+  line-height: var(--leading-caption);
 }
 .service-links {
   display: flex;
   gap: 18px;
-  font-size: 11px;
+  font-size: var(--text-ui);
   margin: 10px 0 14px;
+  line-height: var(--leading-ui);
 }
 .service-advanced,
 .model-options {
@@ -404,8 +424,9 @@
 .model-options > summary {
   cursor: pointer;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--text-ui);
   padding: 10px 0;
+  line-height: var(--leading-ui);
 }
 .service-advanced[open] > summary {
   margin-bottom: 8px;
@@ -425,8 +446,9 @@
   align-items: center;
   gap: 9px;
   padding: 10px 0;
-  font-size: 12px;
+  font-size: var(--text-ui);
   overflow-wrap: anywhere;
+  line-height: var(--leading-ui);
 }
 .catalog-option span {
   flex: 1;
@@ -442,8 +464,8 @@
 }
 .service-discovery-message {
   color: var(--muted);
-  font-size: 12px;
-  line-height: 1.8;
+  font-size: var(--text-caption);
+  line-height: var(--leading-caption);
 }
 .manual-model {
   display: flex;
@@ -475,18 +497,21 @@
 .selected-model-title strong {
   flex: 1;
   min-width: 0;
-  font-size: 12px;
+  font-size: var(--text-ui);
   overflow-wrap: anywhere;
+  line-height: var(--leading-ui);
 }
 .model-options {
   margin-top: 0;
 }
 .model-options > summary {
-  font-size: 10px;
+  font-size: var(--text-ui);
+  line-height: var(--leading-ui);
 }
 .model-options > small {
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--text-caption);
+  line-height: var(--leading-caption);
 }
 .service-dialog-actions {
   position: sticky;
@@ -509,7 +534,8 @@
 .service-dialog-actions > span,
 .service-dialog-actions > small {
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--text-caption);
+  line-height: var(--leading-caption);
 }
 .assignment-settings {
   display: grid;
@@ -530,21 +556,23 @@
   border: 0;
 }
 .assignment-row h3 {
-  font-size: 14px;
+  font-size: var(--text-subheading);
   margin: 0 0 7px;
+  line-height: var(--leading-subheading);
 }
 .assignment-row p {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--text-caption);
   margin: 0;
-  line-height: 1.8;
+  line-height: var(--leading-caption);
 }
 .assignment-row .field {
   margin: 0;
 }
 .assignment-row .field > span {
   display: block;
-  font-size: 11px;
+  font-size: var(--text-ui);
+  line-height: var(--leading-ui);
 }
 .assignment-row select {
   text-overflow: ellipsis;
@@ -553,9 +581,10 @@
   margin-top: 18px;
 }
 .assignment-advanced summary {
-  font-size: 12px;
+  font-size: var(--text-ui);
   color: var(--muted);
   cursor: pointer;
+  line-height: var(--leading-ui);
 }
 .assignment-role-grid {
   display: grid;
@@ -578,18 +607,20 @@
   z-index: 2;
 }
 .role-savebar > span {
-  font-size: 12px;
+  font-size: var(--text-caption);
   color: var(--muted);
+  line-height: var(--leading-caption);
 }
 .model-draft-notice {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: 12px;
+  font-size: var(--text-caption);
   padding: 10px 14px;
   border: 1px solid var(--border);
   border-radius: 8px;
   margin-bottom: 15px;
+  line-height: var(--leading-caption);
 }
 @media (max-width: 1050px) {
   .service-workspace {
@@ -604,17 +635,11 @@
   .service-sidebar-heading {
     flex-wrap: wrap;
   }
-  .service-sidebar-heading > .button {
-    font-size: 11px;
-  }
 }
 @media (max-width: 720px) {
   .model-settings-tabs {
     gap: 24px;
     margin-bottom: 18px;
-  }
-  .model-settings-tabs button {
-    font-size: 13px;
   }
   .service-workspace {
     display: block;
@@ -646,11 +671,6 @@
   }
   .service-detail-heading > button {
     padding: 8px;
-    font-size: 11px;
-  }
-  .service-editor-brand strong,
-  .service-editor-brand h2 {
-    font-size: 17px;
   }
   .service-model-info {
     min-width: 140px;
@@ -659,17 +679,10 @@
     align-items: flex-start;
   }
   .service-model-actions .button {
-    font-size: 11px;
     padding: 7px;
   }
   .service-list-item {
     padding: 14px 10px;
-  }
-  .service-list-item strong {
-    font-size: 14px;
-  }
-  .service-list-item small {
-    font-size: 11px;
   }
   .assignment-row {
     grid-template-columns: 1fr;
@@ -682,9 +695,6 @@
   .role-savebar {
     flex-wrap: wrap;
     padding: 12px;
-  }
-  .role-savebar > span {
-    font-size: 11px;
   }
   .role-savebar > div {
     margin-left: auto;
@@ -704,9 +714,6 @@
   .provider-pick {
     padding: 11px 8px;
     gap: 7px;
-  }
-  .provider-pick span:not(.model-symbol) {
-    font-size: 11px;
   }
   .provider-pick > svg {
     display: none;
@@ -741,8 +748,8 @@
     margin: 0;
   }
   .service-list-label .icon-button {
-    min-height: 36px;
-    min-width: 36px;
+    min-height: var(--target-size);
+    min-width: var(--target-size);
   }
 }
 
@@ -760,9 +767,10 @@
   border: 0;
   border-radius: 6px;
   padding: 10px 4px;
-  font-size: 12px;
+  font-size: var(--text-ui);
   color: var(--muted);
   cursor: pointer;
+  line-height: var(--leading-ui);
 }
 .service-categories button[aria-pressed="true"] {
   background: var(--panel);

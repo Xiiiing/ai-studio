@@ -21,6 +21,8 @@ import {
   Pause,
   Hand,
   X,
+  AlertCircle,
+  ChevronRight,
 } from "lucide-react";
 import { ThemeControl } from "./Theme";
 import { ProjectNavigation } from "./ProjectNavigation";
@@ -52,6 +54,9 @@ import {
   Empty,
   Loading,
   ErrorNotice,
+  FloatingErrorNotice,
+  FeedbackProvider,
+  ActionNotice,
   Field,
   Modal,
   Readable,
@@ -88,6 +93,13 @@ const links = [
   ["activity", "运行记录", Activity],
 ] as const;
 export default function App() {
+  return (
+    <FeedbackProvider>
+      <Workbench />
+    </FeedbackProvider>
+  );
+}
+function Workbench() {
   useUnsavedShotGuard();
   const client = useQueryClient(),
     [route, setRoute] = useState(readRoute),
@@ -409,7 +421,7 @@ export default function App() {
               <MaterialLibrary notify={setToast} />
             ) : (
               <>
-                <ErrorNotice error={overview.error} />
+                <FloatingErrorNotice error={overview.error} />
                 {!overview.data ? (
                   overview.error ? (
                     <button
@@ -468,7 +480,7 @@ export default function App() {
                       title="标准制作流程"
                       description="读取服务器工作流定义；项目中的实际运行和返修记录分别展示。"
                     >
-                      <ErrorNotice error={spec.error} />
+                      <FloatingErrorNotice error={spec.error} />
                       {spec.error && (
                         <button
                           className="button"
@@ -527,11 +539,7 @@ export default function App() {
           </footer>
         </div>
       </div>
-      {toast && (
-        <div id="toast" className="toast" role="status">
-          {toast}
-        </div>
-      )}
+      <ActionNotice message={toast} />
       {create && (
         <CreateProject
           catalog={profiles.data}
@@ -938,7 +946,7 @@ function Projects({
           onOffset={setOffset}
           disabled={query !== search.trim() || page.isFetching}
         />
-        <ErrorNotice error={page.error} />
+        <FloatingErrorNotice error={page.error} />
         {page.error && (
           <button className="button" onClick={() => page.refetch()}>
             重新读取项目
@@ -1164,12 +1172,13 @@ function Project({
     [preview, setPreview] = useState<RecordData | null>(null),
     [control, setControl] = useState<RecordData | null>(null),
     [busy, setBusy] = useState(false),
+    [statusOpen, setStatusOpen] = useState(false),
     [error, setError] = useState("");
   const w = workspace.data;
   if (!w)
     return (
       <>
-        <ErrorNotice error={workspace.error} />
+        <FloatingErrorNotice error={workspace.error} />
         {workspace.error ? (
           <button className="button" onClick={() => workspace.refetch()}>
             重新读取项目
@@ -1216,7 +1225,22 @@ function Project({
           </button>
           <h1>{p.title || "未命名制作"}</h1>
           <div className="project-meta">
-            <Badge status={p.status} />
+            <button
+              type="button"
+              className="project-status-trigger"
+              aria-label="查看项目状态"
+              aria-haspopup="dialog"
+              aria-expanded={statusOpen}
+              onClick={() => setStatusOpen(true)}
+            >
+              {attention?.blocking ? (
+                <AlertCircle size={16} />
+              ) : (
+                <Activity size={16} />
+              )}
+              <span>{names[p.status] || p.status || "未记录"}</span>
+              <ChevronRight size={14} />
+            </button>
             <span>
               {projectVisualLabel(p)} · {p.duration_seconds} 秒
             </span>
@@ -1276,31 +1300,7 @@ function Project({
           </details>
         </div>
       </header>
-      {w.operator?.delegation?.reason && tab === "team" && (
-        <div className="delegation-note">
-          <Bot size={16} />
-          {w.operator.delegation.reason}
-        </div>
-      )}
-      <ErrorNotice error={error || workspace.error} />
-      {attention?.blocking && tab !== "decisions" && tab !== "overview" && (
-        <div className="project-attention-banner">
-          <span className="attention-icon">
-            <Inbox size={20} />
-          </span>
-          <div>
-            <strong>{attention.title}</strong>
-            <span>{attention.summary}</span>
-          </div>
-          <button
-            className="button primary small"
-            onClick={() => onTab(attention.target_tab || "decisions")}
-          >
-            {attention.action_label || "处理待办"}
-            <ArrowRight size={14} />
-          </button>
-        </div>
-      )}
+      <FloatingErrorNotice error={workspace.error || (!control ? error : "")} />
       <div className="project-content-layout">
         <ProjectNavigation
           tab={tab}
@@ -1526,7 +1526,13 @@ function Project({
             />
           ) : tab === "team" ? (
             <>
-              <ErrorNotice
+              {w.operator?.delegation?.reason && (
+                <div className="delegation-note">
+                  <Bot size={16} />
+                  {w.operator.delegation.reason}
+                </div>
+              )}
+              <FloatingErrorNotice
                 error={
                   flow.error
                     ? new Error("历史回执读取失败：" + flow.error.message)
@@ -1746,6 +1752,86 @@ function Project({
           )}
         </div>
       </div>
+      {statusOpen && (
+        <Modal
+          id="project-status-dialog"
+          className="project-status-drawer"
+          title="项目状态"
+          onClose={() => setStatusOpen(false)}
+        >
+          <div className="status-summary">
+            <span className="status-caption">{p.title || "未命名制作"}</span>
+            <h3>
+              {attention?.title ||
+                activityName(w.operator?.current_activity || p.status)}
+            </h3>
+            <p>
+              {attention?.summary ||
+                "当前没有待处理的阻断问题。制作进度和产物可在项目页面查看。"}
+            </p>
+          </div>
+          <dl className="status-facts">
+            <div>
+              <dt>当前状态</dt>
+              <dd>{names[p.status] || p.status || "未记录"}</dd>
+            </div>
+            <div>
+              <dt>当前阶段</dt>
+              <dd>
+                {activityName(
+                  w.operator?.current_activity || p.stage || p.status,
+                )}
+              </dd>
+            </div>
+          </dl>
+          {rows(attention?.issues).length > 0 && (
+            <ul className="status-issues" aria-label="待处理问题">
+              {rows(attention?.issues).map((issue, index) => (
+                <li key={issue.id || index}>
+                  <strong>
+                    {issue.title || issue.description || "审核问题"}
+                  </strong>
+                  {issue.suggestion && <p>{issue.suggestion}</p>}
+                  {Array.isArray(issue.shot_ids) &&
+                    issue.shot_ids.length > 0 && (
+                      <div className="button-row">
+                        {issue.shot_ids.map((shotId: string) => (
+                          <button
+                            key={shotId}
+                            type="button"
+                            className="text-link"
+                            onClick={() => {
+                              setSelectedShot(shotId);
+                              setStatusOpen(false);
+                              onTab("shots");
+                            }}
+                          >
+                            查看 {shotId}
+                            <ArrowUpRight size={16} />
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                </li>
+              ))}
+            </ul>
+          )}
+          {workspace.error && <ErrorNotice error={workspace.error} />}
+          {attention?.blocking && (
+            <button
+              type="button"
+              className="button primary status-next-action"
+              onClick={() => {
+                setStatusOpen(false);
+                onTab(attention.target_tab || "decisions");
+              }}
+            >
+              {attention.action_label || "处理待办"}
+              <ArrowRight size={16} />
+            </button>
+          )}
+        </Modal>
+      )}
       {preview && (
         <Modal
           id="preview-dialog"
@@ -1778,7 +1864,7 @@ function Project({
             busy={busy}
             onSubmit={action}
           />
-          <ErrorNotice error={error} />
+          <ErrorNotice error={error} reserveSpace />
         </Modal>
       )}
     </>
@@ -1888,7 +1974,6 @@ export function CreateProject({
           }
         }}
       >
-        <ErrorNotice error={error} />
         <p className="form-intro">
           给团队一个明确的创作目标。AI
           将完成研究、创作与独立审核，你掌握费用授权和最终审片。
@@ -2056,6 +2141,7 @@ export function CreateProject({
             <textarea name="profile_characters" rows={4} maxLength={5000} />
           </Field>
         </details>
+        <ErrorNotice error={error} reserveSpace />
         <div className="dialog-actions">
           <button
             type="button"
@@ -2134,7 +2220,7 @@ function InboxPage({
         description="按实际阻断与人工关卡整理，较早项目的待办同样保留。"
       />
       <Panel title="需要你处理">
-        <ErrorNotice error={query.error} />
+        <FloatingErrorNotice error={query.error} />
         {query.data ? (
           <>
             <Attention

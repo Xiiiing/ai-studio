@@ -147,9 +147,9 @@ test("mobile drawer traps focus, dismisses with Escape or overlay and restores i
   await expect(trigger).toBeFocused();
   await expect(sidebar).toHaveAttribute("inert", "");
   await trigger.click();
-  await page
-    .locator(".navigation-backdrop")
-    .click({ position: { x: 380, y: 500 } });
+  const backdrop = page.locator(".navigation-backdrop");
+  const backdropBounds = await backdrop.boundingBox();
+  await backdrop.click({ position: { x: backdropBounds.width - 10, y: 500 } });
   await expect(trigger).toBeFocused();
   await expect(sidebar).toHaveAttribute("inert", "");
   await trigger.click();

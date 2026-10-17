@@ -141,7 +141,7 @@ test("failed shot refresh displays the error and does not destroy an active play
   });
   await request.post("/__test/failure", { data: { route: "/shots" } });
   await page.locator('.topbar [data-action="refresh"]').click();
-  await expect(page.locator('.shot-detail [role="alert"]')).toContainText(
+  await expect(page.locator('.feedback-region [role="alert"]')).toContainText(
     "模拟服务暂时不可用",
   );
   expect(
@@ -179,7 +179,9 @@ test("CAS draft remains old after an external update and retake never calls a pa
     .locator('[name="prompt"]')
     .fill("A new frame after reviewing current revision");
   await editor.locator("button").last().click();
-  await expect(page.locator("#toast")).toContainText("局部版本已保存");
+  await expect(page.locator('.feedback-region [role="status"]')).toContainText(
+    "局部版本已保存",
+  );
   const calls = await (await request.get("/__test/calls")).json();
   const edits = calls.filter(
     (call) => call.path.endsWith("/shots/S01") && call.method === "POST",

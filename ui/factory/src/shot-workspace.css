@@ -14,13 +14,15 @@
 }
 .shot-preview-heading h3 {
   margin: 0;
-  font-size: 14px;
+  font-size: var(--text-subheading);
+  line-height: var(--leading-subheading);
 }
 .shot-preview-heading h3 span {
   margin-left: 8px;
-  font-size: 12px;
+  font-size: var(--text-caption);
   font-weight: 400;
   color: var(--muted);
+  line-height: var(--leading-caption);
 }
 .shot-versions .shot-preview-grid {
   gap: 16px;
@@ -38,12 +40,13 @@
   border-top: 1px solid var(--line);
 }
 .candidate-review strong {
-  font-size: 12px;
+  font-size: var(--text-caption);
+  line-height: var(--leading-caption);
 }
 .candidate-review > p {
   margin: 6px 0;
-  font-size: 13px;
-  line-height: 1.6;
+  font-size: var(--text-ui);
+  line-height: var(--leading-ui);
   overflow-wrap: anywhere;
 }
 .candidate-review-status {
@@ -51,13 +54,14 @@
   flex-wrap: wrap;
   gap: 8px 12px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--text-caption);
+  line-height: var(--leading-caption);
 }
 .shot-history-notice {
   margin: 12px 0;
   color: var(--muted);
-  line-height: 1.6;
-  font-size: 12px;
+  line-height: var(--leading-caption);
+  font-size: var(--text-caption);
 }
 .shot-version-history {
   margin-top: 24px;
@@ -65,7 +69,8 @@
   border-top: 1px solid var(--line);
 }
 .shot-version-history > .muted {
-  font-size: 12px;
+  font-size: var(--text-caption);
+  line-height: var(--leading-caption);
 }
 .shot-version-list {
   list-style: none;
@@ -109,16 +114,19 @@
   color: var(--accent-text);
 }
 .shot-version-open strong {
-  font-size: 12px;
+  font-size: var(--text-ui);
+  line-height: var(--leading-ui);
 }
 .shot-version-open small,
 .shot-version-open > span {
-  font-size: 11px;
+  font-size: var(--text-caption);
   color: var(--muted);
   overflow-wrap: anywhere;
+  line-height: var(--leading-caption);
 }
 .shot-preview-grid .candidate-body > details {
-  font-size: 12px;
+  font-size: var(--text-caption);
+  line-height: var(--leading-caption);
 }
 .shot-preview-grid .candidate-body details p,
 .shot-preview-grid .candidate-body small {

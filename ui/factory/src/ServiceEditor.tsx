@@ -594,7 +594,7 @@ export function ServiceEditor({
               )}
             </section>
           </fieldset>
-          <ErrorNotice error={error} />
+          <ErrorNotice error={error} reserveSpace />
           <div className="service-dialog-actions">
             <span>
               {entries.length

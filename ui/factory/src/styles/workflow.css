@@ -18,16 +18,19 @@
   border-color: var(--line);
 }
 .workflow-heading strong {
-  font-size: 17px;
+  font-size: var(--text-reading);
+  line-height: var(--leading-reading);
 }
 .workflow-heading p {
   margin: 6px 0 0;
-  font-size: 13px;
+  font-size: var(--text-ui);
   color: var(--muted);
+  line-height: var(--leading-ui);
 }
 .workflow-heading > small {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--text-caption);
+  line-height: var(--leading-caption);
 }
 .workflow-layout {
   display: grid;
@@ -76,9 +79,10 @@
 .workflow-stage-number {
   flex: 0 0 26px;
   font:
-    600 12px ui-monospace,
+    600 var(--text-caption) ui-monospace,
     monospace;
   color: var(--muted);
+  line-height: var(--leading-caption);
 }
 .workflow-stage-copy {
   display: flex;
@@ -88,19 +92,21 @@
   flex: 1;
 }
 .workflow-stage-copy > strong {
-  font-size: 14px;
+  font-size: var(--text-ui);
+  line-height: var(--leading-ui);
 }
 .workflow-stage-copy > small {
-  line-height: 1.5;
+  line-height: var(--leading-caption);
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--text-caption);
 }
 .workflow-stage-card > .badge {
   position: absolute;
   right: 12px;
   top: 9px;
-  font-size: 12px;
+  font-size: var(--text-caption);
   padding: 3px 5px;
+  line-height: var(--leading-caption);
 }
 .workflow-repair {
   border-top: 1px dashed var(--line);
@@ -110,8 +116,9 @@
 .workflow-repair > small {
   display: block;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--text-caption);
   margin-bottom: 9px;
+  line-height: var(--leading-caption);
 }
 .workflow-repair .workflow-stage-card {
   background: var(--warning-soft);
@@ -148,7 +155,8 @@
   color: var(--muted);
   border-radius: 8px;
   cursor: pointer;
-  font-size: 12px;
+  font-size: var(--text-ui);
+  line-height: var(--leading-ui);
 }
 .workflow-steps > button.active {
   border-color: var(--accent);
@@ -156,11 +164,13 @@
   color: var(--ink);
 }
 .workflow-steps .badge {
-  font-size: 12px;
+  font-size: var(--text-caption);
   padding: 3px 6px;
+  line-height: var(--leading-caption);
 }
 .workflow-steps small {
-  font-size: 12px;
+  font-size: var(--text-caption);
+  line-height: var(--leading-caption);
 }
 .workflow-step-heading {
   display: flex;
@@ -170,17 +180,19 @@
   padding-top: 22px;
 }
 .workflow-step-heading small {
-  font-size: 12px;
+  font-size: var(--text-caption);
   color: var(--muted);
+  line-height: var(--leading-caption);
 }
 .workflow-step-heading h3 {
   margin: 6px 0 0;
-  font-size: 20px;
+  font-size: var(--text-subheading);
+  line-height: var(--leading-subheading);
 }
 .workflow-description {
   margin: 14px 0 18px;
-  line-height: 1.8;
-  font-size: 14px;
+  line-height: var(--leading-ui);
+  font-size: var(--text-ui);
   color: var(--muted);
 }
 .workflow-contract {
@@ -195,8 +207,8 @@
   display: grid;
   grid-template-columns: 36px minmax(0, 1fr);
   gap: 12px;
-  font-size: 12px;
-  line-height: 1.8;
+  font-size: var(--text-caption);
+  line-height: var(--leading-caption);
 }
 .workflow-contract dt {
   color: var(--muted);
@@ -210,9 +222,10 @@
   min-width: 0;
 }
 .workflow-section > h4 {
-  font-size: 14px;
+  font-size: var(--text-subheading);
   margin: 0 0 12px;
   color: var(--ink);
+  line-height: var(--leading-subheading);
 }
 .workflow-members {
   display: flex;
@@ -231,19 +244,22 @@
 }
 .workflow-members strong {
   font-weight: 500;
-  font-size: 12px;
+  font-size: var(--text-caption);
+  line-height: var(--leading-caption);
 }
 .workflow-members small {
   grid-column: 2;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--text-caption);
+  line-height: var(--leading-caption);
 }
 .workflow-transitions {
   margin: 16px 0;
   padding: 14px;
   border-radius: 8px;
   background: var(--warning-soft);
-  font-size: 12px;
+  font-size: var(--text-caption);
+  line-height: var(--leading-caption);
 }
 .workflow-transitions p {
   display: flex;
@@ -258,7 +274,8 @@
 .workflow-evidence {
   margin: 22px 0 0;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--text-caption);
+  line-height: var(--leading-caption);
 }
 .execution-record-focus .execution-record {
   outline: 2px solid var(--accent);
@@ -290,14 +307,16 @@
   border-color: var(--line);
 }
 .workflow-map-caption > strong {
-  font-size: 13px;
+  font-size: var(--text-ui);
+  line-height: var(--leading-ui);
 }
 .workflow-flow-legend {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
-  font-size: 12px;
+  font-size: var(--text-caption);
   color: var(--muted);
+  line-height: var(--leading-caption);
 }
 .workflow-flow-legend > span {
   display: inline-flex;
@@ -362,29 +381,32 @@
 .workflow-map-node-top .badge {
   position: static;
   padding: 3px 5px;
-  font-size: 12px;
+  font-size: var(--text-caption);
+  line-height: var(--leading-caption);
 }
 .workflow-map-node .workflow-stage-number {
   display: flex;
   flex: none;
   align-items: center;
-  font-size: 12px;
+  font-size: var(--text-caption);
+  line-height: var(--leading-caption);
 }
 .workflow-map-node .workflow-stage-copy {
   gap: 8px;
   flex: none;
 }
 .workflow-map-node .workflow-stage-copy > strong {
-  line-height: 1.5;
-  font-size: 14px;
+  line-height: var(--leading-ui);
+  font-size: var(--text-ui);
 }
 .workflow-map-node .workflow-stage-copy > small {
-  line-height: 1.65;
+  line-height: var(--leading-ui);
 }
 .workflow-internal-repair {
-  font-size: 12px;
+  font-size: var(--text-caption);
   margin-top: auto;
   color: var(--warning);
+  line-height: var(--leading-caption);
 }
 .workflow-repair-node {
   background: var(--warning-soft);
@@ -480,8 +502,9 @@
   padding: 12px 16px;
   background: var(--panel);
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--text-caption);
   border-color: var(--line);
+  line-height: var(--leading-caption);
 }
 .workflow-back-to-map {
   display: none;
@@ -506,7 +529,8 @@
   background: var(--surface);
   border-color: var(--line-strong);
   color: var(--ink);
-  font-size: 13px;
+  font-size: var(--text-ui);
+  line-height: var(--leading-ui);
 }
 .workflow-steps .workflow-step-segment > button.active {
   background: var(--surface);

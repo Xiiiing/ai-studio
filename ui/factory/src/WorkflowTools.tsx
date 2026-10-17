@@ -11,7 +11,7 @@ export function WorkflowTools({ notify }: { notify: (s: string) => void }) {
       title="ComfyUI 工作流"
       description="导入 API 格式工作流和输入／输出映射，再将模板编号填写到制作服务。不会运行工作流或安装节点。"
     >
-      <ErrorNotice error={error} />
+      <ErrorNotice error={error} reserveSpace />
       <Field label="工作流模板 JSON">
         <textarea
           rows={8}

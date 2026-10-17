@@ -9,7 +9,15 @@ import {
   ExternalLink,
 } from "lucide-react";
 import { request, keys, rows, roleName, type RecordData } from "./api";
-import { Heading, ErrorNotice, Loading, Field, Panel, Empty } from "./ui";
+import {
+  Heading,
+  ErrorNotice,
+  FloatingErrorNotice,
+  Loading,
+  Field,
+  Panel,
+  Empty,
+} from "./ui";
 import {
   protocolName,
   ProviderSymbol,
@@ -164,7 +172,7 @@ export function Models({ notify }: { notify: (v: string) => void }) {
     return (
       <>
         <Heading eyebrow="MODEL SETTINGS" title="模型与连接" />
-        <ErrorNotice error={query.error} />
+        <FloatingErrorNotice error={query.error} />
         {query.error ? (
           <button className="button" onClick={() => query.refetch()}>
             重新读取模型配置
@@ -211,7 +219,7 @@ export function Models({ notify }: { notify: (v: string) => void }) {
           </button>
         ))}
       </div>
-      <ErrorNotice error={query.error} />
+      <FloatingErrorNotice error={query.error} />
       {dirty && tab !== "roles" && (
         <div className="model-draft-notice">
           制作分工有未保存的修改。
@@ -365,7 +373,7 @@ export function Models({ notify }: { notify: (v: string) => void }) {
             disabled={saving}
             onChange={change}
           />
-          <ErrorNotice error={error} />
+          <ErrorNotice error={error} reserveSpace />
           {dirty && inventory.revision !== base && (
             <ErrorNotice error="其他终端已更新配置。你的分工修改仍保留，请先核对最新配置。" />
           )}
