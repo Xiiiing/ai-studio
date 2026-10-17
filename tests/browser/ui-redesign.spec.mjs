@@ -64,27 +64,42 @@ for (const width of [320, 390, 768, 1024, 1440, 1920]) {
         await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
         await expect(page.getByRole("alert")).toHaveCount(0);
         if (route.tab) {
-          await expect(
-            page.locator(`.project-navigation [data-tab="${route.tab}"]`),
-          ).toHaveAttribute("aria-current", "page");
-          if (width < 1280) {
-            const trigger = page.getByRole("button", { name: /^项目页面：/ });
-            await expect(trigger).toBeVisible();
-            await trigger.click();
-            await expect(page.locator("[data-project-page]")).toHaveCount(10);
-            expect(
-              await page.locator("[data-project-page]").evaluateAll((items) =>
-                items.every((item) => {
-                  const box = item.getBoundingClientRect();
-                  return (
-                    box.left >= 0 && box.right <= innerWidth && box.height >= 44
-                  );
-                }),
-              ),
-            ).toBe(true);
-            await page.keyboard.press("Escape");
-            await expect(trigger).toBeFocused();
+          const group = ["materials", "series"].includes(route.tab)
+            ? "materials"
+            : ["decisions", "quality"].includes(route.tab)
+              ? "decisions"
+              : route.tab;
+          const navigation = page.locator(".project-primary-navigation");
+          await expect(navigation.locator("[data-tab]")).toHaveCount(6);
+          for (const item of await navigation.locator("[data-tab]").all()) {
+            await expect(item).toBeInViewport({ ratio: 1 });
+            const box = await item.boundingBox();
+            expect(box.height).toBeGreaterThanOrEqual(44);
           }
+          if (!["team", "costs"].includes(route.tab))
+            await expect(
+              navigation.locator(`[data-tab="${group}"]`),
+            ).toHaveAttribute("aria-current", "page");
+          if (
+            ["materials", "series", "decisions", "quality"].includes(route.tab)
+          )
+            await expect(
+              page.locator(
+                `.project-subnavigation [data-project-page="${route.tab}"]`,
+              ),
+            ).toHaveAttribute("aria-current", "page");
+          const more = page.locator(".project-more");
+          const trigger = more.locator(":scope > summary");
+          await trigger.click();
+          await expect(more.locator("[data-project-page]")).toHaveCount(2);
+          for (const item of await more.locator("[data-project-page]").all()) {
+            await expect(item).toBeInViewport({ ratio: 1 });
+            const box = await item.boundingBox();
+            expect(box.height).toBeGreaterThanOrEqual(44);
+          }
+          await page.keyboard.press("Escape");
+          await expect(more).not.toHaveAttribute("open");
+          await expect(trigger).toBeFocused();
         }
         expect(
           await page.evaluate(
@@ -102,7 +117,7 @@ for (const width of [320, 390, 768, 1024, 1440, 1920]) {
   }
 }
 
-test("mobile project navigation reaches all ten pages and supports keyboard dismissal", async ({
+test("horizontal project navigation reaches all ten pages on mobile", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 320, height: 844 });
@@ -110,12 +125,46 @@ test("mobile project navigation reaches all ten pages and supports keyboard dism
   for (const tab of tabs) {
     await openProjectPage(page, tab);
     await expect(page).toHaveURL(new RegExp("tab=" + tab));
-    await expect(page.locator(".project-navigation-trigger")).toHaveAttribute(
-      "aria-expanded",
-      "false",
-    );
+    await expect(page.locator(".project-more")).not.toHaveAttribute("open");
     await expect(page.locator("main .loading")).toHaveCount(0);
   }
+});
+
+test("legacy project links retain child pages and browser history", async ({
+  page,
+  request,
+}) => {
+  await page.goto("/#project=012345abcdef&tab=quality");
+  await expect(
+    page.locator('.project-subnavigation [data-project-page="quality"]'),
+  ).toHaveAttribute("aria-current", "page");
+  await openProjectPage(page, "series");
+  await expect(
+    page.locator('.project-subnavigation [data-project-page="series"]'),
+  ).toHaveAttribute("aria-current", "page");
+  await openProjectPage(page, "team");
+  await expect(page).toHaveURL(/tab=team/);
+  await page.goBack();
+  await expect(page).toHaveURL(/tab=series/);
+  await expect(
+    page.locator('.project-subnavigation [data-project-page="series"]'),
+  ).toHaveAttribute("aria-current", "page");
+  await page.goBack();
+  await expect(page).toHaveURL(/tab=materials/);
+  await page.goBack();
+  await expect(page).toHaveURL(/tab=quality/);
+  await page.goForward();
+  await expect(page).toHaveURL(/tab=materials/);
+  await page.goForward();
+  await expect(page).toHaveURL(/tab=series/);
+  await openProjectPage(page, "costs");
+  await expect(page).toHaveURL(/tab=costs/);
+  const calls = await (await request.get("/__test/calls")).json();
+  expect(
+    calls.filter(
+      (call) => call.method === "POST" && call.path.startsWith("/api/"),
+    ),
+  ).toEqual([]);
 });
 
 test("model and shot drafts survive navigating away while keeping their original revisions", async ({

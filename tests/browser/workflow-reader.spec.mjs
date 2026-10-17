@@ -347,7 +347,7 @@ test("narrow screens jump directly to details and can return to the flow", async
       Math.abs(
         (await inspector.evaluate((el) => el.getBoundingClientRect().top)) -
           (await page
-            .locator(".project-navigation-mobile")
+            .locator(".project-navigation-bar")
             .evaluate((el) => el.getBoundingClientRect().bottom)) -
           6,
       ),
@@ -362,7 +362,7 @@ test("narrow screens jump directly to details and can return to the flow", async
           .locator(".workflow-map-container")
           .evaluate((el) => el.getBoundingClientRect().top)) -
           (await page
-            .locator(".project-navigation-mobile")
+            .locator(".project-navigation-bar")
             .evaluate((el) => el.getBoundingClientRect().bottom)) -
           6,
       ),

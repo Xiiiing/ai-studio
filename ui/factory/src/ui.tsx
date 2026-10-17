@@ -48,7 +48,6 @@ export function Panel({
   );
 }
 export function Heading({
-  eyebrow,
   title,
   description,
   action,
@@ -61,7 +60,6 @@ export function Heading({
   return (
     <header className="page-heading">
       <div>
-        <div className="eyebrow">{eyebrow}</div>
         <h1>{title}</h1>
         {description && <p>{description}</p>}
       </div>

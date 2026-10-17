@@ -20,6 +20,7 @@
   padding: 12px 1px;
   font-weight: 600;
   cursor: pointer;
+  min-height: 44px;
 }
 .model-settings-tabs button[aria-selected="true"] {
   color: var(--ink);
@@ -33,11 +34,11 @@
 }
 .service-workspace {
   display: grid;
-  grid-template-columns: 292px minmax(0, 1fr);
+  grid-template-columns: 272px minmax(0, 1fr);
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: var(--radius);
   overflow: hidden;
-  min-height: 540px;
+  min-height: 500px;
   background: var(--panel);
 }
 .service-sidebar {
@@ -94,15 +95,17 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--muted);
   padding: 0 9px 5px;
-  letter-spacing: 0.04em;
+  letter-spacing: 0;
 }
 .service-list-label .icon-button {
   padding: 3px;
-  min-height: 24px;
-  min-width: 24px;
+  min-height: 28px;
+  min-width: 28px;
+  width: 28px;
+  height: 28px;
 }
 .service-list-item {
   width: 100%;
@@ -112,7 +115,7 @@
   padding: 11px 10px;
   border: 1px solid transparent;
   background: none;
-  border-radius: 9px;
+  border-radius: var(--control-radius);
   color: var(--ink);
   text-align: left;
   cursor: pointer;
@@ -121,8 +124,9 @@
   background: var(--surface);
 }
 .service-list-item.active {
-  background: var(--accent-soft);
+  background: var(--surface);
   border-color: var(--border);
+  box-shadow: inset 2px 0 var(--accent);
 }
 .service-list-item .model-symbol {
   width: 34px;
@@ -145,7 +149,7 @@
 }
 .service-list-item small {
   display: block;
-  font-size: 10px;
+  font-size: 12px;
   color: var(--muted);
   white-space: nowrap;
   overflow: hidden;
@@ -157,7 +161,7 @@
   font-size: 12px;
 }
 .service-detail {
-  padding: 28px 30px;
+  padding: 24px;
   min-width: 0;
 }
 .service-detail-heading {
@@ -261,6 +265,8 @@
   border: 1px solid var(--border);
   padding: 3px 6px;
   border-radius: 4px;
+  background: var(--surface);
+  color: var(--muted);
 }
 .service-model-uses {
   color: var(--muted);
@@ -329,7 +335,7 @@
   gap: 10px;
   padding: 13px;
   border: 1px solid var(--border);
-  border-radius: 9px;
+  border-radius: var(--radius);
   background: var(--panel);
   color: var(--ink);
   text-align: left;
@@ -337,8 +343,8 @@
   min-width: 0;
 }
 .provider-pick:hover {
-  border-color: var(--accent);
-  background: var(--accent-soft);
+  border-color: var(--line-strong);
+  background: var(--surface);
 }
 .provider-pick span:not(.model-symbol) {
   flex: 1;
@@ -567,7 +573,7 @@
   padding: 16px 18px;
   margin-top: 20px;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius);
   background: var(--panel);
   z-index: 2;
 }
@@ -746,7 +752,7 @@
   gap: 4px;
   padding: 4px;
   margin: 16px 0;
-  border-radius: 9px;
+  border-radius: var(--radius);
   background: var(--surface);
 }
 .service-categories button {
@@ -761,6 +767,6 @@
 .service-categories button[aria-pressed="true"] {
   background: var(--panel);
   color: var(--ink);
-  box-shadow: var(--shadow-sm);
+  box-shadow: none;
   font-weight: 600;
 }

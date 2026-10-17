@@ -237,3 +237,25 @@ it("retains advice after a failed adoption and never reports an automatic approv
   expect(screen.getByText(proposal.rationale)).toBeVisible();
   expect(sent().body.action).toBe("provide_feedback");
 });
+
+it("does not present a previous writing review as the current production task", () => {
+  const p = project();
+  p.stage = "production";
+  p.review_automation.status = "passed";
+  p.operator.attention = null;
+  mount(p);
+  expect(screen.queryByText(/独立审核已通过/)).not.toBeInTheDocument();
+  expect(screen.getByText("当前没有人工待办")).toBeVisible();
+});
+
+it.each(["screenplay", "storyboard", "script_creation"])(
+  "shows active script review progress for the %s stage",
+  (stage) => {
+    const p = project();
+    p.stage = stage;
+    p.operator.attention = null;
+    p.review_automation.status = "writing";
+    mount(p);
+    expect(screen.getByText(/正在按审核意见返修/)).toBeVisible();
+  },
+);

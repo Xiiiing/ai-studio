@@ -1,7 +1,7 @@
 /* Measured workflow map, inspector, and data-flow motion. */
 .workflow-workspace {
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-radius: var(--radius);
   min-width: 0;
   margin: 20px 0;
   background: var(--surface);
@@ -54,7 +54,7 @@
   padding: 16px;
   text-align: left;
   border: 1px solid var(--line);
-  border-radius: 11px;
+  border-radius: var(--radius);
   cursor: pointer;
   background: var(--panel);
   color: var(--ink);
@@ -63,7 +63,7 @@
 .workflow-stage-card.selected {
   border-color: var(--accent);
   background: var(--surface);
-  box-shadow: 0 0 0 1px var(--shadow-color);
+  box-shadow: none;
 }
 .workflow-stage-card:hover {
   border-color: var(--accent);
@@ -119,7 +119,7 @@
 .workflow-inspector {
   min-width: 0;
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: var(--radius);
   scroll-margin-top: 16px;
   padding: 20px;
   background: var(--panel);
@@ -153,7 +153,7 @@
 .workflow-steps > button.active {
   border-color: var(--accent);
   background: var(--surface);
-  color: var(--accent-text);
+  color: var(--ink);
 }
 .workflow-steps .badge {
   font-size: 12px;
@@ -273,7 +273,7 @@
 .workflow-map-panel {
   min-width: 0;
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: var(--radius);
   overflow: hidden;
   background: var(--surface);
   border-color: var(--line);
@@ -311,10 +311,10 @@
   background: var(--accent);
 }
 .workflow-flow-legend .flow-legend-completed {
-  background: var(--success-soft);
+  background: var(--success);
 }
 .workflow-flow-legend .flow-legend-repair {
-  background: var(--warning-soft);
+  background: var(--warning);
 }
 .workflow-map.workflow-stages {
   display: block;
@@ -322,8 +322,7 @@
   top: auto;
   margin: 0;
   min-width: 0;
-  background-size: 18px 18px;
-  background-image: radial-gradient(var(--grid-dot) 0.7px, transparent 0.7px);
+  background: var(--canvas);
 }
 .workflow-map-grid {
   display: grid;
@@ -348,7 +347,7 @@
   z-index: 1;
   padding: 14px;
   min-height: 138px;
-  box-shadow: var(--shadow-sm);
+  box-shadow: none;
 }
 .workflow-map-node.selected {
   background: var(--surface);
@@ -432,7 +431,7 @@
 }
 .status-running .workflow-port {
   border-color: var(--accent);
-  background: var(--accent-soft);
+  background: var(--surface);
 }
 .workflow-flow-line,
 .workflow-flow-stream {
@@ -455,7 +454,6 @@
 }
 .workflow-flow-packet {
   fill: var(--accent);
-  filter: drop-shadow(0 0 3px var(--focus));
 }
 .is-repair .workflow-flow-line {
   stroke: var(--warning);
@@ -511,16 +509,16 @@
   font-size: 13px;
 }
 .workflow-steps .workflow-step-segment > button.active {
-  background: var(--accent-soft);
+  background: var(--surface);
   border-color: var(--accent);
-  color: var(--accent-text);
+  color: var(--ink);
 }
 .workflow-step-link {
   flex-shrink: 0;
   color: var(--muted);
 }
 .workflow-step-link.is-running {
-  color: var(--accent-text);
+  color: var(--ink);
   animation: workflow-step-flow 1.2s ease-in-out infinite;
 }
 @keyframes workflow-stream {
@@ -541,7 +539,7 @@
 }
 .workflow-stage-card.selected,
 .workflow-map-node.selected {
-  background: var(--accent-soft);
+  background: var(--surface);
   border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent);
+  box-shadow: none;
 }
