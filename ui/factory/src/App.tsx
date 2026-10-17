@@ -515,7 +515,7 @@ function Workbench() {
         <CreateProject
           catalog={profiles.data}
           inventory={models.data}
-          seed={typeof create === "object" ? create : undefined}
+          seed={typeof create === "object" && Object.keys(create).length ? create : undefined}
           onClose={() => setCreate(false)}
           onCreated={(p) => {
             setCreate(false);

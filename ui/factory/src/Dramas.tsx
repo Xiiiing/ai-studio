@@ -116,7 +116,7 @@ export function DramaDetail({id, onBack, openEpisode}: {id: string; onBack: () =
       <Panel title="选择本次制作的剧集"><div className="drama-actions">
         <button className="button" onClick={() => setSelected(rows(p.episodes).filter(e => e.status === 'draft').map(e => e.episode_number))}>选择全部未生成剧集</button>
         <button className="button primary" disabled={busy || !selected.length} onClick={() => void operation('generate', {episode_numbers: selected})}>生成所选 {selected.length} 集</button>
-        <button className="button" disabled={busy} onClick={() => void operation('actions', {action:'pause'})}>暂停整剧制作</button>
+        <button className="button" disabled={busy || p.status==='cancelled'} onClick={() => void operation('actions', {action:p.pause_requested?'resume':'pause'})}>{p.pause_requested?'继续整剧制作':'暂停整剧制作'}</button>
       </div><p className="muted">按集号排队，失败集保留进度，其他无依赖剧集继续。每个制作单元默认上限120卡分钟、180分钟，最多3次尝试；长集按单元累计。</p></Panel>
       <div className="drama-cards">{rows(p.episodes).map(e => <article className="drama-card" key={e.id}>
         <label className="drama-episode-select"><input type="checkbox" aria-label={`选择第${e.episode_number}集`} checked={selected.includes(e.episode_number)} disabled={e.status!=='draft' || busy}
