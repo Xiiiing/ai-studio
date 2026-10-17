@@ -367,7 +367,7 @@ def _active_role(project):
         role = "edit_director" if _object(project.get("revision_request")).get("choice") == "reedit" else "story_editor"
     else:
         role = STAGE_ROLES.get(stage, "orchestrator")
-    if project.get("workflow_version", 1) == 2 and project.get("team_control_version") == 1:
+    if project.get("workflow_version", 1) in {2, 3} and project.get("team_control_version") == 1:
         from .team_tasks import V2_TASKS
         canonical = {"story_creation": "proposals", "script_creation": "screenplay", "storyboard_direction": "storyboard", "style_previews": "visual_development"}.get(stage, stage)
         assigned = _object(project.get("team_assignments")).get("stage:" + str(canonical))
@@ -574,7 +574,7 @@ def build_flow(project, config=None):
     done("editor", delivery_current and bool(delivery) and bool(delivery.get("technical_checks") or delivery.get("qa") or delivery.get("manifest_url")))
     done("producer", project.get("status") == "approved")
 
-    if project.get('workflow_version',1)==2:
+    if project.get('workflow_version',1) in {2,3}:
         # V2 roles are tied to completed executable steps, not artifact presence.
         from .team_tasks import snapshot as current_tasks
         task_rows=current_tasks(project)['tasks']

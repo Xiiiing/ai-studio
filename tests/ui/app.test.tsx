@@ -210,10 +210,11 @@ it("人工介入按钮由真实动作契约提供并提交安全接管动作", a
     calls.filter((c) => c.body && /generate|decision/.test(c.path)),
   ).toHaveLength(0);
 });
-it("创建入口默认AI代管并显式提交原创/改编与制作规格", async () => {
+it("原单集入口默认AI代管并显式提交原创/改编与制作规格", async () => {
   const { calls } = setup();
   await screen.findByRole("heading", { name: "制片总览" });
   await userEvent.click(screen.getAllByRole("button", { name: "新建制作" })[0]);
+  await userEvent.click(screen.getByRole("button", { name: "使用原单集入口" }));
   const dialog = screen.getByRole("dialog");
   expect(within(dialog).getByLabelText(/团队协作方式/)).toHaveValue(
     "delegated",

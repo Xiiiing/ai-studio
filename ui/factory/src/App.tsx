@@ -32,6 +32,7 @@ import {
 } from "./ProjectResultActions";
 import { useUnsavedShotGuard } from "./SessionDraft";
 import { Models, MaterialLibrary } from "./LazyViews";
+import { CreateDrama, DramaDetail } from './Dramas';
 import {
   request,
   keys,
@@ -507,11 +508,14 @@ function Workbench() {
         </div>
       </div>
       <ActionNotice message={toast} />
-      {create && (
+      {create === true && <CreateDrama onClose={() => setCreate(false)} onLegacy={() => setCreate({})} onCreated={p => {
+        setCreate(false); void client.invalidateQueries(); openProject(p.id);
+      }} />}
+      {create && create !== true && (
         <CreateProject
           catalog={profiles.data}
           inventory={models.data}
-          seed={typeof create === "object" ? create : undefined}
+          seed={typeof create === "object" && Object.keys(create).length ? create : undefined}
           onClose={() => setCreate(false)}
           onCreated={(p) => {
             setCreate(false);
@@ -1169,6 +1173,9 @@ function Project({
         )}
       </>
     );
+  if (w.project.record_kind === 'drama') return <DramaDetail id={id} onBack={onBack} openEpisode={episodeId => {
+    location.hash = new URLSearchParams({project:episodeId, tab:'overview'}).toString();
+  }} />;
   const p = { ...w.project, operator: w.operator },
     storyboardShots = rows(p.shots),
     storyboardPages = Math.max(1, Math.ceil(storyboardShots.length / 6)),

@@ -76,6 +76,7 @@ test("saved optional producer binding enables delegated creation but not final a
 }) => {
   await page.goto("/");
   await page.locator('[data-action="new-project"]').first().click();
+  await page.getByRole("button", { name: "使用原单集入口" }).click();
   await expect(
     page.locator('#project-dialog option[value="delegated"]'),
   ).toBeEnabled();
@@ -93,6 +94,7 @@ test("saved optional producer binding enables delegated creation but not final a
   await page.locator('[data-model-action="save-roles"]').click();
   await expect(page.locator('[data-model-action="save-roles"]')).toBeDisabled();
   await page.locator('[data-action="new-project"]').first().click();
+  await page.getByRole("button", { name: "使用原单集入口" }).click();
   await expect(
     page.locator('#project-dialog option[value="delegated"]'),
   ).toBeEnabled();

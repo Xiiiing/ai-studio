@@ -1,0 +1,10 @@
+.drama-form { display: grid; gap: 1rem; min-width: 0; }
+.drama-fields, .drama-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 270px), 1fr)); gap: 1rem; }
+.drama-actions, .drama-tabs { display: flex; flex-wrap: wrap; gap: .6rem; align-items: center; margin: .7rem 0; }
+.drama-card { border: 1px solid var(--border, #7775); border-radius: 12px; padding: 1rem; min-width: 0; overflow-wrap: anywhere; }
+.drama-card p { white-space: pre-wrap; }
+.drama-episode-select { display: flex; gap: .7rem; align-items: baseline; }
+.drama-episode-select input { width: auto; }
+.drama-video { width: 100%; max-height: 60vh; margin: 1rem 0; background: #111; }
+.drama-form textarea, .drama-form input, .drama-form select { max-width: 100%; }
+@media (max-width: 600px) { .drama-tabs .button { flex: 1 1 28%; } .drama-actions .button { min-height: 44px; } }
