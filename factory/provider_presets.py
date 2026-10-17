@@ -1,4 +1,4 @@
-"""Public connection defaults. Keys belong only in the operator's environment."""
+"""Public connection defaults. Key values are stored separately from profiles."""
 from __future__ import annotations
 
 from urllib.parse import urlsplit

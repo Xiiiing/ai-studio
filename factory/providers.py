@@ -25,6 +25,8 @@ import time
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from .connection_secrets import secret_value
+
 MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 MAX_REQUEST_BYTES = 8 * 1024 * 1024
 _DNS_SLOTS = threading.BoundedSemaphore(4)
@@ -161,7 +163,7 @@ def _credential_available(profile):
 def redact_secrets(value, profile=None):
     """Scrub both credential fields and the active environment value recursively."""
     env_name = (profile or {}).get("api_key_env")
-    secret = os.environ.get(env_name, "") if isinstance(env_name, str) else ""
+    secret = secret_value(env_name) or "" if isinstance(env_name, str) else ""
     if not secret and (profile or {}).get("api_key_credential"):
         try:
             secret = _credential_value(profile)
@@ -582,9 +584,9 @@ def request_json(base, route, payload=None, timeout=30, api_key_env=None, *, pro
     if env_name:
         if not isinstance(env_name, str) or not ENV_RE.fullmatch(env_name):
             raise ValueError("api_key_env must be an environment variable name")
-        secret = os.environ.get(env_name)
+        secret = secret_value(env_name)
         if not secret:
-            raise ProviderError("missing_auth", "Configured model authentication environment variable is not set")
+            raise ProviderError("missing_auth", "Configured model authentication is not available")
         if any(character in secret for character in ("\r", "\n")):
             raise ProviderError("invalid_auth", "Configured model authentication contains invalid characters")
         headers["Authorization"] = "Bearer " + secret
@@ -946,7 +948,7 @@ def public_inventory(config=None):
                # Preserve the bearer-auth observation separately from TLS configuration.
                "transport_auth": "mtls" if profile.get("tls_client_cert_env") else "none",
                "tls_client_configured": bool(profile.get("tls_client_cert_env") and profile.get("tls_client_key_env")),
-               "auth_configured": bool((profile.get("api_key_env") and os.environ.get(profile["api_key_env"]))
+               "auth_configured": bool((profile.get("api_key_env") and secret_value(profile["api_key_env"]))
                                          or _credential_available(profile)),
                "roles": [role for role, selected in current.get("llm_roles", {}).items() if selected == name]}
         rows.append(row)
@@ -975,8 +977,8 @@ def probe_profile(profile_id, config=None, timeout=8):
     try:
         if not profile["enabled"]:
             result["status"] = "disabled"
-        elif profile.get("api_key_env") and not os.environ.get(profile["api_key_env"]):
-            raise ProviderError("missing_auth", "密钥环境变量尚未设置；配置后请重启 Web 与 worker")
+        elif profile.get("api_key_env") and not secret_value(profile["api_key_env"]):
+            raise ProviderError("missing_auth", "连接缺少可用凭据；请填写 API Key 或检查高级凭据关联")
         elif profile["model_discovery"] == "skip":
             result.update(status="unverified", message=(
                 "Configuration is valid; endpoint connectivity and model identity have not been checked"))
@@ -1000,7 +1002,7 @@ def probe_profile(profile_id, config=None, timeout=8):
 
 
 def save_registry(profiles, roles, expected_revision, *, config_path=None,
-                  video_profiles=None, video_roles=None, **media_updates):
+                  video_profiles=None, video_roles=None, secrets=None, **media_updates):
     """Compare-and-swap registry update; running jobs retain their in-memory snapshot."""
     import fcntl
     from .config import config_read_path, config_write_path
@@ -1016,6 +1018,26 @@ def save_registry(profiles, roles, expected_revision, *, config_path=None,
         current = json.loads(source.read_text(encoding="utf-8"))
         if config_revision(current) != expected_revision:
             raise ConfigConflict("Model configuration changed; reload before saving")
+        from .connection_secrets import prepare, read_vault, write_vault
+        # Build and validate the complete prospective registry before writing keys.
+        if not isinstance(profiles,dict):raise ValueError('profiles must be an object')
+        prospective = copy.deepcopy(current)
+        prospective['llm_profiles'] = copy.deepcopy(profiles)
+        for kind, values in [('video',video_profiles),('image',media_updates.get('image_profiles')),('audio',media_updates.get('audio_profiles'))]:
+            if values is not None:prospective[kind+'_profiles']=copy.deepcopy(values)
+        additions = prepare(prospective,secrets)
+        # A key update must travel with the registry it updates; otherwise its
+        # opaque reference could be discarded while the private key is written.
+        for connection in secrets or {}:
+            kind = connection.split(':', 1)[0]
+            if kind == 'video' and video_profiles is None:
+                raise ValueError('视频密钥必须与视频连接一起保存')
+            if kind in ('image', 'audio') and kind+'_profiles' not in media_updates:
+                raise ValueError('制作密钥必须与对应制作连接一起保存')
+        profiles = prospective['llm_profiles']
+        if video_profiles is not None:video_profiles=prospective['video_profiles']
+        for kind in ['image','audio']:
+            if kind+'_profiles' in media_updates:media_updates[kind+'_profiles']=prospective[kind+'_profiles']
         updated = validate_registry(profiles, roles, current)
         if video_profiles is not None or video_roles is not None:
             from .video_providers import validate_video_registry
@@ -1026,20 +1048,44 @@ def save_registry(profiles, roles, expected_revision, *, config_path=None,
         from .media_profiles import validate_registry as validate_media
         updated = validate_media(updated, media_updates)
         data = (json.dumps(updated, ensure_ascii=False, indent=2, allow_nan=False) + "\n").encode("utf-8")
+        previous_keys = read_vault() if additions else None
+        committed, keys_written = False, False
         descriptor, temporary = tempfile.mkstemp(prefix="." + target.name + ".", dir=target.parent)
         try:
             with os.fdopen(descriptor, "wb") as output:
+                if additions:
+                    write_vault({**previous_keys,**additions})
+                    keys_written=True
                 os.fchmod(output.fileno(), (target.stat().st_mode & 0o777) if target.exists() else 0o600)
                 output.write(data)
                 output.flush()
                 os.fsync(output.fileno())
-            os.replace(temporary, target)
+            os.replace(temporary,target)
+            committed=True
             directory = os.open(target.parent, os.O_DIRECTORY)
             try:
                 os.fsync(directory)
             finally:
                 os.close(directory)
         finally:
+            if keys_written and not committed:write_vault(previous_keys)
             if os.path.exists(temporary):
                 os.unlink(temporary)
         return public_inventory(updated)
+
+
+def discover_models(profile, api_key=None):
+    """Read a draft endpoint's model directory without saving or generating."""
+    from .connection_secrets import temporary_key
+    with temporary_key(api_key) as reference:
+        clean=copy.deepcopy(profile)
+        if not isinstance(clean,dict):raise ValueError('请填写连接地址及协议')
+        if reference:
+            clean.pop('api_key_credential',None);clean['api_key_env']=reference
+        clean.setdefault('model','__discover__')
+        clean.setdefault('context_tokens',32768)
+        clean=normalize_profile(clean)
+        if clean['enabled'] is False:raise ValueError('请启用待检查的连接')
+        result=list_models(clean,timeout=8)
+        return {'status':'ready','models':result['data'],'generation':False,
+                'message':'已读取模型目录；未生成内容，图像输入能力需按实际模型确认。'}

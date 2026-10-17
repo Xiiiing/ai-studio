@@ -1,5 +1,6 @@
 """Synchronous paid image/TTS calls with durable intents and download recovery."""
 from __future__ import annotations
+from .connection_secrets import secret_value
 import base64
 import copy
 import io
@@ -75,8 +76,8 @@ def prepare_images(engine, targets):
 
 
 def _request(profile, body):
-    secret=os.environ.get(profile['api_key_env'])
-    if not secret or any(c in secret for c in '\r\n'): raise ProviderError('missing_auth','制作 API 密钥环境变量缺失或无效')
+    secret=secret_value(profile['api_key_env'])
+    if not secret or any(c in secret for c in '\r\n'): raise ProviderError('missing_auth','制作 API Key 缺失或无效')
     route='/images/generations' if profile['provider']=='dashscope_image' else '/services/aigc/multimodal-generation/generation'
     encoded=json.dumps(body,ensure_ascii=False,allow_nan=False).encode()
     if len(encoded)>150*1024*1024: raise ValueError('制作请求超出大小限制')
@@ -114,9 +115,9 @@ def raw_artifact(engine, profile, body, line, folder, batch, kind):
             if saved['request_signature']!=line['request_signature']: raise ValueError('云回执与当前请求不匹配')
             response=saved['response']
         else:
-            secret=os.environ.get(profile['api_key_env'])
+            secret=secret_value(profile['api_key_env'])
             if not secret or any(c in secret for c in '\r\n'):
-                raise ProviderError('missing_auth','制作 API 密钥环境变量缺失或无效')
+                raise ProviderError('missing_auth','制作 API Key 缺失或无效')
             engine.boundary()
             cloud_budget.validate_live_profile(profile)
             cloud_budget.reserve(engine.ident,batch['id'],line,profile,
