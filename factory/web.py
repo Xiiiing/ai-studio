@@ -35,6 +35,16 @@ class Handler(LocalMediaHandler):
             if path == '/api/factory/dramas':
                 from .dramas import list_dramas
                 return self.json(list_dramas())
+            match = re.fullmatch(r'/api/factory/dramas/([a-f0-9]{12})/episodes/([a-f0-9]{12})',path)
+            if match:
+                from .dramas import episode_snapshot
+                return self.json(episode_snapshot(*match.groups()))
+            match = re.fullmatch(r'/api/factory/dramas/([a-f0-9]{12})/download',path)
+            if match:
+                from .drama_exports import archive
+                query=parse_qs(urlsplit(self.path).query,keep_blank_values=True)
+                if set(query)-{'batch_id'} or any(len(v)!=1 or not re.fullmatch(r'[a-f0-9]{12}',v[0]) for v in query.values()): raise ValueError('下载批次参数无效')
+                return self.send_file(archive(match[1],query.get('batch_id',[None])[0]))
             match = re.fullmatch(r'/api/factory/dramas/([a-f0-9]{12})(?:/(episodes|batches))?', path)
             if match:
                 from .dramas import snapshot as drama_snapshot

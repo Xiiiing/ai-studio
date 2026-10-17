@@ -6,7 +6,7 @@
     "network_mode": "lan",
     "base_url": "https://172.20.114.10:8790/inference/models/primary/v1",
     "model": "qwen3.8-27b-q8-opt-2dflash",
-    "context_tokens": 32768,
+    "context_tokens": 65536,
     "vision": false,
     "response_format": "llama_json_schema",
     "context_validation": "llama_tokenize",
@@ -22,7 +22,7 @@
     "tls_client_key_env": "CAMI_WKP_TLS_KEY"
   },
   "creative": {
-    "max_review_rounds": 4,
+    "max_review_rounds": 3,
     "separate_storyboard": true
   },
   "research": {
@@ -76,7 +76,7 @@
       "network_mode": "lan",
       "base_url": "https://172.20.114.10:8790/inference/models/primary/v1",
       "model": "qwen3.8-27b-q8-opt-2dflash",
-      "context_tokens": 32768,
+      "context_tokens": 65536,
       "vision": false,
       "response_format": "llama_json_schema",
       "context_validation": "llama_tokenize",

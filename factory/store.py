@@ -440,6 +440,8 @@ def action(pid, payload):
     with connection() as db:
         db.execute("BEGIN IMMEDIATE")
         p = _read(db, pid)
+        if p.get('record_kind')=='drama':
+            raise ValueError('整剧控制请使用整剧与批次操作入口')
         if command == "continue_auto_review":
             prior = p.get("auto_review_continuation") or {}
             if (p.get("status") == "queued" and payload.get("expected_revision") == prior.get("source_revision")

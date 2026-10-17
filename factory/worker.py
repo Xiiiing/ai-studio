@@ -37,7 +37,8 @@ def handle(job):
         return  # A completed/recovered claim is not permission to execute again.
     pid=job["project_id"]
     try:
-        if job.get('kind') in {'drama_plan', 'drama_episode'}:
+        episode_job = job.get('kind') == 'workflow' and store.get(pid,False).get('record_kind') == 'episode'
+        if job.get('kind') in {'drama_plan', 'drama_episode'} or episode_job:
             from .drama_runtime import run_plan, execute_episode
             (run_plan if job['kind'] == 'drama_plan' else execute_episode)(pid)
             store.finish_job(job['id'], lease=job['lease'])
@@ -65,7 +66,7 @@ def handle(job):
         from .team_control import process_pending
         process_pending(pid)
     except ProjectPaused as exc:
-        store.update(pid,{"status":"paused","error":None,"message":str(exc)})
+        store.update(pid,{"status":"cancelled" if store.get(pid,False)['status']=='cancelled' else "paused","error":None,"message":str(exc)})
         store.finish_job(job["id"], lease=job["lease"])
     except Exception as exc:
         from .team_control import TeamInterventionPending, process_pending
@@ -79,7 +80,7 @@ def handle(job):
         if isinstance(exc, CreativeReviewError):
             details={"issues":exc.issues}
         if name=="ProductionPaused":
-            store.update(pid,{"status":"paused","error":None,"message":str(exc)})
+            store.update(pid,{"status":"cancelled" if store.get(pid,False)['status']=='cancelled' else "paused","error":None,"message":str(exc)})
             store.finish_job(job["id"], lease=job["lease"])
             return
         is_budget=name=="ProductionBudgetExceeded"
@@ -116,9 +117,18 @@ def handle(job):
         else:
             traceback.print_exc()
     finally:
-        if job.get('kind') == 'drama_episode':
+        if job.get('kind') in {'drama_episode','workflow'} and store.get(pid,False).get('record_kind') == 'episode':
             from .dramas import after_episode
             after_episode(pid)
+        if job.get('kind') == 'workflow' and store.get(pid,False).get('record_kind') == 'scene_unit':
+            unit = store.get(pid,False)
+            with store.connection() as db:
+                db.execute('BEGIN IMMEDIATE')
+                parent=store._read(db,unit['episode_id'])
+                if parent['status'] in {'awaiting_final','approved'}:
+                    parent.update(status='queued',pause_requested=False,production_revision=parent['production_revision']+1)
+                    store._write(db,parent)
+                    store._enqueue(db,parent['id'],'drama_episode')
 
 
 def main():

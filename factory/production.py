@@ -641,7 +641,7 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                                  "dimensions": dimensions, "kind": kind,
                                  **({"connection": media_identity(self.config["image_connection"])} if kind == "image" and self.config.get("image_connection", {}).get("provider", "legacy") != "legacy" else {}),
                                  **({"connection": media_identity(self.video_connection)} if kind == "video" and self.video_connection.get("provider") in {"comfyui_local", "comfyui_external"} else {}),
-                                 "model": ("FLUX.2-klein-4B" if kind == "image" else
+                                 "model": (self.config.get('image_connection',{}).get('model','FLUX.2-klein-4B') if kind == "image" else
                                            video_identity(self.video_connection) if self.video_connection["provider"] == "minimax"
                                            else self.video_connection["model"]),
                                  **({"connection": media_identity(self.video_connection)} if kind == "video" and self.video_connection["provider"] == "comfyui_h3" else {}),

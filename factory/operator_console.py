@@ -83,6 +83,9 @@ def current_gate(project):
 
 
 def attention(project, *, job_running=False):
+    if project.get('record_kind')=='drama' and project.get('status')=='awaiting_plan':
+        return {'kind':'drama_plan','title':'确认全剧规划','summary':'全剧设定与分集大纲已通过独立审核，等待你确认。',
+            'blocking':True,'owner':'producer','revision':project['revision'],'target_tab':'overview','action_label':'查看全剧规划','actions':[]}
     status = project.get("status")
     if status in TERMINAL:
         return None
@@ -243,7 +246,7 @@ def workspace(pid):
     with store.connection() as db:
         db.execute("BEGIN")
         project = store._read(db, pid)
-        if project.get('record_kind') == 'drama':
+        if project.get('record_kind') == 'drama' or (project.get('record_kind') == 'episode' and project.get('duration_seconds',0)>90):
             return {'project': project, 'revision': project['revision'], 'operator': {}, 'workflow': {}, 'flow': {}}
         running = bool(db.execute("SELECT 1 FROM jobs WHERE project_id=? AND (status='running' OR (status='queued' AND kind='review_advice')) LIMIT 1", (pid,)).fetchone())
         project["events"] = [{"id": r[0], "at": r[1], "kind": r[2], "message": r[3], "data": json.loads(r[4])}
