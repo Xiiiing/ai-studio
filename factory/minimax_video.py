@@ -1,5 +1,6 @@
 """Persistent MiniMax submit/poll/download lifecycle, without implicit resubmission."""
 from __future__ import annotations
+from .connection_secrets import secret_value
 
 import base64
 import copy
@@ -40,9 +41,9 @@ def validate_video_plan(profile, shots):
     clean = normalize_video_profile({key: value for key, value in profile.items() if key != "profile"})
     if not clean["enabled"]:
         raise ValueError("The selected video profile is disabled")
-    secret = os.environ.get(clean["api_key_env"])
+    secret = secret_value(clean["api_key_env"])
     if not secret or any(char in secret for char in ("\r", "\n")):
-        raise ValueError("MiniMax API key environment variable is missing or invalid")
+        raise ValueError("MiniMax API Key is missing or invalid")
     too_long = [str(shot.get("id", "?")) for shot in shots
                 if float(shot.get("seconds", 0)) > clean["duration"]]
     if too_long:

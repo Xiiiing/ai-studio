@@ -2411,3 +2411,118 @@ dialog[open] {
 .brand > span:last-child {
   min-width: 0;
 }
+
+/* Connection setup keeps endpoint, credential and model selection together. */
+.connection-mode {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+.provider-intro {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+  min-width: 0;
+}
+.provider-intro > div {
+  min-width: 0;
+}
+.provider-intro small {
+  display: block;
+  color: var(--muted);
+  margin-top: 4px;
+}
+.provider-links {
+  margin-left: auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 12px;
+}
+.model-symbol {
+  flex-shrink: 0;
+}
+.model-symbol img {
+  object-fit: contain;
+  max-width: 100%;
+}
+.credential-input {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+}
+.credential-input input {
+  flex: 1;
+  min-width: 0;
+}
+.credential-input button {
+  flex-shrink: 0;
+}
+.builtin-endpoint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.builtin-endpoint code {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+.builtin-endpoint button {
+  flex-shrink: 0;
+}
+.connection-advanced {
+  margin: 16px 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.connection-advanced > summary {
+  cursor: pointer;
+  color: var(--muted);
+}
+.connection-advanced[open] > summary {
+  margin-bottom: 16px;
+}
+@media (max-width: 600px) {
+  .provider-intro {
+    flex-wrap: wrap;
+  }
+  .provider-links {
+    width: 100%;
+    margin-left: 51px;
+  }
+  .builtin-endpoint {
+    flex-wrap: wrap;
+  }
+  .builtin-endpoint code {
+    flex-basis: 100%;
+  }
+}
+#model-dialog .dialog-actions,
+#media-dialog .dialog-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  background: var(--panel);
+  padding: 14px 0;
+  box-shadow: 0 -8px 12px var(--panel);
+}
+.model-symbol.brand-wide {
+  width: 74px;
+}
+.model-symbol.brand-wide img {
+  width: 66px;
+}
+.model-symbol:has(img) {
+  background: #fff;
+  border: 1px solid var(--line);
+}
+.connection-discovery {
+  display: block;
+  margin: 10px 0;
+  line-height: 1.7;
+}

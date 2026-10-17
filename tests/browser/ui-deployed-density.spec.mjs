@@ -164,34 +164,38 @@ test("project navigation does not push content away or stretch its grouped butto
 });
 
 for (const width of [320, 390, 768])
-  test(`unsaved model settings can be saved without scrolling the page at ${width}px`, async ({
+  test(`connection changes save once with a reachable footer and preserve failed input at ${width}px`, async ({
     page,
   }) => {
     await page.setViewportSize({ width, height: 844 });
     await page.goto("/#view=models");
     await page.getByLabel("外观主题").selectOption("dark");
+    if (width <= 720) await page.locator('[data-service="llm:writer"]').click();
     await page
       .locator('[data-model-action="edit"][data-profile="writer"]')
       .click();
-    await page
-      .locator('#model-dialog input[name="model"]')
+    const dialog = page.locator("#service-dialog");
+    await dialog.locator(".model-options summary").first().click();
+    await dialog
+      .getByLabel("模型 ID", { exact: true })
       .fill("revised-local-draft");
-    await page.locator('#model-dialog button[type="submit"]').click();
-    const save = page.locator('[data-model-action="save"]');
-    await expect(save).toBeVisible();
-    await expect(save).toBeEnabled();
-    const bar = await page.locator(".config-savebar").boundingBox();
-    expect(bar.y).toBeGreaterThan(690);
-    expect(bar.y + bar.height).toBeLessThanOrEqual(845);
-    await page.locator(".mobile-save-spacer").scrollIntoViewIfNeeded();
-    await expect(save).toBeVisible();
-    await page.route("**/api/factory/models", async (route) =>
+    const save = dialog.getByRole("button", { name: "保存连接", exact: true });
+    await expect(save).toBeInViewport();
+    await page.route("**/api/factory/models", (route) =>
       route.request().method() === "POST"
         ? route.fulfill({ status: 500, json: { error: "合成保存失败" } })
         : route.continue(),
     );
     await save.click();
-    await expect(page.getByRole("alert")).toContainText("合成保存失败");
+    await expect(dialog.getByRole("alert")).toContainText("合成保存失败");
     await expect(save).toBeEnabled();
-    await expect(page.locator(".config-savebar.is-dirty")).toBeVisible();
+    await expect(save).toBeInViewport();
+    await expect(dialog.getByLabel("模型 ID", { exact: true })).toHaveValue(
+      "revised-local-draft",
+    );
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBeTruthy();
   });

@@ -8,6 +8,7 @@ from urllib.parse import quote, urlencode
 import uuid
 from studio.core import fingerprint, media_receipt, read_json, write_json
 from .providers import ProviderError, validate_endpoint
+from .connection_secrets import secret_value
 from .video_transport import _transfer
 from .scheduler import ProductionNeedsDecision
 
@@ -21,8 +22,8 @@ class ExternalComfy:
         auth = {}
         env = self.profile.get('api_key_env')
         if env:
-            secret = os.environ.get(env)
-            if not secret or any(c in secret for c in '\r\n'): raise ProviderError('missing_auth', 'ComfyUI 密钥环境变量缺失或无效')
+            secret = secret_value(env)
+            if not secret or any(c in secret for c in '\r\n'): raise ProviderError('missing_auth', 'ComfyUI API Key 缺失或无效')
             auth['Authorization'] = 'Bearer ' + secret
         if isinstance(payload, dict):
             payload = json.dumps(payload, ensure_ascii=False, allow_nan=False).encode()
