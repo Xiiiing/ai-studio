@@ -91,9 +91,14 @@ test("upload named references, select stable character and confirm the drama pac
   await expect(page.locator("#workspace")).toContainText("林夏参考 · v2");
   await expect(page.getByRole("img", { name: /林夏参考/ })).toBeVisible();
   await page.goto("/#project=" + pid + "&tab=materials");
-  await expect(page.locator("#workspace h1").last()).toHaveText(
-    "本剧素材与定稿",
-  );
+  await expect(page.locator("#workspace h1")).toHaveText("浏览器模拟样片");
+  await expect(
+    page.getByRole("heading", {
+      level: 2,
+      name: "本剧素材与定稿",
+      exact: true,
+    }),
+  ).toBeVisible();
   await page.getByRole("button", { name: "选入本剧", exact: true }).click();
   await expect(page.locator("#workspace")).toContainText(
     "林夏参考 · v2 · female",

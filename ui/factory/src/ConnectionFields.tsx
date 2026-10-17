@@ -175,9 +175,7 @@ export function ProviderSymbol({ provider }: { provider: string }) {
     assets[`./assets/providers/${name}.png`] ||
     assets[`./assets/providers/${name}.svg`];
   return (
-    <span
-      className={`model-symbol ${["gemini", "llama_cpp"].includes(provider) ? "brand-wide" : ""}`}
-    >
+    <span className="model-symbol">
       {source ? (
         <img src={source} alt="" width="28" height="28" />
       ) : (

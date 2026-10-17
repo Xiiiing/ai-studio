@@ -12,6 +12,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 import {
   CloudAuthorization,
+  Costs,
   FeeConfirmation,
   SeriesOperation,
   Shots,
@@ -307,6 +308,61 @@ const quote = {
     source: "fixture pricing",
   },
 };
+describe("cost page feedback stays outside the ledger layout", () => {
+  it("starts with the cost panel when no authorization or fee form is needed", async () => {
+    captureRequests(() => ({ tasks: [], totals: {}, authorizations: [] }));
+    const { container } = render(<Costs project={project} notify={vi.fn()} />, {
+      wrapper: queryWrapper().wrapper,
+    });
+    await screen.findByRole("heading", { name: "云媒体费用与授权" });
+    const stack = container.querySelector(".stack")!;
+    expect(stack.firstElementChild).toHaveClass("panel");
+    expect(stack.querySelector(".form-feedback-slot")).toBeNull();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("shows a failed cost confirmation in an overlay and retains the entered amount and evidence", async () => {
+    const user = userEvent.setup(),
+      notify = vi.fn();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async (_path: string, init?: RequestInit) =>
+          new Response(
+            JSON.stringify(
+              init?.method === "POST"
+                ? { error: "账单服务暂时不可用" }
+                : { tasks, totals: {}, authorizations: [] },
+            ),
+            {
+              status: init?.method === "POST" ? 503 : 200,
+              headers: { "Content-Type": "application/json" },
+            },
+          ),
+      ),
+    );
+    const { container } = render(<Costs project={project} notify={notify} />, {
+      wrapper: queryWrapper().wrapper,
+    });
+    await user.click(await screen.findByText("按供应商账单确认实际费用"));
+    await user.selectOptions(screen.getByLabelText("任务"), "intent-A");
+    await user.type(screen.getByLabelText("实际金额"), "12.50");
+    await user.type(screen.getByLabelText("核对依据"), "Task A invoice");
+    await user.click(screen.getByRole("button", { name: "确认实际费用" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("账单服务暂时不可用");
+    expect(alert.closest(".feedback-region")).not.toBeNull();
+    expect(container.querySelector(".stack")!.contains(alert)).toBe(false);
+    expect(container.querySelector(".stack")!.firstElementChild).toHaveClass(
+      "panel",
+    );
+    expect(screen.getByLabelText("任务")).toHaveValue("intent-A");
+    expect(screen.getByLabelText("实际金额")).toHaveValue("12.50");
+    expect(screen.getByLabelText("核对依据")).toHaveValue("Task A invoice");
+    expect(screen.getByRole("button", { name: "确认实际费用" })).toBeEnabled();
+    expect(notify).not.toHaveBeenCalled();
+  });
+});
 describe("cloud authorization is bound to the reviewed quote", () => {
   it("preserves a stale cap draft and requires an explicit review of a new batch", async () => {
     const user = userEvent.setup(),

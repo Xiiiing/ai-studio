@@ -11,16 +11,19 @@
   gap: 8px;
   align-items: baseline;
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--text-ui);
+  line-height: var(--leading-ui);
 }
 .team-summary strong {
   color: var(--ink);
-  font-size: 23px;
+  font-size: var(--text-ui);
+  line-height: var(--leading-ui);
 }
 .team-overview-event {
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--text-ui);
   margin: 10px 0 0;
+  line-height: var(--leading-ui);
 }
 .team-departments {
   display: grid;
@@ -29,7 +32,7 @@
 }
 .team-department {
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--radius);
   padding: 16px;
   min-width: 0;
   background: var(--panel);
@@ -38,15 +41,16 @@
   border-color: var(--accent);
 }
 .team-department > .row-between > svg {
-  color: var(--accent-text);
+  color: var(--muted);
 }
 .team-department h3 {
   margin: 12px 0 6px;
 }
 .team-department > p {
-  font-size: 13px;
+  font-size: var(--text-ui);
   color: var(--muted);
   min-height: 38px;
+  line-height: var(--leading-ui);
 }
 .team-department > small {
   color: var(--muted);
@@ -64,7 +68,8 @@
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  font-size: 12px;
+  font-size: var(--text-caption);
+  line-height: var(--leading-caption);
 }
 .team-member > div {
   display: flex;
@@ -72,11 +77,13 @@
   align-items: center;
 }
 .team-member small {
-  font-size: 10px;
+  font-size: var(--text-caption);
   color: var(--muted);
+  line-height: var(--leading-caption);
 }
 .team-member .badge {
-  font-size: 10px;
+  font-size: var(--text-caption);
+  line-height: var(--leading-caption);
 }
 .team-member-task {
   flex-basis: 100%;
@@ -136,7 +143,7 @@
 }
 .team-task-button.selected {
   border-color: var(--accent);
-  background: var(--accent-soft);
+  background: var(--surface);
 }
 .team-task-button > span {
   display: flex;
@@ -145,7 +152,8 @@
   gap: 10px;
 }
 .team-task-button strong {
-  font-size: 13px;
+  font-size: var(--text-ui);
+  line-height: var(--leading-ui);
 }
 .team-task-button small {
   color: var(--muted);
@@ -153,8 +161,9 @@
 }
 .team-task-button em {
   color: var(--warning);
-  font-size: 12px;
+  font-size: var(--text-ui);
   font-style: normal;
+  line-height: var(--leading-ui);
 }
 .team-task-detail .panel-head {
   gap: 12px;
@@ -165,7 +174,8 @@
 }
 .team-task-detail .panel-head small {
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--text-caption);
+  line-height: var(--leading-caption);
 }
 .team-task-detail section + section {
   border-top: 1px solid var(--line);
@@ -173,14 +183,16 @@
   margin-top: 16px;
 }
 .team-task-detail h3 {
-  font-size: 13px;
+  font-size: var(--text-subheading);
   margin: 16px 0 10px;
+  line-height: var(--leading-subheading);
 }
 .team-task-meta {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
-  font-size: 12px;
+  font-size: var(--text-caption);
+  line-height: var(--leading-caption);
 }
 .team-task-meta dt {
   color: var(--muted);
@@ -215,8 +227,9 @@
   border-radius: 8px;
   padding: 12px;
   margin: 8px 0;
-  font-size: 12px;
+  font-size: var(--text-caption);
   overflow-wrap: anywhere;
+  line-height: var(--leading-caption);
 }
 .team-attempt p {
   margin: 7px 0;
@@ -242,13 +255,15 @@
 .team-events li {
   display: flex;
   gap: 16px;
-  font-size: 13px;
+  font-size: var(--text-ui);
   align-items: baseline;
+  line-height: var(--leading-ui);
 }
 .team-events time {
   color: var(--muted);
   white-space: nowrap;
-  font-size: 11px;
+  font-size: var(--text-caption);
+  line-height: var(--leading-caption);
 }
 .team-events .text-link {
   text-align: left;
@@ -257,7 +272,7 @@
 .team-legacy-receipts {
   border: 1px solid var(--line);
   padding: 18px;
-  border-radius: 12px;
+  border-radius: var(--radius);
 }
 .team-legacy-receipts > summary {
   cursor: pointer;
@@ -274,12 +289,6 @@
 @media (max-width: 540px) {
   .team-summary {
     gap: 12px 20px;
-  }
-  .team-summary > span {
-    font-size: 11px;
-  }
-  .team-summary strong {
-    font-size: 19px;
   }
   .team-events li {
     flex-direction: column;
@@ -316,7 +325,8 @@
 }
 .team-control-actions > p {
   margin: 10px 0;
-  font-size: 12px;
+  font-size: var(--text-caption);
+  line-height: var(--leading-caption);
 }
 .team-control-notice {
   color: var(--success);
@@ -330,7 +340,8 @@
 }
 .team-intervention-form > p {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--text-ui);
+  line-height: var(--leading-ui);
 }
 .team-intervention-form .field {
   margin: 0;
@@ -343,16 +354,18 @@
 }
 .team-intervention-form legend {
   padding: 0 6px;
-  font-size: 13px;
+  font-size: var(--text-ui);
   font-weight: 600;
+  line-height: var(--leading-ui);
 }
 .team-scope-choice {
   display: flex;
   align-items: start;
   gap: 9px;
   padding: 8px 0;
-  font-size: 13px;
+  font-size: var(--text-ui);
   cursor: pointer;
+  line-height: var(--leading-ui);
 }
 .team-scope-choice input {
   flex: 0 0 auto;
@@ -365,8 +378,9 @@
 .team-scope-choice small {
   display: block;
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--text-caption);
   margin-top: 4px;
+  line-height: var(--leading-caption);
 }
 .team-impact-preview {
   padding: 12px;
@@ -377,11 +391,13 @@
 }
 .team-impact-preview h3 {
   margin: 0 0 8px;
-  font-size: 14px;
+  font-size: var(--text-subheading);
+  line-height: var(--leading-subheading);
 }
 .team-impact-preview p {
   margin: 8px 0;
-  font-size: 13px;
+  font-size: var(--text-ui);
+  line-height: var(--leading-ui);
 }
 .team-instructions > h3 {
   margin: 0;
@@ -402,16 +418,18 @@
   padding-bottom: 16px;
 }
 .team-leadership-toolbar p {
-  font-size: 13px;
+  font-size: var(--text-ui);
   margin: 5px 0 0;
+  line-height: var(--leading-ui);
 }
 .team-leader-entry {
   margin-top: 12px;
 }
 .team-leader-entry details {
-  font-size: 12px;
+  font-size: var(--text-caption);
   margin-top: 8px;
   color: var(--muted);
+  line-height: var(--leading-caption);
 }
 .team-leader-entry summary {
   cursor: pointer;
@@ -425,8 +443,9 @@
   text-align: left;
 }
 .team-instructions > h2 {
-  font-size: 16px;
+  font-size: var(--text-section);
   margin: 0 0 14px;
+  line-height: var(--leading-section);
 }
 .team-instruction-text {
   white-space: pre-wrap;
@@ -452,7 +471,8 @@
   margin-top: 12px;
 }
 .team-applied-plan h3 {
-  font-size: 13px;
+  font-size: var(--text-subheading);
+  line-height: var(--leading-subheading);
 }
 .team-applied-plan ul {
   padding-left: 18px;

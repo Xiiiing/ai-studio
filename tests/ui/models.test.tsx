@@ -210,7 +210,7 @@ async function addCustom() {
   return within(screen.getByRole("dialog"));
 }
 describe("服务与制作分工", () => {
-  it("uses a service list and keeps roles separate from connections", async () => {
+  it("shows compact service cards and keeps roles separate from connections", async () => {
     setup();
     expect(await screen.findByText("writer-a")).toBeVisible();
     expect(screen.queryByText("接入向导")).not.toBeInTheDocument();
@@ -230,7 +230,7 @@ describe("服务与制作分工", () => {
     ).toBeDisabled();
   });
   it("groups models sharing the same endpoint and credential, while separating distinct keys", async () => {
-    const { update } = setup();
+    const { update, view } = setup();
     await screen.findByText("writer-a");
     const first = inventory().editable_profiles.writer;
     update({
@@ -240,11 +240,22 @@ describe("服务与制作分工", () => {
         other: { ...first, model: "third-model", api_key_env: "KEY_TWO" },
       },
     });
-    expect(await screen.findByText("second-model")).toBeVisible();
+    expect(await screen.findByTitle("writer-a、second-model")).toBeVisible();
     expect(
-      screen.getAllByRole("button", { name: /llama.cpp.*127.0.0.1/ }),
+      view.container.querySelectorAll(
+        '.model-service-card[data-service^="llm:"]',
+      ),
     ).toHaveLength(2);
-    expect(screen.queryByText("third-model")).not.toBeInTheDocument();
+    expect(screen.getByText("third-model")).toBeVisible();
+    const grouped = view.container.querySelector(
+      '[data-service="llm:one"]',
+    ) as HTMLElement;
+    expect(
+      within(grouped).getByRole("button", { name: /^查看模型/ }),
+    ).toHaveTextContent("2 个模型");
+    expect(
+      screen.queryByRole("dialog", { name: "服务详情" }),
+    ).not.toBeInTheDocument();
   });
   it("saves a service once, supports multiple manually selected models and writes keys separately", async () => {
     const { calls } = setup();
@@ -307,8 +318,8 @@ describe("服务与制作分工", () => {
         },
       },
     });
-    await screen.findByText("second-model");
-    fireEvent.click(screen.getByRole("button", { name: "管理服务" }));
+    await screen.findByTitle("writer-a、second-model");
+    fireEvent.click(screen.getAllByRole("button", { name: /^配置连接 / })[0]);
     const dialog = within(screen.getByRole("dialog"));
     fireEvent.click(dialog.getByRole("button", { name: "保存连接" }));
     await waitFor(() =>
@@ -329,7 +340,7 @@ describe("服务与制作分工", () => {
   it("keeps the editor open with its captured revision and key after a CAS conflict", async () => {
     const { calls, update } = setup();
     await screen.findByText("writer-a");
-    fireEvent.click(screen.getByRole("button", { name: "管理服务" }));
+    fireEvent.click(screen.getAllByRole("button", { name: /^配置连接 / })[0]);
     const dialog = within(screen.getByRole("dialog"));
     fireEvent.change(dialog.getByLabelText("API Key"), {
       target: { value: "keep-key" },
@@ -353,7 +364,7 @@ describe("服务与制作分工", () => {
           finish = r;
         }),
     );
-    fireEvent.click(screen.getByRole("button", { name: "管理服务" }));
+    fireEvent.click(screen.getAllByRole("button", { name: /^配置连接 / })[0]);
     const dialog = within(screen.getByRole("dialog"));
     const save = dialog.getByRole("button", { name: "保存连接" });
     fireEvent.click(save);
@@ -452,6 +463,9 @@ describe("服务与制作分工", () => {
           finish = r;
         }),
     );
+    fireEvent.click(
+      screen.getByRole("button", { name: /^查看模型 .*writer-a/ }),
+    );
     const check = screen.getByRole("button", { name: "检查连接" });
     fireEvent.click(check);
     fireEvent.click(check);
@@ -472,6 +486,9 @@ describe("服务与制作分工", () => {
   it("does not relabel directory-only checks as generation success", async () => {
     setup();
     await screen.findByText("writer-a");
+    fireEvent.click(
+      screen.getByRole("button", { name: /^查看模型 .*writer-a/ }),
+    );
     fireEvent.click(screen.getByRole("button", { name: "检查连接" }));
     expect(await screen.findByRole("status")).toHaveTextContent(
       "目录跳过，连接尚未验证",
@@ -481,7 +498,7 @@ describe("服务与制作分工", () => {
   it("blocks removing an assigned model and supports explicit role reassignment", async () => {
     setup();
     await screen.findByText("writer-a");
-    fireEvent.click(screen.getByRole("button", { name: "管理服务" }));
+    fireEvent.click(screen.getAllByRole("button", { name: /^配置连接 / })[0]);
     fireEvent.click(screen.getByRole("button", { name: "移除 writer-a" }));
     expect(screen.getByRole("alert")).toHaveTextContent("正在用于制作分工");
     expect(
@@ -513,8 +530,14 @@ it("removes an unused service with one save and preserves assigned models", asyn
       visual_critic: "writer",
     },
   });
-  fireEvent.click(screen.getByRole("button", { name: /兼容接口.*127.0.0.1/ }));
-  fireEvent.click(screen.getByRole("button", { name: "管理服务" }));
+  await waitFor(() =>
+    expect(
+      screen
+        .getByRole("button", { name: /^配置连接 兼容接口/ })
+        .closest("article"),
+    ).toHaveTextContent("未分配用途"),
+  );
+  fireEvent.click(screen.getByRole("button", { name: /^配置连接 兼容接口/ }));
   fireEvent.click(screen.getByText("高级连接设置"));
   fireEvent.click(screen.getByRole("button", { name: "移除服务" }));
   await waitFor(() =>
@@ -523,4 +546,108 @@ it("removes an unused service with one save and preserves assigned models", asyn
   const saved = calls.find((c) => c.body?.expected_revision)?.body;
   expect(Object.keys(saved.profiles)).toEqual(["writer"]);
   expect(saved.roles.independent_critic).toBe("writer");
+});
+
+it("keeps services with the same provider and distinct endpoints as separate overview cards", async () => {
+  const { view, update, calls } = setup();
+  await screen.findByText("writer-a");
+  const first = inventory().editable_profiles.writer;
+  update({
+    editable_profiles: {
+      writer: first,
+      remote: {
+        ...first,
+        model: "remote-writer",
+        base_url: "https://other.example.test/models/writer/v1",
+      },
+    },
+  });
+  await screen.findByText("remote-writer");
+  expect(
+    view.container.querySelectorAll(
+      '.model-service-card[data-service^="llm:"]',
+    ),
+  ).toHaveLength(2);
+  expect(screen.getByText("other.example.test/models/writer/v1")).toBeVisible();
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  expect(
+    calls.filter((call) => call.body || call.path.endsWith("/test")),
+  ).toHaveLength(0);
+});
+
+it("opens full service details on demand and closes the drawer before editing the same connection", async () => {
+  const user = userEvent.setup(),
+    { update, calls } = setup();
+  await screen.findByText("writer-a");
+  const profile = {
+    ...inventory().editable_profiles.writer,
+    tls_client_cert_env: "FIXTURE_CERT",
+    tls_client_key_env: "FIXTURE_KEY",
+    tls_ca_file_env: "FIXTURE_CA",
+    base_url: "https://inference.example.test/models/writer/v1",
+  };
+  update({ editable_profiles: { writer: profile } });
+  const opener = await screen.findByRole("button", {
+    name: /^查看模型 .*inference.example.test/,
+  });
+  expect(screen.queryByText("双向 TLS 身份已关联")).not.toBeInTheDocument();
+  await user.click(opener);
+  const drawer = screen.getByRole("dialog", { name: "服务详情" });
+  expect(drawer).toHaveClass("service-details-drawer");
+  expect(within(drawer).getByText(profile.base_url)).toBeVisible();
+  expect(within(drawer).getByText("双向 TLS 身份已关联")).toBeVisible();
+  expect(
+    within(drawer).getByRole("button", { name: "检查连接" }),
+  ).toBeVisible();
+  expect(calls.filter((call) => call.body)).toHaveLength(0);
+  await user.click(within(drawer).getByRole("button", { name: "管理服务" }));
+  expect(
+    screen.queryByRole("dialog", { name: "服务详情" }),
+  ).not.toBeInTheDocument();
+  expect(screen.getAllByRole("dialog")).toHaveLength(1);
+  const editor = screen.getByRole("dialog", { name: "管理服务" });
+  expect(within(editor).getByLabelText("服务 URL")).toHaveValue(
+    profile.base_url,
+  );
+  await user.click(within(editor).getByRole("button", { name: "关闭" }));
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  expect(opener).toHaveFocus();
+});
+
+it("labels overview configuration truthfully without probing, and filters by usage or address", async () => {
+  const { update, calls, view } = setup();
+  await screen.findByText("writer-a");
+  update({
+    editable_profiles: {
+      ...inventory().editable_profiles,
+      critic: { ...inventory().editable_profiles.critic, enabled: false },
+    },
+  });
+  await waitFor(() =>
+    expect(
+      view.container.querySelector('[data-service="llm:critic"]'),
+    ).toHaveTextContent("已停用"),
+  );
+  expect(
+    view.container.querySelector('[data-service="llm:writer"]'),
+  ).toHaveTextContent("已配置");
+  expect(screen.queryByText("连接成功")).not.toBeInTheDocument();
+  fireEvent.change(screen.getByRole("searchbox", { name: "搜索服务" }), {
+    target: { value: "视觉审核" },
+  });
+  expect(view.container.querySelectorAll(".model-service-card")).toHaveLength(
+    1,
+  );
+  fireEvent.change(screen.getByRole("searchbox", { name: "搜索服务" }), {
+    target: { value: "127.0.0.1:8000" },
+  });
+  expect(
+    view.container.querySelector('[data-service="llm:critic"]'),
+  ).toBeVisible();
+  expect(
+    view.container.querySelector('[data-service="llm:writer"]'),
+  ).not.toBeInTheDocument();
+  expect(
+    calls.filter((call) => call.body || call.path.endsWith("/test")),
+  ).toHaveLength(0);
 });

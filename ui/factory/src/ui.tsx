@@ -2,6 +2,7 @@ import {
   useEffect,
   useRef,
   useId,
+  useState,
   Children,
   isValidElement,
   cloneElement,
@@ -10,11 +11,19 @@ import {
   type ReactElement,
 } from "react";
 import { X, AlertCircle, Inbox, ArrowUpRight } from "lucide-react";
+import { lockPageScroll } from "./ScrollLock";
+import { PageHeader } from "./PageHeader";
+import { StatusIndicator } from "./StatusIndicator";
 import { names, text, mediaUrl, ownedMedia, type RecordData } from "./api";
+export {
+  FeedbackProvider,
+  FloatingErrorNotice,
+  ActionNotice,
+} from "./Feedback";
 export function Badge({ status, label }: { status?: string; label?: string }) {
   return (
     <span className={"badge tone-" + status}>
-      <i />
+      <StatusIndicator status={status} />
       {label || names[status || ""] || status || "未记录"}
     </span>
   );
@@ -48,7 +57,6 @@ export function Panel({
   );
 }
 export function Heading({
-  eyebrow,
   title,
   description,
   action,
@@ -58,16 +66,7 @@ export function Heading({
   description?: string;
   action?: ReactNode;
 }) {
-  return (
-    <header className="page-heading">
-      <div>
-        <div className="eyebrow">{eyebrow}</div>
-        <h1>{title}</h1>
-        {description && <p>{description}</p>}
-      </div>
-      {action}
-    </header>
-  );
+  return <PageHeader title={title} description={description} action={action} />;
 }
 export function Empty({
   title,
@@ -90,19 +89,65 @@ export function Empty({
 export function ErrorNotice({
   error,
   children,
+  reserveSpace = false,
 }: {
   error?: any;
   children?: ReactNode;
+  reserveSpace?: boolean;
 }) {
-  return error ? (
+  const feedback = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!reserveSpace || !error) return;
+    const frame = requestAnimationFrame(() => {
+      const slot = feedback.current;
+      // A sticky save bar may be visible while its inline error is still offscreen.
+      // Reveal the form's own error without moving focus or opening another dialog.
+      if (slot?.closest("dialog")?.open)
+        slot.scrollIntoView?.({ block: "center", inline: "nearest" });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [error, reserveSpace]);
+  const [expanded, setExpanded] = useState(false);
+  const detailId = useId();
+  useEffect(() => {
+    if (!error) setExpanded(false);
+  }, [error]);
+  const notice = error ? (
     <div className="notice error" role="alert">
       <AlertCircle size={18} />
       <div>
         {error instanceof Error ? error.message : text(error)}
         {children}
       </div>
+      {reserveSpace && (
+        <button
+          type="button"
+          className="text-link"
+          onClick={() => setExpanded(true)}
+        >
+          查看详情
+        </button>
+      )}
     </div>
   ) : null;
+  return reserveSpace ? (
+    <div className="form-feedback-slot" ref={feedback}>
+      {notice}
+      {expanded && error && (
+        <Modal
+          id={detailId}
+          title="错误详情"
+          onClose={() => setExpanded(false)}
+        >
+          <p className="preserve-lines">
+            {error instanceof Error ? error.message : text(error)}
+          </p>
+        </Modal>
+      )}
+    </div>
+  ) : (
+    notice
+  );
 }
 export function Loading() {
   return (
@@ -117,28 +162,39 @@ export function Modal({
   title,
   children,
   onClose,
+  className,
 }: {
   id: string;
   title: string;
   children: ReactNode;
   onClose: () => void;
+  className?: string;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const titleId = useId();
   useEffect(() => {
     const d = ref.current;
     const previous = document.activeElement as HTMLElement | null;
-    const overflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    const releaseScroll = lockPageScroll();
     d?.showModal();
     return () => {
       d?.close();
-      document.body.style.overflow = overflow;
+      releaseScroll();
       if (previous?.isConnected) previous.focus({ preventScroll: true });
     };
   }, []);
   return (
-    <dialog ref={ref} id={id} aria-labelledby={titleId} onCancel={onClose}>
+    <dialog
+      ref={ref}
+      id={id}
+      className={className}
+      aria-labelledby={titleId}
+      onCancel={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        onClose();
+      }}
+    >
       <header className="dialog-head">
         <h2 id={titleId}>{title}</h2>
         <button

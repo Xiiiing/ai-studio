@@ -15,5 +15,5 @@
   document.documentElement.dataset.themePreference = preference;
   document.documentElement.style.colorScheme = theme;
   var meta = document.querySelector('meta[name="theme-color"]');
-  if (meta) meta.content = theme === "dark" ? "#14151c" : "#f5f5f8";
+  if (meta) meta.content = theme === "dark" ? "#171719" : "#f7f7f8";
 })();

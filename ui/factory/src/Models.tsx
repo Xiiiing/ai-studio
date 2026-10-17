@@ -3,13 +3,21 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Plus,
   Search,
-  ArrowLeft,
   Settings2,
   ChevronRight,
   ExternalLink,
 } from "lucide-react";
 import { request, keys, rows, roleName, type RecordData } from "./api";
-import { Heading, ErrorNotice, Loading, Field, Panel, Empty } from "./ui";
+import {
+  Heading,
+  ErrorNotice,
+  FloatingErrorNotice,
+  Loading,
+  Field,
+  Panel,
+  Empty,
+  Modal,
+} from "./ui";
 import {
   protocolName,
   ProviderSymbol,
@@ -35,6 +43,24 @@ import "./model-settings.css";
 export { normalizeProfile } from "./ModelConfig";
 
 type Editor = { kind: ModelKind; service?: Service; inventory: RecordData };
+function servicePurpose(service: Service, draft: RecordData) {
+  if (service.kind !== "llm") return kindLabels[service.kind] + "制作";
+  const roles = service.profiles.flatMap(([id]) => modelUses(draft, "llm", id));
+  const labels = [];
+  if (
+    roles.some(
+      (role) =>
+        !["visual_critic", "story_critic", "independent_critic"].includes(role),
+    )
+  )
+    labels.push("文本创作");
+  if (
+    roles.some((role) => ["story_critic", "independent_critic"].includes(role))
+  )
+    labels.push("文本审核");
+  if (roles.includes("visual_critic")) labels.push("视觉审核");
+  return labels.join(" / ") || "未分配用途";
+}
 export function Models({ notify }: { notify: (v: string) => void }) {
   const client = useQueryClient();
   const query = useQuery({
@@ -91,7 +117,7 @@ export function Models({ notify }: { notify: (v: string) => void }) {
       });
       if (select) {
         setSelected(select);
-        setShowDetails(true);
+        setShowDetails(false);
         setEditing(null);
       }
       notify("配置已保存，后续执行批次使用新配置。");
@@ -146,7 +172,7 @@ export function Models({ notify }: { notify: (v: string) => void }) {
     return (
       <>
         <Heading eyebrow="MODEL SETTINGS" title="模型与连接" />
-        <ErrorNotice error={query.error} />
+        <FloatingErrorNotice error={query.error} />
         {query.error ? (
           <button className="button" onClick={() => query.refetch()}>
             重新读取模型配置
@@ -157,43 +183,75 @@ export function Models({ notify }: { notify: (v: string) => void }) {
       </>
     );
   const all = services(draft),
-    current = all.find((s) => s.id === selected) || all[0];
+    current = all.find((s) => s.id === selected);
   const filtered = all.filter((s) =>
-    `${providerLabel(inventory, s.provider)} ${serviceHost(s.profiles[0][1])} ${s.profiles.map(([, p]) => p.model).join(" ")}`
+    `${servicePurpose(s, draft)} ${providerLabel(inventory, s.provider)} ${serviceHost(s.profiles[0][1])} ${s.profiles.map(([, p]) => p.model).join(" ")}`
       .toLowerCase()
       .includes(search.toLowerCase()),
   );
   const open = (kind: ModelKind, service?: Service) => {
-    if (!dirty && !saving)
-      setEditing({ kind, service, inventory: structuredClone(inventory) });
+    if (dirty || saving) return;
+    setShowDetails(false);
+    setEditing({ kind, service, inventory: structuredClone(inventory) });
   };
   return (
     <div className="model-settings">
-      <Heading
-        eyebrow="MODEL SETTINGS"
-        title="模型与连接"
-        description="先连接服务，再选择各项制作使用的模型。"
-      />
-      <div className="model-settings-tabs" role="tablist" aria-label="模型设置">
-        {[
-          ["services", "服务连接"],
-          ["roles", "制作分工"],
-          ["tools", "高级工具"],
-        ].map(([id, name]) => (
-          <button
-            key={id}
-            role="tab"
-            aria-selected={tab === id}
-            aria-controls={"model-tab-" + id}
-            id={"model-tab-button-" + id}
-            onClick={() => setTab(id)}
-          >
-            {name}
-            {id === "roles" && dirty && <span className="unsaved-dot" />}
-          </button>
-        ))}
+      <Heading eyebrow="MODEL SETTINGS" title="模型与连接" />
+      <div
+        className={
+          "model-settings-toolbar" +
+          (tab === "services" ? " has-service-search" : "")
+        }
+      >
+        <div
+          className="model-settings-tabs"
+          role="tablist"
+          aria-label="模型设置"
+        >
+          {[
+            ["services", "服务连接"],
+            ["roles", "制作分工"],
+            ["tools", "高级工具"],
+          ].map(([id, name]) => (
+            <button
+              key={id}
+              role="tab"
+              aria-selected={tab === id}
+              aria-controls={"model-tab-" + id}
+              id={"model-tab-button-" + id}
+              onClick={() => setTab(id)}
+            >
+              {name}
+              {id === "roles" && dirty && <span className="unsaved-dot" />}
+            </button>
+          ))}
+        </div>
+        {tab === "services" && (
+          <>
+            <Field label="搜索服务">
+              <div className="service-search">
+                <Search size={16} aria-hidden="true" />
+                <input
+                  type="search"
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="用途、供应商或模型"
+                />
+              </div>
+            </Field>
+            <button
+              className="button primary model-add-service"
+              data-model-action="add"
+              disabled={saving || dirty}
+              onClick={() => open("llm")}
+            >
+              <Plus size={15} aria-hidden="true" />
+              添加服务
+            </button>
+          </>
+        )}
       </div>
-      <ErrorNotice error={query.error} />
+      <FloatingErrorNotice error={query.error} />
       {dirty && tab !== "roles" && (
         <div className="model-draft-notice">
           制作分工有未保存的修改。
@@ -204,128 +262,89 @@ export function Models({ notify }: { notify: (v: string) => void }) {
         </div>
       )}
       {tab === "services" && (
-        <div
+        <section
           role="tabpanel"
           aria-labelledby="model-tab-button-services"
           id="model-tab-services"
-          className={
-            "service-workspace " + (showDetails ? "show-service-detail" : "")
-          }
+          className="service-workspace"
         >
-          <aside className="service-sidebar">
-            <div className="service-sidebar-heading">
-              <strong>
-                我的服务 <span>{all.length}</span>
-              </strong>
-              <button
-                className="button primary compact"
-                data-model-action="add"
-                disabled={saving || dirty}
-                onClick={() => open("llm")}
-              >
-                <Plus size={15} />
-                添加服务
-              </button>
-            </div>
-            <Field label="搜索服务">
-              <div className="service-search">
-                <Search size={16} />
-                <input
-                  type="search"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="服务商、地址或模型"
-                />
-              </div>
-            </Field>
-            <nav className="service-list" aria-label="已连接的服务">
-              {(["llm", "image", "video", "audio"] as ModelKind[]).map(
-                (kind) => (
-                  <div key={kind}>
-                    <div className="service-list-label">
-                      {kindLabels[kind]}
-                      <button
-                        className="icon-button"
-                        aria-label={"添加" + kindLabels[kind] + "服务"}
-                        disabled={saving || dirty}
-                        onClick={() => open(kind)}
-                      >
-                        <Plus size={15} />
-                      </button>
-                    </div>
-                    {filtered
-                      .filter((s) => s.kind === kind)
-                      .map((s) => (
-                        <button
-                          key={s.id}
-                          className={
-                            "service-list-item " +
-                            (current?.id === s.id ? "active" : "")
-                          }
-                          onClick={() => {
-                            setSelected(s.id);
-                            setShowDetails(true);
-                          }}
-                          aria-current={
-                            current?.id === s.id ? "true" : undefined
-                          }
-                          data-service={s.id}
-                        >
-                          <ProviderSymbol provider={s.provider} />
-                          <span>
-                            <strong>
-                              {providerLabel(inventory, s.provider)}
-                            </strong>
-                            <small>{serviceHost(s.profiles[0][1])}</small>
-                          </span>
-                          <b>{s.profiles.length}</b>
-                        </button>
-                      ))}
-                  </div>
-                ),
-              )}
-            </nav>
-            {search && !filtered.length && (
-              <p className="muted">没有匹配的服务</p>
-            )}
-          </aside>
-          <section className="service-detail">
-            <button
-              className="button quiet service-back"
-              onClick={() => setShowDetails(false)}
-            >
-              <ArrowLeft size={16} />
-              服务列表
-            </button>
-            {current ? (
-              <ServiceDetails
-                service={current}
-                inventory={inventory}
-                draft={draft}
-                disabled={saving || dirty}
-                probes={probes}
-                probing={probing}
-                onEdit={() => open(current.kind, current)}
-                onProbe={(id) => probe(current.kind, id)}
-              />
-            ) : (
-              <Empty
-                title="连接你的第一个模型服务"
-                action={
-                  <button
-                    className="button primary"
-                    onClick={() => open("llm")}
+          {filtered.length ? (
+            <div className="service-card-grid" aria-label="已配置服务">
+              {filtered.map((service) => {
+                const purpose = servicePurpose(service, draft);
+                const models = service.profiles
+                  .map(([, profile]) => profile.model)
+                  .join("、");
+                const label = `${providerLabel(inventory, service.provider)} · ${models} · ${serviceHost(service.profiles[0][1])}`;
+                const paused = service.profiles.every(
+                  ([, profile]) => profile.enabled === false,
+                );
+                return (
+                  <article
+                    className="model-service-card"
+                    key={service.id}
+                    data-service={service.id}
                   >
-                    <Plus size={15} />
-                    添加服务
-                  </button>
-                }
-              >
-                云端服务填写 Key；本地与自定义服务填写 URL 和可选 Key。
-              </Empty>
-            )}
-          </section>
-        </div>
+                    <header>
+                      <ProviderSymbol provider={service.provider} />
+                      <div>
+                        <h2>{purpose}</h2>
+                        <p>
+                          {providerLabel(inventory, service.provider)} ·{" "}
+                          {kindLabels[service.kind]}
+                        </p>
+                      </div>
+                      <span className="service-config-state">
+                        {paused ? "已停用" : "已配置"}
+                      </span>
+                    </header>
+                    <strong className="service-card-models" title={models}>
+                      {models}
+                    </strong>
+                    <code
+                      className="service-card-address"
+                      title={service.profiles[0][1].base_url}
+                    >
+                      {serviceHost(service.profiles[0][1])}
+                    </code>
+                    <footer>
+                      <button
+                        className="button"
+                        data-model-action="manage"
+                        aria-label={"配置连接 " + label}
+                        disabled={saving || dirty}
+                        onClick={() => open(service.kind, service)}
+                      >
+                        <Settings2 size={15} aria-hidden="true" />
+                        配置连接
+                      </button>
+                      <button
+                        className="button quiet"
+                        data-model-action="details"
+                        aria-label={"查看模型 " + label}
+                        onClick={() => {
+                          setSelected(service.id);
+                          setShowDetails(true);
+                        }}
+                      >
+                        {service.profiles.length} 个模型
+                        <ChevronRight size={15} aria-hidden="true" />
+                      </button>
+                    </footer>
+                  </article>
+                );
+              })}
+            </div>
+          ) : search ? (
+            <Empty title="没有匹配的服务">
+              试试用途、供应商、模型名称或服务地址。
+            </Empty>
+          ) : (
+            <Empty title="连接你的第一个模型服务">
+              云端服务填写 Key；本地与自定义服务填写 URL 和可选 Key。
+            </Empty>
+          )}
+        </section>
       )}
       {tab === "roles" && (
         <section
@@ -339,7 +358,7 @@ export function Models({ notify }: { notify: (v: string) => void }) {
             disabled={saving}
             onChange={change}
           />
-          <ErrorNotice error={error} />
+          <ErrorNotice error={error} reserveSpace />
           {dirty && inventory.revision !== base && (
             <ErrorNotice error="其他终端已更新配置。你的分工修改仍保留，请先核对最新配置。" />
           )}
@@ -390,6 +409,25 @@ export function Models({ notify }: { notify: (v: string) => void }) {
         >
           <WorkflowTools notify={notify} />
         </section>
+      )}
+      {showDetails && current && tab === "services" && (
+        <Modal
+          id="model-service-detail-dialog"
+          className="service-details-drawer"
+          title="服务详情"
+          onClose={() => setShowDetails(false)}
+        >
+          <ServiceDetails
+            service={current}
+            inventory={inventory}
+            draft={draft}
+            disabled={saving || dirty}
+            probes={probes}
+            probing={probing}
+            onEdit={() => open(current.kind, current)}
+            onProbe={(id) => probe(current.kind, id)}
+          />
+        </Modal>
       )}
       {editing?.kind === "llm" && (
         <ServiceEditor
@@ -445,7 +483,7 @@ function ServiceDetails({
           <ProviderSymbol provider={service.provider} />
           <div>
             <h2>{providerLabel(inventory, service.provider)}</h2>
-            <small>{kindLabels[service.kind]}</small>
+            <small>{servicePurpose(service, draft)}</small>
           </div>
         </div>
         <button
