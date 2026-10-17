@@ -1,3 +1,4 @@
+import { refreshPage } from "./header-flow.mjs";
 import { test, expect } from "@playwright/test";
 import { openProjectPage } from "./navigation.mjs";
 const id = "012345abcdef";
@@ -164,7 +165,7 @@ test("team console desktop/mobile themes, filters, evidence and playback survive
     .poll(() => video.evaluate((element) => element.currentTime))
     .toBeGreaterThan(0.2);
   const before = await video.evaluate((element) => element.currentTime);
-  await page.locator('.topbar [data-action="refresh"]').click();
+  await refreshPage(page);
   await expect(page.getByLabel("镜头编号", { exact: true })).toHaveValue("S01");
   await expect(
     detail.getByRole("heading", { name: "第 1 镜视频" }),

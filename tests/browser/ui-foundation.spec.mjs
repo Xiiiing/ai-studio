@@ -1,3 +1,4 @@
+import { refreshPage, exposePageControl } from "./header-flow.mjs";
 import { setTheme, themeButton } from "./theme.mjs";
 import { test, expect } from "@playwright/test";
 
@@ -194,14 +195,27 @@ for (const width of [320, 1440])
     await page.route("**/api/factory/console**", (route) =>
       route.fulfill({ status: 503, json: { error: "测试同步中断" } }),
     );
-    await page.getByRole("button", { name: "刷新项目", exact: true }).click();
+    await refreshPage(page);
     const status = page.locator(".sync-state.error-text");
-    await expect(status).toHaveText("同步中断");
+    await expect(await exposePageControl(page, status)).toHaveText("同步中断");
+    const dot = status.locator('[data-status-indicator="failed"]');
+    await expect(dot).toHaveCSS("width", "6px");
+    await expect(dot).toHaveCSS("height", "6px");
+    const colors = await status.evaluate((element) => ({
+      text: getComputedStyle(element)
+        .color.match(/[\d.]+/g)
+        .slice(0, 3)
+        .map(Number),
+      dot: getComputedStyle(element.querySelector("[data-status-indicator]"))
+        .backgroundColor.match(/[\d.]+/g)
+        .slice(0, 3)
+        .map(Number),
+    }));
     expect(
-      await status
-        .locator("i")
-        .evaluate((el) => getComputedStyle(el).backgroundColor),
-    ).toBe(await status.evaluate((el) => getComputedStyle(el).color));
+      Math.max(...colors.text) - Math.min(...colors.text),
+    ).toBeLessThanOrEqual(14);
+    expect(colors.dot[0]).toBeGreaterThan(colors.dot[1] + 30);
+    expect(colors.dot[0]).toBeGreaterThan(colors.dot[2] + 20);
     await expect(page.getByRole("heading", { name: "制片总览" })).toBeVisible();
     expect(
       await page.evaluate(

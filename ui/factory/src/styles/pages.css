@@ -1,9 +1,4 @@
 /* Project pages, document reading, and material previews. */
-.topbar {
-  position: sticky;
-  top: 0;
-  z-index: 20;
-}
 .dashboard-grid {
   align-items: start;
   gap: 16px;
@@ -378,8 +373,7 @@
   margin-top: 14px;
   display: flex;
 }
-.panel-head p,
-.page-heading p {
+.panel-head p {
   color: var(--muted);
 }
 .activity-list p,

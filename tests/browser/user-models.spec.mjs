@@ -1,3 +1,4 @@
+import { addService, openServiceDetails } from "./model-flow.mjs";
 import { test, expect } from "@playwright/test";
 
 test.beforeEach(async ({ request, page }) => {
@@ -11,7 +12,7 @@ test.beforeEach(async ({ request, page }) => {
 async function models(page) {
   await page.goto("/#view=models");
   await expect(page.locator("#workspace h1")).toHaveText("模型与连接");
-  await expect(page.locator(".service-list-item").first()).toBeVisible();
+  await expect(page.locator(".model-service-card").first()).toBeVisible();
 }
 async function saveCalls(request) {
   return (await (await request.get("/__test/calls")).json()).filter(
@@ -94,12 +95,14 @@ for (const viewport of [
     expect(saves[0].body.secrets).toEqual({
       ["llm:" + cloud[0]]: "fixture-cloud-token",
     });
-    await expect(page.locator(".service-detail .model-name")).toHaveText(
+    const cloudDetails = await openServiceDetails(page, "llm:" + cloud[0]);
+    await expect(cloudDetails.locator(".model-name")).toHaveText(
       "deepseek-chat",
     );
+    await page.keyboard.press("Escape");
     await page.reload();
-    if (viewport.name === "mobile")
-      await expect(page.locator(".service-sidebar")).toBeVisible();
+    await expect(page.locator(".service-card-grid")).toBeVisible();
+    await expect(page.locator("#model-service-detail-dialog")).toHaveCount(0);
     await page.getByRole("button", { name: "添加服务", exact: true }).click();
     await page
       .getByRole("button", { name: "OpenAI-compatible API", exact: true })
@@ -145,10 +148,8 @@ for (const viewport of [
       custom.find(([, p]) => p.model === "fixture-discovered-model")[1].vision,
     ).toBe(false);
     await page.reload();
-    await page
-      .locator('.service-list-item[data-service="llm:' + custom[0][0] + '"]')
-      .click();
-    await expect(page.locator(".service-detail .model-name")).toHaveCount(2);
+    const customDetails = await openServiceDetails(page, "llm:" + custom[0][0]);
+    await expect(customDetails.locator(".model-name")).toHaveCount(2);
     await page.getByRole("button", { name: "管理服务", exact: true }).click();
     await expect(dialog.getByLabel("API Key", { exact: true })).toHaveValue("");
     await dialog
@@ -201,9 +202,7 @@ for (const viewport of [
   }, testInfo) => {
     await page.setViewportSize(viewport);
     await models(page);
-    await page
-      .getByRole("button", { name: "添加视频服务", exact: true })
-      .click();
+    await addService(page, "视频");
     await page
       .getByRole("button", { name: "ComfyUI / MiniMax H3", exact: true })
       .click();
@@ -283,7 +282,7 @@ test("speech Key, ComfyUI URL and template tools retain their adapters", async (
   request,
 }) => {
   await models(page);
-  await page.getByRole("button", { name: "添加配音服务", exact: true }).click();
+  await addService(page, "配音");
   await page.getByRole("button", { name: "百炼语音 API", exact: true }).click();
   let dialog = page.locator("#media-dialog");
   await expect(dialog.getByLabel("模型 ID", { exact: true })).toHaveValue(
@@ -294,7 +293,7 @@ test("speech Key, ComfyUI URL and template tools retain their adapters", async (
     .fill("fixture-speech-token");
   await dialog.getByRole("button", { name: "保存连接" }).click();
   await expect(dialog).toHaveCount(0);
-  await page.getByRole("button", { name: "添加图像服务", exact: true }).click();
+  await addService(page, "图像");
   await page
     .getByRole("button", { name: "自己的 ComfyUI 服务", exact: true })
     .click();

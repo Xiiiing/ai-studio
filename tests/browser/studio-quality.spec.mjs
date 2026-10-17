@@ -1,3 +1,4 @@
+import { refreshPage } from "./header-flow.mjs";
 import { test, expect } from "@playwright/test";
 import { startRealServer } from "./real-server.mjs";
 import { mkdir, readFile } from "node:fs/promises";
@@ -167,7 +168,7 @@ test("real Markdown attachments, retried calls and step attribution remain reada
   const output = inspector.getByRole("region", { name: "交付内容" });
   await output.getByRole("button", { name: "阅读文件" }).click();
   await expect(output.getByRole("heading", { name: "站台重逢" })).toBeVisible();
-  await page.getByRole("button", { name: "刷新项目", exact: true }).click();
+  await refreshPage(page);
   await expect(page.locator('[data-flow-node="screenplay"]')).toHaveAttribute(
     "aria-pressed",
     "true",
@@ -285,7 +286,14 @@ test("real project creation, partial image recovery, full-size preview and visua
     .check();
   await page.getByLabel("创作规格", { exact: true }).selectOption("compact6");
   await page.getByRole("button", { name: "开始自主策划" }).click();
-  await expect(page.locator("main h1").last()).toHaveText("本剧素材与定稿");
+  await expect(page.locator("main h1")).toHaveText("素材准备闭环测试");
+  await expect(
+    page.getByRole("heading", {
+      level: 2,
+      name: "本剧素材与定稿",
+      exact: true,
+    }),
+  ).toBeVisible();
   const pid = new URLSearchParams(new URL(page.url()).hash.slice(1)).get(
     "project",
   );

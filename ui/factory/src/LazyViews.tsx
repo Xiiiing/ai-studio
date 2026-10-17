@@ -1,5 +1,5 @@
 import { lazy, Suspense } from "react";
-import { Loading } from "./ui";
+import { Heading, Loading } from "./ui";
 import type { RecordData } from "./api";
 
 const ModelView = lazy(() =>
@@ -13,7 +13,14 @@ const MaterialView = lazy(() =>
 
 export function Models(props: { notify: (message: string) => void }) {
   return (
-    <Suspense fallback={<Loading />}>
+    <Suspense
+      fallback={
+        <>
+          <Heading eyebrow="" title="模型与连接" />
+          <Loading />
+        </>
+      }
+    >
       <ModelView {...props} />
     </Suspense>
   );
@@ -23,7 +30,18 @@ export function MaterialLibrary(props: {
   notify: (message: string) => void;
 }) {
   return (
-    <Suspense fallback={<Loading />}>
+    <Suspense
+      fallback={
+        props.project ? (
+          <Loading />
+        ) : (
+          <>
+            <Heading eyebrow="" title="素材库" />
+            <Loading />
+          </>
+        )
+      }
+    >
       <MaterialView {...props} />
     </Suspense>
   );

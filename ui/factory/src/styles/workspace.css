@@ -173,12 +173,6 @@
     display: none;
   }
 }
-.project-heading {
-  display: flex;
-  gap: 16px;
-  align-items: flex-start;
-  margin-bottom: 16px;
-}
 
 .project-primary-navigation i,
 .project-attention-dot {
@@ -187,24 +181,14 @@
   border-radius: 50%;
   background: var(--warning);
 }
-.project-heading > div:first-child {
-  min-width: 0;
-}
-.project-heading h1 {
-  overflow-wrap: anywhere;
-}
-.project-heading .breadcrumb-link {
-  min-height: 28px;
-  margin-bottom: 4px;
-}
 .project-meta {
   margin-top: 8px;
   gap: 6px 12px;
 }
 .heading-actions {
   margin-top: 0;
-  flex-direction: column;
-  align-items: flex-end;
+  flex-direction: row;
+  align-items: flex-start;
   gap: 6px;
   flex-shrink: 0;
 }
@@ -228,6 +212,7 @@
 }
 .project-actions-menu {
   position: relative;
+  margin: 0;
 }
 .project-actions-menu > summary {
   min-height: var(--target-size);
@@ -236,6 +221,9 @@
   color: var(--muted);
   font-size: var(--text-ui);
   line-height: var(--leading-ui);
+}
+.project-actions-menu[open] > summary {
+  margin-bottom: 0;
 }
 .project-actions-list {
   position: absolute;
@@ -401,7 +389,7 @@
   background: var(--panel);
 }
 .workflow-map-node.workflow-repair-node.selected {
-  border-color: var(--warning-line);
+  border-color: var(--accent);
 }
 .workflow-stage-card .badge {
   background: var(--surface);
@@ -437,9 +425,6 @@
   }
 }
 @media (max-width: 700px) {
-  .project-heading {
-    display: block;
-  }
   .heading-actions {
     margin-top: 12px;
     flex-direction: row;
@@ -463,9 +448,6 @@
     align-items: center;
     padding: 8px 4px;
     white-space: nowrap;
-  }
-  .project-heading .breadcrumb-link {
-    min-height: 28px;
   }
 
   .project-context {

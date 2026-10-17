@@ -11,6 +11,8 @@ import {
   type ReactElement,
 } from "react";
 import { X, AlertCircle, Inbox, ArrowUpRight } from "lucide-react";
+import { PageHeader } from "./PageHeader";
+import { StatusIndicator } from "./StatusIndicator";
 import { names, text, mediaUrl, ownedMedia, type RecordData } from "./api";
 export {
   FeedbackProvider,
@@ -20,7 +22,7 @@ export {
 export function Badge({ status, label }: { status?: string; label?: string }) {
   return (
     <span className={"badge tone-" + status}>
-      <i />
+      <StatusIndicator status={status} />
       {label || names[status || ""] || status || "未记录"}
     </span>
   );
@@ -63,15 +65,7 @@ export function Heading({
   description?: string;
   action?: ReactNode;
 }) {
-  return (
-    <header className="page-heading">
-      <div>
-        <h1>{title}</h1>
-        {description && <p>{description}</p>}
-      </div>
-      {action}
-    </header>
-  );
+  return <PageHeader title={title} description={description} action={action} />;
 }
 export function Empty({
   title,

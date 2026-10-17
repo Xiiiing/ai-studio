@@ -1,3 +1,4 @@
+import { refreshPage } from "./header-flow.mjs";
 import { openWorkflow } from "./navigation.mjs";
 import { openProjectPage } from "./navigation.mjs";
 import { test, expect } from "@playwright/test";
@@ -212,7 +213,7 @@ test("creative blocker exposes review evidence, suggested edits, and preserves s
     fullPage: true,
   });
   await request.post("/__test/progress");
-  await page.locator('.topbar [data-action="refresh"]').click();
+  await refreshPage(page);
   await expect(page.locator(".decision-draft-stale")).toBeVisible();
   await expect(field).toHaveValue(original);
   await expect(page.locator('form[data-form="retry"]')).toHaveAttribute(
