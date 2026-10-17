@@ -1,3 +1,11 @@
+import {
+  builtinProviders,
+  CredentialField,
+  endpointValues,
+  protocolName,
+  providerLinks,
+  ProviderSymbol,
+} from "./ConnectionFields";
 import { MediaSettings } from "./MediaSettings";
 import { useModelDraft } from "./ModelDraft";
 import { useEffect, useRef, useState } from "react";
@@ -59,6 +67,7 @@ export function normalizeProfile(
     enabled: values.enabled === "on",
   };
   delete out.discovered_models;
+  delete out.pending_key;
   delete out.id;
   if (video) {
     if (provider === "comfyui_h3" && values.quality) {
@@ -103,9 +112,7 @@ export function normalizeProfile(
     return out;
   }
   Object.assign(out, {
-    base_url: values.base_url.trim(),
-    network_mode: values.network_mode,
-    allowed_hosts: split(values.allowed_hosts),
+    ...endpointValues(values, previous),
     api_key_env: values.api_key_env?.trim() || "",
     context_tokens: Number(values.context_tokens),
     vision: values.vision === "on",
@@ -339,9 +346,7 @@ export function Models({ notify }: { notify: (v: string) => void }) {
         return (
           <article className="model-card" key={id}>
             <div className="row-between">
-              <div className="model-symbol">
-                <Network size={22} />
-              </div>
+              <ProviderSymbol provider={p.provider} />
               <Badge
                 status={
                   !p.enabled
@@ -375,6 +380,11 @@ export function Models({ notify }: { notify: (v: string) => void }) {
                   ? "远程服务"
                   : "服务器管理"}
             </p>
+            {!video && (
+              <small className="protocol-label">
+                {protocolName(p.provider)}
+              </small>
+            )}
             <code className="endpoint">
               {p.base_url || "服务器托管的生成工作流"}
             </code>
@@ -389,7 +399,11 @@ export function Models({ notify }: { notify: (v: string) => void }) {
                 {credentialMounted ? "已挂载" : "尚未挂载或状态待同步"}
               </small>
             ) : p.api_key_env ? (
-              <small>密钥变量：{p.api_key_env}</small>
+              <small>
+                {p.api_key_env.startsWith("STUDIO_KEY_")
+                  ? "Key 已保存在服务端"
+                  : "已关联服务器凭据"}
+              </small>
             ) : null}
             <div className="member-chips">
               {Object.entries(video ? draft.video_roles || {} : draft.roles)
@@ -530,13 +544,13 @@ export function Models({ notify }: { notify: (v: string) => void }) {
       <div className="connection-note">
         <PlugZap size={20} />
         <p>
-          模型、Qwen TTS
-          与视频服务在已配置的服务器运行。这里登记接口和环境变量名称；连接测试不会生成素材。
+          模型、Qwen TTS 与视频服务在已配置的服务器运行。在这里选择服务、填写
+          URL 与 Key；连接测试不会生成素材。
         </p>
       </div>
       <Panel
         title="接入向导"
-        description="连接使用你自己的模型或购买的 API。密钥保存在 config/runtime.env，修改后重启 Web 和 worker。"
+        description="内置服务填 Key 即可开始；自定义服务填写 URL 与 Key，再选择实际模型。密钥仅保存在服务端。"
       >
         <Field label="使用方式">
           <select
@@ -720,16 +734,31 @@ export function Models({ notify }: { notify: (v: string) => void }) {
                     editing.id
                   ],
                   discovered_models: probes[editing.id]?.models || [],
+                  pending_key:
+                    draft.secrets?.[
+                      (editing.video ? "video:" : "llm:") + editing.id
+                    ],
                 }
               : {}
           }
           onClose={() => setEditing(null)}
-          onSave={(id, p) => {
+          onSave={(id, p, secret) => {
             if (store.getSnapshot().saving) return;
             const kind = editing.video ? "video_profiles" : "profiles";
             if (!editing.id && Object.hasOwn(draft[kind], id))
               throw new Error("连接编号已存在。");
-            change((d) => ({ ...d, [kind]: { ...d[kind], [id]: p } }));
+            change((d) => ({
+              ...d,
+              [kind]: { ...d[kind], [id]: p },
+              ...(secret !== undefined
+                ? {
+                    secrets: {
+                      ...d.secrets,
+                      [(editing.video ? "video:" : "llm:") + id]: secret,
+                    },
+                  }
+                : {}),
+            }));
             setEditing(null);
           }}
         />
@@ -758,7 +787,7 @@ function ProfileEditor({
   profile: RecordData;
   video: boolean;
   onClose: () => void;
-  onSave: (id: string, p: RecordData) => void;
+  onSave: (id: string, p: RecordData, secret?: string | null) => void;
 }) {
   const [provider, setProvider] = useState(
       profile.provider || (video ? "minimax" : "deepseek"),
@@ -777,6 +806,16 @@ function ProfileEditor({
         (profile.provider === "comfyui_h3" ? "preview" : "production"),
     ),
     [error, setError] = useState("");
+  const [custom, setCustom] = useState(!builtinProviders.has(provider));
+  const [editAddress, setEditAddress] = useState(false);
+  const [discovering, setDiscovering] = useState(false);
+  const [discoveryMessage, setDiscoveryMessage] = useState("");
+  const [modelOptions, setModelOptions] = useState<string[]>(
+    profile.discovered_models || [],
+  );
+  const autoId = useRef(
+    id || `connection-${Math.random().toString(36).slice(2, 9)}`,
+  );
   const form = useRef<HTMLFormElement>(null),
     cloud = video && provider === "minimax";
   const field = (name: string, label: string, options: RecordData = {}) => (
@@ -805,6 +844,10 @@ function ProfileEditor({
       enabled: true,
     });
     setProvider(next);
+    setEditAddress(false);
+    setModelOptions([]);
+    setDiscoveryMessage("");
+    setError("");
     setH3Quality(defaults?.quality || "production");
   }
 
@@ -827,24 +870,55 @@ function ProfileEditor({
               current,
               video,
             );
-            onSave(String(values.id), next);
+            onSave(
+              String(values.id),
+              next,
+              values.api_key ? String(values.api_key).trim() : undefined,
+            );
           } catch (err) {
             setError((err as Error).message);
           }
         }}
       >
-        <fieldset disabled={disabled} className="model-editor-fields">
+        <fieldset
+          disabled={disabled || discovering}
+          className="model-editor-fields"
+        >
           <ErrorNotice error={error} />
           <datalist id="provider-models">
-            {[current.model, ...(profile.discovered_models || [])]
+            {[...new Set([current.model, ...modelOptions])]
               .filter(Boolean)
               .map((m: string) => (
                 <option key={m} value={m} />
               ))}
           </datalist>
+          {!video && (
+            <div className="connection-mode" role="group" aria-label="接入类型">
+              <button
+                type="button"
+                className={custom ? "button" : "button primary"}
+                onClick={() => {
+                  setCustom(false);
+                  switchProvider("deepseek");
+                }}
+              >
+                内置服务
+              </button>
+              <button
+                type="button"
+                className={custom ? "button primary" : "button"}
+                onClick={() => {
+                  setCustom(true);
+                  switchProvider("openai_compatible");
+                }}
+              >
+                自定义 / 本地
+              </button>
+            </div>
+          )}
           <div className="form-row">
             {field("id", "连接编号", {
-              value: current.id ?? id,
+              value: current.id ?? autoId.current,
               required: true,
               readOnly: !!id,
               pattern: "[A-Za-z0-9][A-Za-z0-9_.-]{0,63}",
@@ -855,16 +929,50 @@ function ProfileEditor({
                 value={provider}
                 onChange={(e) => switchProvider(e.target.value)}
               >
-                {Object.entries(video ? videoProviders : providers).map(
-                  ([v, label]) => (
+                {Object.entries(video ? videoProviders : providers)
+                  .filter(
+                    ([v]) =>
+                      video ||
+                      (custom
+                        ? !builtinProviders.has(v) ||
+                          ["anthropic", "gemini"].includes(v)
+                        : builtinProviders.has(v)),
+                  )
+                  .map(([v, label]) => (
                     <option key={v} value={v}>
                       {label}
                     </option>
-                  ),
-                )}
+                  ))}
               </select>
             </Field>
           </div>
+          {!video && (
+            <div className="provider-intro">
+              <ProviderSymbol provider={provider} />
+              <div>
+                <strong>{providers[provider] || provider}</strong>
+                <small>{protocolName(provider)}</small>
+              </div>
+              {providerLinks[provider] && (
+                <div className="provider-links">
+                  <a
+                    href={providerLinks[provider].docs}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    官方文档
+                  </a>
+                  <a
+                    href={providerLinks[provider].keys}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    获取 Key
+                  </a>
+                </div>
+              )}
+            </div>
+          )}
           {field("model", "模型标识", { required: true })}
           {video && provider === "comfyui_h3" && (
             <>
@@ -946,51 +1054,141 @@ function ProfileEditor({
           )}
           {(!video || cloud) && (
             <>
-              {field("base_url", "接口地址", {
-                type: "url",
-                required: true,
-                hint: "完整服务前缀；保留 /v1 或自定义代理路径。",
-              })}
-              <div className="form-row">
-                {!video && (
-                  <Field label="连接范围">
-                    <select
-                      name="network_mode"
-                      defaultValue={current.network_mode || "loopback"}
+              {!video && !custom && !editAddress ? (
+                <Field label="接口地址">
+                  <input
+                    name="base_url"
+                    type="hidden"
+                    value={current.base_url || ""}
+                  />
+                  <div className="builtin-endpoint">
+                    <code>{current.base_url}</code>
+                    <button
+                      type="button"
+                      className="button quiet"
+                      onClick={() => setEditAddress(true)}
                     >
-                      <option value="loopback">服务器本机</option>
-                      <option value="lan">局域网服务</option>
-                      <option value="remote">远程 HTTPS</option>
-                    </select>
-                  </Field>
-                )}
-                {field("allowed_hosts", "允许访问的主机名", {
-                  value: Array.isArray(current.allowed_hosts)
-                    ? current.allowed_hosts.join(", ")
-                    : current.allowed_hosts,
-                  hint: "多个精确 hostname 用逗号分隔。",
-                })}
-              </div>
-              {field("api_key_env", "密钥环境变量名称", {
-                pattern: "[A-Za-z_][A-Za-z0-9_]*",
-                hint: current.api_key_credential
-                  ? "此连接已有 systemd 凭据关联，不能同时使用密钥环境变量。"
-                  : "只登记变量名称，真实密钥由服务端读取。",
-              })}
-              {current.api_key_credential && (
-                <small>保留系统凭据关联：{current.api_key_credential}</small>
+                      自定义地址
+                    </button>
+                  </div>
+                </Field>
+              ) : (
+                field("base_url", "接口地址", {
+                  type: "url",
+                  required: true,
+                  hint: "服务地址或完整调用地址均可；保留自定义代理前缀。",
+                })
               )}
-              {field("request_timeout_seconds", "请求超时 / 秒", {
-                type: "number",
-                fallback: video ? 60 : 120,
-                min: 1,
-                max: 600,
-                required: true,
-              })}
+              <CredentialField
+                saved={
+                  !!id && !!(current.api_key_env || current.api_key_credential)
+                }
+                value={
+                  provider === profile.provider ? profile.pending_key || "" : ""
+                }
+              />
+              {!video && (
+                <button
+                  type="button"
+                  className="button"
+                  disabled={discovering}
+                  onClick={async () => {
+                    if (!form.current) return;
+                    setDiscovering(true);
+                    setError("");
+                    try {
+                      const raw = Object.fromEntries(
+                        new FormData(form.current),
+                      );
+                      const p = normalizeProfile(
+                        {
+                          ...raw,
+                          model: raw.model || "__discover__",
+                          provider,
+                        },
+                        current,
+                      );
+                      const result = await request("/models/discover", {
+                        profile: p,
+                        ...(raw.api_key
+                          ? { api_key: String(raw.api_key).trim() }
+                          : {}),
+                      });
+                      const names = rows(result.models).map((m) => m.id);
+                      setModelOptions(names);
+                      const input = form.current.elements.namedItem(
+                        "model",
+                      ) as HTMLInputElement;
+                      if (!input.value && names.length) input.value = names[0];
+                      setDiscoveryMessage(
+                        names.length
+                          ? `已读取 ${names.length} 个模型。${names.includes(input.value) ? "可在模型标识中选择。" : "当前标识不在目录中，请核对或从目录选择。"}尚未验证生成能力。`
+                          : "",
+                      );
+                      if (!names.length)
+                        setError("服务返回空模型目录，可填写实际模型标识。");
+                    } catch (error) {
+                      setError((error as Error).message);
+                    } finally {
+                      setDiscovering(false);
+                    }
+                  }}
+                >
+                  {discovering ? "读取中…" : "读取可用模型"}
+                </button>
+              )}
+              {discoveryMessage && (
+                <small className="connection-discovery" role="status">
+                  {discoveryMessage}
+                </small>
+              )}
+              <details className="connection-advanced">
+                <summary>高级连接设置</summary>
+                <div className="form-row">
+                  {!video && (
+                    <Field label="连接范围">
+                      <select
+                        name="network_mode"
+                        defaultValue={
+                          id ? current.network_mode || "auto" : "auto"
+                        }
+                      >
+                        <option value="auto">根据 URL 自动判断</option>
+                        <option value="loopback">服务器本机</option>
+                        <option value="lan">局域网服务</option>
+                        <option value="remote">远程 HTTPS</option>
+                      </select>
+                    </Field>
+                  )}
+                  {field("allowed_hosts", "允许访问的主机名", {
+                    value: Array.isArray(current.allowed_hosts)
+                      ? current.allowed_hosts.join(", ")
+                      : current.allowed_hosts,
+                    hint: "多个精确 hostname 用逗号分隔。",
+                  })}
+                </div>
+                {field("api_key_env", "密钥环境变量名称", {
+                  pattern: "[A-Za-z_][A-Za-z0-9_]*",
+                  hint: current.api_key_credential
+                    ? "此连接已有 systemd 凭据关联，不能同时使用密钥环境变量。"
+                    : "只登记变量名称，真实密钥由服务端读取。",
+                })}
+                {current.api_key_credential && (
+                  <small>保留系统凭据关联：{current.api_key_credential}</small>
+                )}
+                {field("request_timeout_seconds", "请求超时 / 秒", {
+                  type: "number",
+                  fallback: video ? 60 : 120,
+                  min: 1,
+                  max: 600,
+                  required: true,
+                })}
+              </details>
             </>
           )}
           {!video && (
-            <>
+            <details className="connection-advanced">
+              <summary>模型能力与推理设置</summary>
               <div className="form-row">
                 {field("context_tokens", "上下文 Token 上限", {
                   type: "number",
@@ -1087,7 +1285,7 @@ function ProfileEditor({
                 />
                 支持图像输入
               </label>
-            </>
+            </details>
           )}
           {cloud && (
             <>

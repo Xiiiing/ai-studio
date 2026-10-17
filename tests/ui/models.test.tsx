@@ -697,6 +697,9 @@ describe("实际模型设置页面", () => {
       within(card).getByRole("button", { name: "编辑连接" }),
     );
     const dialog = screen.getByRole("dialog");
+    await userEvent.click(
+      within(dialog).getByText("高级连接设置", { exact: true }),
+    );
     expect(
       within(dialog).getByText("保留系统凭据关联：qwen38_primary"),
     ).toBeVisible();

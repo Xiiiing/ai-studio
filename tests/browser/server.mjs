@@ -290,6 +290,12 @@ const server = http.createServer(async (request, response) => {
       }
       if (url.pathname === "/api/factory/workflow-templates")
         return json(response, { templates: [] });
+      if (url.pathname === "/api/factory/models/discover")
+        return json(response, {
+          status: "ready",
+          models: [{ id: "fixture-discovered-model" }],
+          generation: false,
+        });
       if (url.pathname === "/api/factory/models/test")
         return json(response, {
           status: "unverified",

@@ -68,6 +68,9 @@ test("API speech connection and custom workflow import save without generation",
     page.getByLabel("制作密钥环境变量", { exact: true }),
   ).toHaveValue("DASHSCOPE_API_KEY");
   await page
+    .locator('#media-dialog input[name="api_key"]')
+    .fill("fixture-voice-key");
+  await page
     .getByRole("button", { name: "加入制作配置草稿", exact: true })
     .click();
   await page
@@ -97,6 +100,7 @@ test("API speech connection and custom workflow import save without generation",
     (c) => c.method === "POST" && c.path === "/api/factory/models",
   ).body;
   expect(saved.audio_profiles["my-voice"].provider).toBe("dashscope_tts");
+  expect(saved.secrets).toEqual({ "audio:my-voice": "fixture-voice-key" });
   expect(saved.audio_roles.speech_generator).toBe("my-voice");
   expect(
     calls.some(
@@ -167,13 +171,19 @@ for (const viewport of [
         () => document.documentElement.scrollWidth <= window.innerWidth,
       ),
     ).toBeTruthy();
-      await page.locator("#model-dialog").screenshot({
+    await page.locator("#model-dialog").screenshot({
       path: testInfo.outputPath(`h3-quality-${viewport.name}.png`),
     });
-      await page.locator('#model-dialog button[type="submit"]').scrollIntoViewIfNeeded();
-      await expect(page.locator('#model-dialog button[type="submit"]')).toBeInViewport();
-      if (viewport.name === "mobile")
-        await page.locator("#model-dialog").screenshot({ path: testInfo.outputPath("h3-quality-mobile-actions.png") });
+    await page
+      .locator('#model-dialog button[type="submit"]')
+      .scrollIntoViewIfNeeded();
+    await expect(
+      page.locator('#model-dialog button[type="submit"]'),
+    ).toBeInViewport();
+    if (viewport.name === "mobile")
+      await page.locator("#model-dialog").screenshot({
+        path: testInfo.outputPath("h3-quality-mobile-actions.png"),
+      });
     await page.locator('#model-dialog button[type="submit"]').click();
     await page.locator("#role-video-video_generator").selectOption("wkp_h3");
     await expect(
@@ -214,3 +224,147 @@ for (const viewport of [
     );
   });
 }
+
+for (const viewport of [
+  { name: "desktop", width: 1440, height: 1000 },
+  { name: "mobile", width: 390, height: 844 },
+]) {
+  test(`key-only cloud preset and custom URL discovery on ${viewport.name}`, async ({
+    page,
+    request,
+  }, testInfo) => {
+    await page.setViewportSize(viewport);
+    await models(page);
+    await page.getByLabel("使用方式", { exact: true }).selectOption("api");
+    await page.locator('[data-model-action="add"]').click();
+    const dialog = page.locator("#model-dialog");
+    await dialog.locator('input[name="id"]').fill("cloud-direct");
+    await dialog.locator('select[name="provider"]').selectOption("deepseek");
+    await expect(dialog.locator('input[name="base_url"]')).toBeHidden();
+    await expect(
+      dialog.getByText("OpenAI 兼容 · Chat Completions", { exact: true }),
+    ).toBeVisible();
+    await dialog
+      .locator('input[name="api_key"]')
+      .fill("fixture-cloud-only-token");
+    await expect(dialog.locator('input[name="api_key"]')).toHaveAttribute(
+      "type",
+      "password",
+    );
+    await expect(
+      dialog.getByLabel("密钥环境变量名称", { exact: true }),
+    ).toBeHidden();
+    expect(
+      await dialog
+        .locator(".provider-intro img")
+        .evaluate((img) => img.complete && img.naturalWidth > 0),
+    ).toBeTruthy();
+    await expect(dialog.locator('button[type="submit"]')).toBeInViewport();
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBeTruthy();
+    await dialog.screenshot({
+      path: testInfo.outputPath(`cloud-key-${viewport.name}.png`),
+    });
+    await dialog.locator('button[type="submit"]').click();
+    await page.locator('[data-model-action="save"]').click();
+    await expect(
+      page.getByRole("heading", { name: "cloud-direct", exact: true }),
+    ).toBeVisible();
+    await page.locator('[data-model-action="add"]').click();
+    await dialog
+      .getByRole("button", { name: "自定义 / 本地", exact: true })
+      .click();
+    await dialog.locator('input[name="id"]').fill("local-direct");
+    await dialog
+      .getByLabel("接口地址", { exact: true })
+      .fill("http://127.0.0.1:8090/gateway/v1/chat/completions");
+    await dialog.locator('input[name="model"]').fill("");
+    await dialog
+      .locator('input[name="api_key"]')
+      .fill("fixture-local-only-token");
+    await dialog
+      .getByRole("button", { name: "读取可用模型", exact: true })
+      .click();
+    await expect(dialog.locator('input[name="model"]')).toHaveValue(
+      "fixture-discovered-model",
+    );
+    await dialog.screenshot({
+      path: testInfo.outputPath(`custom-url-${viewport.name}.png`),
+    });
+    await dialog.locator('button[type="submit"]').click();
+    await page.locator('[data-model-action="save"]').click();
+    const calls = await (await request.get("/__test/calls")).json();
+    const saves = calls.filter(
+      (c) => c.path === "/api/factory/models" && c.method === "POST",
+    );
+    expect(saves[0].body.secrets).toEqual({
+      "llm:cloud-direct": "fixture-cloud-only-token",
+    });
+    expect(JSON.stringify(saves[0].body.profiles)).not.toContain(
+      "fixture-cloud-only-token",
+    );
+    expect(saves[1].body.secrets).toEqual({
+      "llm:local-direct": "fixture-local-only-token",
+    });
+    expect(saves[1].body.profiles["local-direct"]).toMatchObject({
+      base_url: "http://127.0.0.1:8090/gateway/v1",
+      network_mode: "loopback",
+      allowed_hosts: [],
+    });
+    expect(
+      calls.filter((c) => c.path === "/api/factory/models/discover"),
+    ).toHaveLength(1);
+    expect(
+      await page.evaluate(() => localStorage.length + sessionStorage.length),
+    ).toBe(0);
+    await page
+      .locator('[data-model-action="edit"][data-profile="cloud-direct"]')
+      .click();
+    await expect(dialog.locator('input[name="api_key"]')).toHaveValue("");
+    expect(
+      calls.some(
+        (c) =>
+          c.path.includes("generation") || c.path.includes("chat/completions"),
+      ),
+    ).toBeFalsy();
+  });
+}
+
+test("custom ComfyUI accepts a LAN URL and a separate Key without adding a chat API path", async ({
+  page,
+  request,
+}) => {
+  await models(page);
+  await page.getByLabel("使用方式", { exact: true }).selectOption("mixed");
+  await page.getByRole("button", { name: "添加图像连接", exact: true }).click();
+  await page
+    .getByLabel("制作服务类型", { exact: true })
+    .selectOption("comfyui_external");
+  await page.getByLabel("制作连接编号", { exact: true }).fill("lan-comfy");
+  await page
+    .getByLabel("ComfyUI 服务地址", { exact: true })
+    .fill("https://172.20.114.10:8188");
+  await page
+    .locator('#media-dialog input[name="api_key"]')
+    .fill("fixture-comfy-key");
+  await page
+    .getByRole("button", { name: "加入制作配置草稿", exact: true })
+    .click();
+  await page.locator('[data-model-action="save"]').click();
+  const calls = await (await request.get("/__test/calls")).json();
+  const saved = calls.find(
+    (c) => c.path === "/api/factory/models" && c.method === "POST",
+  ).body;
+  expect(saved.image_profiles["lan-comfy"]).toMatchObject({
+    base_url: "https://172.20.114.10:8188",
+    network_mode: "lan",
+    allowed_hosts: ["172.20.114.10"],
+  });
+  expect(saved.secrets).toEqual({ "image:lan-comfy": "fixture-comfy-key" });
+  expect(JSON.stringify(saved.image_profiles)).not.toContain(
+    "fixture-comfy-key",
+  );
+});
