@@ -175,6 +175,8 @@ def production_config(project, config):
                 ("schema_version", "llm", "llm_profiles", "llm_roles", "setup_incomplete") if key in config}
     from .media_profiles import resolve
     result["image_connection"] = resolve(config, "image")
+    if result['image_connection']['provider']=='comfyui_qwen_image21' and not result.get('gpu_service'):
+        raise ValueError('Qwen-Image-2.1 需要配置 Wkp 持久任务服务，不能在开发机启动模型')
     result["audio_connection"] = resolve(config, "audio")
     result["remote_step"] = True  # Worker executions always yield remote waiting.
     result["semantic_enabled"] = bool(config.get("quality",{}).get("semantic_enabled",True))

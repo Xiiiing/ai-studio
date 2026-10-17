@@ -1,0 +1,164 @@
+{
+  "schema_version": 1,
+  "llm": {
+    "provider": "llama_cpp",
+    "enabled": true,
+    "network_mode": "lan",
+    "base_url": "https://172.20.114.10:8790/inference/models/primary/v1",
+    "model": "qwen3.8-27b-q8-opt-2dflash",
+    "context_tokens": 32768,
+    "vision": false,
+    "response_format": "llama_json_schema",
+    "context_validation": "llama_tokenize",
+    "request_timeout_seconds": 480,
+    "chat_template_kwargs": {
+      "enable_thinking": false
+    },
+    "allowed_hosts": [
+      "172.20.114.10"
+    ],
+    "tls_ca_file_env": "CAMI_WKP_TLS_CA",
+    "tls_client_cert_env": "CAMI_WKP_TLS_CERT",
+    "tls_client_key_env": "CAMI_WKP_TLS_KEY"
+  },
+  "creative": {
+    "max_review_rounds": 4,
+    "separate_storyboard": true
+  },
+  "research": {
+    "provider": "google_news_rss",
+    "max_sources": 8,
+    "timeout_seconds": 15
+  },
+  "production": {
+    "gpu_cards": [
+      5
+    ],
+    "image_min_free_mib": 15000,
+    "gpu_min_free_mib": 15000,
+    "max_gpu_workers": 1,
+    "max_parallel": 1,
+    "max_attempts": 3,
+    "h3_prompting": "automatic",
+    "review_only_existing_videos": true,
+    "max_wall_seconds": 10800,
+    "max_gpu_seconds": 7200,
+    "image_width": 736,
+    "image_height": 1312,
+    "output_width": 720,
+    "output_height": 1280,
+    "comfy_start_port": 8340,
+    "video_profile": "fastwan",
+    "gpu_service": {
+      "base_url": "https://172.20.114.10:8790/inference",
+      "ca_file": "/path/to/ca.crt",
+      "client_cert": "/path/to/client.crt",
+      "client_key": "/path/to/client.key"
+    }
+  },
+  "web": {
+    "host": "127.0.0.1",
+    "port": 8787
+  },
+  "quality": {
+    "semantic_enabled": true,
+    "minimum_score": 60
+  },
+  "optimization": {
+    "strategy": "render_evaluate_repair",
+    "dspy_enabled": false,
+    "vbench_enabled": false
+  },
+  "llm_profiles": {
+    "primary": {
+      "provider": "llama_cpp",
+      "enabled": true,
+      "network_mode": "lan",
+      "base_url": "https://172.20.114.10:8790/inference/models/primary/v1",
+      "model": "qwen3.8-27b-q8-opt-2dflash",
+      "context_tokens": 32768,
+      "vision": false,
+      "response_format": "llama_json_schema",
+      "context_validation": "llama_tokenize",
+      "request_timeout_seconds": 480,
+      "chat_template_kwargs": {
+        "enable_thinking": false
+      },
+      "allowed_hosts": [
+        "172.20.114.10"
+      ],
+      "tls_ca_file_env": "CAMI_WKP_TLS_CA",
+      "tls_client_cert_env": "CAMI_WKP_TLS_CERT",
+      "tls_client_key_env": "CAMI_WKP_TLS_KEY"
+    },
+    "vision": {
+      "provider": "llama_cpp",
+      "enabled": true,
+      "network_mode": "lan",
+      "base_url": "https://172.20.114.10:8790/inference/models/vision/v1",
+      "model": "qwen3.8-27b-q8-vision",
+      "context_tokens": 32768,
+      "vision": true,
+      "response_format": "llama_json_schema",
+      "context_validation": "llama_tokenize",
+      "request_timeout_seconds": 480,
+      "chat_template_kwargs": {
+        "enable_thinking": false
+      },
+      "allowed_hosts": [
+        "172.20.114.10"
+      ],
+      "tls_ca_file_env": "CAMI_WKP_TLS_CA",
+      "tls_client_cert_env": "CAMI_WKP_TLS_CERT",
+      "tls_client_key_env": "CAMI_WKP_TLS_KEY",
+      "image_token_budget": 1024
+    }
+  },
+  "llm_roles": {
+    "researcher": "primary",
+    "creator": "primary",
+    "story_editor": "primary",
+    "story_critic": "primary",
+    "screenwriter": "primary",
+    "storyboard_director": "primary",
+    "independent_critic": "primary",
+    "visual_designer": "primary",
+    "prompt_style_compiler": "primary",
+    "visual_critic": "vision",
+    "dialogue_editor": "primary",
+    "edit_director": "primary",
+    "executive_producer": "primary"
+  },
+  "video_profiles": {
+    "wkp_h3": {
+      "provider": "comfyui_h3",
+      "enabled": true,
+      "model": "MiniMax-H3",
+      "revision": "wkp-dualgpu-turbo4-v1"
+    }
+  },
+  "video_roles": {
+    "video_generator": "wkp_h3"
+  },
+  "image_profiles": {
+    "wkp_qwen_image21": {
+      "provider": "comfyui_qwen_image21",
+      "model": "Qwen-Image-2.1",
+      "enabled": true,
+      "steps": 8
+    }
+  },
+  "image_roles": {
+    "image_generator": "wkp_qwen_image21"
+  },
+  "audio_profiles": {
+    "wkp_tts": {
+      "provider": "qwen_tts_local",
+      "model": "Qwen3-TTS-1.7B",
+      "enabled": true
+    }
+  },
+  "audio_roles": {
+    "speech_generator": "wkp_tts"
+  }
+}

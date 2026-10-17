@@ -13,11 +13,12 @@ MEDIA_PROVIDERS = {
     'dashscope_image': {'label': '百炼图像 API'},
     'dashscope_tts': {'label': '百炼语音 API'},
     'qwen_tts_local': {'label': '本地 Qwen3-TTS'},
+    'comfyui_qwen_image21': {'label': 'Wkp Qwen-Image-2.1（持久任务）'},
 }
 COMMON = {'provider', 'enabled', 'model', 'revision', 'base_url', 'network_mode', 'allowed_hosts',
           'api_key_env', 'tls_ca_file_env', 'tls_client_cert_env', 'tls_client_key_env',
           'workflow_template', 'reference_templates', 'model_files', 'python_path', 'model_dir', 'voices',
-          'default_voice', 'language', 'request_timeout_seconds', 'pricing', 'download_hosts', 'max_download_bytes'}
+          'default_voice', 'language', 'request_timeout_seconds', 'pricing', 'download_hosts', 'max_download_bytes', 'steps'}
 
 
 def normalize_media(value, kind):
@@ -26,10 +27,13 @@ def normalize_media(value, kind):
     _reject_secret_fields(value)
     p = copy.deepcopy(value)
     valid = {'legacy', 'comfyui_local', 'comfyui_external'} if kind in {'image', 'video'} else {'legacy', 'qwen_tts_local', 'dashscope_tts'}
-    if kind == 'image': valid.add('dashscope_image')
+    if kind == 'image': valid.update({'dashscope_image', 'comfyui_qwen_image21'})
     if p.get('provider') not in valid:
         raise ValueError('不支持的制作供应商')
     p.setdefault('enabled', True)
+    if p['provider'] == 'comfyui_qwen_image21':
+        if p.get('model') != 'Qwen-Image-2.1': raise ValueError('请选择 Qwen-Image-2.1 模型')
+        if type(p.get('steps', 8)) is not int or not 1 <= p.get('steps', 8) <= 40: raise ValueError('图像采样步数须为1至40')
     if type(p['enabled']) is not bool: raise ValueError('enabled 必须为布尔值')
     p['model'] = _valid_text(p.get('model'), 'model')
     p.setdefault('request_timeout_seconds', 120)
@@ -117,6 +121,7 @@ def inventory(config):
                   'comfyui_external': {'provider': 'comfyui_external', 'model': 'Wan2.2-TI2V-5B', 'enabled': True, 'base_url': 'http://127.0.0.1:8188', 'network_mode': 'loopback', 'allowed_hosts': []}}}}
     result['media_presets']['image']['dashscope_image'] = {'provider':'dashscope_image','model':'qwen-image-2.1-pro','enabled':True,'network_mode':'remote','allowed_hosts':['dashscope.aliyuncs.com'],'base_url':'https://dashscope.aliyuncs.com/compatible-mode/v1','api_key_env':'DASHSCOPE_API_KEY'}
     result['media_presets']['audio']['dashscope_tts'] = {'provider':'dashscope_tts','model':'qwen3-tts-flash','enabled':True,'network_mode':'remote','allowed_hosts':['dashscope.aliyuncs.com'],'base_url':'https://dashscope.aliyuncs.com/api/v1','api_key_env':'DASHSCOPE_API_KEY','default_voice':'Cherry','language':'Chinese','voices':{'female':'Cherry','male':'Ethan','narrator':'Cherry'}}
+    result['media_presets']['image']['comfyui_qwen_image21'] = {'provider': 'comfyui_qwen_image21', 'model': 'Qwen-Image-2.1', 'enabled': True, 'steps': 8}
     for kind in KINDS:
         profiles, roles = registry(config, kind)
         result.update({kind + '_profiles': profiles, kind + '_roles': roles})
@@ -144,6 +149,14 @@ def probe(profile, kind):
         result.update(status='disabled'); return result
     if profile.get('api_key_env') and not secret_value(profile['api_key_env']):
         result.update(status='error', message='连接缺少可用 API Key'); return result
+    if profile['provider'] == 'comfyui_qwen_image21':
+        from .config import load_config
+        from .gpu_client import GPUClient
+        service = load_config().get('production', {}).get('gpu_service')
+        if not service: raise ValueError('Qwen Image 需要配置 Wkp 持久任务服务')
+        observed = GPUClient(service).request('/health')
+        backend = observed.get('image_backends', {}).get('comfyui_qwen_image21', {})
+        result.update(network_checked=True, model_match=backend.get('model') == profile['model'], status='configured' if backend.get('installed') else 'error')
     if profile['provider'] == 'comfyui_external':
         from .external_comfy import ExternalComfy
         info = ExternalComfy(profile).check()
