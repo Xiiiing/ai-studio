@@ -1,7 +1,8 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useShotDraft } from "./SessionDraft";
+import { ShotVersions } from "./ShotVersions";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Image, Film, Save, Play, ArrowUpRight } from "lucide-react";
+import { Film, Save, Play, ArrowUpRight } from "lucide-react";
 import {
   request,
   keys,
@@ -10,7 +11,6 @@ import {
   mediaUrl,
   money,
   parseMoney,
-  ownedMedia,
   type RecordData,
 } from "./api";
 import {
@@ -112,9 +112,6 @@ function ShotDetail({
     shot.id,
   );
   const [editorOpen, setEditorOpen] = useState(!!draft);
-  const candidates = [...rows(shot.candidates)].sort(
-    (a, b) => Number(b.stage === "video") - Number(a.stage === "video"),
-  );
   const revision = draft?.revision ?? board.revision,
     stale = !!draft && revision !== board.revision,
     disabled = busy || !board.editable || !!error;
@@ -145,7 +142,6 @@ function ShotDetail({
   return (
     <div className="shot-detail">
       <header className="shot-detail-heading">
-        <div className="eyebrow">SHOT {shot.id}</div>
         <h2>
           {shot.id} · {shot.dramatic_beat || shot.action || "镜头详情"}
         </h2>
@@ -160,29 +156,17 @@ function ShotDetail({
           先暂停制作，等待当前安全步骤结束后，即可精修或选片。
         </div>
       )}
-      <h3 className="section-label">
-        候选比较 <span>{rows(shot.candidates).length} 个版本</span>
-      </h3>
       {rows(board.errors).length > 0 && (
         <ErrorNotice error={"部分候选回执不可用：" + text(board.errors)} />
       )}
-      <div className="candidate-grid">
-        {candidates.map((c) => (
-          <Candidate
-            projectId={project.id}
-            key={c.id || c.stage + ":" + c.take}
-            candidate={c}
-            revision={board.revision}
-            disabled={disabled || stale || !c.selectable}
-            onSubmit={mutate}
-          />
-        ))}
-      </div>
-      {!rows(shot.candidates).length && (
-        <Empty title="此镜头尚无候选">
-          素材生成后可比较画面、视频与审核记录。
-        </Empty>
-      )}
+      <ShotVersions
+        projectId={project.id}
+        candidates={rows(shot.candidates)}
+        revision={board.revision}
+        disabled={disabled || stale}
+        onSubmit={mutate}
+        truncated={!!shot.truncated}
+      />
       <details
         className="shot-editor"
         open={editorOpen}
@@ -310,106 +294,6 @@ function ShotDetail({
         </form>
       </details>
     </div>
-  );
-}
-function Candidate({
-  candidate: c,
-  revision,
-  disabled,
-  onSubmit,
-  projectId,
-}: {
-  projectId: string;
-  candidate: RecordData;
-  revision: number;
-  disabled: boolean;
-  onSubmit: (body: RecordData) => void;
-}) {
-  const [confirmed, setConfirmed] = useState(false),
-    [base, setBase] = useState(revision);
-  const stale = confirmed && base !== revision,
-    url = ownedMedia(projectId, c.media_url);
-  return (
-    <article className="candidate-card">
-      <header className="row-between">
-        <strong>
-          {c.take} · {c.stage === "video" ? "视频" : "画面"}
-        </strong>
-        <Badge status={c.status} />
-      </header>
-      {url ? (
-        c.stage === "video" ? (
-          <video controls playsInline preload="metadata" src={url} />
-        ) : (
-          <img src={url} alt={"候选 " + c.take} loading="lazy" />
-        )
-      ) : (
-        <div className="media-empty">
-          <Image size={24} />
-          尚无可预览素材
-        </div>
-      )}
-      <div className="candidate-body">
-        <p>
-          {c.producer_selected
-            ? "出品人已选定"
-            : c.plan_current
-              ? "当前参数候选"
-              : "历史参数候选"}
-        </p>
-        <small>模型：{c.model || c.receipt?.model || "未记录"}</small>
-        {c.cost && (
-          <small>
-            估算 {money(c.cost.estimated_cost_micros, c.cost.currency)} · 确认{" "}
-            {money(c.cost.confirmed_cost_micros, c.cost.currency)}
-          </small>
-        )}
-        <details>
-          <summary>评分、参数与失败原因</summary>
-          <Readable value={c.qa} />
-          {c.error && <ErrorNotice error={c.error} />}
-          <Readable value={c.parameters} />
-          <p>{c.prompt}</p>
-        </details>
-        <form
-          data-shot-operation="select"
-          onSubmit={(e) => {
-            e.preventDefault();
-            onSubmit({
-              action: "select",
-              stage: c.stage,
-              take: c.take,
-              confirmed: true,
-              expected_revision: base,
-            });
-          }}
-        >
-          <label className="check">
-            <input
-              type="checkbox"
-              name="confirmed"
-              required
-              disabled={disabled}
-              checked={confirmed}
-              onChange={(e) => {
-                setBase(revision);
-                setConfirmed(e.target.checked);
-              }}
-            />
-            确认采用此候选，保留原素材
-          </label>
-          {stale && (
-            <p className="error-text">候选状态已更新，请重新勾选确认。</p>
-          )}
-          <button
-            className="button full"
-            disabled={disabled || stale || !confirmed}
-          >
-            设为选定素材
-          </button>
-        </form>
-      </div>
-    </article>
   );
 }
 export function Series({
