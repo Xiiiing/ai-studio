@@ -390,7 +390,7 @@ def decide(pid, payload, actor=None):
         p["error"] = None
         _write(db, p)
         _event(db, pid, "已记录选择，制片团队继续执行。", "decision", answer)
-        _enqueue(db, pid)
+        _enqueue(db, pid, 'drama_episode' if p.get('record_kind') == 'episode' else 'workflow')
         return p
 
 

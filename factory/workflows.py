@@ -350,6 +350,8 @@ def revision(state):
 
 
 def build_graph(checkpointer, workflow_version=1):
+    if workflow_version == 3:
+        return _build_graph_v2(checkpointer, pinned=True)
     if workflow_version == 2:
         return _build_graph_v2(checkpointer)
     if workflow_version != 1:
@@ -532,7 +534,7 @@ def visual_design(state):
     return {'route':'continue','style_generation':generation}
 
 
-def _build_graph_v2(checkpointer):
+def _build_graph_v2(checkpointer, pinned=False):
     from .team_tasks import tracked_node
     builder=StateGraph(State)
     nodes={'research':research,'proposals':proposals,'story_decision':story_decision,
@@ -542,16 +544,28 @@ def _build_graph_v2(checkpointer):
            'production':production,'final_decision':final_decision,'apply_final':apply_final,'revision':revision}
     for name,fn in nodes.items():
         builder.add_node(name,tracked_node(name,fn) if name not in {'story_decision','apply_story','style_decision','apply_style','final_decision','apply_final'} else fn)
-    for source,target in [(START,'research'),('research','proposals'),('proposals','story_decision'),
+    for source,target in [((START if not pinned else 'unused_start'),'research'),('research','proposals'),('proposals','story_decision'),
                           ('story_decision','apply_story'),('story_resolution','screenplay'),
                           ('screenplay','storyboard'),('storyboard','script_review'),
                           ('visual_design','visual_development'),('visual_development','style_decision'),
                           ('style_decision','apply_style'),('final_decision','apply_final'),('revision','production')]:
-        builder.add_edge(source,target)
+        if source != 'unused_start': builder.add_edge(source,target)
+    if pinned: builder.add_edge(START, 'story_resolution')
     builder.add_conditional_edges('apply_story',lambda s:s['route'],{'repropose':'proposals','continue':'story_resolution'})
     builder.add_conditional_edges('script_review',lambda s:s['route'],{'repair':'screenplay','continue':'visual_design'})
     builder.add_conditional_edges('apply_style',lambda s:s['route'],{'restyle':'visual_design','continue':'production'})
-    builder.add_conditional_edges('production',lambda s:s['route'],{'continue':'final_decision','revision':'revision'})
+    if pinned:
+        def unit_done(state):
+            p = _project(state)
+            store.update(p['id'], {'status': 'unit_ready', 'stage': 'unit_ready', 'progress': 100})
+            return {'route': 'continue'}
+        builder.add_node('unit_ready', unit_done)
+        builder.add_edge('unit_ready', END)
+        builder.add_conditional_edges('production', lambda s: 'revision' if s['route'] == 'revision' else
+            'unit' if store.get(s['project_id'], False).get('record_kind') == 'scene_unit' else 'continue',
+            {'continue':'final_decision','revision':'revision','unit':'unit_ready'})
+    else:
+        builder.add_conditional_edges('production',lambda s:s['route'],{'continue':'final_decision','revision':'revision'})
     builder.add_conditional_edges('apply_final',lambda s:s['route'],{'done':END,'revision':'revision'})
     return builder.compile(checkpointer=checkpointer)
 
@@ -570,7 +584,7 @@ def _restart_graph(graph,snapshot,project,configuration):
     routes={'research':(START,'continue'),'proposals':('research','continue'),
             'story_resolution':('apply_story','continue'),'screenplay':('story_resolution','continue'),
             'visual_design':('script_review','continue'), 'storyboard':('screenplay','continue'),
-            'script_review':('storyboard','continue')} if version == 2 else {
+            'script_review':('storyboard','continue')} if version in {2,3} else {
             'research':(START,'continue'),'proposals':('research','continue'),
             'story_resolution':('apply_story','continue'),'screenplay':('apply_story','continue'),
             'visual_design':('apply_style','restyle')}

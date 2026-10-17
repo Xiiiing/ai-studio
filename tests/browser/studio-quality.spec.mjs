@@ -275,6 +275,7 @@ test("real project creation, partial image recovery, full-size preview and visua
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "展开导航" }).click();
   await page.locator('[data-action="new-project"]').click();
+    await page.getByRole("button", { name: "使用原单集入口" }).click();
   await page
     .getByLabel("项目名称 / 可选", { exact: true })
     .fill("素材准备闭环测试");

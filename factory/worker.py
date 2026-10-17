@@ -37,6 +37,11 @@ def handle(job):
         return  # A completed/recovered claim is not permission to execute again.
     pid=job["project_id"]
     try:
+        if job.get('kind') in {'drama_plan', 'drama_episode'}:
+            from .drama_runtime import run_plan, execute_episode
+            (run_plan if job['kind'] == 'drama_plan' else execute_episode)(pid)
+            store.finish_job(job['id'], lease=job['lease'])
+            return
         if job.get("kind") == "team_instruction":
             from .team_control import process_pending
             process_pending(pid)
@@ -110,6 +115,10 @@ def handle(job):
             print(json.dumps({"event":"project_needs_attention","project":pid,"reason_type":needs.get("kind") or needs.get("type"),"exception_type":name},ensure_ascii=False),flush=True)
         else:
             traceback.print_exc()
+    finally:
+        if job.get('kind') == 'drama_episode':
+            from .dramas import after_episode
+            after_episode(pid)
 
 
 def main():

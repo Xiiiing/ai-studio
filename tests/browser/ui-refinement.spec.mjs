@@ -336,6 +336,7 @@ test("Escape closes nested error details while preserving the project form and i
 }) => {
   await page.goto("/");
   await page.locator('[data-action="new-project"]').click();
+    await page.getByRole("button", { name: "使用原单集入口" }).click();
   const form = page.getByRole("dialog", {
     name: "发起一部新制作",
     exact: true,

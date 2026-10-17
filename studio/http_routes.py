@@ -29,6 +29,10 @@ PID = r"[a-f0-9]{12}"
 JID = r"[a-f0-9]{32}"
 PROJECT = r"/api/factory/projects/" + PID
 FACTORY_ROUTES = (
+    Route('GET', r'/api/factory/dramas', 'read', 'dramas'),
+    Route('POST', r'/api/factory/dramas', 'modify', 'create_drama', 262144),
+    Route('GET', r'/api/factory/dramas/' + PID + r'(?:/(episodes|batches))?', 'read', 'drama'),
+    Route('POST', r'/api/factory/dramas/' + PID + r'/(confirm|generate|actions)', 'task_control', 'drama_control', 262144),
     Route("GET", r"/legacy", "ui", "legacy_alias"),
     Route("GET", r"/factory/static/.+", "ui", "factory_static"),
     *(Route("GET", "/api/factory/" + name, "read", name) for name in (
