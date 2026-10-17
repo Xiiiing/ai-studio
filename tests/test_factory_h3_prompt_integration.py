@@ -196,6 +196,113 @@ def test_director_model_change_invalidates_generation(setup):
     assert target(production._Run(project, cfg, None, None))['signature'] != before
 
 
+def test_first_frame_reassessment_changes_review_but_not_video_inputs(setup):
+    project, cfg, target, *_ = setup
+    cfg.update(semantic_enabled=True, semantic_model_identity={'context_tokens':8192})
+    project['episode']['shots'][0]['image']['qa'] = {'status':'pass', 'semantic':{'summary':'First assessment'}}
+    before = target(production._Run(project, cfg, None, None))
+    project['episode']['shots'][0]['image']['qa']['semantic'] = {'summary':'New assessment', 'score':95}
+    cfg['semantic_model_identity']['context_tokens'] = 32768
+    after = target(production._Run(project, cfg, None, None))
+    assert before['signature'] == after['signature']
+    assert before['review_signature'] != after['review_signature']
+
+
+def test_video_plan_matches_renderer_duration_normalization(setup):
+    project, cfg, target, *_ = setup
+    raw = project['episode']['shots'][0]
+    raw['seconds'] = 6
+    raw['motion_prompt'] = raw['prompt']
+    run = production._Run(project, cfg, None, None)
+    assert plan_signature(project, raw, 'video') == plan_signature(project, run.shots[0], 'video')
+    raw['seconds'] = 6.1
+    assert plan_signature(project, raw, 'video') != plan_signature(project, run.shots[0], 'video')
+
+
+def legacy_pending_video(setup, monkeypatch):
+    """Create a real CPU clip with the pre-fix QA-bound signature on disk."""
+    project, cfg, target, events, compiles, executions, frame = setup
+    cfg.update(semantic_enabled=True, semantic_max_attempts=1)
+    old_qa = {'status':'pass', 'semantic':{'status':'pass', 'summary':'Original keyframe assessment'}}
+    project['episode']['shots'][0]['image']['qa'] = old_qa
+    run = production._Run(project, cfg, None, None, evaluator=lambda *a:{'status':'unavailable','issues':[]})
+    original_fingerprint = production.fingerprint
+    def old_signature(value):
+        if 'h3_prompt_compiler' in value and 'first_frame_review' not in value:
+            value = {**value, 'first_frame_review':old_qa}
+        return original_fingerprint(value)
+    with monkeypatch.context() as old:
+        old.setattr(production, 'fingerprint', old_signature)
+        current = target(run)
+    with pytest.raises(scheduler.ProductionNeedsDecision, match='semantic reviewer'):
+        run._render_targets([current], 'diffusion_video')
+    for name in ('attempt.json', 'result.json', 'pending_review.json'):
+        path = current['folder']/name if name == 'pending_review.json' else current['folder']/'take_001'/name
+        value = core.read_json(path)
+        value.pop('generation_signature', None)
+        core.write_json(path, value)
+    return run, cfg, target, current
+
+
+@pytest.mark.parametrize('with_contract', [False, True])
+def test_locked_legacy_pending_video_is_reviewed_without_director_or_gpu(setup, monkeypatch, with_contract):
+    if with_contract:
+        setup[0]['creative_contract'] = {'schema_version':1, 'visual_style':'photorealistic',
+            'story_mode':'standalone', 'pacing':'short_drama', 'motion':'generated_video'}
+    run, cfg, target, old = legacy_pending_video(setup, monkeypatch)
+    _, _, _, _, compiles, executions, frame = setup
+    before = core.sha256(old['folder']/'take_001/video.mp4')
+    run.project['episode']['shots'][0]['image']['qa'] = {'status':'pass','semantic':{'summary':'Reassessed'}}
+    cfg['semantic_model_identity'] = {'context_tokens':32768}
+    def locked(pid, kind, scope, *, check_locks=True):
+        if kind == 'video' and check_locks:
+            raise production.team_control.TeamInterventionPending('Locked: no new generation')
+    monkeypatch.setattr(production.team_control, 'admit', locked)
+    reviews = []
+    def review(project, shot, path, refs):
+        reviews.append(path)
+        return {'status':'pass','score':95,'issues':[]}
+    resumed = production._Run(run.project, cfg, None, None, evaluator=review)
+    current = target(resumed)
+    assert old['signature'] in current['compatible_source_signatures']
+    selected = resumed._render_targets([current], 'diffusion_video')[0]
+    assert selected['source_signature'] == old['signature']  # provenance/locks unchanged
+    assert selected['generation_signature'] == current['signature']
+    assert selected['take'] == 'take_001' and selected['sha256'] == before
+    assert len(reviews) == len(compiles) == len(executions) == 1
+    again = production._Run(resumed.project, cfg, None, None, evaluator=review)
+    again._render_targets([target(again)], 'diffusion_video')
+    assert len(reviews) == len(compiles) == len(executions) == 1
+
+
+@pytest.mark.parametrize('changed', ['action', 'frame', 'director', 'recipe', 'retake'])
+def test_legacy_compatibility_never_ignores_real_generation_changes(setup, monkeypatch, changed):
+    run, cfg, target, old = legacy_pending_video(setup, monkeypatch)
+    if changed == 'action':
+        run.project['episode']['shots'][0]['action'] = 'Leave the cup and walk out.'
+    elif changed == 'frame':
+        from PIL import Image
+        Image.new('RGB',(160,288),'red').save(setup[-1])
+    elif changed == 'director':
+        cfg['h3_prompt_config']['llm']['model'] = 'different-director'
+    elif changed == 'recipe':
+        cfg['video_connection']['shift_video'] = 11.0
+    else:
+        run.project['episode']['shots'][0]['render_revisions'] = {'video':1}
+    current = target(production._Run(run.project, cfg, None, None))
+    assert old['signature'] not in current['compatible_source_signatures']
+    assert current['signature'] != old['signature']
+
+
+def test_legacy_reuse_still_checks_video_bytes(setup, monkeypatch):
+    run, cfg, target, old = legacy_pending_video(setup, monkeypatch)
+    (old['folder']/'take_001/video.mp4').write_bytes(b'corrupt')
+    resumed = production._Run(run.project, cfg, None, None)
+    with pytest.raises(scheduler.ProductionNeedsDecision, match='checksum'):
+        resumed._render_targets([target(resumed)], 'diffusion_video')
+    assert len(setup[4]) == len(setup[5]) == 1
+
+
 def test_explicit_manual_mode_preserves_existing_motion_prompt(setup, monkeypatch):
     project, cfg, target, events, compiles, executions, _ = setup
     cfg['h3_prompting'] = 'manual'

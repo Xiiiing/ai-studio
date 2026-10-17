@@ -55,6 +55,11 @@ def _receipt_path(record):
     return path
 
 
+def _matching_source(record, target):
+    return (record.get("generation_signature", record.get("source_signature")) == target["signature"]
+            or record.get("source_signature") in target.get("compatible_source_signatures", ()))
+
+
 def _grounded_repair_plan(assessment, stage, attempt, expected=None, reference_roles=()):
     """Route structured diagnoses and ground new prompts in approved shot facts.
 
@@ -402,7 +407,7 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
         if not selected.exists():
             return None
         record = read_json(selected)
-        if record.get("source_signature") != target["signature"]:
+        if not _matching_source(record, target):
             return None
         _receipt_path(record)
         if record.get("qa", {}).get("status") == "fail":
@@ -491,7 +496,7 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
         records = []
         for path in sorted(target["folder"].glob("take_*/attempt.json")):
             record = read_json(path)
-            if record.get("source_signature") == target["signature"]:
+            if _matching_source(record, target):
                 record["_file"] = str(path)
                 records.append(record)
         return records
@@ -514,7 +519,8 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
     def _team_publish_target(self, target):
         identity = self._team_target(target)
         if identity:
-            team_control.assert_publishable(self.ident, *identity, input_version=target["signature"])
+            team_control.assert_publishable(self.ident, *identity, input_version=target["signature"],
+                                            compatible_input_versions=target.get("compatible_source_signatures", ()))
         else:
             team_control.assert_publishable(self.ident, "stage", "visual_development")
 
@@ -619,15 +625,30 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                                     if (extra.get("shot") or {}).get("render_revisions", {}).get(kind) else {}),
                                  **({"production_profile": profile_signature(self.project)} if explicit_profile(self.project) else {})})
         shot = extra.get("shot") or extra.get("review_context") or {}
+        compatible_sources = []
         if kind == "video" and self.h3_automatic:
             from .h3_prompting import identity
-            signature = fingerprint({"source": signature,
+            generation_inputs = {"source": signature,
                 "h3_prompt_compiler": identity(self.config.get("h3_prompt_config", {})),
                 "approved_shot": {key: shot.get(key) for key in (
                     "action", "continuity", "characters", "character_states", "cast", "lip_sync",
                     "camera_motion", "motion_prompt", "prompt", "material_constraints")},
-                "style": self.style_prompt, "cast": self.cast,
-                "first_frame_review": shot.get("image", {}).get("qa")})
+                "style": self.style_prompt, "cast": self.cast}
+            signature = fingerprint(generation_inputs)
+            # Old H3 signatures included the full first-frame QA. Reconstruct
+            # each old hash with its saved QA, but with ALL current generation
+            # inputs (including actual frame bytes, recipe and compiler).
+            # A matching frame alone cannot authorize reuse after a shot edit.
+            for path in folder.glob("take_*/attempt.json"):
+                old = read_json(path)
+                old_refs = old.get("references") or []
+                if not old_refs or not isinstance(old_refs[0], dict):
+                    continue
+                legacy = fingerprint({**generation_inputs, "first_frame_review": old_refs[0].get("qa")})
+                if self.creative_contract:
+                    legacy = fingerprint({"source_signature": legacy, "creative_contract": self.creative_contract})
+                if old.get("source_signature") == legacy:
+                    compatible_sources.append(legacy)
         expected = {key: shot.get(key) for key in (
             "id", "seconds", "prompt", "motion_prompt", "dialogue", "reference_group",
             "reference_shots", "continuity", "camera_motion", "action", "cast", "characters")}
@@ -648,7 +669,8 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
         if self.project.get("team_review_revisions", {}).get(review_key):
             review_signature = fingerprint({"review": review_signature, "producer_review_revision": self.project["team_review_revisions"][review_key]})
         return {"key": key, "folder": folder, "prompt": prompt, "references": refs,
-                "kind": kind, "signature": signature, "review_signature": review_signature, **extra}
+                "kind": kind, "signature": signature, "review_signature": review_signature,
+                "compatible_source_signatures": compatible_sources, **extra}
 
     def _unfinished_candidate(self, target):
         self._guard_remote_submissions(target)
@@ -970,6 +992,13 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                                                  "cloud_diffusion_video" if self._remote_video(target) else "local_diffusion_video")}
                     if target["kind"] == "video":
                         saved.update(motion_method="generated_video", diffusion_video=True)
+                        if self.h3_automatic:
+                            record["generation_signature"] = target["signature"]
+                            saved["generation_signature"] = target["signature"]
+                            # Locks and provenance retain the original source
+                            # receipt. The new canonical identity is separate.
+                            if _matching_source(receipt, target):
+                                saved["source_signature"] = receipt["source_signature"]
                         if record.get("h3_prompt"):
                             saved["h3_prompt"] = copy.deepcopy(record["h3_prompt"])
                         if self.video_connection["provider"] == "comfyui_h3":

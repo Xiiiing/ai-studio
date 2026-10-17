@@ -189,7 +189,9 @@ REVIEW_SCHEMA={
       "summary":{"type":"string"},
       "issues":{"type":"array","items":{"type":"object","additionalProperties":False,
         "properties":{"code":{"type":"string","enum":["identity","anatomy","composition","continuity","action","off_prompt","low_quality"]},
-                      "severity":{"type":"string","enum":["minor","blocking"]},"detail":{"type":"string"}},
+                      "severity":{"type":"string","enum":["minor","blocking"],
+                                  "description":"blocking requires visible evidence of a serious story, identity, prop, anatomy or approved-style error. Cosmetic differences alone are minor."},
+                      "detail":{"type":"string"}},
         "required":["code","severity","detail"]}}
     },"required":["status","score","summary","issues"]
 }
@@ -299,6 +301,12 @@ def review_media(project, shot, path, references, config=None, *, output_dir=Non
         "criteria":{"pass":"叙事主体/服装/构图足够匹配，无明显多肢/脸部崩坏或关键剧情错置",
                     "fail":"仅对清晰可见且影响剧情的严重错误判fail；不能从单张静态图推断口型或全过程表演连续性"},
         "evidence_rule":"只用待评镜头样本判断当前人物动作、道具持有人、位置与构图；参考图仅用于身份和衣装对照，参考图中的持物或背景不代表候选帧已经具备。逐项根据本次可见证据判断，不猜测历史评审。",
+        "severity_rule": (
+            "blocking必须指出候选中的明确可见证据，以及它如何改变关键剧情、人物身份、必要道具/状态、指定画风或造成严重人体崩坏。"
+            "同一叙事事实的特效软硬边缘、粒子外形和细小姿态差异，未改变关键含义时只能记minor，不得单独判fail或据此给低于合格线的分数。"
+            "特效应服从批准的媒介风格，硬边赛璐璐无需具备写实烟雾的柔软渐变。"
+            "判断违规文字须指出实际可读内容，不能仅凭装饰性圆点、三角或交叉形状联想到字母就认定为文字。"
+            "禁止把具体要求缺失等严重问题降级为minor；人物/道具缺失、错误持物、剧情错置及视频批准动作未兑现仍须阻断。"),
         "note":"这是抽帧视觉语言模型评审，不是VBench，分数是模型判断，不是客观真值。",
         "project_id":project.get("id"),"production_revision":project.get("production_revision"),
         "production_profile":project.get("production_profile")
@@ -322,9 +330,21 @@ def review_media(project, shot, path, references, config=None, *, output_dir=Non
         if not is_video and contract["motion"] == "generated_video":
             context["shot"].pop("action", None)
             context["shot"].pop("motion_prompt", None)
+            context["shot"].pop("continuity", None)
+            # The current shot's sequence entry can repeat the future action
+            # ("opens her eyes") as continuity. Do not leak it back into the
+            # static-frame gate after excluding action/motion_prompt above.
+            # Other shots remain available for prop-order contradictions.
+            context["approved_sequence"] = [entry for entry in context["approved_sequence"]
+                                            if entry.get("id") != shot.get("id")]
             context["任务"] = (
                 "本次只评静态起始关键帧，不是完整视频。根据prompt检查指定画风、人物、衣装、构图和初始道具状态。"
                 "图片不需要已经完成整个动作，不得因为未抬手、未走到终点或没有发生位移而阻断；人物动作将在视频阶段独立审核。")
+            context["keyframe_rule"] = (
+                "只检查静态初态是否能合理承接批准动作；单帧无法证明开始睁眼、眨眼或烟雾逐渐出现等过程。"
+                "approved_sequence中本镜的观察、转头等动作不要求在起始帧已发生；低头待反应不能因尚未看向新出现的特效而阻断。"
+                "眼睛半开/全开等相近初态，若未改变人物正在观察的关键对象和剧情关系，不得单独阻断。"
+                "必须对照实际眼神/头部证据，不得把可见低头垂眼说成平视前方。")
         if shot.get("review_purpose") == "visual_direction_preview":
             context["approved_sequence"] = []
             context["shot"] = {key: context["shot"][key] for key in
@@ -387,14 +407,17 @@ def review_media(project, shot, path, references, config=None, *, output_dir=Non
     if errors:
         raise ValueError("VLM result does not match the visual review contract")
     blocking=[issue for issue in result["issues"] if issue["severity"]=="blocking"]
+    result["model_status"] = result["status"]
+    # The verdict follows the declared severity and configured score gate;
+    # a high-scoring cosmetic-only report cannot independently block a take.
+    result["status"] = ("fail" if blocking or result["score"] < config.get("quality",{}).get("minimum_score",60)
+                        else "pass")
     if result.get("material_alignment"):
         alignment = result["material_alignment"]
         if "mismatch" in alignment.values():
             result["status"] = "fail"
-        elif "uncertain" in alignment.values():
+        elif "uncertain" in alignment.values() and result["status"] != "fail":
             result["status"] = "unavailable"
-    if blocking or result["score"] < config.get("quality",{}).get("minimum_score",60):
-        result["status"]="fail"
     if contract:
         _enforce_contract_review(result, require_motion)
     selected_model = resolve_llm(config, "visual_critic", require_vision=True)
