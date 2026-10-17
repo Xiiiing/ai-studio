@@ -332,7 +332,7 @@ def _cloud_image(task, prompt, refs, folder, step):
 
 def _render_image(task, prompt, refs, folder, step, budget):
     from .scheduler import Budget, Scheduler
-    from studio.graphs import flux_image
+    from .image_generation import image_request
     data, profile = task["data"], task["data"]["image_profile"]
     folder.mkdir(parents=True, exist_ok=True)
     if profile["provider"] == "dashscope_image":
@@ -353,7 +353,7 @@ def _render_image(task, prompt, refs, folder, step, budget):
         else:
             if profile.get("reference_templates"):
                 raise ValueError("当前参考图数量没有对应工作流模板")
-            graph = flux_image(prompt, seed, 768, 1024, references=names)
+            graph = image_request(profile, prompt, seed, 768, 1024, references=names)
         for node in graph.values():
             for field, filename in profile.get("model_files", {}).items():
                 if field in node["inputs"]: node["inputs"][field] = filename
@@ -375,7 +375,7 @@ def _render_image(task, prompt, refs, folder, step, budget):
                     local = ExternalComfy({"base_url": worker.base, "network_mode": "loopback", "allowed_hosts": []})
                     path = local.execute(graph, folder, "image", loaded["output"], check=lambda: boundary(task))
                 else:
-                    graph = flux_image(prompt, seed, 768, 1024, references=names, prefix=task["id"])
+                    graph = image_request(profile, prompt, seed, 768, 1024, references=names, prefix=task["id"])
                     for node in graph.values():
                         for field, filename in profile["model_files"].items():
                             if field in node["inputs"]: node["inputs"][field] = filename
@@ -383,7 +383,7 @@ def _render_image(task, prompt, refs, folder, step, budget):
             else:
                 if profile.get("reference_templates"):
                     raise ValueError("当前参考图数量没有对应工作流模板")
-                graph = flux_image(prompt, seed, 768, 1024, references=names, prefix=task["id"])
+                graph = image_request(profile, prompt, seed, 768, 1024, references=names, prefix=task["id"])
                 path = worker.execute(graph, folder, "image", timeout=budget.timeout(1800))
     receipt = core.media_receipt(path, provider=profile["provider"], model=profile["model"], connection=identity(profile))
     if (folder / "result.json").exists(): receipt.update(core.read_json(folder / "result.json"))

@@ -18,6 +18,7 @@ from pathlib import Path
 
 from studio.core import ROOT, fingerprint, media_receipt, read_json, sha256, within, write_json
 from studio.graphs import flux_image, wan_video, h3_video
+from .image_generation import image_request
 from . import team_control, team_ledger
 from .audio_editor import AudioEditorMixin
 from .speech import SpeechMixin
@@ -955,7 +956,7 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                         try:
                             names = [worker.copy_input(p) for p in target["references"]]
                             if target["kind"] == "image":
-                                graph = flux_image(record["prompt"], record["seed"], *self.image_size,
+                                graph = image_request(self.config.get("image_connection", {}), record["prompt"], record["seed"], *self.image_size,
                                                    references=names, prefix=self.slug + "/" + target["key"])
                             else:
                                 if self.h3_automatic and record.get("repair_keyframe"):
@@ -976,7 +977,7 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                                                         record["repair"].get("prompt_suffix", "")) + "\n" +
                                                        self.style_prompt + " " + target["shot"]["prompt"] +
                                                        " Preserve each corresponding character identity and wardrobe.")
-                                    repair_graph = flux_image(keyframe_prompt, record["seed"], *self.image_size,
+                                    repair_graph = image_request(self.config.get("image_connection", {}), keyframe_prompt, record["seed"], *self.image_size,
                                                               references=repair_names,
                                                               prefix=self.slug + "/repair/" + target["key"])
                                     repair_path = worker.execute(repair_graph, target["folder"] / record["take"] / "repair_keyframe",

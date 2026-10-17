@@ -1,0 +1,19 @@
+{
+  "production": {
+    "gpu_cards": [
+      5
+    ],
+    "resident_h3": {
+      "base_url": "http://127.0.0.1:8346",
+      "gpu_cards": [
+        6,
+        7
+      ]
+    }
+  },
+  "model_routes": {
+    "primary": "qwen38_primary",
+    "critic": "qwen38_primary",
+    "vision": "qwen38_vision"
+  }
+}
