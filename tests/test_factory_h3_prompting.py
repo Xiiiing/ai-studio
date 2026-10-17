@@ -68,7 +68,7 @@ def test_registered_compiler_renders_anchor_sections_and_actual_director_receipt
     receipt = result["receipt"]
     assert receipt["quality_status"] == "pending_actual_media_review"
     assert receipt["compiler"]["model_identity"]["profile"] == "qwen"
-    assert receipt["prompt"]["status"] == "registered" and receipt["prompt"]["version"] == "3.0.0"
+    assert receipt["prompt"]["status"] == "registered" and receipt["prompt"]["version"] == "3.1.0"
     assert receipt["first_frame_sha256"] == "a" * 64
     assert receipt["rendered_prompt_sha256"] == hashlib.sha256(result["prompt"].encode()).hexdigest()
     assert calls[0]["request"]["model"] == "fixture-qwen"
@@ -108,6 +108,9 @@ def test_cache_reuses_exact_input_and_changes_with_model_action_frame_style_and_
     lambda p: p.update(status="blocked", blocked_reason="The approved handover cannot finish in this duration."),
     lambda p: p["timeline"][0].update(end_seconds=6),
     lambda p: p["timeline"][1].update(start_seconds=1),
+    lambda p: p["timeline"][0].update(start_seconds=.2),
+    lambda p: p["timeline"][1].update(start_seconds=2.2),
+    lambda p: p["timeline"][1].update(end_seconds=4.5),
     lambda p: p["timeline"][0].update(start_seconds=True),
     lambda p: p["timeline"][0].update(start_seconds=2, end_seconds=2),
     lambda p: p.update(timeline=[]),

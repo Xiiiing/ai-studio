@@ -120,3 +120,22 @@ def test_video_review_separates_observed_head_motion_from_approved_action_comple
     assert result["motion_alignment"]["status"] == "character_motion"
     assert result["status"] == ("fail" if action_mismatch else "pass")
     assert result["issues"] == issues
+
+
+def test_keyframe_excludes_future_story_beat_without_mutating_physical_state(tmp_path):
+    project={'slug':'factory-starting-state','format':'animation','creative_contract':{
+        'schema_version':1,'visual_style':'anime_2d','story_mode':'standalone','pacing':'short_drama','motion':'generated_video'}}
+    shot={'id':'S04','prompt':'Kneeling with lowered head and empty hands; marks are visible.',
+          'dramatic_beat':'FUTURE_DISCOVERY','action':'Open eyes and discover the marks.',
+          'character_states':{'female':{'position':'Kneeling, head lowered','held_props':[],
+                                       'story_state':'FUTURE_KNOWLEDGE'}}}
+    original=deepcopy(shot);seen={}
+    def request(*a,**kw):
+        seen['context']=json.loads(kw['content'][0]['text'])
+        return {'status':'pass','score':95,'summary':'Approved initial pose','issues':[],
+                'style_alignment':{'status':'match','evidence':'Drawn outlines and hard cel shadows'}}
+    with patch.object(llm,'_request',side_effect=request),patch.object(llm,'_image_url',return_value='data:image/png;base64,fixture'):
+        result=llm.review_media(project,shot,tmp_path/'first.png',[],{'llm':{'model':'fixture'}},output_dir=tmp_path/'qa')
+    assert result['status']=='pass' and shot==original
+    assert 'FUTURE_' not in json.dumps(seen['context'])
+    assert seen['context']['shot']['character_states']['female']=={'position':'Kneeling, head lowered','held_props':[]}

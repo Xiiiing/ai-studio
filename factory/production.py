@@ -227,8 +227,11 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
         if not 1 <= self.semantic_max_attempts <= 3:
             raise ValueError("semantic_max_attempts must be between one and three")
         explicit_policy = self.config.get("semantic_review_revision")
+        from .temporal_review import POLICY as temporal_evidence_policy
         self.review_policy = fingerprint({
             "policy": explicit_policy or "local_vlm_review_v2",
+            **({"temporal_evidence_policy": temporal_evidence_policy}
+               if not explicit_policy or self.h3_automatic else {}),
             "model": self.config.get("semantic_model"),
             **({"temporal_sampling": self.config.get("temporal_sampling", {
                 "policy": "uniform_endpoints_and_cut_neighbors.v1", "count": 8})}
@@ -237,7 +240,7 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                if self.config.get("semantic_model_identity") is not None else {}),
             "implementation": {} if explicit_policy else {
                 name: sha256(ROOT / "factory" / name)
-                for name in ("llm.py", "quality.py", "evaluation_sampling.py") if (ROOT / "factory" / name).is_file()},
+                for name in ("llm.py", "quality.py", "evaluation_sampling.py", "temporal_review.py") if (ROOT / "factory" / name).is_file()},
             "evaluator": (getattr(evaluator, "__module__", "") + "." +
                           getattr(evaluator, "__qualname__", type(evaluator).__name__)) if evaluator else None,
         })
@@ -627,7 +630,7 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
         shot = extra.get("shot") or extra.get("review_context") or {}
         compatible_sources = []
         if kind == "video" and self.h3_automatic:
-            from .h3_prompting import identity
+            from .h3_prompting import identity, compatible_compiler
             generation_inputs = {"source": signature,
                 "h3_prompt_compiler": identity(self.config.get("h3_prompt_config", {})),
                 "approved_shot": {key: shot.get(key) for key in (
@@ -644,11 +647,19 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                 old_refs = old.get("references") or []
                 if not old_refs or not isinstance(old_refs[0], dict):
                     continue
-                legacy = fingerprint({**generation_inputs, "first_frame_review": old_refs[0].get("qa")})
-                if self.creative_contract:
-                    legacy = fingerprint({"source_signature": legacy, "creative_contract": self.creative_contract})
-                if old.get("source_signature") == legacy:
-                    compatible_sources.append(legacy)
+                compilers = [generation_inputs["h3_prompt_compiler"]]
+                frozen = (old.get("h3_prompt") or {}).get("compiler")
+                if ((path.parent / "result.json").is_file()
+                        and compatible_compiler(frozen, compilers[0])):
+                    compilers.append(frozen)
+                for compiler in compilers:
+                    inputs = {**generation_inputs, "h3_prompt_compiler": compiler}
+                    for candidate in (inputs, {**inputs, "first_frame_review": old_refs[0].get("qa")}):
+                        legacy = fingerprint(candidate)
+                        if self.creative_contract:
+                            legacy = fingerprint({"source_signature": legacy, "creative_contract": self.creative_contract})
+                        if legacy in (old.get("source_signature"), old.get("generation_signature")):
+                            compatible_sources.append(legacy)
         expected = {key: shot.get(key) for key in (
             "id", "seconds", "prompt", "motion_prompt", "dialogue", "reference_group",
             "reference_shots", "continuity", "camera_motion", "action", "cast", "characters")}
@@ -683,8 +694,16 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                      not (folder / "submission.json").exists() and not result.exists())):
                 target["resume_attempt"] = record
                 return None
-            if record.get("state") in ("generated", "reviewing", "semantic_pending", "passed", "rendering") and result.exists():
+            reassess_failed = (
+                record.get("state") == "failed" and self._review_required(target)
+                and record.get("qa", {}).get("technical", {}).get("status") == "pass"
+                and bool(record.get("review_signature"))
+                and record["review_signature"] != target["review_signature"])
+            if (record.get("state") in ("generated", "reviewing", "semantic_pending", "passed", "rendering")
+                    or reassess_failed) and result.exists():
                 media = read_json(result)
+                if reassess_failed and not _matching_source(media, target):
+                    continue
                 _receipt_path(media)
                 return record, media
             if uses_bound(self, target) and record.get("state") == "rendering":

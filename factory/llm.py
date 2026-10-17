@@ -295,7 +295,7 @@ def review_media(project, shot, path, references, config=None, *, output_dir=Non
     record=Path(output_dir) if output_dir is not None else ROOT/"production"/project["slug"]/"quality"/"semantic"
     context={
         "任务":"评估新镜头与分镜的匹配及明确可见的严重瑕疵。先出现的是角色参考，后是带时间点的候选帧；不要把画风差异误判为同一角色身份漂移。score使用0至100整数，不是概率；问题证据应标注实际样本时间。相机运动不等于人物完成动作，有限抽样不可证明全过程正确。",
-        "format":project.get("format"),"shot":_review_expectations(shot),
+        "format":project.get("format"),"shot":copy.deepcopy(_review_expectations(shot)),
         "approved_sequence":_review_sequence(project),
         "sequence_rule":"approved_sequence是批准剧情时序，只用于检查明显的道具提前出现或持有人矛盾；只要求本镜动作，不要求单帧演完整段事件。",
         "criteria":{"pass":"叙事主体/服装/构图足够匹配，无明显多肢/脸部崩坏或关键剧情错置",
@@ -320,6 +320,11 @@ def review_media(project, shot, path, references, config=None, *, output_dir=Non
     is_video = path.suffix.lower() in {".mp4", ".webm", ".mov"}
     require_motion = bool(contract and is_video and contract["motion"] == "generated_video")
     schema = _contract_review_schema(require_motion) if contract else REVIEW_SCHEMA
+    if is_video:
+        from .temporal_review import RULE, concern_schema
+        schema = copy.deepcopy(schema)
+        schema["properties"]["temporal_concerns"] = concern_schema()
+        context["temporal_rule"] = RULE
     if shot.get("material_constraints"):
         schema = copy.deepcopy(schema)
         checks = {key: {"type": "string", "enum": ["match", "mismatch", "uncertain", "not_applicable"]} for key in ("identity", "style", "scene", "correspondence")}
@@ -331,6 +336,12 @@ def review_media(project, shot, path, references, config=None, *, output_dir=Non
             context["shot"].pop("action", None)
             context["shot"].pop("motion_prompt", None)
             context["shot"].pop("continuity", None)
+            context["shot"].pop("dramatic_beat", None)
+            states = context["shot"].get("character_states")
+            if isinstance(states, dict):
+                for state in states.values():
+                    if isinstance(state, dict):
+                        state.pop("story_state", None)
             # The current shot's sequence entry can repeat the future action
             # ("opens her eyes") as continuity. Do not leak it back into the
             # static-frame gate after excluding action/motion_prompt above.
@@ -344,7 +355,11 @@ def review_media(project, shot, path, references, config=None, *, output_dir=Non
                 "只检查静态初态是否能合理承接批准动作；单帧无法证明开始睁眼、眨眼或烟雾逐渐出现等过程。"
                 "approved_sequence中本镜的观察、转头等动作不要求在起始帧已发生；低头待反应不能因尚未看向新出现的特效而阻断。"
                 "眼睛半开/全开等相近初态，若未改变人物正在观察的关键对象和剧情关系，不得单独阻断。"
-                "必须对照实际眼神/头部证据，不得把可见低头垂眼说成平视前方。")
+                "必须对照实际眼神/头部证据，不得把可见低头垂眼说成平视前方。"
+                "能量连接、接触等空间关系应结合人物接触位置、局部光效与可见线条判断；"
+                "接触区域已有对应光效或线条时，局部遮挡或特效线条没有逐像素相接不能直接证明连接缺失。"
+                "只有连接对象明确错误、关键效果完全缺失且没有可见关联等改变叙事事实的证据才阻断；"
+                "不能擅自增加整条特效链路及全部接触点必须无遮挡可见的要求，也不能放过真正错误的连接对象。")
         if shot.get("review_purpose") == "visual_direction_preview":
             context["approved_sequence"] = []
             context["shot"] = {key: context["shot"][key] for key in
@@ -377,6 +392,7 @@ def review_media(project, shot, path, references, config=None, *, output_dir=Non
         if ref and Path(ref).is_file():
             content.extend([{"type":"text","text":f"角色或场景参考 {index+1}"},
                             {"type":"image_url","image_url":{"url":_image_url(ref)}}])
+    reference_content = list(content[1:])
     sampling = {"policy":"single_image","timestamps":[0.0]}
     if is_video:
         from .evaluation_sampling import sample_video
@@ -393,6 +409,8 @@ def review_media(project, shot, path, references, config=None, *, output_dir=Non
         if contract:
             sampling.update(configured_samples=requested, context_limited=count < requested,
                             context_limit_tokens=profile.get("context_tokens"))
+        context["temporal_sampling"] = {**sampling, "frames_are_consecutive": False}
+        content[0]["text"] = json.dumps(context, ensure_ascii=False)
         samples = [item["image"] for item in sampled]
     else:
         samples = [path]
@@ -406,6 +424,11 @@ def review_media(project, shot, path, references, config=None, *, output_dir=Non
     errors = list(Draft202012Validator(schema).iter_errors(result))
     if errors:
         raise ValueError("VLM result does not match the visual review contract")
+    if is_video:
+        from .temporal_review import verify_temporal
+        result = verify_temporal(config, schema, context, reference_content,
+                                 sampled, sampling, result, path, record)
+    temporal_pending = result.pop("_temporal_unavailable", False)
     blocking=[issue for issue in result["issues"] if issue["severity"]=="blocking"]
     result["model_status"] = result["status"]
     # The verdict follows the declared severity and configured score gate;
@@ -420,6 +443,17 @@ def review_media(project, shot, path, references, config=None, *, output_dir=Non
             result["status"] = "unavailable"
     if contract:
         _enforce_contract_review(result, require_motion)
+    if temporal_pending:
+        from .temporal_review import TEMPORAL_CODES
+        audit = result.get("temporal_verification", {})
+        confirmed = any(item.get("status") == "confirmed" for item in audit.get("findings", []))
+        other_blocking = any(issue["severity"] == "blocking" and issue["code"] not in TEMPORAL_CODES
+                             for issue in result["issues"])
+        mismatch = (result.get("style_alignment", {}).get("status") == "mismatch"
+                    or "mismatch" in result.get("material_alignment", {}).values())
+        if not (confirmed or other_blocking or mismatch):
+            result["status"] = "unavailable"
+            result["detail"] = "抽帧时间连续性疑点尚无充分连续帧证据；保留已有视频，需补审，不据此重制。"
     selected_model = resolve_llm(config, "visual_critic", require_vision=True)
     result.update(evaluator="vlm_sampled_frames",model=selected_model["model"],
                   profile=selected_model["profile"],endpoint=selected_model.get("base_url"),
