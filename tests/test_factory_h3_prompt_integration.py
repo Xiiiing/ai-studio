@@ -130,6 +130,7 @@ def test_failed_video_repairs_prompt_after_replacement_frame_gpu_is_released(set
 
 def test_pending_repair_prompt_resumes_same_take_without_extra_frame_generation(setup, monkeypatch):
     project, cfg, target, events, compiles, executions, _ = setup
+    cfg['review_only_existing_videos'] = False  # Explicitly authorized continuation of a repair.
     cfg['semantic_enabled'] = True
     original = h3_prompting.compile_prompt
     unavailable = [True]
@@ -196,6 +197,113 @@ def test_director_model_change_invalidates_generation(setup):
     assert target(production._Run(project, cfg, None, None))['signature'] != before
 
 
+def test_first_frame_reassessment_changes_review_but_not_video_inputs(setup):
+    project, cfg, target, *_ = setup
+    cfg.update(semantic_enabled=True, semantic_model_identity={'context_tokens':8192})
+    project['episode']['shots'][0]['image']['qa'] = {'status':'pass', 'semantic':{'summary':'First assessment'}}
+    before = target(production._Run(project, cfg, None, None))
+    project['episode']['shots'][0]['image']['qa']['semantic'] = {'summary':'New assessment', 'score':95}
+    cfg['semantic_model_identity']['context_tokens'] = 32768
+    after = target(production._Run(project, cfg, None, None))
+    assert before['signature'] == after['signature']
+    assert before['review_signature'] != after['review_signature']
+
+
+def test_video_plan_matches_renderer_duration_normalization(setup):
+    project, cfg, target, *_ = setup
+    raw = project['episode']['shots'][0]
+    raw['seconds'] = 6
+    raw['motion_prompt'] = raw['prompt']
+    run = production._Run(project, cfg, None, None)
+    assert plan_signature(project, raw, 'video') == plan_signature(project, run.shots[0], 'video')
+    raw['seconds'] = 6.1
+    assert plan_signature(project, raw, 'video') != plan_signature(project, run.shots[0], 'video')
+
+
+def legacy_pending_video(setup, monkeypatch):
+    """Create a real CPU clip with the pre-fix QA-bound signature on disk."""
+    project, cfg, target, events, compiles, executions, frame = setup
+    cfg.update(semantic_enabled=True, semantic_max_attempts=1)
+    old_qa = {'status':'pass', 'semantic':{'status':'pass', 'summary':'Original keyframe assessment'}}
+    project['episode']['shots'][0]['image']['qa'] = old_qa
+    run = production._Run(project, cfg, None, None, evaluator=lambda *a:{'status':'unavailable','issues':[]})
+    original_fingerprint = production.fingerprint
+    def old_signature(value):
+        if 'h3_prompt_compiler' in value and 'first_frame_review' not in value:
+            value = {**value, 'first_frame_review':old_qa}
+        return original_fingerprint(value)
+    with monkeypatch.context() as old:
+        old.setattr(production, 'fingerprint', old_signature)
+        current = target(run)
+    with pytest.raises(scheduler.ProductionNeedsDecision, match='semantic reviewer'):
+        run._render_targets([current], 'diffusion_video')
+    for name in ('attempt.json', 'result.json', 'pending_review.json'):
+        path = current['folder']/name if name == 'pending_review.json' else current['folder']/'take_001'/name
+        value = core.read_json(path)
+        value.pop('generation_signature', None)
+        core.write_json(path, value)
+    return run, cfg, target, current
+
+
+@pytest.mark.parametrize('with_contract', [False, True])
+def test_locked_legacy_pending_video_is_reviewed_without_director_or_gpu(setup, monkeypatch, with_contract):
+    if with_contract:
+        setup[0]['creative_contract'] = {'schema_version':1, 'visual_style':'photorealistic',
+            'story_mode':'standalone', 'pacing':'short_drama', 'motion':'generated_video'}
+    run, cfg, target, old = legacy_pending_video(setup, monkeypatch)
+    _, _, _, _, compiles, executions, frame = setup
+    before = core.sha256(old['folder']/'take_001/video.mp4')
+    run.project['episode']['shots'][0]['image']['qa'] = {'status':'pass','semantic':{'summary':'Reassessed'}}
+    cfg['semantic_model_identity'] = {'context_tokens':32768}
+    def locked(pid, kind, scope, *, check_locks=True):
+        if kind == 'video' and check_locks:
+            raise production.team_control.TeamInterventionPending('Locked: no new generation')
+    monkeypatch.setattr(production.team_control, 'admit', locked)
+    reviews = []
+    def review(project, shot, path, refs):
+        reviews.append(path)
+        return {'status':'pass','score':95,'issues':[]}
+    resumed = production._Run(run.project, cfg, None, None, evaluator=review)
+    current = target(resumed)
+    assert old['signature'] in current['compatible_source_signatures']
+    selected = resumed._render_targets([current], 'diffusion_video')[0]
+    assert selected['source_signature'] == old['signature']  # provenance/locks unchanged
+    assert selected['generation_signature'] == current['signature']
+    assert selected['take'] == 'take_001' and selected['sha256'] == before
+    assert len(reviews) == len(compiles) == len(executions) == 1
+    again = production._Run(resumed.project, cfg, None, None, evaluator=review)
+    again._render_targets([target(again)], 'diffusion_video')
+    assert len(reviews) == len(compiles) == len(executions) == 1
+
+
+@pytest.mark.parametrize('changed', ['action', 'frame', 'director', 'recipe', 'retake'])
+def test_legacy_compatibility_never_ignores_real_generation_changes(setup, monkeypatch, changed):
+    run, cfg, target, old = legacy_pending_video(setup, monkeypatch)
+    if changed == 'action':
+        run.project['episode']['shots'][0]['action'] = 'Leave the cup and walk out.'
+    elif changed == 'frame':
+        from PIL import Image
+        Image.new('RGB',(160,288),'red').save(setup[-1])
+    elif changed == 'director':
+        cfg['h3_prompt_config']['llm']['model'] = 'different-director'
+    elif changed == 'recipe':
+        cfg['video_connection']['shift_video'] = 11.0
+    else:
+        run.project['episode']['shots'][0]['render_revisions'] = {'video':1}
+    current = target(production._Run(run.project, cfg, None, None))
+    assert old['signature'] not in current['compatible_source_signatures']
+    assert current['signature'] != old['signature']
+
+
+def test_legacy_reuse_still_checks_video_bytes(setup, monkeypatch):
+    run, cfg, target, old = legacy_pending_video(setup, monkeypatch)
+    (old['folder']/'take_001/video.mp4').write_bytes(b'corrupt')
+    resumed = production._Run(run.project, cfg, None, None)
+    with pytest.raises(scheduler.ProductionNeedsDecision, match='checksum'):
+        resumed._render_targets([target(resumed)], 'diffusion_video')
+    assert len(setup[4]) == len(setup[5]) == 1
+
+
 def test_explicit_manual_mode_preserves_existing_motion_prompt(setup, monkeypatch):
     project, cfg, target, events, compiles, executions, _ = setup
     cfg['h3_prompting'] = 'manual'
@@ -244,3 +352,168 @@ def test_prompt_preparation_phase_exposes_director_and_readable_label():
     assert operator_console.PHASES['h3_prompt_preparation'] == '自动编写视频镜头提示词'
     assert runtime_observations.PHASE_TASKS['h3_prompt_preparation'][1] == 'storyboard_director'
     assert 'storyboard_director' in team_tasks.TASKS['production']['members']
+
+
+def frozen_compiler_video(setup, monkeypatch):
+    """An archived registered compiler created a real immutable CPU clip."""
+    from factory.prompt_registry import load_prompt
+    project,cfg,target,*_=setup
+    def compiler(version,digest):
+        spec=load_prompt('storyboard_director',version).spec
+        return {'protocol':h3_prompting.PROTOCOL,'role':h3_prompting.ROLE,'version':version,
+                'template_sha256':spec.template_sha256,'contract_sha256':spec.contract_sha256,
+                'implementation_sha256':digest*64,'model_identity':{'model':'chosen-director'}}
+    old=compiler('3.0.0','a');new=compiler('3.1.0','b');active=[old]
+    monkeypatch.setattr(h3_prompting,'identity',lambda c:copy.deepcopy(active[0]))
+    original=h3_prompting.compile_prompt
+    def compile_with_receipt(*a,**kw):
+        result=original(*a,**kw);result['receipt']['compiler']=copy.deepcopy(active[0]);return result
+    monkeypatch.setattr(h3_prompting,'compile_prompt',compile_with_receipt)
+    cfg.update(semantic_enabled=True,semantic_max_attempts=1)
+    run=production._Run(project,cfg,None,None,evaluator=lambda *a:{'status':'unavailable','issues':[]})
+    before=target(run)
+    with pytest.raises(scheduler.ProductionNeedsDecision):run._render_targets([before],'diffusion_video')
+    active[0]=new
+    return run,cfg,target,before,active
+
+
+def test_new_writer_policy_reviews_locked_old_video_without_writer_or_gpu(setup,monkeypatch):
+    run,cfg,target,old,active=frozen_compiler_video(setup,monkeypatch)
+    before=core.sha256(old['folder']/'take_001/video.mp4')
+    def locked(pid,kind,scope,*,check_locks=True):
+        if kind=='video' and check_locks:raise production.team_control.TeamInterventionPending('Locked original')
+    monkeypatch.setattr(production.team_control,'admit',locked)
+    resumed=production._Run(run.project,cfg,None,None,evaluator=lambda *a:{'status':'pass','score':95,'issues':[]})
+    current=target(resumed)
+    assert old['signature']!=current['signature'] and old['signature'] in current['compatible_source_signatures']
+    selected=resumed._render_targets([current],'diffusion_video')[0]
+    assert selected['sha256']==before and selected['h3_prompt']['compiler']['version']=='3.0.0'
+    assert len(setup[4])==len(setup[5])==1
+
+
+@pytest.mark.parametrize('changed',['action','frame','director','recipe','retake','template'])
+def test_writer_policy_compatibility_still_rejects_changed_inputs(setup,monkeypatch,changed):
+    run,cfg,target,old,active=frozen_compiler_video(setup,monkeypatch)
+    if changed=='action':run.project['episode']['shots'][0]['action']='Leave the cup and walk away.'
+    elif changed=='frame':Image.new('RGB',(160,288),'red').save(setup[-1])
+    elif changed=='director':active[0]['model_identity']={'model':'different-director'}
+    elif changed=='recipe':cfg['video_connection']['shift_video']=11.0
+    elif changed=='retake':run.project['episode']['shots'][0]['render_revisions']={'video':1}
+    else:
+        path=old['folder']/'take_001/attempt.json';record=core.read_json(path)
+        record['h3_prompt']['compiler']['template_sha256']='f'*64;core.write_json(path,record)
+    current=target(production._Run(run.project,cfg,None,None))
+    assert old['signature'] not in current['compatible_source_signatures']
+
+
+@pytest.mark.parametrize('kind', ['image', 'video'])
+def test_failed_media_is_reviewed_once_under_changed_policy_without_new_take(setup, monkeypatch, kind):
+    project,cfg,video_target,*_=setup
+    cfg.update(semantic_enabled=True,semantic_max_attempts=1,max_attempts=1)
+    def target(run):
+        if kind=='video':return video_target(run)
+        shot=run.shots[0]
+        return run._target('S01',run.folder/'assets/shots/S01',shot['prompt'],[],
+                           kind='image',shot=shot,review=True)
+    run=production._Run(project,cfg,None,None,evaluator=lambda *a:{'status':'unavailable','issues':[]})
+    old=target(run)
+    with pytest.raises(scheduler.ProductionNeedsDecision):run._render_targets([old],'diffusion_'+kind)
+    path=old['folder']/'take_001/attempt.json';record=core.read_json(path)
+    record.update(state='failed',qa={**record['qa'],'status':'fail','semantic':{'status':'fail','issues':[]}})
+    core.write_json(path,record)
+    original=core.read_json(path.parent/'result.json');digest=core.sha256(core.ROOT/original['path'])
+    assert run._unfinished_candidate(old) is None  # Same rules cannot loop on a failed review.
+    cfg['semantic_model_identity']={'context_tokens':32768}
+    def locked(pid,unit,scope,*,check_locks=True):
+        if unit==kind and check_locks:raise production.team_control.TeamInterventionPending('Preserve original')
+    monkeypatch.setattr(production.team_control,'admit',locked)
+    calls=[]
+    def review(*args):
+        calls.append(args[2]);return {'status':'pass','score':95,'issues':[]}
+    resumed=production._Run(run.project,cfg,None,None,evaluator=review)
+    selected=resumed._render_targets([target(resumed)],'diffusion_'+kind)[0]
+    assert selected['take']=='take_001' and selected['sha256']==digest
+    assert len(calls)==1 and len(setup[5])==1 and len(list(old['folder'].glob('take_*')))==1
+    again=production._Run(resumed.project,cfg,None,None,evaluator=review)
+    again._render_targets([target(again)],'diffusion_'+kind)
+    assert len(calls)==1 and len(setup[5])==1
+
+
+@pytest.mark.parametrize('invalid', ['technical', 'source', 'receipt', 'no_review'])
+def test_policy_upgrade_never_revives_unusable_failed_media(setup,monkeypatch,invalid):
+    run,cfg,target,old,_=frozen_compiler_video(setup,monkeypatch)
+    path=old['folder']/'take_001/attempt.json';record=core.read_json(path)
+    record['state']='failed'
+    if invalid=='technical':record['qa']['technical']['status']='fail'
+    elif invalid=='source':record['source_signature']='unrelated';record.pop('generation_signature',None)
+    elif invalid=='no_review':record.pop('review_signature',None)
+    else:
+        receipt=core.read_json(path.parent/'result.json');receipt['source_signature']='unrelated'
+        receipt.pop('generation_signature',None);core.write_json(path.parent/'result.json',receipt)
+    core.write_json(path,record)
+    resumed=production._Run(run.project,cfg,None,None)
+    assert resumed._unfinished_candidate(target(resumed)) is None
+
+
+def test_existing_video_failure_stops_before_any_generation_admission(setup,monkeypatch):
+    run,cfg,target,old,_=frozen_compiler_video(setup,monkeypatch)
+    run.project['production'].pop('review_only_video_results',None)  # New review request boundary.
+    before=core.sha256(old['folder']/'take_001/video.mp4')
+    def no_generation(pid,kind,scope,*,check_locks=True):
+        if kind=='video' and check_locks:pytest.fail('Entered video generation admission')
+    monkeypatch.setattr(production.team_control,'admit',no_generation)
+    calls=[]
+    def failed(*args):
+        calls.append(args);return {'status':'fail','score':40,'issues':[{'code':'action','severity':'blocking','detail':'Approved action is missing'}]}
+    resumed=production._Run(run.project,cfg,None,None,evaluator=failed)
+    with pytest.raises(scheduler.ProductionNeedsDecision) as error:
+        resumed._render_targets([target(resumed)],'diffusion_video')
+    assert error.value.reason=='existing_video_review_failed'
+    assert error.value.details['regeneration_allowed'] is False
+    assert len(setup[4])==len(setup[5])==1
+    assert core.sha256(old['folder']/'take_001/video.mp4')==before
+    again=production._Run(resumed.project,cfg,None,None,evaluator=failed)
+    with pytest.raises(scheduler.ProductionNeedsDecision) as repeated:
+        again._render_targets([target(again)],'diffusion_video')
+    assert repeated.value.reason=='existing_video_review_failed'
+    assert len(calls)==1
+    assert len(list(old['folder'].glob('take_*')))==1
+
+
+def test_existing_video_with_changed_inputs_never_triggers_implicit_regeneration(setup,monkeypatch):
+    run,cfg,target,old,_=frozen_compiler_video(setup,monkeypatch)
+    run.project['production'].pop('review_only_video_results',None)
+    run.project['episode']['shots'][0]['action']='Leave the cup and walk away.'
+    resumed=production._Run(run.project,cfg,None,None)
+    with pytest.raises(scheduler.ProductionNeedsDecision) as error:
+        resumed._render_targets([target(resumed)],'diffusion_video')
+    assert error.value.reason=='existing_video_review_required'
+    with pytest.raises(scheduler.ProductionNeedsDecision):resumed._new_attempt(target(resumed))
+    assert len(setup[5])==1
+
+
+def test_new_video_stays_repairable_across_remote_yield_boundary(setup,monkeypatch):
+    run,cfg,target,old,_=frozen_compiler_video(setup,monkeypatch)
+    assert run.project['production']['review_only_video_results']==[]
+    resumed=production._Run(run.project,cfg,None,None)
+    assert resumed._review_only_video(target(resumed)) is False
+
+
+def test_existing_video_with_missing_receipt_is_preserved_not_replaced(setup,monkeypatch):
+    run,cfg,target,old,_=frozen_compiler_video(setup,monkeypatch)
+    (old['folder']/'take_001/result.json').unlink()
+    run.project['production'].pop('review_only_video_results',None)
+    resumed=production._Run(run.project,cfg,None,None)
+    with pytest.raises(scheduler.ProductionNeedsDecision) as error:
+        resumed._render_targets([target(resumed)],'diffusion_video')
+    assert error.value.reason=='existing_video_review_required'
+    assert len(setup[5])==1 and (old['folder']/'take_001/video.mp4').is_file()
+
+
+def test_explicit_project_review_only_request_overrides_general_repair_setting(setup,monkeypatch):
+    run,cfg,target,old,_=frozen_compiler_video(setup,monkeypatch)
+    cfg['review_only_existing_videos']=False
+    run.project['production']['review_only_existing_videos']=True
+    run.project['production']['review_only_video_results']=[str((old['folder']/'take_001/result.json').relative_to(core.ROOT))]
+    resumed=production._Run(run.project,cfg,None,None)
+    assert resumed._review_only_video(target(resumed)) is True

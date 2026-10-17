@@ -152,7 +152,7 @@ def test_compiler_uses_configured_http_director_then_reuses_frozen_prompt(text_s
 
     receipt = result["receipt"]
     assert receipt["compiler"]["model_identity"] == llm_identity(config, "storyboard_director")
-    assert receipt["compiler"]["version"] == "3.0.0"
+    assert receipt["compiler"]["version"] == "3.1.0"
     assert receipt["first_frame_sha256"] == "a" * 64
     assert receipt["quality_status"] == "pending_actual_media_review"
     receipts = call_receipts(tmp_path)
@@ -162,7 +162,7 @@ def test_compiler_uses_configured_http_director_then_reuses_frozen_prompt(text_s
     assert receipts[0]["profile"] == "selected_director"
     assert receipts[0]["response_model"] == model
     assert receipts[0]["prompt"]["status"] == "registered"
-    assert receipts[0]["prompt"]["version"] == "3.0.0"
+    assert receipts[0]["prompt"]["version"] == "3.1.0"
 
     prompt = result["prompt"]
     assert prompt.startswith(

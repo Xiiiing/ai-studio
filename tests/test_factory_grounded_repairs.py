@@ -57,8 +57,8 @@ class GroundedRepairTests(unittest.TestCase):
         plan = self.grounded(assessment, expected, reference_roles=("female",))
         self.assertEqual(plan["action"], "repair_scene_action_and_continuity")
         self.assertNotIn("identity", plan["action"].lower())
-        self.assertIn("门把手", plan["prompt_prefix"])
-        self.assertIn("钥匙", plan["prompt_prefix"])
+        self.assertIn("door handle", plan["prompt_prefix"])
+        self.assertIn("keyring", plan["prompt_prefix"])
         self.assertNotIn(sentinel, plan["prompt_prefix"])
         self.assertNotIn("提前拿走钥匙", plan["prompt_prefix"])
         self.assertEqual(plan["diagnosis"]["severity"], "blocking")
@@ -95,8 +95,8 @@ class GroundedRepairTests(unittest.TestCase):
                 self.assertEqual(set(plan["diagnosis"]["codes"]), {"continuity", "identity"})
                 self.assertEqual(len(plan["diagnosis"]["issues"]), 2)
                 self.assertEqual(plan["action"], "repair_scene_action_and_continuity")
-                self.assertIn("钥匙", plan["prompt_prefix"])
-                self.assertIn("骨头挂件", plan["prompt_prefix"])
+                self.assertIn("keyring", plan["prompt_prefix"])
+                self.assertIn("bone-shaped pendant", plan["prompt_prefix"])
                 self.assertNotIn("未展示钥匙", plan["prompt_prefix"])
                 self.assertNotIn("FAILURE_FACT_MUST_STAY_IN_DIAGNOSIS", plan["prompt_prefix"])
 
@@ -122,7 +122,7 @@ class GroundedRepairTests(unittest.TestCase):
                 lower = prefix.lower()
                 self.assertEqual(plan["diagnosis"]["primary_code"], "identity")
                 self.assertIn("the man remains visible", prefix)
-                self.assertIn("女主在前景", prefix)
+                self.assertIn("foreground woman", prefix)
                 for forbidden in ("one clear subject", "single-subject", "single subject"):
                     self.assertNotIn(forbidden, lower)
                 self.assertNotIn("IDENTITY_FAILURE_DETAIL", prefix)
@@ -138,3 +138,23 @@ class GroundedRepairTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_starting_pose_repair_never_reintroduces_full_future_action():
+    expected = {'id':'S14', 'prompt':'Woman stands left. Man kneels on one knee right; their empty hands are clasped.',
+                'action':'FUTURE_ACTION_SENTINEL pull him all the way to standing',
+                'continuity':'FUTURE_CONTINUITY_SENTINEL now standing together',
+                'motion_prompt':'FUTURE_MOTION_SENTINEL rise to standing',
+                'character_states':{'male':{'position':'One knee down, free hand on bent knee.',
+                                             'held_props':[], 'story_state':'FUTURE_STORY_SENTINEL stands with help'}}}
+    before=copy.deepcopy(expected)
+    problem={'issues':[{'code':'action','severity':'blocking','detail':'The man is already fully standing.'}]}
+    image=_grounded_repair_plan(problem,'image',2,expected)
+    assert expected==before
+    assert 'one knee' in image['prompt_prefix'] and 'bent knee' in image['prompt_prefix']
+    assert 'static STARTING frame' in image['prompt_prefix']
+    assert 'FUTURE_' not in image['prompt_prefix']
+    assert [v['field'] for v in image['positive_constraints']]==['prompt','character_states']
+    video=_grounded_repair_plan(problem,'video',2,expected)
+    assert 'FUTURE_ACTION_SENTINEL' in video['prompt_prefix']
+    assert 'FUTURE_MOTION_SENTINEL' in video['prompt_prefix']

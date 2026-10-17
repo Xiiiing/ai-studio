@@ -564,6 +564,8 @@ def action(pid, payload):
             _event(db, pid, "已记录指定镜头的局部修改；累计预算、历史素材与未修改镜头继续保留。",
                    "revision", request)
         elif command in {"resume","retry"}:
+            if "review_only_existing_videos" in payload and type(payload["review_only_existing_videos"]) is not bool:
+                raise ValueError("review_only_existing_videos 必须是布尔值")
             if p["status"] in TERMINAL:
                 raise ValueError("项目已完成")
             if p["status"] not in {"blocked","failed","paused"} and not p.get("pause_requested"):
@@ -608,6 +610,13 @@ def action(pid, payload):
                 target = ("revision" if p.get("revision_request") else "story_resolution"
                           if p.get("selected_story") else "research" if need.get("kind") == "source_rights" else "proposals")
                 _restart(p, target)
+            if "review_only_existing_videos" in payload:
+                p.setdefault("production", {})["review_only_existing_videos"] = payload["review_only_existing_videos"]
+            if payload.get("review_only_existing_videos") is True:
+                from .shot_workbench import project_root, retained_video_results
+                from studio.core import ROOT
+                p.setdefault("production", {})["review_only_video_results"] = [
+                    str(path.relative_to(ROOT)) for path in retained_video_results(project_root(p))]
             p.update(pause_requested=False, error=None, status="queued")
             p.pop("needs_decision", None)
             _enqueue(db, pid)

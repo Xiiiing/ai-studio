@@ -16,6 +16,15 @@ SHOT_RE = re.compile(r"S\d{2,3}\Z")
 TAKE_RE = re.compile(r"(?:take_\d{3,9}|camera_[a-f0-9]{16})\Z")
 
 
+def retained_video_results(root):
+    """Protect existing files even when a result journal needs restoration."""
+    folder = root / "renders"
+    paths = set(folder.glob("*/take_*/result.json"))
+    paths.update(path.parent / "result.json" for path in folder.glob("*/take_*/*")
+                 if path.is_file() and path.suffix.lower() in {".mp4", ".webm", ".mov"})
+    return sorted(paths)
+
+
 def shot_definition(project, shot_id):
     if not isinstance(shot_id, str) or not SHOT_RE.fullmatch(shot_id):
         raise ValueError("镜头编号无效")
@@ -32,7 +41,11 @@ def plan_signature(project, shot, stage):
     if stage == "video":
         fields += ("motion_prompt", "camera_motion", "seconds", "lip_sync")
         fields += tuple(key for key in ("action", "continuity") if key in shot)
-    return core.fingerprint({"shot": {k: shot.get(k) for k in fields},
+    inputs = {k: shot.get(k) for k in fields}
+    if stage == "video" and inputs.get("seconds") is not None:
+        # Match the renderer's 24 fps normalization, including JSON 6 vs 6.0.
+        inputs["seconds"] = round(float(inputs["seconds"]) * 24) / 24
+    return core.fingerprint({"shot": inputs,
                              "series": project.get("series_references", {}).get(shot["id"], []),
                              **({"materials": material_references(project, shot)} if project.get("material_package") else {}),
                              "style": project.get("selected_style"),
@@ -155,7 +168,8 @@ def pinned_selection(project, target):
         return None
     from .scheduler import ProductionNeedsDecision
     shot = target.get("shot") or shot_definition(project, target["key"])
-    if pin["plan_signature"] != plan_signature(project, shot, target["kind"]) or pin["receipt"].get("source_signature") != target["signature"]:
+    from .production import _matching_source
+    if pin["plan_signature"] != plan_signature(project, shot, target["kind"]) or not _matching_source(pin["receipt"], target):
         raise ProductionNeedsDecision("人工选片的参数已变化，请重新选片或明确重制", "manual_selection_stale")
     result = copy.deepcopy(pin["receipt"])
     result["producer_selection"] = {k: v for k, v in pin.items() if k != "receipt"}
