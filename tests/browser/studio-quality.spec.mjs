@@ -45,7 +45,7 @@ for (const width of [1440, 1024, 390]) {
       await expect(page.getByRole("alert")).toHaveCount(0);
       if (width === 390 && page.url().includes("project=")) {
         const tabsFit = await page
-          .locator(".tabbar button")
+          .locator(".project-primary-navigation [data-tab]")
           .evaluateAll((buttons) =>
             buttons.every((button) => {
               const box = button.getBoundingClientRect();
@@ -78,15 +78,35 @@ for (const width of [1440, 1024, 390]) {
       await expect(page.locator(".project-heading h1")).toHaveText(
         "HTTP 边界隔离测试",
       );
-      await expect(page.locator(`.tabbar [data-tab="${tab}"]`)).toHaveAttribute(
-        "aria-current",
-        "page",
-      );
+      const navigation = page.locator(".project-primary-navigation");
+      await expect(navigation.locator("[data-tab]")).toHaveCount(6);
+      const group =
+        tab === "series" ? "materials" : tab === "quality" ? "decisions" : tab;
+      if (["team", "costs"].includes(tab)) {
+        await expect(
+          page.locator(`.project-more [data-project-page="${tab}"]`),
+        ).toHaveAttribute("aria-current", "page");
+        await expect(
+          page.locator(".project-more > summary"),
+        ).toHaveAccessibleName(
+          tab === "team"
+            ? "更多项目页面：团队与回执"
+            : "更多项目页面：云任务与费用",
+        );
+      } else {
+        await expect(
+          navigation.locator(`[data-tab="${group}"]`),
+        ).toHaveAttribute("aria-current", "page");
+        if (["materials", "series", "decisions", "quality"].includes(tab))
+          await expect(
+            page.locator(`.project-subnavigation [data-project-page="${tab}"]`),
+          ).toHaveAttribute("aria-current", "page");
+      }
       await expect(page.locator("main .loading")).toHaveCount(0);
       await expect(page.getByRole("alert")).toHaveCount(0);
       if (width === 390 && page.url().includes("project=")) {
         const tabsFit = await page
-          .locator(".tabbar button")
+          .locator(".project-primary-navigation [data-tab]")
           .evaluateAll((buttons) =>
             buttons.every((button) => {
               const box = button.getBoundingClientRect();

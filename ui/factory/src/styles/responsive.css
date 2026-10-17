@@ -4,74 +4,7 @@
     padding: 36px 40px 48px;
   }
 }
-@media (max-width: 1649px) {
-  .project-content-layout {
-    display: block;
-  }
-  .tabbar.project-navigation {
-    display: none;
-  }
-  .project-navigation-mobile {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    position: sticky;
-    top: 60px;
-    margin-bottom: 16px;
-    padding: 8px 0;
-    background: var(--canvas);
-    z-index: 15;
-  }
-  .project-navigation-trigger {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    width: auto;
-    margin-left: auto;
-    min-width: 200px;
-    padding: 9px 12px;
-    border: 1px solid var(--line-strong);
-    border-radius: 10px;
-    background: var(--panel);
-    color: var(--ink);
-    font-size: 14px;
-    min-height: 44px;
-  }
-  .project-navigation-menu {
-    position: absolute;
-    top: calc(100% - 2px);
-    right: 0;
-    width: min(620px, 100%);
-    max-height: min(520px, calc(100dvh - 160px));
-    overflow: auto;
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    align-items: start;
-    gap: 12px;
-    margin-top: 0;
-    padding: 16px;
-    border: 1px solid var(--line);
-    border-radius: 12px;
-    background: var(--panel);
-    box-shadow: var(--shadow-md);
-  }
-  .project-navigation-menu button {
-    border: 0;
-    background: transparent;
-    padding: 10px 12px;
-    border-radius: 8px;
-    text-align: left;
-    min-height: 44px;
-    color: var(--muted);
-    font-size: 14px;
-  }
-  .project-navigation-menu button.active {
-    background: var(--accent-soft);
-    color: var(--accent-text);
-    font-weight: 600;
-  }
-}
+
 @media (max-width: 1250px) {
   .app-shell {
     grid-template-columns: 208px minmax(0, 1fr);
@@ -195,12 +128,6 @@
   }
   .topbar-right {
     gap: 8px;
-  }
-  .theme-control > span {
-    display: none;
-  }
-  .topbar .sync-state {
-    display: none;
   }
 }
 @media (max-width: 800px) {
@@ -357,7 +284,7 @@
   }
   .panel {
     padding: 18px 16px;
-    border-radius: 12px;
+    border-radius: var(--radius);
     margin-bottom: 18px;
   }
   .panel-head {
@@ -499,7 +426,7 @@
     overflow: visible;
     background: var(--panel);
     border: 1px solid var(--line);
-    border-radius: 10px;
+    border-radius: var(--radius);
   }
   .tabbar:not(.project-navigation) button {
     justify-content: center;
@@ -513,8 +440,8 @@
     border-radius: 7px;
   }
   .tabbar:not(.project-navigation) button.active {
-    background: var(--accent-soft);
-    color: var(--accent-text);
+    background: var(--surface-strong);
+    color: var(--ink);
   }
   .project-context {
     gap: 12px;
@@ -763,19 +690,7 @@
   .topbar-right {
     gap: 6px;
   }
-  .theme-control {
-    gap: 0;
-    flex: none;
-  }
-  .theme-control select {
-    font-size: 12px;
-    min-height: 44px;
-    padding: 8px 24px 8px 9px;
-    max-width: 92px;
-  }
-  .producer-avatar {
-    display: none;
-  }
+
   .button,
   .button.small,
   .icon-button,
@@ -1000,29 +915,6 @@
   }
 }
 @media (min-width: 1024px) and (max-width: 1649px) {
-  .project-quick-navigation {
-    display: flex;
-    gap: 4px;
-    padding: 4px;
-    border: 1px solid var(--line);
-    border-radius: 10px;
-    background: var(--panel);
-  }
-  .project-quick-navigation button {
-    padding: 8px 12px;
-    min-height: 38px;
-    border: 0;
-    border-radius: 7px;
-    background: transparent;
-    color: var(--muted);
-    font-size: 13px;
-    white-space: nowrap;
-  }
-  .project-quick-navigation button.active {
-    color: var(--accent-text);
-    background: var(--accent-soft);
-    font-weight: 600;
-  }
 }
 @media (max-width: 1023px) {
   .dashboard-grid {
@@ -1116,35 +1008,7 @@
   .heading-actions {
     margin-top: 12px;
   }
-  .project-navigation-mobile {
-    top: 64px;
-    margin-bottom: 12px;
-    padding-block: 6px;
-  }
-  .project-navigation-trigger {
-    width: 100%;
-    margin-left: 0;
-    min-width: 0;
-  }
-  .project-navigation-menu {
-    grid-template-columns: 1fr;
-    width: 100%;
-    padding: 12px;
-    gap: 12px;
-  }
-  .project-navigation-menu .project-navigation-group {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 4px;
-  }
-  .project-navigation-menu .project-navigation-label {
-    grid-column: 1 / -1;
-    padding-bottom: 0;
-  }
-  .project-navigation-menu button {
-    padding: 8px 10px;
-    font-size: 14px;
-    align-self: start;
-  }
+
   .project-context {
     margin-bottom: 16px;
     gap: 8px;
@@ -1217,7 +1081,7 @@
   }
   .workflow-inspector,
   .workflow-map-container {
-    scroll-margin-top: 126px;
+    scroll-margin-top: 114px;
   }
   .shot-editor {
     padding: 14px;
@@ -1274,10 +1138,7 @@
   .breadcrumb > span {
     margin: 0 5px;
   }
-  .project-navigation-menu {
-    padding: 12px;
-    gap: 8px;
-  }
+
   .workflow-map-node-top {
     flex-wrap: wrap;
   }

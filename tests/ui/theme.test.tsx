@@ -17,7 +17,10 @@ afterEach(() => {
 
 it("remembers an explicit theme and applies the browser color scheme", async () => {
   render(<ThemeControl />);
-  await userEvent.selectOptions(screen.getByLabelText("外观主题"), "dark");
+  await userEvent.click(
+    screen.getByRole("button", { name: /外观主题：跟随系统/ }),
+  );
+  await userEvent.click(screen.getByRole("button", { name: /外观主题：浅色/ }));
   expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe("dark");
   expect(document.documentElement.dataset.theme).toBe("dark");
   expect(document.documentElement.style.colorScheme).toBe("dark");
@@ -46,6 +49,29 @@ it("keeps a session theme usable when storage writes fail", async () => {
     throw new Error("Storage unavailable");
   });
   render(<ThemeControl />);
-  await userEvent.selectOptions(screen.getByLabelText("外观主题"), "dark");
+  await userEvent.click(
+    screen.getByRole("button", { name: /外观主题：跟随系统/ }),
+  );
+  await userEvent.click(screen.getByRole("button", { name: /外观主题：浅色/ }));
   expect(document.documentElement.dataset.theme).toBe("dark");
+});
+
+it("cycles all three preferences with a current and next-mode accessible name", async () => {
+  render(<ThemeControl />);
+  for (const [current, next, value] of [
+    ["跟随系统", "浅色", "light"],
+    ["浅色", "深色", "dark"],
+    ["深色", "跟随系统", "system"],
+  ]) {
+    const control = screen.getByRole("button", {
+      name: `外观主题：${current}；切换为${next}`,
+    });
+    expect(control).toHaveAttribute(
+      "title",
+      control.getAttribute("aria-label"),
+    );
+    await userEvent.click(control);
+    expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe(value);
+    expect(document.documentElement.dataset.themePreference).toBe(value);
+  }
 });

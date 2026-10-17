@@ -190,3 +190,106 @@ test("CAS draft remains old after an external update and retake never calls a pa
     calls.some((call) => call.path.includes("video_generation")),
   ).toBeFalsy();
 });
+
+for (const width of [390, 1440])
+  test(`historical shot versions stay compact and two versions can be compared at ${width}px`, async ({
+    page,
+    request,
+  }) => {
+    await page.setViewportSize({ width, height: 1000 });
+    await page.route(
+      "**/api/factory/projects/012345abcdef/shots",
+      async (route) => {
+        const response = await route.fetch(),
+          board = await response.json();
+        const current = board.shots[0].candidates[0];
+        board.shots[0].candidates.push(
+          ...["take_002", "take_003"].map((take, index) => ({
+            ...current,
+            id: "video:" + take,
+            take,
+            plan_current: false,
+            status: "failed",
+            selectable: false,
+            qa: {
+              semantic: {
+                status: "fail",
+                summary: "历史版本的人物接触位置不符。",
+              },
+              technical: { status: "pass" },
+            },
+            attempt: index + 2,
+          })),
+        );
+        await route.fulfill({ response, json: board });
+      },
+    );
+    await page.goto("/#project=012345abcdef&tab=shots");
+    await expect(page.locator("[data-shot-version]")).toHaveCount(3);
+    await expect(page.locator(".candidate-card video")).toHaveCount(1);
+    await expect(
+      page.locator('.candidate-card[data-candidate-id="video:take_001"]'),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "对比所选版本", exact: true }),
+    ).toBeDisabled();
+    await page
+      .getByRole("button", { name: "查看 视频 take_002", exact: true })
+      .click();
+    const historical = page.locator(
+      '.candidate-card[data-candidate-id="video:take_002"]',
+    );
+    await expect(
+      historical.getByLabel("审核结论", { exact: true }),
+    ).toContainText("历史版本的人物接触位置不符。");
+    await expect(
+      historical.getByRole("button", { name: "设为选定素材" }),
+    ).toBeDisabled();
+    await page
+      .getByRole("button", { name: "返回当前素材", exact: true })
+      .click();
+    await expect(
+      page.locator('.candidate-card[data-candidate-id="video:take_001"]'),
+    ).toBeVisible();
+    await page
+      .getByRole("checkbox", { name: "对比 视频 take_001", exact: true })
+      .check();
+    await page
+      .getByRole("checkbox", { name: "对比 视频 take_002", exact: true })
+      .check();
+    await expect(
+      page.getByRole("checkbox", { name: "对比 视频 take_003", exact: true }),
+    ).toBeDisabled();
+    await page
+      .getByRole("button", { name: "对比所选版本（2/2）", exact: true })
+      .click();
+    await expect(
+      page.locator('[data-shot-preview="compare"] .candidate-card'),
+    ).toHaveCount(2);
+    await expect(
+      page.locator(
+        '[data-shot-preview="compare"] [data-candidate-id="video:take_002"]',
+      ),
+    ).toContainText("历史版本的人物接触位置不符。");
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+    await page.screenshot({
+      path: `runtime/browser-report/shot-comparison-${width}.png`,
+      fullPage: true,
+    });
+    await page
+      .getByRole("button", { name: "返回当前素材", exact: true })
+      .click();
+    await expect(
+      page.locator('[data-shot-preview="current"] .candidate-card'),
+    ).toHaveCount(1);
+    const calls = await (await request.get("/__test/calls")).json();
+    expect(
+      calls.filter(
+        (call) => call.method === "POST" && call.path.startsWith("/api/"),
+      ),
+    ).toEqual([]);
+  });

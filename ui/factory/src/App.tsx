@@ -79,10 +79,10 @@ function readRoute(): Route {
   };
 }
 const links = [
-  ["dashboard", "制片总览", LayoutDashboard],
-  ["projects", "全部项目", FolderKanban],
-  ["library", "统一素材库", FolderKanban],
-  ["inbox", "待办决策", Inbox],
+  ["dashboard", "总览", LayoutDashboard],
+  ["projects", "项目", FolderKanban],
+  ["library", "素材库", FolderKanban],
+  ["inbox", "待办", Inbox],
   ["workflow", "制作流程与团队", Bot],
   ["models", "模型与连接", Settings2],
   ["activity", "运行记录", Activity],
@@ -261,34 +261,43 @@ export default function App() {
             <Plus size={16} />
             新建制作
           </button>
-          <div className="sidebar-label">工作室</div>
           <nav className="main-nav">
-            {links.map(([view, label, Icon]) => (
-              <button
-                key={view}
-                className={
-                  "nav-item " +
-                  (!route.project && route.view === view ? "active" : "")
-                }
-                data-action={
-                  view === "models"
-                    ? "models"
-                    : view === "dashboard"
-                      ? "dashboard"
-                      : "view"
-                }
-                data-view={view}
-                aria-current={
-                  !route.project && route.view === view ? "page" : undefined
-                }
-                onClick={() => navigate(view)}
-              >
-                <Icon size={17} />
-                {label}
-                {view === "inbox" && (
-                  <span className="nav-count">{metrics.attention || 0}</span>
-                )}
-              </button>
+            {[
+              { label: "工作室", entries: links.slice(0, 4) },
+              { label: "管理", entries: [links[5], links[4], links[6]] },
+            ].map((group) => (
+              <div className="nav-group" key={group.label}>
+                <div className="sidebar-label">{group.label}</div>
+                {group.entries.map(([view, label, Icon]) => (
+                  <button
+                    key={view}
+                    className={
+                      "nav-item " +
+                      (!route.project && route.view === view ? "active" : "")
+                    }
+                    data-action={
+                      view === "models"
+                        ? "models"
+                        : view === "dashboard"
+                          ? "dashboard"
+                          : "view"
+                    }
+                    data-view={view}
+                    aria-current={
+                      !route.project && route.view === view ? "page" : undefined
+                    }
+                    onClick={() => navigate(view)}
+                  >
+                    <Icon size={17} />
+                    {label}
+                    {view === "inbox" && (
+                      <span className="nav-count">
+                        {metrics.attention || 0}
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
             ))}
           </nav>
           <div className="sidebar-label row-between">
@@ -351,15 +360,26 @@ export default function App() {
               <ThemeControl />
               <span
                 className={
-                  "sync-state " + (overview.isError ? "error-text" : "")
+                  "sync-state " +
+                  (overview.isError ? "error-text" : "sync-compact")
                 }
+                title={
+                  overview.isError
+                    ? "同步中断"
+                    : overview.isFetching
+                      ? "正在同步"
+                      : "已同步"
+                }
+                role="status"
               >
-                <i />
-                {overview.isError
-                  ? "同步中断"
-                  : overview.isFetching
-                    ? "正在同步"
-                    : "已同步"}
+                <i aria-hidden="true" />
+                <span className={overview.isError ? "" : "sr-only"}>
+                  {overview.isError
+                    ? "同步中断"
+                    : overview.isFetching
+                      ? "正在同步"
+                      : "已同步"}
+                </span>
               </span>
               <button
                 className="icon-button"
@@ -369,7 +389,6 @@ export default function App() {
               >
                 <RefreshCw size={17} />
               </button>
-              <span className="producer-avatar">出</span>
             </div>
           </header>
           <main id="workspace" tabIndex={-1}>
@@ -1257,7 +1276,7 @@ function Project({
           </details>
         </div>
       </header>
-      {w.operator?.delegation?.reason && (
+      {w.operator?.delegation?.reason && tab === "team" && (
         <div className="delegation-note">
           <Bot size={16} />
           {w.operator.delegation.reason}
@@ -1332,9 +1351,10 @@ function Project({
                   <CurrentOutput project={p} />
                 </Panel>
                 <Panel title="当前任务与下一步">
-                  <ReviewAutomation project={p} />
+                  {p.review_automation?.status !== "passed" && (
+                    <ReviewAutomation project={p} />
+                  )}
                   <div className="current-task">
-                    <Badge status={p.status} />
                     <h3>
                       {attention?.title ||
                         activityName(w.operator?.current_activity || p.status)}
@@ -1343,15 +1363,6 @@ function Project({
                       {attention?.summary ||
                         "团队按工作流继续推进，实际产物与审核结果会持续更新。"}
                     </p>
-                    <div className="member-chips">
-                      {(
-                        rows(graph.nodes).find(
-                          (n) => n.id === graph.active_node,
-                        )?.members || []
-                      ).map((r: string) => (
-                        <span key={r}>{roleName(r)}</span>
-                      ))}
-                    </div>
                     {attention?.blocking ? (
                       <button
                         className="button primary"
@@ -1368,6 +1379,18 @@ function Project({
                         <ArrowRight size={15} />
                       </button>
                     )}
+                    <details className="current-task-members">
+                      <summary>参与角色</summary>
+                      <div className="member-chips">
+                        {(
+                          rows(graph.nodes).find(
+                            (n) => n.id === graph.active_node,
+                          )?.members || []
+                        ).map((r: string) => (
+                          <span key={r}>{roleName(r)}</span>
+                        ))}
+                      </div>
+                    </details>
                   </div>
                 </Panel>
               </div>
@@ -1434,55 +1457,61 @@ function Project({
                 <CreativeContract project={p} compact />
                 <TeamOverview projectId={id} onOpen={() => onTab("team")} />
               </details>
-              <div className="project-bottom-grid">
-                <Panel title="创作任务与当前故事">
-                  <p className="brief-text">{p.brief}</p>
-                  {p.selected_story && (
-                    <div className="selected-story">
-                      <small>
-                        已选故事 ·{" "}
-                        {p.script_review?.passed
-                          ? "当前已通过剧本"
-                          : "选题方向"}
-                      </small>
-                      <h3>
-                        {p.script?.title ||
-                          rows(p.proposals).find(
-                            (s) => s.id === p.selected_story,
-                          )?.title ||
-                          p.title}
-                      </h3>
-                      <p>
-                        {p.script?.logline ||
-                          p.script?.summary ||
-                          rows(p.proposals).find(
-                            (s) => s.id === p.selected_story,
-                          )?.logline}
-                      </p>
-                    </div>
-                  )}
-                  <details>
-                    <summary>研究资料与使用范围</summary>
-                    {rows(p.sources || p.research?.sources).map((s, i) => (
-                      <div className="source-item" key={i}>
-                        <Artifact
-                          item={{ url: s.url, label: s.title || s.url }}
-                        />
-                        <Badge label={s.rights || "仅研究"} status="pending" />
+              <details className="project-background">
+                <summary>创作背景与最近事件</summary>
+                <div className="project-bottom-grid">
+                  <Panel title="创作任务与当前故事">
+                    <p className="brief-text">{p.brief}</p>
+                    {p.selected_story && (
+                      <div className="selected-story">
+                        <small>
+                          已选故事 ·{" "}
+                          {p.script_review?.passed
+                            ? "当前已通过剧本"
+                            : "选题方向"}
+                        </small>
+                        <h3>
+                          {p.script?.title ||
+                            rows(p.proposals).find(
+                              (s) => s.id === p.selected_story,
+                            )?.title ||
+                            p.title}
+                        </h3>
+                        <p>
+                          {p.script?.logline ||
+                            p.script?.summary ||
+                            rows(p.proposals).find(
+                              (s) => s.id === p.selected_story,
+                            )?.logline}
+                        </p>
                       </div>
-                    ))}
-                  </details>
-                </Panel>
-                <Panel title="最近项目事件">
-                  <ActivityList
-                    events={rows(p.events)
-                      .slice(-5)
-                      .reverse()
-                      .map((e) => ({ ...e, project_id: id, title: p.title }))}
-                    openProject={(_, t) => onTab(t || "quality")}
-                  />
-                </Panel>
-              </div>
+                    )}
+                    <details>
+                      <summary>研究资料与使用范围</summary>
+                      {rows(p.sources || p.research?.sources).map((s, i) => (
+                        <div className="source-item" key={i}>
+                          <Artifact
+                            item={{ url: s.url, label: s.title || s.url }}
+                          />
+                          <Badge
+                            label={s.rights || "仅研究"}
+                            status="pending"
+                          />
+                        </div>
+                      ))}
+                    </details>
+                  </Panel>
+                  <Panel title="最近项目事件">
+                    <ActivityList
+                      events={rows(p.events)
+                        .slice(-5)
+                        .reverse()
+                        .map((e) => ({ ...e, project_id: id, title: p.title }))}
+                      openProject={(_, t) => onTab(t || "quality")}
+                    />
+                  </Panel>
+                </div>
+              </details>
             </>
           ) : tab === "decisions" ? (
             <DecisionCenter
@@ -2139,7 +2168,6 @@ function CurrentOutput({ project: p }: { project: RecordData }) {
           <p>
             {p.duration_seconds} 秒 · 制作版本 {p.production_revision || 1}
           </p>
-          <Badge status={p.status} />
         </div>
       </div>
     );

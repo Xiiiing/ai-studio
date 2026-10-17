@@ -10,6 +10,22 @@ export function ReviewAutomation({ project }: { project: RecordData }) {
     !Number.isInteger(state.max_rounds)
   )
     return null;
+  const stages: Record<string, string[]> = {
+    proposals: [
+      "proposals",
+      "story_creation",
+      "story_review",
+      "story_decision",
+    ],
+    script: ["screenplay", "storyboard", "script_creation", "script_review"],
+    story_resolution: ["story_resolution", "story_resolution_review"],
+  };
+  if (
+    project.stage &&
+    stages[state.phase] &&
+    !stages[state.phase].includes(project.stage)
+  )
+    return null;
   const names: RecordData = {
     writing: state.round > 1 ? "正在按审核意见返修" : "正在创作首稿",
     reviewing: "独立审稿人正在验收",

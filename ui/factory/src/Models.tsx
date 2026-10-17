@@ -35,6 +35,24 @@ import "./model-settings.css";
 export { normalizeProfile } from "./ModelConfig";
 
 type Editor = { kind: ModelKind; service?: Service; inventory: RecordData };
+function servicePurpose(service: Service, draft: RecordData) {
+  if (service.kind !== "llm") return kindLabels[service.kind] + "制作";
+  const roles = service.profiles.flatMap(([id]) => modelUses(draft, "llm", id));
+  const labels = [];
+  if (
+    roles.some(
+      (role) =>
+        !["visual_critic", "story_critic", "independent_critic"].includes(role),
+    )
+  )
+    labels.push("文本创作");
+  if (
+    roles.some((role) => ["story_critic", "independent_critic"].includes(role))
+  )
+    labels.push("文本审核");
+  if (roles.includes("visual_critic")) labels.push("视觉审核");
+  return labels.join(" / ") || "未分配用途";
+}
 export function Models({ notify }: { notify: (v: string) => void }) {
   const client = useQueryClient();
   const query = useQuery({
@@ -159,7 +177,7 @@ export function Models({ notify }: { notify: (v: string) => void }) {
   const all = services(draft),
     current = all.find((s) => s.id === selected) || all[0];
   const filtered = all.filter((s) =>
-    `${providerLabel(inventory, s.provider)} ${serviceHost(s.profiles[0][1])} ${s.profiles.map(([, p]) => p.model).join(" ")}`
+    `${servicePurpose(s, draft)} ${providerLabel(inventory, s.provider)} ${serviceHost(s.profiles[0][1])} ${s.profiles.map(([, p]) => p.model).join(" ")}`
       .toLowerCase()
       .includes(search.toLowerCase()),
   );
@@ -273,10 +291,18 @@ export function Models({ notify }: { notify: (v: string) => void }) {
                         >
                           <ProviderSymbol provider={s.provider} />
                           <span>
-                            <strong>
-                              {providerLabel(inventory, s.provider)}
-                            </strong>
-                            <small>{serviceHost(s.profiles[0][1])}</small>
+                            <strong>{servicePurpose(s, draft)}</strong>
+                            <small
+                              title={s.profiles
+                                .map(([, p]) => p.model)
+                                .join("、")}
+                            >
+                              {providerLabel(inventory, s.provider)} ·{" "}
+                              {s.profiles.map(([, p]) => p.model).join("、")}
+                            </small>
+                            <small title={s.profiles[0][1].base_url}>
+                              {serviceHost(s.profiles[0][1])}
+                            </small>
                           </span>
                           <b>{s.profiles.length}</b>
                         </button>
@@ -445,7 +471,7 @@ function ServiceDetails({
           <ProviderSymbol provider={service.provider} />
           <div>
             <h2>{providerLabel(inventory, service.provider)}</h2>
-            <small>{kindLabels[service.kind]}</small>
+            <small>{servicePurpose(service, draft)}</small>
           </div>
         </div>
         <button

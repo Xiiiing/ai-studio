@@ -51,19 +51,13 @@
   float: left;
   margin: 0 12px 0 0;
 }
-.project-quick-navigation {
-  display: none;
-}
-.project-navigation-group {
-  align-content: start;
-  align-self: start;
-}
+
 .project-pane {
   container-type: inline-size;
 }
 .creative-contract-summary {
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--radius);
   background: var(--panel);
   padding: 14px 16px;
   margin-bottom: 16px;
@@ -80,7 +74,7 @@
   font-size: 13px;
 }
 .creative-contract-summary summary {
-  color: var(--accent-text);
+  color: var(--muted);
   font-size: 13px;
   cursor: pointer;
 }
@@ -109,7 +103,7 @@
   min-width: 0;
   padding: 16px;
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--radius);
   background: var(--panel);
 }
 .quality-shot > header,
@@ -146,7 +140,7 @@
 }
 .quality-shot summary {
   padding-block: 8px;
-  color: var(--accent-text);
+  color: var(--muted);
   cursor: pointer;
   font-size: 13px;
 }
@@ -199,7 +193,7 @@
 }
 .script-evidence > summary {
   cursor: pointer;
-  color: var(--accent-text);
+  color: var(--muted);
 }
 .execution-history-toolbar {
   display: flex;
@@ -212,12 +206,12 @@
 .shot-editor {
   border: 1px solid var(--line);
   background: var(--panel);
-  border-radius: 10px;
+  border-radius: var(--radius);
   padding: 16px;
 }
 .shot-editor-summary {
   cursor: pointer;
-  color: var(--ink);
+  color: var(--muted);
   line-height: 1.7;
 }
 .shot-editor-summary::marker {
@@ -397,7 +391,7 @@
   margin: 0 0 22px;
   padding: 20px;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius);
   background: var(--surface);
 }
 .creative-contract small {
@@ -421,14 +415,14 @@
 .creative-remake-note {
   padding: 14px 16px;
   margin-bottom: 18px;
-  border-radius: 10px;
+  border-radius: var(--radius);
   background: var(--surface);
 }
 .document-reader {
   min-width: 0;
   margin-top: 12px;
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--radius);
   overflow: hidden;
   background: var(--panel);
 }
@@ -462,8 +456,8 @@
 }
 .document-view-toggle button.active {
   background: var(--panel);
-  color: var(--accent-text);
-  box-shadow: var(--shadow-sm);
+  color: var(--ink);
+  box-shadow: none;
 }
 .document-content {
   min-width: 0;
@@ -568,7 +562,7 @@
 }
 .material-card {
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--radius);
   min-width: 0;
   padding: 18px;
   background: var(--panel);
@@ -613,7 +607,7 @@
   padding: 16px;
   margin: 12px 0;
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--radius);
   background: var(--panel);
   border-color: var(--line);
 }
@@ -663,7 +657,7 @@
   max-width: 500px;
   overflow: hidden;
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--radius);
   background: var(--media);
 }
 .material-region img {
@@ -691,7 +685,7 @@
 .material-pending-files {
   padding: 12px;
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--radius);
 }
 .material-pending-files span {
   min-width: 0;
@@ -714,7 +708,7 @@
   max-height: 70vh;
   object-fit: contain;
   margin-bottom: 16px;
-  border-radius: 10px;
+  border-radius: var(--radius);
   background: var(--media);
 }
 #material-preview-dialog {

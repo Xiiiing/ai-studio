@@ -155,7 +155,7 @@ it("实际导航从总览进入具体故事选择，提交绑定当前gate与rev
   const { calls } = setup();
   await screen.findByRole("heading", { name: "制片总览" });
   const nav = screen.getByRole("navigation");
-  await userEvent.click(within(nav).getByRole("button", { name: /待办决策/ }));
+  await userEvent.click(within(nav).getByRole("button", { name: /待办/ }));
   await screen.findByRole("heading", { name: "待办决策" });
   await userEvent.click(screen.getByRole("button", { name: "处理" }));
   await screen.findByRole("button", { name: "选择这个故事" });

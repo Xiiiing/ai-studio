@@ -1,19 +1,22 @@
+import { expect } from "@playwright/test";
+
 export async function openProjectPage(page, tab) {
-  // React can mount after navigation; do not mistake a not-yet-rendered mobile
-  // picker for the hidden desktop tabbar. Wait for either visible control.
-  await page
-    .locator(
-      ".project-navigation-trigger:visible, .project-navigation [data-tab]:visible",
-    )
-    .first()
-    .waitFor({ state: "visible" });
-  const trigger = page.getByRole("button", { name: /^项目页面：/ });
-  if (await trigger.isVisible()) {
-    await trigger.click();
-    await page.locator(`[data-project-page="${tab}"]`).click();
-  } else {
-    await page.locator(`.project-navigation [data-tab="${tab}"]`).click();
+  const navigation = page.locator(".project-navigation");
+  await expect(navigation).toBeVisible();
+  if (["team", "costs"].includes(tab)) {
+    const more = page.locator(".project-more");
+    if ((await more.getAttribute("open")) === null)
+      await more.locator(":scope > summary").click();
+    await more.locator(`[data-project-page="${tab}"]`).click();
+    return;
   }
+  const group =
+    tab === "series" ? "materials" : tab === "quality" ? "decisions" : tab;
+  await navigation.locator(`[data-tab="${group}"]`).click();
+  if (tab !== group)
+    await page
+      .locator(`.project-subnavigation [data-project-page="${tab}"]`)
+      .click();
 }
 
 export async function openWorkflow(page) {

@@ -1,3 +1,4 @@
+import { setTheme } from "./theme.mjs";
 import { test, expect } from "@playwright/test";
 import { openProjectPage } from "./navigation.mjs";
 
@@ -64,7 +65,7 @@ for (const width of [320, 390, 768, 1440])
   }) => {
     await page.setViewportSize({ width, height: 844 });
     await page.goto("/#project=012345abcdef&tab=quality");
-    await page.getByLabel("外观主题").selectOption("dark");
+    await setTheme(page, "dark");
     await expect(page.locator(".quality-shot")).toHaveCount(6);
     await expect(page.locator(".activity-list > article")).toHaveCount(8);
     expect(
@@ -144,9 +145,11 @@ test("project navigation does not push content away or stretch its grouped butto
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/#project=012345abcdef&tab=quality");
   const before = await page.locator(".quality-panel").boundingBox();
-  await page.getByRole("button", { name: /^项目页面：/ }).click();
-  const menu = page.getByRole("navigation", { name: "项目页面选择" });
-  await expect(menu.locator("button")).toHaveCount(10);
+  const more = page.locator(".project-more");
+  const trigger = more.locator(":scope > summary");
+  await trigger.click();
+  const menu = more.locator(".project-navigation-menu");
+  await expect(menu.locator("button")).toHaveCount(2);
   expect(
     await menu
       .locator("button")
@@ -160,7 +163,8 @@ test("project navigation does not push content away or stretch its grouped butto
   ).toBeTruthy();
   expect((await page.locator(".quality-panel").boundingBox()).y).toBe(before.y);
   await page.keyboard.press("Escape");
-  await expect(menu).toHaveCount(0);
+  await expect(menu).toBeHidden();
+  await expect(trigger).toBeFocused();
 });
 
 for (const width of [320, 390, 768])
@@ -169,7 +173,7 @@ for (const width of [320, 390, 768])
   }) => {
     await page.setViewportSize({ width, height: 844 });
     await page.goto("/#view=models");
-    await page.getByLabel("外观主题").selectOption("dark");
+    await setTheme(page, "dark");
     if (width <= 720) await page.locator('[data-service="llm:writer"]').click();
     await page
       .locator('[data-model-action="edit"][data-profile="writer"]')

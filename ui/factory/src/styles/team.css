@@ -29,7 +29,7 @@
 }
 .team-department {
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--radius);
   padding: 16px;
   min-width: 0;
   background: var(--panel);
@@ -38,7 +38,7 @@
   border-color: var(--accent);
 }
 .team-department > .row-between > svg {
-  color: var(--accent-text);
+  color: var(--muted);
 }
 .team-department h3 {
   margin: 12px 0 6px;
@@ -136,7 +136,7 @@
 }
 .team-task-button.selected {
   border-color: var(--accent);
-  background: var(--accent-soft);
+  background: var(--surface);
 }
 .team-task-button > span {
   display: flex;
@@ -257,7 +257,7 @@
 .team-legacy-receipts {
   border: 1px solid var(--line);
   padding: 18px;
-  border-radius: 12px;
+  border-radius: var(--radius);
 }
 .team-legacy-receipts > summary {
   cursor: pointer;

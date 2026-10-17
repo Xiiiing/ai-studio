@@ -3,6 +3,8 @@ import { Monitor, Moon, Sun } from "lucide-react";
 
 export type ThemePreference = "system" | "light" | "dark";
 export const THEME_STORAGE_KEY = "studio.theme";
+const cycle: ThemePreference[] = ["system", "light", "dark"];
+const labels = { system: "跟随系统", light: "浅色", dark: "深色" };
 
 export function readTheme(): ThemePreference {
   try {
@@ -22,7 +24,7 @@ export function applyTheme(preference: ThemePreference, systemDark: boolean) {
   document.documentElement.style.colorScheme = theme;
   document
     .querySelector('meta[name="theme-color"]')
-    ?.setAttribute("content", theme === "dark" ? "#14151c" : "#f5f5f8");
+    ?.setAttribute("content", theme === "dark" ? "#171719" : "#f7f7f8");
 }
 
 export function ThemeControl() {
@@ -44,26 +46,25 @@ export function ThemeControl() {
   }, []);
   const Icon =
     preference === "system" ? Monitor : preference === "dark" ? Moon : Sun;
+  const next = cycle[(cycle.indexOf(preference) + 1) % cycle.length];
+  const description = `外观主题：${labels[preference]}；切换为${labels[next]}`;
   return (
-    <label className="theme-control">
+    <button
+      type="button"
+      className="theme-control icon-button"
+      aria-label={description}
+      title={description}
+      data-tooltip={description}
+      onClick={() => {
+        try {
+          localStorage.setItem(THEME_STORAGE_KEY, next);
+        } catch {
+          /* Session choice still applies. */
+        }
+        setPreference(next);
+      }}
+    >
       <Icon size={16} aria-hidden="true" />
-      <select
-        aria-label="外观主题"
-        value={preference}
-        onChange={(event) => {
-          const next = event.target.value as ThemePreference;
-          try {
-            localStorage.setItem(THEME_STORAGE_KEY, next);
-          } catch {
-            /* Session choice still applies. */
-          }
-          setPreference(next);
-        }}
-      >
-        <option value="system">跟随系统</option>
-        <option value="light">浅色</option>
-        <option value="dark">深色</option>
-      </select>
-    </label>
+    </button>
   );
 }
