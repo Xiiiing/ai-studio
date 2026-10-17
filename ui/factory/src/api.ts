@@ -199,6 +199,10 @@ export function parseMoney(value: any) {
   return result;
 }
 export const names: Record<string, string> = {
+  unit_ready: '单元已完成',
+  awaiting_plan: '待确认全剧规划',
+  waiting_dependency: '等待前集结果',
+  draft: '未生成',
   skipped: "无需执行",
   finished: "已交接",
   pending: "待执行",

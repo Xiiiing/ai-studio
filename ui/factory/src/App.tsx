@@ -32,7 +32,7 @@ import {
 } from "./ProjectResultActions";
 import { useUnsavedShotGuard } from "./SessionDraft";
 import { Models, MaterialLibrary } from "./LazyViews";
-import { CreateDrama, DramaDetail } from './Dramas';
+import { CreateDrama, DramaDetail, LongEpisodeDetail } from './Dramas';
 import {
   request,
   keys,
@@ -1176,6 +1176,9 @@ function Project({
   if (w.project.record_kind === 'drama') return <DramaDetail id={id} onBack={onBack} openEpisode={episodeId => {
     location.hash = new URLSearchParams({project:episodeId, tab:'overview'}).toString();
   }} />;
+  if (w.project.record_kind === 'episode' && w.project.duration_seconds > 90) return <LongEpisodeDetail episode={w.project} openProject={projectId => {
+    location.hash = new URLSearchParams({project:projectId, tab:'overview'}).toString();
+  }} />;
   const p = { ...w.project, operator: w.operator },
     storyboardShots = rows(p.shots),
     storyboardPages = Math.max(1, Math.ceil(storyboardShots.length / 6)),
@@ -1214,7 +1217,7 @@ function Project({
             className="icon-button project-back"
             aria-label="返回项目列表"
             title="返回项目列表"
-            onClick={onBack}
+            onClick={() => { if (p.parent_id) location.hash=new URLSearchParams({project:p.parent_id,tab:'overview'}).toString(); else onBack(); }}
           >
             <ArrowLeft size={20} aria-hidden="true" />
           </button>

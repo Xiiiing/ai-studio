@@ -1,6 +1,6 @@
 # Wkp 服务接入与 0.1.0 开发基线
 
-2026-10-17 使用现有授权 mTLS 连接只读核对 `/health` 和模型目录：primary 的模型 ID 是 `qwen3.8-27b-q8-opt-2dflash`，服务声明上下文 131072；vision 是 `qwen3.8-27b-q8-vision`，上下文 32768，声明图片和视频输入。应用示例保守使用 32768。健康与目录响应不代表生成质量验收。
+2026-10-17 使用现有授权 mTLS 连接只读核对 `/health` 和模型目录：primary 的模型 ID 是 `qwen3.8-27b-q8-opt-2dflash`，服务声明上下文 131072；vision 是 `qwen3.8-27b-q8-vision`，上下文 32768，声明图片和视频输入。长集配置示例使用 primary 65536、vision 32768，均不超过本次读取的服务声明。健康与目录响应不代表生成质量验收。
 
 `config/factory.wkp.example.json` 是控制层配置格式示例；替换已有授权 TLS 文件路径。文本创作与独立审稿均走 primary，视觉质检走 vision。不会读取或复制 Wkp 原始模型凭据。
 

@@ -44,6 +44,7 @@ def inspect(root, readers, media):
     schemas = {name: sql.schema(db, name) for name, db in readers.items()}
     db, checkpoints = readers["studio.sqlite3"], readers["checkpoints.sqlite3"]
     projects, identities, references = [], set(), 0
+    hierarchy = {}
     for row in rows(db, "SELECT id,revision,snapshot FROM projects ORDER BY id"):
         project = files.decode_json(row["snapshot"])
         pid = row["id"]
@@ -57,10 +58,25 @@ def inspect(root, readers, media):
         if owner in catalog and files.read_json(root, owner).get("project_id") != pid:
             raise BackupError("Project production directory owner differs")
         identities.add(pid)
+        hierarchy[pid]=project
         references += receipt_references(project, catalog)
         projects.append({"id": pid, "slug": slug, "revision": row["revision"],
                          "production_revision": project.get("production_revision"), "status": project.get("status"),
                          "snapshot_sha256": files.digest(project)})
+    for pid,project in hierarchy.items():
+        kind=project.get('record_kind')
+        if kind=='drama':
+            for eid in project.get('episodes',[]):
+                if hierarchy.get(eid,{}).get('drama_id')!=pid: raise BackupError('Orphaned drama episode relationship')
+            for batch in project.get('batches',[]):
+                if not set(batch['episode_ids'])<=set(project['episodes']): raise BackupError('Foreign episode in drama batch')
+        elif kind in {'episode','scene_unit'}:
+            root=hierarchy.get(project.get('drama_id'),{})
+            if root.get('record_kind')!='drama' or not 1<=project.get('plan_version',0)<=root.get('plan_version',0):
+                raise BackupError('Invalid pinned drama version or parent')
+            if kind=='episode' and pid not in root.get('episodes',[]): raise BackupError('Orphaned drama episode relationship')
+            if kind=='scene_unit' and pid not in hierarchy.get(project.get('episode_id'),{}).get('unit_ids',[]):
+                raise BackupError('Orphaned scene unit relationship')
     threads = {r[0] for r in rows(checkpoints, "SELECT thread_id FROM checkpoints UNION SELECT thread_id FROM writes")}
     if not threads <= identities: raise BackupError("Checkpoint database contains another project/thread")
     for table in ("memories", "idempotency"):

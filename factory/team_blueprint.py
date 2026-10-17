@@ -32,8 +32,9 @@ def topology(workflow_version=1):
             nodes[ident]['execution_nodes'].append(executable)
             continue
         if ident == 'unit_ready':
-            decisions[ident] = ('制作单元就绪', ['delivery'], ['unit_ready'])
-        if ident in decisions:
+            spec={'label':'制作单元就绪','owner':'editor','reviewer':'visual_critic','members':['editor','visual_critic'],
+                  'inputs':['delivery'],'outputs':['unit_ready']}
+        elif ident in decisions:
             label,inputs,outputs=decisions[ident]
             spec={'label':label,'owner':'producer','reviewer':None,
                   'members':['executive_producer','producer'],'inputs':inputs,'outputs':outputs}
@@ -88,6 +89,8 @@ def project_graph(project, attention=None, running=False):
                 status, evidence = "succeeded", "decision_receipt"
         if ident == "delivery" and project.get("status") == "approved":
             status, evidence = "succeeded", "producer_approval"
+        if ident == 'unit_ready' and project.get('status') == 'unit_ready' and project.get('delivery'):
+            status, evidence = 'succeeded', 'unit_delivery_receipt'
         if ident == active:
             if project.get("status") in {"blocked", "failed"}: status = "blocked"
             elif project.get("status") == "paused" or project.get("pause_requested"): status = "paused"
