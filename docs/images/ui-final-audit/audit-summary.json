@@ -1,0 +1,24 @@
+{
+  "baseline": "823ae9f / index-BTjyJPmh.js",
+  "finalBundle": "index-CRmGsIl1.js / index-CB3aPTac.css",
+  "environment": "Independent fixtures, temporary databases and synthetic media; no production writes, model calls or deployment",
+  "views": 17,
+  "widths": [
+    320,
+    390,
+    768,
+    1024,
+    1440,
+    1920
+  ],
+  "themes": [
+    "light",
+    "dark"
+  ],
+  "pageCombinations": 204,
+  "overlayCombinations": 84,
+  "stressCombinations": 24,
+  "menuCombinations": 24,
+  "contentMaxMovementPx": 0,
+  "notes": "Geometry is measured on actual page content, not internal root clientWidth; full viewport modal paint and body padding compensation are also verified."
+}

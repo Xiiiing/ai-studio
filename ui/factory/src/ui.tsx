@@ -11,6 +11,7 @@ import {
   type ReactElement,
 } from "react";
 import { X, AlertCircle, Inbox, ArrowUpRight } from "lucide-react";
+import { lockPageScroll } from "./ScrollLock";
 import { PageHeader } from "./PageHeader";
 import { StatusIndicator } from "./StatusIndicator";
 import { names, text, mediaUrl, ownedMedia, type RecordData } from "./api";
@@ -94,6 +95,18 @@ export function ErrorNotice({
   children?: ReactNode;
   reserveSpace?: boolean;
 }) {
+  const feedback = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!reserveSpace || !error) return;
+    const frame = requestAnimationFrame(() => {
+      const slot = feedback.current;
+      // A sticky save bar may be visible while its inline error is still offscreen.
+      // Reveal the form's own error without moving focus or opening another dialog.
+      if (slot?.closest("dialog")?.open)
+        slot.scrollIntoView?.({ block: "center", inline: "nearest" });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [error, reserveSpace]);
   const [expanded, setExpanded] = useState(false);
   const detailId = useId();
   useEffect(() => {
@@ -118,7 +131,7 @@ export function ErrorNotice({
     </div>
   ) : null;
   return reserveSpace ? (
-    <div className="form-feedback-slot">
+    <div className="form-feedback-slot" ref={feedback}>
       {notice}
       {expanded && error && (
         <Modal
@@ -162,12 +175,11 @@ export function Modal({
   useEffect(() => {
     const d = ref.current;
     const previous = document.activeElement as HTMLElement | null;
-    const overflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    const releaseScroll = lockPageScroll();
     d?.showModal();
     return () => {
       d?.close();
-      document.body.style.overflow = overflow;
+      releaseScroll();
       if (previous?.isConnected) previous.focus({ preventScroll: true });
     };
   }, []);

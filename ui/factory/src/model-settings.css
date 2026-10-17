@@ -207,13 +207,18 @@
   }
 }
 #model-service-detail-dialog {
-  inset: 0 0 0 auto;
+  position: fixed;
+  inset: 0 calc(100% - 100vw) 0 auto;
   width: min(480px, 100vw);
   max-width: 100vw;
   height: 100dvh;
   max-height: 100dvh;
-  margin: 0 0 0 auto;
+  margin: 0;
   border-radius: 0;
+}
+#model-service-detail-dialog[open] {
+  display: flex;
+  flex-direction: column;
 }
 #model-service-detail-dialog .dialog-head {
   flex: none;
@@ -221,6 +226,7 @@
 #model-service-detail-dialog .dialog-body {
   min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
   flex: 1;
 }
 .service-detail-heading {
@@ -229,6 +235,16 @@
   justify-content: space-between;
   gap: 15px;
   margin-bottom: 22px;
+}
+.service-detail-heading > .service-editor-brand {
+  flex: 1;
+}
+.service-detail-heading h2 {
+  overflow-wrap: anywhere;
+}
+.service-detail-heading > button {
+  flex: none;
+  white-space: nowrap;
 }
 .service-editor-brand {
   display: flex;

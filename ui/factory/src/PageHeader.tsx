@@ -152,7 +152,9 @@ export function PageHeader({
           </button>
         )}
         {parent}
-        <h1>{title}</h1>
+        <h1 title={title}>
+          <span className="header-title-text">{title}</span>
+        </h1>
       </div>
       {action && <div className="header-business-actions">{action}</div>}
       {tools && <WorkspaceTools tools={tools} />}

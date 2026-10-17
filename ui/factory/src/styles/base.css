@@ -2204,9 +2204,9 @@ dialog::backdrop {
   padding-top: 22px;
   margin-top: 20px;
   position: sticky;
-  bottom: -20px;
+  bottom: 0;
   z-index: 2;
-  padding: 16px 0;
+  padding: 16px 0 max(16px, env(safe-area-inset-bottom, 0px));
   background: var(--panel);
 }
 #preview-dialog {

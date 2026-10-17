@@ -185,6 +185,9 @@
   margin-top: 8px;
   gap: 6px 12px;
 }
+.project-meta > .project-download-reason {
+  margin-inline-start: auto;
+}
 .heading-actions {
   margin-top: 0;
   flex-direction: row;
@@ -211,17 +214,29 @@
   line-height: var(--leading-caption);
 }
 .project-actions-menu {
-  position: relative;
+  position: static;
   margin: 0;
 }
 .project-actions-menu > summary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   min-height: var(--target-size);
-  padding: 4px 8px;
-  cursor: pointer;
-  color: var(--muted);
-  font-size: var(--text-ui);
-  line-height: var(--leading-ui);
+  padding: 10px 14px;
+  list-style: none;
+  white-space: nowrap;
 }
+.project-actions-menu > summary::marker {
+  content: "";
+}
+.project-actions-menu > summary::-webkit-details-marker {
+  display: none;
+}
+.project-actions-menu[open] > summary > svg {
+  transform: rotate(180deg);
+}
+
 .project-actions-menu[open] > summary {
   margin-bottom: 0;
 }
@@ -441,13 +456,6 @@
   }
   .project-result-actions [data-project-result] > svg:last-child {
     display: none;
-  }
-  .project-actions-menu > summary {
-    min-height: 44px;
-    display: flex;
-    align-items: center;
-    padding: 8px 4px;
-    white-space: nowrap;
   }
 
   .project-context {

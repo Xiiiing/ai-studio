@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   LayoutDashboard,
@@ -22,7 +22,9 @@ import {
   AlertCircle,
   ChevronRight,
   ArrowLeft,
+  ChevronDown,
 } from "lucide-react";
+import { lockPageScroll } from "./ScrollLock";
 import { ThemeProvider } from "./Theme";
 import { PageHeader, PageHeaderProvider } from "./PageHeader";
 import { ProjectNavigation } from "./ProjectNavigation";
@@ -124,8 +126,7 @@ function Workbench() {
   }, []);
   useEffect(() => {
     if (!mobile || !narrow) return;
-    const overflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    const releaseScroll = lockPageScroll();
     let focusFrame = requestAnimationFrame(() => {
       focusFrame = requestAnimationFrame(() =>
         navigationRef.current
@@ -135,7 +136,7 @@ function Workbench() {
     });
     return () => {
       cancelAnimationFrame(focusFrame);
-      document.body.style.overflow = overflow;
+      releaseScroll();
       navigationTrigger.current?.focus({ preventScroll: true });
     };
   }, [mobile, narrow]);
@@ -1130,6 +1131,22 @@ function Project({
     enabled: !!workspace.data && !workspace.data.flow,
     refetchInterval: 5000,
   });
+  const actionsMenu = useRef<HTMLDetailsElement>(null);
+  const downloadReasonId = useId();
+  useEffect(() => {
+    if (actionsMenu.current) actionsMenu.current.open = false;
+  }, [tab]);
+  useEffect(() => {
+    const outside = (event: PointerEvent) => {
+      if (
+        actionsMenu.current &&
+        !actionsMenu.current.contains(event.target as Node)
+      )
+        actionsMenu.current.open = false;
+    };
+    document.addEventListener("pointerdown", outside);
+    return () => document.removeEventListener("pointerdown", outside);
+  }, []);
   const [selectedFlowNode, setSelectedFlowNode] = useState(""),
     [selectedExecution, setSelectedExecution] = useState(""),
     [workflowOpen, setWorkflowOpen] = useState(false),
@@ -1243,21 +1260,40 @@ function Project({
                     ? "总制片协作"
                     : "人工把关"}
             </span>
+            {!ownedMedia(p.id, p.delivery?.video_url) && (
+              <span id={downloadReasonId} className="project-download-reason">
+                成片尚未生成
+              </span>
+            )}
           </div>
         }
         action={
           <div className="heading-actions">
-            <ProjectResultActions project={p} onOpen={onTab} />
+            <ProjectResultActions
+              project={p}
+              onOpen={onTab}
+              reasonId={downloadReasonId}
+            />
             <details
+              ref={actionsMenu}
               className="project-actions-menu"
+              onBlur={(event) => {
+                if (!event.currentTarget.contains(event.relatedTarget as Node))
+                  event.currentTarget.open = false;
+              }}
               onKeyDown={(event) => {
                 if (event.key === "Escape") {
+                  event.preventDefault();
+                  event.stopPropagation();
                   event.currentTarget.open = false;
                   event.currentTarget.querySelector("summary")?.focus();
                 }
               }}
             >
-              <summary>项目操作</summary>
+              <summary className="button">
+                项目操作
+                <ChevronDown size={16} aria-hidden="true" />
+              </summary>
               <div className="project-actions-list">
                 <button className="button small" onClick={() => onRemake(p)}>
                   按新规格重制

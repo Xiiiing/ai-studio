@@ -771,8 +771,7 @@ export function Costs({
         String(project.needs_decision?.code || "").startsWith("cloud_"));
   return (
     <div className="stack">
-      <FloatingErrorNotice error={query.error} />
-      <ErrorNotice error={error} reserveSpace />
+      <FloatingErrorNotice error={query.error || error} />
       <Panel
         title="云媒体费用与授权"
         description="每批请求按模型、参数和生产版本绑定授权，累计用量不会因返修清零。"

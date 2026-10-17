@@ -2,6 +2,10 @@ import { refreshPage } from "./header-flow.mjs";
 import { openWorkflow } from "./navigation.mjs";
 import { openProjectPage } from "./navigation.mjs";
 import { test, expect } from "@playwright/test";
+import {
+  documentAnchors,
+  expectAnchorsUnchanged,
+} from "./control-alignment.mjs";
 const id = "012345abcdef";
 test.beforeEach(async ({ page, request }) => {
   await request.post("/__test/reset");
@@ -84,10 +88,9 @@ test("remake opens an editable new project without mutating existing media", asy
     .getByLabel("创作方向")
     .fill("调整为2D动漫短剧，冲突和反转在单部作品中完成。");
   await page.setViewportSize({ width: 390, height: 844 });
-  // The stable scrollbar gutter reserves space even while the modal locks scrolling.
-  const lockedBodyWidth = await page
-    .locator("body")
-    .evaluate((element) => element.scrollWidth);
+  // Modal scroll locking releases the root gutter so the top layer can paint
+  // edge to edge. The visible workspace must retain its actual geometry.
+  const lockedWorkspace = await documentAnchors(page);
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= innerWidth + 1,
@@ -98,10 +101,7 @@ test("remake opens an editable new project without mutating existing media", asy
     fullPage: true,
   });
   await dialog.getByRole("button", { name: "取消", exact: true }).click();
-  await expect(page.locator("body")).toHaveJSProperty(
-    "scrollWidth",
-    lockedBodyWidth,
-  );
+  await expectAnchorsUnchanged(page, lockedWorkspace);
   const after = await (await request.get("/api/factory/projects/" + id)).json();
   expect(after).toEqual(before);
   const calls = await (await request.get("/__test/calls")).json();
