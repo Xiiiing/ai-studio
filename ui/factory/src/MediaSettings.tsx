@@ -1,3 +1,8 @@
+import {
+  CredentialField,
+  ProviderSymbol,
+  endpointValues,
+} from "./ConnectionFields";
 import { useRef, useState } from "react";
 import { Field, Panel, Modal, ErrorNotice } from "./ui";
 import { request, type RecordData } from "./api";
@@ -144,6 +149,7 @@ export function MediaSettings({
                   )
                   .map(([id, p]: [string, any]) => (
                     <article key={id} className="model-card">
+                      <ProviderSymbol provider={p.provider} />
                       <h3>{id}</h3>
                       <p>
                         {inventory.media_providers?.[p.provider]?.label ||
@@ -152,7 +158,7 @@ export function MediaSettings({
                       </p>
                       <small>
                         {p.base_url || "使用已配置的制作环境"}
-                        {p.api_key_env ? ` · 密钥变量：${p.api_key_env}` : ""}
+                        {p.api_key_env ? " · 已关联服务端凭据" : ""}
                       </small>
                       <div className="button-row">
                         <button
@@ -276,10 +282,11 @@ export function MediaSettings({
           kind={editing.kind}
           id={editing.id}
           current={draft[editing.kind + "_profiles"]?.[editing.id] || {}}
+          pendingKey={draft.secrets?.[editing.kind + ":" + editing.id] || ""}
           presets={inventory.media_presets[editing.kind]}
           labels={inventory.media_providers}
           onClose={() => setEditing(null)}
-          onSave={(id, p) => {
+          onSave={(id, p, secret) => {
             if (saving) return;
             const kind = editing.kind;
             if (!editing.id && draft[kind + "_profiles"]?.[id])
@@ -287,6 +294,9 @@ export function MediaSettings({
             onChange((d) => ({
               ...d,
               [kind + "_profiles"]: { ...d[kind + "_profiles"], [id]: p },
+              ...(secret !== undefined
+                ? { secrets: { ...d.secrets, [kind + ":" + id]: secret } }
+                : {}),
             }));
             setEditing(null);
           }}
@@ -305,7 +315,9 @@ function MediaEditor({
   onClose,
   onSave,
   preferLocal,
+  pendingKey,
 }: {
+  pendingKey: string;
   disabled?: boolean;
   preferLocal: boolean;
   kind: Kind;
@@ -314,7 +326,7 @@ function MediaEditor({
   presets: RecordData;
   labels: RecordData;
   onClose: () => void;
-  onSave: (id: string, p: RecordData) => void;
+  onSave: (id: string, p: RecordData, secret?: string) => void;
 }) {
   const [provider, setProvider] = useState(
     current.provider ||
@@ -394,12 +406,33 @@ function MediaEditor({
                   ? "compatible-mode/v1"
                   : "api/v1");
             }
-            if (p.base_url && p.network_mode !== "loopback") {
-              const host = new URL(p.base_url).hostname;
-              if (!(p.allowed_hosts || []).includes(host))
-                p.allowed_hosts = [...(p.allowed_hosts || []), host];
+            if (p.base_url) {
+              const changed =
+                !values.base_url ||
+                new URL(p.base_url).origin !== new URL(values.base_url).origin;
+              Object.assign(
+                p,
+                endpointValues({
+                  ...p,
+                  network_mode:
+                    changed && p.network_mode === values.network_mode
+                      ? "auto"
+                      : p.network_mode,
+                }),
+              );
+              if (changed)
+                for (const key of [
+                  "tls_ca_file_env",
+                  "tls_client_cert_env",
+                  "tls_client_key_env",
+                ])
+                  delete p[key];
             }
-            onSave(String(f.id), p);
+            onSave(
+              String(f.id),
+              p,
+              f.api_key ? String(f.api_key).trim() : undefined,
+            );
           } catch (e) {
             setError((e as Error).message);
           }
@@ -409,7 +442,10 @@ function MediaEditor({
           <Field label="制作连接编号">
             <input
               name="id"
-              defaultValue={values.id ?? id}
+              defaultValue={
+                values.id ??
+                (id || `connection-${Math.random().toString(36).slice(2, 9)}`)
+              }
               readOnly={!!id}
               required
               pattern="[A-Za-z0-9][A-Za-z0-9_.-]{0,63}"
@@ -436,13 +472,20 @@ function MediaEditor({
               ))}
             </select>
           </Field>
+          <div className="provider-intro">
+            <ProviderSymbol provider={provider} />
+            <strong>{providerLabels?.[provider]?.label || provider}</strong>
+          </div>
           {field("model", "制作模型标识", true)}
           {provider === "comfyui_external" &&
             field("base_url", "ComfyUI 服务地址", true)}
           {values.base_url &&
             provider !== "comfyui_external" &&
             field("base_url", "API 地址", true)}
-          {field("api_key_env", "制作密钥环境变量")}
+          <CredentialField
+            saved={!!id && !!current.api_key_env}
+            value={provider === current.provider ? pendingKey : ""}
+          />
           {provider.startsWith("dashscope_") && (
             <Field label="百炼工作空间 ID（专属入口需要时填写）">
               <input name="workspace_id" pattern="[A-Za-z0-9-]+" />
@@ -465,6 +508,7 @@ function MediaEditor({
           )}
           <details>
             <summary>高级设置：网络、模型文件、声线和参考图模板</summary>
+            {field("api_key_env", "制作密钥环境变量")}
             <Field label="制作高级设置 JSON">
               <textarea
                 name="advanced"

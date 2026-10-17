@@ -226,3 +226,31 @@ def test_template_import_export_and_separate_body_limit(endpoint, monkeypatch, t
     assert code == 200 and exported == value
     assert next(r for r in FACTORY_ROUTES if r.name == 'workflow_template_import').body_limit == 1048576
     assert next(r for r in FACTORY_ROUTES if r.name == 'model_save').body_limit == 65536
+
+
+def test_draft_discovery_http_accepts_write_only_key_and_rejects_extra_fields(endpoint,monkeypatch):
+    client,calls,_,_=endpoint
+    def discover(profile,api_key=None):
+        assert api_key=='fixture-write-only-token'
+        assert profile['base_url']=='http://127.0.0.1:8090/v1'
+        return {'status':'ready','models':[{'id':'fixture-model'}],'generation':False}
+    monkeypatch.setattr(providers,'discover_models',discover)
+    payload={'profile':{'base_url':'http://127.0.0.1:8090/v1'},'api_key':'fixture-write-only-token'}
+    status,_,data=client.request('POST','/api/factory/models/discover',payload)
+    assert status==200 and data['generation'] is False
+    assert 'fixture-write-only-token' not in json.dumps(data)
+    assert not calls
+    assert client.request('POST','/api/factory/models/discover',{**payload,'unexpected':True})[0]==409
+
+
+def test_save_http_passes_separate_key_envelope_without_echo(endpoint,monkeypatch):
+    client,_,inventory,_=endpoint
+    def save(profiles,roles,expected_revision,*,secrets=None):
+        assert secrets=={'llm:writer':'fixture-write-only-token'}
+        assert all('api_key' not in value for value in profiles.values())
+        return {'revision':'updated','editable_profiles':profiles}
+    monkeypatch.setattr(providers,'save_registry',save)
+    status,_,data=client.request('POST','/api/factory/models',{
+        'profiles':inventory['editable_profiles'],'roles':inventory['role_assignments'],
+        'expected_revision':inventory['revision'],'secrets':{'llm:writer':'fixture-write-only-token'}})
+    assert status==200 and 'fixture-write-only-token' not in json.dumps(data)

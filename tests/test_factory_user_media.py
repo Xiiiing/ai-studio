@@ -32,13 +32,21 @@ def test_template_hash_roundtrip_mappings_and_compatibility(tmp_path, monkeypatc
     with pytest.raises(ValueError,match='校验'): wt.load_template(saved['id'])
 
 
-@pytest.fixture
-def comfy(tmp_path,monkeypatch):
+@pytest.fixture(params=[False, True], ids=["no-key", "managed-key"])
+def comfy(tmp_path,monkeypatch,request):
     monkeypatch.setattr(core,'ROOT',tmp_path)
+    credential={}
+    if request.param:
+        from factory import connection_secrets as vault
+        monkeypatch.setattr(vault,'vault_path',lambda:tmp_path/'keys.json')
+        reference=vault.PREFIX+'b'*32
+        vault.write_vault({reference:'fixture-comfy-key'})
+        credential={'api_key_env':reference}
     calls=[]
     class Handler(BaseHTTPRequestHandler):
         def log_message(self,*args):pass
         def do_GET(self):
+            assert self.headers.get('Authorization')==('Bearer fixture-comfy-key' if request.param else None)
             if self.path=='/object_info': answer={'Prompt':{},'SaveImage':{}}
             elif self.path.startswith('/history/'):
                 answer={'prompt-1':{'status':{'status_str':'success'},'outputs':{'2':{'images':[{'filename':'other.png'},{'filename':'selected.png'}]}}}}
@@ -47,12 +55,13 @@ def comfy(tmp_path,monkeypatch):
             else: self.send_response(404);self.end_headers();return
             self.send_response(200);self.end_headers();self.wfile.write(json.dumps(answer).encode())
         def do_POST(self):
+            assert self.headers.get('Authorization')==('Bearer fixture-comfy-key' if request.param else None)
             body=self.rfile.read(int(self.headers['Content-Length']));calls.append((self.path,body))
             self.send_response(200);self.end_headers()
             self.wfile.write(json.dumps({'name':'uploaded.png'} if self.path=='/upload/image' else {'prompt_id':'prompt-1'}).encode())
     server=ThreadingHTTPServer(('127.0.0.1',0),Handler)
     thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
-    client=external_comfy.ExternalComfy({'base_url':f'http://127.0.0.1:{server.server_port}', 'network_mode':'loopback','enabled':True})
+    client=external_comfy.ExternalComfy({'base_url':f'http://127.0.0.1:{server.server_port}', 'network_mode':'loopback','enabled':True,**credential})
     try:yield client,calls
     finally:server.shutdown();server.server_close();thread.join()
 

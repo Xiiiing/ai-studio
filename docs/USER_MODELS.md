@@ -12,7 +12,9 @@ cp config/runtime.env.example config/runtime.env
 chmod 600 config/runtime.env
 ```
 
-在私有环境文件填写自己的密钥，例如 `DASHSCOPE_API_KEY=...`、`MINIMAX_API_KEY=...`。前台 Web、worker、CLI 和 systemd 都读取此文件；已有进程环境变量优先。文件不执行 shell，不展开 `$变量`。修改后重启 Web 和 worker。不要提交真实密钥。
+启动后可直接在“模型与连接”填写 API Key。选择内置服务时地址与协议已有预设，填写 Key 并确认模型标识即可；自定义／本地连接填写服务 URL、可选 Key，并选择实际接口协议或运行时。连接编号自动生成，也可自行命名。添加连接后点击页面“保存配置”，再分配相应制作角色。
+
+高级部署仍可在私有环境文件填写 `DASHSCOPE_API_KEY=...`、`MINIMAX_API_KEY=...` 等变量，并在高级连接设置登记变量名。Web、worker、CLI 和 systemd 都读取此文件；进程已有环境变量优先。文件不执行 shell，不展开 `$变量`，修改环境文件后需要重启 Web 和 worker。直接在界面保存的 Key 无需这样重启；运行中任务保留原配置快照。不要提交真实密钥。
 
 分别启动 `python -m factory.web` 和 `python -m factory.worker`，使用实际控制层 Python 环境。浏览器打开本机工作台，进入“模型与连接”。工作台是本机管理面；远程访问沿用认证代理或 SSH 转发，不能直接监听公网。
 
@@ -22,7 +24,7 @@ chmod 600 config/runtime.env
 
 | 环节 | 首批支持 | 配置方式 |
 | --- | --- | --- |
-| 文本、视觉理解 | OpenAI、DeepSeek、百炼、智谱、Moonshot、MiniMax、硅基流动、Claude、Gemini | 选择平台预设及模型，配置对应密钥变量，分配角色 |
+| 文本、视觉理解 | OpenAI、DeepSeek、百炼、智谱、Moonshot、MiniMax、硅基流动、Claude、Gemini | 选择平台预设及模型，填写 API Key，分配角色 |
 | 图像与参考图编辑 | 百炼 Qwen Image 2.1 / 3.0 | 添加图像 API 连接，选为图像生成连接 |
 | 配音 | 百炼 Qwen3-TTS-Flash 非流式接口 | 添加语音 API 连接，配置默认声线、语言及角色声线映射 |
 | 视频 | MiniMax 已适配图生视频接口 | 添加视频连接，选择兼容模型、时长和分辨率 |
@@ -37,7 +39,7 @@ chmod 600 config/runtime.env
 
 ## 3. 自己部署的模型
 
-文本模型可连接 Ollama、vLLM、LM Studio、llama.cpp 或兼容接口。`localhost` 指 AI Studio 后端所在机器。局域网模型需配置精确主机与网络范围；带鉴权的非本机接口使用 HTTPS。
+文本模型可连接 Ollama、vLLM、LM Studio、llama.cpp 或兼容接口。`localhost` 指 AI Studio 后端所在机器。界面会根据 URL 填入连接范围与精确允许主机，可在高级设置调整；带鉴权的非本机接口使用 HTTPS。完整 Chat Completions 调用 URL 会转换为服务基址，自定义网关路径前缀保留。
 
 图像／视频有两种接入方式：让 AI Studio 管理本机 ComfyUI，或连接自己已经运行的 ComfyUI。后者通过 HTTP 上传和下载，不要求共享目录，AI Studio 不会停止用户自己的服务。自定义 API 工作流及映射格式见 [模型接口说明](MODEL_PROVIDERS.md#自定义-comfyui-api-工作流)。模型文件、必要节点及参考图槽位必须兼容。
 
@@ -52,3 +54,13 @@ chmod 600 config/runtime.env
 工作流模板和未完成云媒体的私有响应位于 `runtime/factory/workflow_templates/` 与 `runtime/factory/cloud_media_responses/`。现有可移植备份不收集这些运行文件或密钥；模板请单独导出，未完成任务迁移前需保留私有响应或先核对供应商结果。旧数据库和旧云视频记录继续可读，新媒体元数据使用新增表。
 
 本地自动化验收使用隔离数据库、模拟 API 和真实 FFmpeg 编解码，不代表真实供应商质量或 Wkp 实测。接入自己的账号后，先检查结构化文本、图片理解、单张图片、短配音与单镜头视频，再扩大制作规模。
+
+## 5. Key、协议与连接检查
+
+界面直接填写的 Key 只通过保存请求中的独立 `secrets` 字段写入服务端，配置文件和查询响应只包含随机引用。私有文件为 `$DRAMA_FACTORY_DATA/model-keys.json`（默认 `runtime/factory/model-keys.json`），权限 `0600`；这是操作系统权限保护的明文存储，不是加密保险箱。Web 与 worker 必须使用同一个数据目录和运行身份。导出模型配置不包含 Key；该私有文件需要独立受限备份，不进入 Git。编辑已关联凭据的连接时，空 Key 保留原关联，新 Key 替换关联；旧引用保留供运行中任务使用。服务端 API 可通过 `secrets` 中的 `null` 清除可选凭据关联，必需鉴权的制作连接仍须提供有效来源。
+
+“读取可用模型”对当前草稿实际请求目录，使用填写的新 Key 或原凭据，不保存配置、不生成内容。目录可用仅说明接口和鉴权能够读取目录，不能证明模型能看图、按 schema 输出或生成合格素材。部分平台不提供当前前缀的目录，失败时根据官方控制台填写确切模型标识，不要据此换成另一种协议。页面上原有“检查连接”继续按配置的目录策略执行，跳过目录时明确显示尚未验证。
+
+OpenAI 兼容协议使用 Chat Completions；Claude 使用 Anthropic Messages；Gemini 使用 generateContent；Ollama 可选原生 API。模型名称、供应商名称和 HTTP 协议不是同一件事，不能把任意视频 URL 当成文本接口。ComfyUI 工作流和 Qwen3-TTS 本机进程仍按各自方式配置。预设模型标识可以修改，以账号开通情况和实际服务目录为准。
+
+配置体验参考 [Cherry Studio 的供应商设置](https://docs.cherry-ai.com/cherry-studio-wen-dang/en-us/cherry-studio/preview/settings/providers) 与 [LibreChat 的自定义端点](https://github.com/LibreChat-AI/docs/blob/main/content/docs/configuration/librechat_yaml/object_structure/custom_endpoint.mdx)：服务预设、协议和用户连接分别管理。这里只借鉴已核对的配置交互，没有声称运行过这些项目的整套生产系统。品牌图形来源见 [资源说明](PROVIDER_BRAND_ASSETS.md)。

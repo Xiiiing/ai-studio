@@ -1,5 +1,6 @@
 """Video connection registry, independent of text model brands and roles."""
 from __future__ import annotations
+from .connection_secrets import secret_value
 
 import copy
 import os
@@ -161,7 +162,7 @@ def probe_video_profile(profile_id, config):
     if not isinstance(profile_id, str) or profile_id not in profiles:
         raise ValueError("Unknown video profile")
     profile = profiles[profile_id]
-    authenticated = profile["provider"] != "minimax" or bool(os.environ.get(profile["api_key_env"]))
+    authenticated = profile["provider"] != "minimax" or bool(secret_value(profile["api_key_env"]))
     if profile["provider"] in ("comfyui_local", "comfyui_external"):
         from .media_profiles import probe
         return {"profile": profile_id, **probe(profile, "video")}
@@ -173,5 +174,5 @@ def probe_video_profile(profile_id, config):
     if not profile["enabled"]:
         result["status"] = "disabled"
     elif not authenticated:
-        result["error"] = {"code": "missing_auth", "message": "视频服务的密钥环境变量尚未设置"}
+        result["error"] = {"code": "missing_auth", "message": "视频服务缺少可用 API Key"}
     return result

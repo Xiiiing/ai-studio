@@ -16,13 +16,20 @@ from factory.scheduler import ProductionNeedsDecision, Scheduler
 from studio import core
 
 
-@pytest.fixture
-def cloud(tmp_path,monkeypatch):
+@pytest.fixture(params=["environment", "managed"])
+def cloud(tmp_path,monkeypatch,request):
     for module in (core,production,__import__('factory.speech',fromlist=['ROOT']),__import__('factory.audio_editor',fromlist=['ROOT']),__import__('studio.media',fromlist=['ROOT'])):
         monkeypatch.setattr(module,'ROOT',tmp_path)
     monkeypatch.setattr(cm,'DATA',tmp_path/'db')
     monkeypatch.setattr(store,'DATA',tmp_path/'db');monkeypatch.setattr(store,'DATABASE',tmp_path/'db/studio.sqlite3')
     store.initialize();monkeypatch.setenv('FIXTURE_CLOUD_KEY','fixture-private-key')
+    credential_name='FIXTURE_CLOUD_KEY'
+    if request.param=='managed':
+        from factory import connection_secrets as vault
+        monkeypatch.setattr(vault,'vault_path',lambda:tmp_path/'keys.json')
+        credential_name=vault.PREFIX+'a'*32
+        vault.write_vault({credential_name:'fixture-private-key'})
+        monkeypatch.delenv('FIXTURE_CLOUD_KEY')
     calls=[];assets={}
     class Handler(BaseHTTPRequestHandler):
         def log_message(self,*args):pass
@@ -56,10 +63,10 @@ def cloud(tmp_path,monkeypatch):
     server=ThreadingHTTPServer(('127.0.0.1',0),Handler)
     base=f'http://127.0.0.1:{server.server_port}'
     thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
-    image=normalize_media({'provider':'dashscope_image','model':'qwen-image-2.1-pro','enabled':True,'base_url':base+'/v1','network_mode':'loopback','api_key_env':'FIXTURE_CLOUD_KEY'},'image')
-    audio=normalize_media({'provider':'dashscope_tts','model':'qwen3-tts-flash','enabled':True,'base_url':base+'/api/v1','network_mode':'loopback','api_key_env':'FIXTURE_CLOUD_KEY'},'audio')
+    image=normalize_media({'provider':'dashscope_image','model':'qwen-image-2.1-pro','enabled':True,'base_url':base+'/v1','network_mode':'loopback','api_key_env':credential_name},'image')
+    audio=normalize_media({'provider':'dashscope_tts','model':'qwen3-tts-flash','enabled':True,'base_url':base+'/api/v1','network_mode':'loopback','api_key_env':credential_name},'audio')
     cfg={'schema_version':1,'image_profiles':{'api':image},'image_roles':{'image_generator':'api'},'audio_profiles':{'api':audio},'audio_roles':{'speech_generator':'api'},
-         'video_profiles':{'api':{'provider':'minimax','model':'MiniMax-Hailuo-2.3','enabled':True,'base_url':base+'/v1','network_mode':'loopback','api_key_env':'FIXTURE_CLOUD_KEY'}},'video_roles':{'video_generator':'api'}}
+         'video_profiles':{'api':{'provider':'minimax','model':'MiniMax-Hailuo-2.3','enabled':True,'base_url':base+'/v1','network_mode':'loopback','api_key_env':credential_name}},'video_roles':{'video_generator':'api'}}
     path=tmp_path/'config.json';path.write_text(json.dumps(cfg));monkeypatch.setattr(config,'config_read_path',lambda:path)
     p=store.create({'brief':'两个成年人物在窗边重逢的原创故事','format':'animation'})
     from factory.video_providers import resolve_video
@@ -228,6 +235,8 @@ def test_missing_key_never_reserves_a_paid_submission(cloud,monkeypatch):
     profile=cm.paid_profile(flat['image_connection'],'image');body=cm.image_body(profile,'Portrait',[],(384,704),1)
     line=cm.make_line(p['id'],'preview',{'source_signature':'same','take':'take_001','attempt':1},profile,body,'image')
     costs.prepare_batch(p,profile,[line]);authorize_next(p['id'],cfg);batch=costs.ensure_batch(p,profile,[line])
-    monkeypatch.delenv('FIXTURE_CLOUD_KEY')
+    monkeypatch.delenv('FIXTURE_CLOUD_KEY',raising=False)
+    from factory import connection_secrets as vault
+    if profile['api_key_env'].startswith(vault.PREFIX):vault.write_vault({})
     with pytest.raises(ProviderError):cm.raw_artifact(engine,profile,body,line,root/'take',batch,'image')
     assert costs.summary(p['id'])['tasks']==[] and not calls

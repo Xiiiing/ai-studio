@@ -1,6 +1,6 @@
 # 模型接口、角色分工与视频服务
 
-协议核实日期：**2026-10-13**。本页说明当前代码已经实现的连接方式、配置生效范围和恢复行为。验证依据是 CPU 测试、mock 和测试自己的 loopback HTTP 服务；没有把这些测试当作真实云 API、GPU 推理或生成质量的验收。
+连接管理更新日期：**2026-10-17**；原有协议核实日期：**2026-10-13**。本页说明当前代码已经实现的连接方式、配置生效范围和恢复行为。验证依据是 CPU 测试、mock 和测试自己的 loopback HTTP 服务；没有把这些测试当作真实云 API、GPU 推理或生成质量的验收。
 
 ## 1. 角色、配置档与服务
 
@@ -25,15 +25,22 @@
 | `ollama_native` | Ollama 原生 Chat / Tags | `http://127.0.0.1:11434` | `openai_json_schema`，转换为原生 schema | `required` |
 | `vllm` | OpenAI 兼容接口 | `http://127.0.0.1:8000/v1` | `openai_json_schema` | `required` |
 | `lm_studio` | LM Studio 的 OpenAI 兼容接口 | `http://127.0.0.1:1234/v1` | `openai_json_schema` | `required` |
-| `deepseek` | DeepSeek OpenAI 兼容接口 | `https://api.deepseek.com` | `json_object` | `required` |
+| `deepseek` | DeepSeek OpenAI 兼容接口 | `https://api.deepseek.com` | `json_object` | `skip` |
 | `dashscope` | Qwen / 百炼 OpenAI 兼容接口 | `https://dashscope.aliyuncs.com/compatible-mode/v1` | `json_object` | `skip` |
 | `openai_compatible` | 用户配置的 Chat Completions 网关 | `https://api.example.com/custom-prefix` | `json_object` | `required` |
+| `openai` | OpenAI Chat Completions | `https://api.openai.com/v1` | `json_object` | `skip` |
+| `zhipu` | 智谱 OpenAI 兼容 | `https://open.bigmodel.cn/api/paas/v4` | `json_object` | `skip` |
+| `moonshot` | Moonshot OpenAI 兼容 | `https://api.moonshot.cn/v1` | `json_object` | `skip` |
+| `minimax_text` | MiniMax OpenAI 兼容文本 | `https://api.minimax.io/v1` | `prompt` | `skip` |
+| `siliconflow` | 硅基流动 OpenAI 兼容 | `https://api.siliconflow.cn/v1` | `json_object` | `skip` |
+| `anthropic` | 原生 Messages | `https://api.anthropic.com/v1` | `prompt` + 本地 schema 校验 | `skip` |
+| `gemini` | 原生 generateContent | `https://generativelanguage.googleapis.com/v1beta` | `prompt` + 本地 schema 校验 | `skip` |
 
 `llama_cpp` 文本调用使用服务端模板和 tokenizer 检查上下文；带图像的调用及其他 provider 使用保守的 UTF-8 字节、消息开销和图像预算估算。模型仍须实际支持所选输出格式和视觉能力。
 
 ### 完整 API 前缀
 
-除原生 Ollama 的明确路由规则外，文本请求在 `base_url` 后追加 `/chat/completions`，目录请求追加 `/models`。**应用不会统一追加 `/v1`。**
+OpenAI 兼容文本请求在 `base_url` 后追加 `/chat/completions`，目录请求追加 `/models`；原生 Ollama、Claude 和 Gemini 使用各自路由。后端配置不会统一追加 `/v1`。界面输入无路径的自定义 OpenAI 地址时补全 `/v1`，输入完整调用地址时去掉调用路由，保留网关前缀。
 
 | 配置的 `base_url` | 实际 Chat 路径 |
 | --- | --- |
@@ -42,7 +49,7 @@
 | `https://workspace-id.cn-beijing.maas.aliyuncs.com/compatible-mode/v1` | 相同前缀后追加 `/chat/completions` |
 | `https://gateway.example.com/custom-prefix` | `https://gateway.example.com/custom-prefix/chat/completions` |
 
-百炼示例中的 `workspace-id` 必须替换为真实工作空间域名，并同步修改 `allowed_hosts`。地域、工作空间地址和密钥应以当前服务控制台为准。不要把完整的 `/chat/completions` 端点填进 `base_url`。
+百炼示例中的 `workspace-id` 必须替换为真实工作空间域名，并同步修改 `allowed_hosts`。地域、工作空间地址和密钥应以当前服务控制台为准。直接编辑后端配置时不要把完整的 `/chat/completions` 端点填进 `base_url`；界面输入支持自动转换。
 
 ## 3. 模型目录检查与“不生成内容”的预检
 
@@ -299,7 +306,7 @@ CDN 下载不携带 MiniMax 的 Authorization、Cookie 或环境代理配置，�
 
 ## 10. 当前范围与官方协议来源
 
-八个文本 provider 表示明确支持的协议或兼容配置，并不保证所有版本、所有模型都实现相同的参数。当前没有原生 Anthropic Messages、Gemini 或任意 OpenAI Responses 的角色调用实现；用户管理的兼容网关须实际提供这里使用的 Chat Completions 合约。
+文本 provider 表示明确支持的协议或兼容配置，并不保证所有版本、所有模型都实现相同的参数。原生 Anthropic Messages 与 Gemini generateContent 已有角色调用适配；当前未实现 OpenAI Responses。用户管理的 OpenAI 兼容网关须提供这里使用的 Chat Completions 合约。
 
 MiniMax 支持范围是上述 `/v1/video_generation` 生命周期及它支持的模型。**MiniMax H3 的其他协议、其他供应商的视频接口和任意插件接口不会仅凭更换模型名自动适配。** 新模型能否使用，还要核对其 API、分辨率、时长和首帧要求。
 
@@ -322,7 +329,9 @@ MiniMax 支持范围是上述 `/v1/video_generation` 生命周期及它支持的
 
 预设覆盖 OpenAI、DeepSeek、百炼、智谱、Moonshot、MiniMax、硅基流动、Claude 和 Gemini，以及原有本地运行时。Claude 使用原生 Messages，Gemini 使用原生 generateContent；两者目前使用完整 schema 提示词、本地校验及有界修复，不通过删减 schema 约束伪装为原生结构化输出。实际响应模型必须与配置或明确别名匹配。原生接口依据 [Claude Messages](https://platform.claude.com/docs/en/api/messages/create) 和 [Gemini generateContent](https://ai.google.dev/api/generate-content)。OpenAI 预设复用现有 [Chat Completions](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create) 适配器。
 
-密钥继续放在私有 `config/runtime.env`（权限 600），例如 `DEEPSEEK_API_KEY=...`。前台 Web、worker、CLI 与 systemd 都读取该文件；进程已有环境变量优先。文件只支持空行、注释和 KEY=value（可用单／双引号包裹整个值），不执行 shell、不展开变量。修改后重启两个服务。工作台只保存变量名称，不接受或导出密钥。跳过模型目录的预检只检查配置和密钥是否存在，不表示服务在线或生成成功。
+工作台支持直接填写 Key，也保留高级环境变量及原有 systemd 凭据。直接填写的 Key 通过独立写入信封保存为私有数据目录的 `model-keys.json`（0600），配置只保存不透明引用。保存先验证完整配置与 revision；失败不替换当前配置或凭据。运行中的配置快照所用旧引用继续可读。密钥存储、生效、备份与高级部署限制见 [用户模型说明](USER_MODELS.md#5-key协议与连接检查)。
+
+`POST /api/factory/models/discover` 接受 `profile` 与可选写入型 `api_key`，对草稿实际读取目录，不保存、不调用生成。`POST /api/factory/models` 可带 `secrets: {"llm:连接编号":"Key", "image:连接编号":"Key", "audio:连接编号":"Key", "video:连接编号":"Key"}`；Key 不允许放进 profiles。媒体密钥修改必须同时提供对应的完整连接与分工。
 
 ## 用户自己的图像、视频与配音
 
