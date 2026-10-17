@@ -118,3 +118,21 @@ def test_media_keys_require_matching_registry_and_support_all_consumers(registry
     assert KEY not in json.dumps(public)
     ref=json.loads(path.read_text())['image_profiles']['image']['api_key_env']
     assert vault.secret_value(ref)==KEY
+
+
+def test_multiple_models_share_one_new_key_without_reusing_old_snapshot_reference(registry):
+    path, save = registry
+    save({'llm:fixture': KEY})
+    current = json.loads(path.read_text())
+    old = current['llm_profiles']['fixture']['api_key_env']
+    current['llm_profiles']['second'] = {**current['llm_profiles']['fixture'], 'model': 'second'}
+    path.write_text(json.dumps(current))
+    public = save({'llm:fixture': KEY, 'llm:second': KEY})
+    profiles = json.loads(path.read_text())['llm_profiles']
+    new = profiles['fixture']['api_key_env']
+    assert new == profiles['second']['api_key_env'] and new != old
+    assert vault.secret_value(old) == vault.secret_value(new) == KEY
+    assert KEY not in json.dumps(public)
+    save({'llm:second': 'another-service-key'})
+    profiles = json.loads(path.read_text())['llm_profiles']
+    assert profiles['fixture']['api_key_env'] != profiles['second']['api_key_env']
