@@ -1,3 +1,4 @@
+import { refreshPage } from "./header-flow.mjs";
 import { openWorkflow } from "./navigation.mjs";
 import { openProjectPage } from "./navigation.mjs";
 import { test, expect } from "@playwright/test";
@@ -59,7 +60,7 @@ test("workflow is navigable and team roles remain separate from approval", async
     fullPage: true,
   });
   await request.post("/__test/failure", { data: { route: "/workspace" } });
-  await page.locator('.topbar [data-action="refresh"]').click();
+  await refreshPage(page);
   await expect(page.locator('.feedback-region [role="alert"]')).toContainText(
     "模拟服务暂时不可用",
   );

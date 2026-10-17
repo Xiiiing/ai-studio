@@ -1,3 +1,6 @@
+import { paletteViolations } from "./palette.mjs";
+import { refreshPage } from "./header-flow.mjs";
+import { addService, openServiceDetails } from "./model-flow.mjs";
 import { test, expect } from "@playwright/test";
 import { mkdir } from "node:fs/promises";
 import { setTheme } from "./theme.mjs";
@@ -40,7 +43,7 @@ async function refreshWorkspace(page, status = 200) {
       response.url().endsWith(`/projects/${projectId}/workspace`) &&
       response.status() === status,
   );
-  await page.locator('.topbar [data-action="refresh"]').click();
+  await refreshPage(page);
   await response;
 }
 
@@ -266,7 +269,7 @@ for (const width of [320, 1440]) {
       .click();
     await typography(page.locator(".brief-text"), 16, 28);
     await page.goto("/#view=models");
-    await expect(page.locator(".service-list-item").first()).toBeVisible();
+    await expect(page.locator(".model-service-card").first()).toBeVisible();
     const logoSizes = async (selector, size, imageSize) => {
       const containers = page.locator(selector);
       expect(await containers.count(), selector).toBeGreaterThan(0);
@@ -287,19 +290,15 @@ for (const width of [320, 1440]) {
         }
       }
     };
-    await logoSizes(".service-list-item .model-symbol", 32, 24);
-    if (width <= 720) await page.locator('[data-service="llm:writer"]').click();
+    await logoSizes(".model-service-card .model-symbol", 32, 28);
+    await openServiceDetails(page);
     await logoSizes(
-      ".service-detail .service-editor-brand .model-symbol",
+      "#model-service-detail-dialog .service-editor-brand .model-symbol",
       40,
       28,
     );
-    if (width <= 720)
-      await page.getByRole("button", { name: "服务列表", exact: true }).click();
-    await page
-      .getByRole("button", { name: "添加服务", exact: true })
-      .first()
-      .click();
+    await page.keyboard.press("Escape");
+    await addService(page);
     await logoSizes(".provider-picker-grid .model-symbol", 40, 28);
     await page.keyboard.press("Escape");
     await page.screenshot({
@@ -310,7 +309,7 @@ for (const width of [320, 1440]) {
 }
 
 for (const theme of ["light", "dark"])
-  test(`representative surfaces, states and controls use neutral or blue colors in ${theme}`, async ({
+  test(`representative surfaces and controls use neutral or blue colors with marked status accents in ${theme}`, async ({
     page,
     request,
   }) => {
@@ -326,46 +325,7 @@ for (const theme of ["light", "dark"])
       await page.goto("/#" + hash);
       await expect(page.locator("main h1").first()).toBeVisible();
       await expect(page.locator("main .loading")).toHaveCount(0);
-      const violations = await page.evaluate(() => {
-        const allowed = (value) => {
-          const components = value.match(/[\d.]+/g)?.map(Number);
-          if (!components || components.length < 3) return true;
-          const [r, g, b, alpha = 1] = components;
-          if (alpha === 0 || Math.max(r, g, b) - Math.min(r, g, b) <= 14)
-            return true;
-          // Blue accents are allowed; logos and media are checked separately.
-          return b > r + 10 && b >= g && g >= r && (g - r) / (b - r) <= 0.85;
-        };
-        const properties = [
-          "color",
-          "backgroundColor",
-          "borderTopColor",
-          "borderRightColor",
-          "borderBottomColor",
-          "borderLeftColor",
-        ];
-        return [...document.querySelectorAll("body *")]
-          .filter(
-            (element) =>
-              element.getClientRects().length &&
-              !element.closest("img,video,canvas,.model-symbol img"),
-          )
-          .flatMap((element) => {
-            const style = getComputedStyle(element);
-            return properties.flatMap((property) =>
-              allowed(style[property])
-                ? []
-                : [
-                    {
-                      element: `${element.tagName}.${element.className?.baseVal ?? element.className}`,
-                      property,
-                      value: style[property],
-                    },
-                  ],
-            );
-          })
-          .slice(0, 20);
-      });
+      const violations = await paletteViolations(page);
       expect(violations, hash).toEqual([]);
     }
   });

@@ -75,3 +75,35 @@ it("cycles all three preferences with a current and next-mode accessible name", 
     expect(document.documentElement.dataset.themePreference).toBe(value);
   }
 });
+
+it("keeps root session preference when page controls unmount and storage is unavailable", async () => {
+  vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+    throw new Error("unavailable");
+  });
+  vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+    throw new Error("unavailable");
+  });
+  const { ThemeProvider } = await import("../../ui/factory/src/Theme");
+  const view = render(
+    <ThemeProvider>
+      <ThemeControl />
+    </ThemeProvider>,
+  );
+  await userEvent.click(
+    screen.getByRole("button", { name: /外观主题：跟随系统/ }),
+  );
+  view.rerender(
+    <ThemeProvider>
+      <span>another page</span>
+    </ThemeProvider>,
+  );
+  view.rerender(
+    <ThemeProvider>
+      <ThemeControl />
+    </ThemeProvider>,
+  );
+  expect(
+    screen.getByRole("button", { name: /外观主题：浅色/ }),
+  ).toBeInTheDocument();
+  expect(document.documentElement.dataset.themePreference).toBe("light");
+});

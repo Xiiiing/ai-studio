@@ -1,3 +1,4 @@
+import { refreshPage } from "./header-flow.mjs";
 import { openWorkflow } from "./navigation.mjs";
 import { test, expect } from "@playwright/test";
 const id = "012345abcdef";
@@ -123,7 +124,7 @@ for (const width of [1440, 1024, 390]) {
     ).toBeVisible();
     await expect(script.getByRole("table")).toContainText("我答应过你");
     await request.post("/__test/progress");
-    await page.locator('.topbar [data-action="refresh"]').click();
+    await refreshPage(page);
     await expect(inspector.locator(".workflow-step-heading h3")).toHaveText(
       "剧本创作",
     );
@@ -307,19 +308,19 @@ test("data flows animate during execution, stop on pause and human gates, and re
     await route.fulfill({ response, json: body });
   };
   await page.route("**/workspace", pause);
-  await page.locator('.topbar [data-action="refresh"]').click();
+  await refreshPage(page);
   await expect(page.locator('[data-flow-state="running"]')).toHaveCount(0);
   await expect(page.locator(".workflow-flow-packet")).toHaveCount(0);
   await page.unroute("**/workspace", pause);
   await request.post("/__test/scenario", { data: { kind: "final" } });
-  await page.locator('.topbar [data-action="refresh"]').click();
+  await refreshPage(page);
   await expect(page.locator('[data-stage="delivery"]')).toContainText(
     "等待你处理",
   );
   await expect(page.locator('[data-flow-state="running"]')).toHaveCount(0);
   await page.emulateMedia({ reducedMotion: "reduce" });
   await request.post("/__test/scenario", { data: { kind: "repairing" } });
-  await page.locator('.topbar [data-action="refresh"]').click();
+  await refreshPage(page);
   await expect(edge).toHaveAttribute("data-flow-state", "running");
   await expect(edge.locator("circle")).toBeHidden();
   expect(

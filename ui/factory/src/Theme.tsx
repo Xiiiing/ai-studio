@@ -1,4 +1,10 @@
-import { useEffect, useState } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  type ReactNode,
+} from "react";
 import { Monitor, Moon, Sun } from "lucide-react";
 
 export type ThemePreference = "system" | "light" | "dark";
@@ -27,7 +33,7 @@ export function applyTheme(preference: ThemePreference, systemDark: boolean) {
     ?.setAttribute("content", theme === "dark" ? "#171719" : "#f7f7f8");
 }
 
-export function ThemeControl() {
+function useThemeState() {
   const [preference, setPreference] = useState<ThemePreference>(readTheme);
   useEffect(() => {
     const media = window.matchMedia("(prefers-color-scheme: dark)");
@@ -44,6 +50,40 @@ export function ThemeControl() {
     window.addEventListener("storage", update);
     return () => window.removeEventListener("storage", update);
   }, []);
+  return {
+    preference,
+    choose: (next: ThemePreference) => {
+      try {
+        localStorage.setItem(THEME_STORAGE_KEY, next);
+      } catch {
+        /* Keep session choice. */
+      }
+      setPreference(next);
+    },
+  };
+}
+const ThemeContext = createContext<ReturnType<typeof useThemeState> | null>(
+  null,
+);
+export function ThemeProvider({ children }: { children: ReactNode }) {
+  const theme = useThemeState();
+  return (
+    <ThemeContext.Provider value={theme}>{children}</ThemeContext.Provider>
+  );
+}
+function StandaloneThemeControl() {
+  const theme = useThemeState();
+  return <ThemeButton theme={theme} />;
+}
+export function ThemeControl() {
+  const theme = useContext(ThemeContext);
+  return theme ? <ThemeButton theme={theme} /> : <StandaloneThemeControl />;
+}
+function ThemeButton({
+  theme: { preference, choose },
+}: {
+  theme: ReturnType<typeof useThemeState>;
+}) {
   const Icon =
     preference === "system" ? Monitor : preference === "dark" ? Moon : Sun;
   const next = cycle[(cycle.indexOf(preference) + 1) % cycle.length];
@@ -55,16 +95,9 @@ export function ThemeControl() {
       aria-label={description}
       title={description}
       data-tooltip={description}
-      onClick={() => {
-        try {
-          localStorage.setItem(THEME_STORAGE_KEY, next);
-        } catch {
-          /* Session choice still applies. */
-        }
-        setPreference(next);
-      }}
+      onClick={() => choose(next)}
     >
-      <Icon size={16} aria-hidden="true" />
+      <Icon size={20} aria-hidden="true" />
     </button>
   );
 }

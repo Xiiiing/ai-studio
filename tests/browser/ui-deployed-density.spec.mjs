@@ -1,3 +1,4 @@
+import { manageService } from "./model-flow.mjs";
 import { setTheme } from "./theme.mjs";
 import { test, expect } from "@playwright/test";
 import { openProjectPage } from "./navigation.mjs";
@@ -174,10 +175,7 @@ for (const width of [320, 390, 768])
     await page.setViewportSize({ width, height: 844 });
     await page.goto("/#view=models");
     await setTheme(page, "dark");
-    if (width <= 720) await page.locator('[data-service="llm:writer"]').click();
-    await page
-      .locator('[data-model-action="edit"][data-profile="writer"]')
-      .click();
+    await manageService(page);
     const dialog = page.locator("#service-dialog");
     await dialog.locator(".model-options summary").first().click();
     await dialog

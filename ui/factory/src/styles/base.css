@@ -364,34 +364,6 @@ pre {
   flex-direction: column;
   min-height: 100vh;
 }
-.topbar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  border-bottom: 1px solid var(--line);
-  min-height: 60px;
-  height: auto;
-  padding: 10px 28px;
-  gap: 16px;
-  background: var(--panel);
-}
-.topbar-context,
-.topbar-right {
-  display: flex;
-  align-items: center;
-  min-width: 0;
-  gap: 12px;
-}
-.breadcrumb {
-  color: var(--muted);
-  font-size: var(--text-caption);
-  overflow-wrap: anywhere;
-  line-height: var(--leading-caption);
-}
-.breadcrumb > span {
-  margin: 0 11px;
-  color: var(--muted);
-}
 .icon-button {
   display: inline-flex;
   align-items: center;
@@ -411,7 +383,8 @@ pre {
 .mobile-navigation {
   display: none;
 }
-.sync-state {
+.sync-state,
+.sync-state.error-text {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -420,13 +393,13 @@ pre {
   line-height: var(--leading-caption);
 }
 .sync-state i {
-  width: 5px;
-  height: 5px;
-  background: var(--success);
+  width: 6px;
+  height: 6px;
+  background: var(--status-color, var(--status-success));
   border-radius: 50%;
 }
 .sync-state.error-text i {
-  background: var(--danger);
+  background: var(--status-failed);
 }
 
 #workspace {
@@ -448,13 +421,6 @@ pre {
   font-size: var(--text-caption);
   line-height: var(--leading-caption);
 }
-.page-heading {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 20px;
-  gap: 20px;
-}
 .eyebrow {
   font-weight: 500;
   margin-bottom: 6px;
@@ -462,13 +428,6 @@ pre {
   letter-spacing: 0.02em;
   color: var(--muted);
   line-height: var(--leading-caption);
-}
-.page-heading p {
-  margin: 7px 0 0;
-  font-size: var(--text-ui);
-  color: var(--muted);
-  max-width: 800px;
-  line-height: var(--leading-ui);
 }
 .row-between {
   display: flex;
@@ -684,45 +643,33 @@ td > strong {
   font-size: var(--text-caption);
   padding: 4px 8px;
   line-height: var(--leading-caption);
-  background: var(--surface-strong);
+  background: var(--surface);
   color: var(--muted);
 }
-.badge i {
-  width: 4px;
-  height: 4px;
-  background: currentColor;
+.badge i,
+.status-indicator {
+  display: inline-block;
+  vertical-align: middle;
+  width: 6px;
+  height: 6px;
+  background: var(--status-color, var(--status-idle));
   border-radius: 50%;
+  flex: 0 0 6px;
 }
-.tone-running,
-.tone-producing,
-.tone-creating,
-.tone-scripting,
-.tone-visual_development,
-.tone-waiting_remote {
-  background: var(--surface-strong);
-  color: var(--ink);
+.status-indicator[data-status-indicator="running"] {
+  --status-color: var(--status-running);
 }
-.tone-human,
-.tone-awaiting_story,
-.tone-awaiting_style,
-.tone-awaiting_final,
-.tone-human_required {
-  background: var(--warning-soft);
-  color: var(--warning);
+.status-indicator[data-status-indicator="review"] {
+  --status-color: var(--status-review);
 }
-.tone-blocked,
-.tone-failed,
-.tone-error {
-  background: var(--danger-soft);
-  color: var(--danger);
+.status-indicator[data-status-indicator="failed"] {
+  --status-color: var(--status-failed);
 }
-.tone-succeeded,
-.tone-approved,
-.tone-passed,
-.tone-pass,
-.tone-ready {
-  background: var(--success-soft);
-  color: var(--success);
+.status-indicator[data-status-indicator="success"] {
+  --status-color: var(--status-success);
+}
+.status-indicator[data-status-indicator="idle"] {
+  --status-color: var(--status-idle);
 }
 .progress-track {
   height: 4px;
@@ -962,22 +909,7 @@ td > strong {
 .activity-filter {
   margin-bottom: 14px;
 }
-.project-heading {
-  display: flex;
-  justify-content: space-between;
-  gap: 20px;
-  margin-bottom: 20px;
-  align-items: flex-start;
-}
-.breadcrumb-link {
-  border: 0;
-  background: transparent;
-  padding: 0;
-  font-size: var(--text-ui);
-  color: var(--muted);
-  margin-bottom: 10px;
-  line-height: var(--leading-ui);
-}
+
 .project-meta {
   display: flex;
   align-items: center;

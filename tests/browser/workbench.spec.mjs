@@ -1,3 +1,5 @@
+import { refreshPage } from "./header-flow.mjs";
+import { manageService, openServiceDetails } from "./model-flow.mjs";
 import { openProjectPage } from "./navigation.mjs";
 import { test, expect } from "@playwright/test";
 
@@ -27,16 +29,15 @@ test("project list, model settings and connection preflight use only mock APIs",
   await expect(page.locator("#project-list")).toContainText("浏览器模拟样片");
   await page.locator('.main-nav [data-action="models"]').click();
   await expect(page.locator("#workspace h1")).toHaveText("模型与连接");
-  await page
-    .locator('[data-model-action="edit"][data-profile="writer"]')
-    .click();
+  await manageService(page);
   await expect(page.locator("#service-dialog")).toBeVisible();
   await page.locator("#service-dialog .model-options summary").first().click();
   await page.getByLabel("模型 ID", { exact: true }).fill("mock-writer-revised");
   await page.locator('#service-dialog button[type="submit"]').click();
-  await expect(page.locator("#workspace .model-name").first()).toHaveText(
-    "mock-writer-revised",
-  );
+  await openServiceDetails(page);
+  await expect(
+    page.locator("#model-service-detail-dialog .model-name").first(),
+  ).toHaveText("mock-writer-revised");
   await page
     .locator('[data-model-action="test"][data-profile="writer"]')
     .click();
@@ -103,7 +104,7 @@ test("playing candidate remains the same connected node across progress refresh"
   await page.waitForFunction(() => window.__playing.currentTime > 0.2);
   const before = await page.evaluate(() => window.__playing.currentTime);
   await request.post("/__test/progress");
-  await page.locator('.topbar [data-action="refresh"]').click();
+  await refreshPage(page);
   await expect(page.locator(".shot-detail-heading h2")).toContainText(
     "其他区域已更新，视频继续播放",
   );
@@ -140,7 +141,7 @@ test("failed shot refresh displays the error and does not destroy an active play
     await video.play();
   });
   await request.post("/__test/failure", { data: { route: "/shots" } });
-  await page.locator('.topbar [data-action="refresh"]').click();
+  await refreshPage(page);
   await expect(page.locator('.feedback-region [role="alert"]')).toContainText(
     "模拟服务暂时不可用",
   );
@@ -171,7 +172,7 @@ test("CAS draft remains old after an external update and retake never calls a pa
   const editor = page.locator('form[data-shot-operation="edit"]');
   await editor.locator('[name="prompt"]').fill("A revised station frame");
   await request.post("/__test/progress");
-  await page.locator('.topbar [data-action="refresh"]').click();
+  await refreshPage(page);
   await expect(page.locator(".shot-detail")).toContainText("草稿仍绑定旧版本");
   await expect(editor).toHaveAttribute("data-revision", "7");
   await page.locator("[data-shot-discard]").click();

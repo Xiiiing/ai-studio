@@ -327,13 +327,13 @@
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--accent);
+  background: var(--status-running);
 }
 .workflow-flow-legend .flow-legend-completed {
-  background: var(--success);
+  background: var(--status-success);
 }
 .workflow-flow-legend .flow-legend-repair {
-  background: var(--warning);
+  background: var(--status-review);
 }
 .workflow-map.workflow-stages {
   display: block;
@@ -414,14 +414,11 @@
 }
 .workflow-repair-node.selected {
   background: var(--warning-soft);
-  border-color: var(--warning);
-  box-shadow: 0 0 0 1px var(--warning);
+  border-color: var(--accent);
+  box-shadow: none;
 }
 .workflow-map-node.status-running {
-  border-color: var(--accent);
-}
-.workflow-map-node.status-running .workflow-map-node-top > .badge {
-  animation: workflow-status-glow 2s ease-in-out infinite;
+  border-color: var(--status-running);
 }
 .workflow-map-node:is(.status-human, .status-blocked, .status-failed) {
   border-color: var(--danger-line);
@@ -452,7 +449,7 @@
   top: calc(50% - 3px);
 }
 .status-running .workflow-port {
-  border-color: var(--accent);
+  border-color: var(--status-running);
   background: var(--surface);
 }
 .workflow-flow-line,
@@ -466,35 +463,35 @@
   stroke: var(--flow-line);
 }
 .is-running .workflow-flow-line {
-  stroke: var(--accent);
+  stroke: var(--status-running);
 }
 .workflow-flow-stream {
   stroke-width: 2;
   stroke-dasharray: 7 11;
   animation: workflow-stream 1.2s linear infinite;
-  stroke: var(--accent);
+  stroke: var(--status-running);
 }
 .workflow-flow-packet {
-  fill: var(--accent);
+  fill: var(--status-running);
 }
 .is-repair .workflow-flow-line {
-  stroke: var(--warning);
+  stroke: var(--status-review);
   stroke-dasharray: 5 5;
 }
 .is-completed .workflow-flow-line {
-  stroke: var(--success);
+  stroke: var(--flow-line);
 }
 .flow-arrow-pending {
   fill: var(--flow-line);
 }
 .flow-arrow-running {
-  fill: var(--accent);
+  fill: var(--status-running);
 }
 .flow-arrow-completed {
-  fill: var(--success);
+  fill: var(--flow-line);
 }
 .flow-arrow-repair {
-  fill: var(--warning);
+  fill: var(--status-review);
 }
 .workflow-map-hint {
   border-top: 1px solid var(--line);
@@ -542,17 +539,12 @@
   color: var(--muted);
 }
 .workflow-step-link.is-running {
-  color: var(--ink);
+  color: var(--status-running);
   animation: workflow-step-flow 1.2s ease-in-out infinite;
 }
 @keyframes workflow-stream {
   to {
     stroke-dashoffset: -36;
-  }
-}
-@keyframes workflow-status-glow {
-  50% {
-    box-shadow: 0 0 0 4px var(--shadow-color);
   }
 }
 @keyframes workflow-step-flow {

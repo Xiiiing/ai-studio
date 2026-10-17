@@ -101,9 +101,6 @@
   .asset-grid {
     grid-template-columns: 1fr;
   }
-  .project-heading {
-    align-items: flex-start;
-  }
   .heading-actions {
     max-width: 190px;
   }
@@ -119,12 +116,6 @@
   }
   .current-output-video video {
     height: 240px;
-  }
-  .topbar {
-    padding: 12px 24px;
-  }
-  .topbar-right {
-    gap: 8px;
   }
 }
 @media (max-width: 800px) {
@@ -200,22 +191,6 @@
   .mobile-navigation {
     display: inline-flex;
   }
-  .topbar {
-    height: 56px;
-    padding: 10px 12px;
-    min-height: 64px;
-    gap: 8px;
-    align-items: center;
-  }
-  .topbar-right {
-    gap: 8px;
-    flex: none;
-  }
-  .breadcrumb {
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
   #workspace {
     padding: 24px 16px 32px;
     min-height: calc(100dvh - 112px);
@@ -225,19 +200,6 @@
   }
   .workspace-footer span:last-child {
     display: none;
-  }
-  .page-heading {
-    align-items: flex-start;
-    flex-wrap: wrap;
-    gap: 14px;
-    margin-bottom: 22px;
-  }
-  .page-heading p {
-    max-width: none;
-  }
-  .page-heading > .button {
-    white-space: nowrap;
-    padding: 10px 14px;
   }
   .console-metrics {
     grid-template-columns: 1fr 1fr;
@@ -325,13 +287,6 @@
   }
   .segmented button {
     padding: 8px;
-  }
-  .project-heading h1 {
-    overflow-wrap: anywhere;
-  }
-  .project-heading {
-    gap: 12px;
-    display: block;
   }
   .heading-actions {
     max-width: none;
@@ -524,10 +479,6 @@
   .brand {
     padding: 0 4px 24px;
   }
-  .topbar-context,
-  .topbar-right {
-    gap: 6px;
-  }
 
   .button,
   .button.small,
@@ -590,10 +541,6 @@
   }
   .region-coordinates {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .topbar-context {
-    flex: 1;
-    min-width: 0;
   }
   .material-library-toolbar {
     grid-template-columns: minmax(0, 1fr);
@@ -732,41 +679,8 @@
   .metric-number {
     margin: 3px 0 0;
   }
-  .page-heading {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 8px 12px;
-    align-items: center;
-    margin-bottom: 16px;
-  }
-  .page-heading > div {
-    display: contents;
-  }
-  .page-heading .eyebrow {
-    display: none;
-  }
-  .page-heading h1 {
-    grid-column: 1;
-    grid-row: 1;
-  }
-  .page-heading p {
-    grid-column: 1 / -1;
-    grid-row: 2;
-    margin: 0;
-  }
-  .page-heading > .button {
-    grid-column: 2;
-    grid-row: 1;
-    padding-inline: 10px;
-  }
   #workspace {
     padding-top: 16px;
-  }
-  .project-heading .breadcrumb-link {
-    display: inline-flex;
-    align-items: center;
-    min-height: 44px;
-    margin-bottom: 0;
   }
   .heading-actions {
     margin-top: 12px;
@@ -875,13 +789,6 @@
 @media (max-width: 380px) {
   #workspace {
     padding: 20px 12px 28px;
-  }
-  .topbar {
-    padding: 8px;
-    gap: 4px;
-  }
-  .breadcrumb > span {
-    margin: 0 5px;
   }
 
   .workflow-map-node-top {

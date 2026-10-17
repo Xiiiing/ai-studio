@@ -59,11 +59,78 @@ for (const width of [320, 390, 768, 1024, 1440, 1920]) {
         })),
       ]) {
         await page.goto(server.endpoint + "/#" + route.hash);
-        await expect(page.locator("main h1").first()).toBeVisible();
+        await expect(page.locator("main h1")).toHaveCount(1);
+        await expect(page.locator("main h1")).toBeVisible();
+        await expect(page.locator(".shared-page-header")).toHaveCount(1);
+        await expect(page.locator(".shared-page-header h1")).toHaveCount(1);
+        await expect(page.locator(".topbar, .breadcrumb")).toHaveCount(0);
         await expect(page.locator("main .loading")).toHaveCount(0);
         await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
         await expect(page.getByRole("alert")).toHaveCount(0);
+        if (route.name === "models") {
+          const grid = page.locator(".service-card-grid");
+          await expect(grid).toBeVisible();
+          const geometry = await grid.evaluate((element) => ({
+            width: element.getBoundingClientRect().width,
+            columns:
+              getComputedStyle(element).gridTemplateColumns.split(/\s+/).length,
+            firstY: element
+              .querySelector(".model-service-card")
+              .getBoundingClientRect().top,
+          }));
+          expect(geometry.columns).toBe(
+            geometry.width >= 980 ? 3 : geometry.width >= 640 ? 2 : 1,
+          );
+          if (width === 1440) expect(geometry.firstY).toBeLessThanOrEqual(180);
+          if ([320, 390].includes(width))
+            expect(geometry.firstY).toBeLessThanOrEqual(220);
+        }
         if (route.tab) {
+          if (width >= 1280) {
+            await expect(page.locator(".heading-actions")).toHaveCSS(
+              "flex-direction",
+              "row",
+            );
+            const result = await page
+              .locator(".project-result-actions")
+              .boundingBox();
+            const operations = await page
+              .locator(".project-actions-menu > summary")
+              .boundingBox();
+            expect(Math.abs(result.y - operations.y)).toBeLessThanOrEqual(1);
+            if (route.tab === "overview") {
+              const geometry = () =>
+                page.evaluate(() =>
+                  Object.fromEntries(
+                    [".shared-page-header", ".project-navigation-bar"].map(
+                      (selector) => [
+                        selector,
+                        document.querySelector(selector).getBoundingClientRect()
+                          .top + scrollY,
+                      ],
+                    ),
+                  ),
+                );
+              const baseline = await geometry();
+              const menu = page.locator(".project-actions-menu");
+              await menu.locator(":scope > summary").click();
+              await expect(menu).toHaveAttribute("open", "");
+              const expanded = await geometry();
+              for (const selector of Object.keys(baseline))
+                expect(
+                  Math.abs(expanded[selector] - baseline[selector]),
+                  selector + " after opening project operations",
+                ).toBeLessThanOrEqual(1);
+              await page.keyboard.press("Escape");
+              await expect(menu).not.toHaveAttribute("open");
+              const closed = await geometry();
+              for (const selector of Object.keys(baseline))
+                expect(
+                  Math.abs(closed[selector] - baseline[selector]),
+                  selector + " after closing project operations",
+                ).toBeLessThanOrEqual(1);
+            }
+          }
           const group = ["materials", "series"].includes(route.tab)
             ? "materials"
             : ["decisions", "quality"].includes(route.tab)
@@ -323,7 +390,7 @@ for (const theme of ["light", "dark"])
         ".button.primary:not(:disabled)",
         ".notice",
         ".service-detail-footnote",
-        ".service-list-item small",
+        ".service-card-address",
         ".field > label",
         ".nav-item.active",
       ].flatMap((selector) => {
