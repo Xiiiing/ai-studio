@@ -11,7 +11,6 @@ type ModelDraft = {
   generation: number;
   probes: RecordData;
   probing: string;
-  setupMode: string | null;
 };
 
 // The query client lives above routing. Keep drafts with that application,
@@ -27,7 +26,6 @@ function createStore() {
     generation: 0,
     probes: {},
     probing: "",
-    setupMode: null,
   };
   const listeners = new Set<() => void>();
   const guard = (event: BeforeUnloadEvent) => {

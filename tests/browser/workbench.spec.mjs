@@ -30,12 +30,10 @@ test("project list, model settings and connection preflight use only mock APIs",
   await page
     .locator('[data-model-action="edit"][data-profile="writer"]')
     .click();
-  await expect(page.locator("#model-dialog")).toBeVisible();
-  await page
-    .locator('#model-dialog input[name="model"]')
-    .fill("mock-writer-revised");
-  await page.locator('#model-dialog button[type="submit"]').click();
-  await page.locator('[data-model-action="save"]').click();
+  await expect(page.locator("#service-dialog")).toBeVisible();
+  await page.locator("#service-dialog .model-options summary").first().click();
+  await page.getByLabel("模型 ID", { exact: true }).fill("mock-writer-revised");
+  await page.locator('#service-dialog button[type="submit"]').click();
   await expect(page.locator("#workspace .model-name").first()).toHaveText(
     "mock-writer-revised",
   );

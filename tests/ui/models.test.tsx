@@ -201,518 +201,326 @@ function setup() {
     },
   };
 }
-describe("实际模型设置页面", () => {
-  it("shows the selected ComfyUI H3 chain and explains the visual-review requirement", async () => {
+async function roleTab() {
+  fireEvent.click(await screen.findByRole("tab", { name: "制作分工" }));
+}
+async function addCustom() {
+  fireEvent.click(await screen.findByRole("button", { name: "添加服务" }));
+  fireEvent.click(screen.getByRole("button", { name: "兼容接口" }));
+  return within(screen.getByRole("dialog"));
+}
+describe("服务与制作分工", () => {
+  it("uses a service list and keeps roles separate from connections", async () => {
+    setup();
+    expect(await screen.findByText("writer-a")).toBeVisible();
+    expect(screen.queryByText("接入向导")).not.toBeInTheDocument();
+    expect(
+      screen.queryByLabelText("编剧", { exact: true }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "保存配置" }),
+    ).not.toBeInTheDocument();
+    await roleTab();
+    expect(screen.getByLabelText("文本创作模型")).toHaveValue("writer");
+    expect(screen.getByLabelText("视觉审核模型")).toHaveValue("writer");
+    expect(
+      within(screen.getByLabelText("视觉审核模型")).getByRole("option", {
+        name: /critic-a/,
+      }),
+    ).toBeDisabled();
+  });
+  it("groups models sharing the same endpoint and credential, while separating distinct keys", async () => {
     const { update } = setup();
     await screen.findByText("writer-a");
+    const first = inventory().editable_profiles.writer;
     update({
-      video_profiles: {
-        wkp_h3: { provider: "comfyui_h3", model: "MiniMax-H3", enabled: true },
+      editable_profiles: {
+        one: { ...first, api_key_env: "KEY_ONE" },
+        two: { ...first, model: "second-model", api_key_env: "KEY_ONE" },
+        other: { ...first, model: "third-model", api_key_env: "KEY_TWO" },
       },
-      video_roles: { video_generator: "wkp_h3" },
-      video_providers: [{ id: "comfyui_h3", label: "ComfyUI / MiniMax H3" }],
     });
+    expect(await screen.findByText("second-model")).toBeVisible();
     expect(
-      await screen.findByText(/ComfyUI \/ MiniMax H3 双 GPU 工作流/),
-    ).toBeVisible();
-    expect(screen.getByText(/视觉审核需要支持图片输入的模型/)).toBeVisible();
-    expect(screen.queryByText("Wan2.2-TI2V-5B")).not.toBeInTheDocument();
+      screen.getAllByRole("button", { name: /llama.cpp.*127.0.0.1/ }),
+    ).toHaveLength(2);
+    expect(screen.queryByText("third-model")).not.toBeInTheDocument();
   });
-  it("edits H3 production parameters and switches back to the fixed preview recipe", async () => {
-    const { update, calls } = setup();
-    await screen.findByText("writer-a");
-    update({
-      video_profiles: {
-        wkp_h3: {
-          provider: "comfyui_h3",
-          model: "MiniMax-H3",
-          enabled: true,
-          quality: "production",
-          steps: 20,
-          shift_video: 12,
-          shift_audio: 3,
-          sampler: "euler",
-          revision: "wkp-dualgpu-base-v1",
-        },
-      },
-      video_roles: { video_generator: "wkp_h3" },
-      video_providers: [{ id: "comfyui_h3", label: "ComfyUI / MiniMax H3" }],
+  it("saves a service once, supports multiple manually selected models and writes keys separately", async () => {
+    const { calls } = setup();
+    const dialog = await addCustom();
+    fireEvent.change(dialog.getByLabelText("服务 URL"), {
+      target: { value: "http://127.0.0.1:9000/gateway/v1/chat/completions" },
     });
-    const card = (await screen.findByText("MiniMax-H3")).closest("article")!;
-    await userEvent.click(
-      within(card).getByRole("button", { name: "编辑连接" }),
-    );
-    const dialog = screen.getByRole("dialog");
-    await userEvent.clear(within(dialog).getByLabelText("采样步数"));
-    await userEvent.type(within(dialog).getByLabelText("采样步数"), "28");
-    await userEvent.selectOptions(
-      within(dialog).getByLabelText("采样器"),
-      "heun",
-    );
-    expect(within(dialog).getByText(/不加载预览加速 LoRA/)).toBeVisible();
-    await userEvent.click(
-      within(dialog).getByRole("button", { name: "加入待保存修改" }),
-    );
-    await userEvent.click(screen.getByRole("button", { name: "保存配置" }));
+    fireEvent.change(dialog.getByLabelText("API Key"), {
+      target: { value: "fixture-key" },
+    });
+    for (const model of ["text-model", "vision-named-but-unknown"]) {
+      fireEvent.change(
+        dialog.getByLabelText("手动添加模型 ID", { exact: true }),
+        { target: { value: model } },
+      );
+      fireEvent.click(dialog.getByRole("button", { name: "添加" }));
+    }
+    fireEvent.click(dialog.getByRole("button", { name: "保存连接" }));
     await waitFor(() =>
-      expect(calls.some((c) => c.body?.video_profiles)).toBe(true),
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
     );
-    expect(
-      calls.find((c) => c.body?.video_profiles)!.body.video_profiles.wkp_h3,
-    ).toMatchObject({
-      quality: "production",
-      steps: 28,
-      sampler: "heun",
-      revision: "wkp-dualgpu-base-v1",
-    });
-    expect(
-      within(card).getByText("正式质量档 · 基础模型 · 28 步 · heun"),
-    ).toBeVisible();
-    await userEvent.click(
-      within(card).getByRole("button", { name: "编辑连接" }),
-    );
-    const reopened = screen.getByRole("dialog");
-    await userEvent.selectOptions(
-      within(reopened).getByLabelText("H3 质量档"),
-      "preview",
-    );
-    expect(
-      within(reopened).queryByLabelText("采样步数"),
-    ).not.toBeInTheDocument();
-    await userEvent.click(
-      within(reopened).getByRole("button", { name: "加入待保存修改" }),
-    );
-    await userEvent.click(screen.getByRole("button", { name: "保存配置" }));
-    await waitFor(() =>
-      expect(calls.filter((c) => c.body?.video_profiles)).toHaveLength(2),
-    );
-    expect(
-      calls.filter((c) => c.body?.video_profiles)[1].body.video_profiles.wkp_h3,
-    ).toMatchObject({
-      quality: "preview",
-      steps: 4,
-      sampler: "euler",
-      revision: "wkp-dualgpu-turbo4-v1",
-    });
+    const saves = calls.filter((c) => c.path.endsWith("/models") && c.body);
+    expect(saves).toHaveLength(1);
+    const profiles = Object.entries(saves[0].body.profiles).filter(
+      ([id]) => !["writer", "critic"].includes(id),
+    ) as [string, RecordData][];
+    expect(profiles).toHaveLength(2);
+    for (const [id, p] of profiles) {
+      expect(p).toMatchObject({
+        base_url: "http://127.0.0.1:9000/gateway/v1",
+        network_mode: "loopback",
+        vision: false,
+      });
+      expect(saves[0].body.secrets["llm:" + id]).toBe("fixture-key");
+    }
+    expect(JSON.stringify(saves[0].body.profiles)).not.toContain("fixture-key");
+    expect(localStorage.length).toBe(0);
+    expect(sessionStorage.length).toBe(0);
   });
-  it("does not apply the new production preset while editing a legacy H3 connection", async () => {
-    const { update, calls } = setup();
+  it("retains per-model settings, mTLS, stable IDs and role bindings when editing one shared service", async () => {
+    const { calls, update } = setup();
     await screen.findByText("writer-a");
-    const legacy = {
-      provider: "comfyui_h3",
-      model: "MiniMax-H3",
-      enabled: true,
-      revision: "wkp-dualgpu-turbo4-v1",
+    const p = {
+      ...inventory().editable_profiles.writer,
+      tls_ca_file_env: "CA",
+      tls_client_cert_env: "CERT",
+      tls_client_key_env: "TLS_KEY",
+      api_key_credential: "system.key",
     };
     update({
-      video_profiles: { wkp_h3: legacy },
-      video_roles: { video_generator: "wkp_h3" },
-      video_providers: [{ id: "comfyui_h3", label: "ComfyUI / MiniMax H3" }],
-      video_presets: {
-        comfyui_h3: {
-          ...legacy,
-          quality: "production",
-          revision: "wkp-dualgpu-base-v1",
-          steps: 20,
-          shift_video: 12,
-          shift_audio: 3,
-          sampler: "euler",
+      editable_profiles: {
+        writer: p,
+        second: {
+          ...p,
+          model: "second-model",
+          request_timeout_seconds: 240,
+          context_tokens: 65536,
+          vision: false,
+          temperature_override: 0.8,
         },
       },
     });
-    const card = (await screen.findByText("MiniMax-H3")).closest("article")!;
-    await userEvent.click(
-      within(card).getByRole("button", { name: "编辑连接" }),
-    );
-    const dialog = screen.getByRole("dialog");
-    expect(within(dialog).getByLabelText("H3 质量档")).toHaveValue("preview");
-    await userEvent.click(
-      within(dialog).getByRole("button", { name: "加入待保存修改" }),
-    );
-    await userEvent.click(screen.getByRole("button", { name: "保存配置" }));
+    await screen.findByText("second-model");
+    fireEvent.click(screen.getByRole("button", { name: "管理服务" }));
+    const dialog = within(screen.getByRole("dialog"));
+    fireEvent.click(dialog.getByRole("button", { name: "保存连接" }));
     await waitFor(() =>
-      expect(calls.some((c) => c.body?.video_profiles)).toBe(true),
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
     );
-    expect(
-      calls.find((c) => c.body?.video_profiles)!.body.video_profiles.wkp_h3,
-    ).toEqual(legacy);
-  });
-  it("不同应用的 QueryClient 不共享草稿", async () => {
-    const { view } = setup();
-    await screen.findByText("writer-a");
-    await userEvent.selectOptions(screen.getByLabelText("编剧"), "critic");
-    const isolated = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
+    const payload = calls.find((c) => c.body?.expected_revision)?.body;
+    expect(payload.profiles.writer).toMatchObject(p);
+    expect(payload.profiles.second).toMatchObject({
+      context_tokens: 65536,
+      request_timeout_seconds: 240,
+      vision: false,
+      temperature_override: 0.8,
+      tls_client_key_env: "TLS_KEY",
     });
-    view.rerender(
-      <QueryClientProvider client={isolated}>
-        <Models notify={vi.fn()} />
-      </QueryClientProvider>,
-    );
-    await screen.findByText("writer-a");
-    expect(screen.getByLabelText("编剧")).toHaveValue("writer");
-    expect(screen.getByRole("button", { name: "保存配置" })).toBeDisabled();
+    expect(payload.roles.screenwriter).toBe("writer");
+    expect(payload).not.toHaveProperty("secrets");
   });
-
-  it("媒体与文本检测共享进行中状态，跨页面返回也不可重复提交", async () => {
-    const { client, view, update, fetch } = setup();
+  it("keeps the editor open with its captured revision and key after a CAS conflict", async () => {
+    const { calls, update } = setup();
     await screen.findByText("writer-a");
-    act(() =>
-      update({
-        image_profiles: {
-          image: {
-            provider: "comfyui_external",
-            enabled: true,
-            model: "image-model",
-          },
-        },
-        image_roles: { image_generator: "image" },
-        media_presets: { image: { comfyui_external: { model: "custom" } } },
-      }),
+    fireEvent.click(screen.getByRole("button", { name: "管理服务" }));
+    const dialog = within(screen.getByRole("dialog"));
+    fireEvent.change(dialog.getByLabelText("API Key"), {
+      target: { value: "keep-key" },
+    });
+    update({ revision: "config-other" });
+    fireEvent.click(dialog.getByRole("button", { name: "保存连接" }));
+    expect(await dialog.findByRole("alert")).toHaveTextContent("配置已更新");
+    expect(dialog.getByLabelText("API Key")).toHaveValue("keep-key");
+    expect(calls.find((c) => c.body?.secrets)?.body.expected_revision).toBe(
+      "config-1",
     );
-    await screen.findByText(/image-model/, { selector: "p" });
-    let finish!: (response: Response) => void;
+    expect(dialog.getByRole("button", { name: "保存连接" })).toBeEnabled();
+  });
+  it("does not save twice while a connection request is pending", async () => {
+    const { fetch } = setup();
+    await screen.findByText("writer-a");
+    let finish!: (r: Response) => void;
     fetch.mockImplementationOnce(
       () =>
-        new Promise<Response>((resolve) => {
-          finish = resolve;
+        new Promise<Response>((r) => {
+          finish = r;
         }),
     );
-    const button = screen.getByRole("button", { name: "检查图像配置" });
-    fireEvent.click(button);
-    fireEvent.click(button);
+    fireEvent.click(screen.getByRole("button", { name: "管理服务" }));
+    const dialog = within(screen.getByRole("dialog"));
+    const save = dialog.getByRole("button", { name: "保存连接" });
+    fireEvent.click(save);
+    fireEvent.click(save);
+    expect(dialog.getByRole("button", { name: "保存中…" })).toBeDisabled();
     expect(fetch).toHaveBeenCalledTimes(2);
-    for (const test of screen.getAllByRole("button", { name: "测试连接" }))
-      expect(test).toBeDisabled();
-    view.rerender(
-      <QueryClientProvider client={client}>
-        <p>其他页面</p>
-      </QueryClientProvider>,
-    );
-    view.rerender(
-      <QueryClientProvider client={client}>
-        <Models notify={vi.fn()} />
-      </QueryClientProvider>,
-    );
-    expect(screen.getByLabelText("使用方式")).toHaveValue("local");
-    expect(screen.getByRole("button", { name: "检测中…" })).toBeDisabled();
-    fireEvent.click(screen.getByRole("button", { name: "检测中…" }));
-    expect(
-      fetch.mock.calls.filter(([path]) => String(path).endsWith("/test")),
-    ).toHaveLength(1);
     await act(async () =>
       finish(
-        new Response(
-          JSON.stringify({ status: "ready", message: "图像配置已就绪" }),
-        ),
-      ),
-    );
-    const card = screen
-      .getByText(/image-model/, { selector: "p" })
-      .closest("article")!;
-    expect(within(card).getByRole("status")).toHaveTextContent(
-      "图像配置已就绪",
-    );
-    await userEvent.selectOptions(screen.getByLabelText("编剧"), "critic");
-    expect(screen.queryByText("图像配置已就绪")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "检查图像配置" })).toBeDisabled();
-    const saveBar = screen
-      .getByText("有尚未保存的配置修改")
-      .closest(".config-savebar")!;
-    expect(
-      card.compareDocumentPosition(saveBar) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
-  });
-
-  it("保留离开页面后的草稿与原 revision，刷新不会覆盖，并继续保护页面关闭", async () => {
-    const { view, client, update, calls } = setup();
-    await screen.findByText("writer-a");
-    await userEvent.selectOptions(screen.getByLabelText("编剧"), "critic");
-    view.rerender(
-      <QueryClientProvider client={client}>
-        <p>其他页面</p>
-      </QueryClientProvider>,
-    );
-    const closing = new Event("beforeunload", { cancelable: true });
-    window.dispatchEvent(closing);
-    expect(closing.defaultPrevented).toBe(true);
-    act(() => update({ revision: "remote-2" }));
-    view.rerender(
-      <QueryClientProvider client={client}>
-        <Models notify={vi.fn()} />
-      </QueryClientProvider>,
-    );
-    expect(screen.getByLabelText("编剧")).toHaveValue("critic");
-    expect(await screen.findByText(/其他终端已更新配置/)).toBeVisible();
-    await userEvent.click(screen.getByRole("button", { name: "保存配置" }));
-    await screen.findByText("配置已更新，草稿已保留");
-    expect(
-      calls.find((call) => call.body?.profiles)?.body.expected_revision,
-    ).toBe("config-1");
-  });
-
-  it("保存期间锁定所有编辑入口，切换页面后继续等待，失败保留草稿", async () => {
-    const { view, client, fetch } = setup();
-    await screen.findByText("writer-a");
-    await userEvent.selectOptions(screen.getByLabelText("编剧"), "critic");
-    let finish!: (response: Response) => void;
-    fetch.mockImplementationOnce(
-      () =>
-        new Promise<Response>((resolve) => {
-          finish = resolve;
-        }),
-    );
-    const button = screen.getByRole("button", { name: "保存配置" });
-    fireEvent.click(button);
-    fireEvent.click(button);
-    expect(fetch).toHaveBeenCalledTimes(2);
-    expect(screen.getByRole("button", { name: "添加连接" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "添加视频连接" })).toBeDisabled();
-    expect(
-      screen.getByRole("button", { name: "应用基础角色分工" }),
-    ).toBeDisabled();
-    expect(screen.getByLabelText("编剧")).toBeDisabled();
-    for (const edit of screen.getAllByRole("button", { name: "编辑连接" }))
-      expect(edit).toBeDisabled();
-    view.rerender(
-      <QueryClientProvider client={client}>
-        <p>其他页面</p>
-      </QueryClientProvider>,
-    );
-    view.rerender(
-      <QueryClientProvider client={client}>
-        <Models notify={vi.fn()} />
-      </QueryClientProvider>,
-    );
-    expect(screen.getByRole("button", { name: "保存中…" })).toBeDisabled();
-    expect(screen.getByLabelText("编剧")).toHaveValue("critic");
-    await act(async () =>
-      finish(
-        new Response(JSON.stringify({ error: "暂时无法保存" }), {
+        new Response(JSON.stringify({ error: "fixture failure" }), {
           status: 500,
         }),
       ),
     );
-    await screen.findByText("暂时无法保存");
-    expect(screen.getByLabelText("编剧")).toHaveValue("critic");
-    expect(screen.getByRole("button", { name: "保存配置" })).toBeEnabled();
+    expect(await dialog.findByRole("alert")).toHaveTextContent(
+      "fixture failure",
+    );
   });
-
-  it("主动重新载入须确认，取消保留草稿，确认后使用服务器配置", async () => {
-    const { calls } = setup();
-    await screen.findByText("writer-a");
-    await userEvent.selectOptions(screen.getByLabelText("编剧"), "critic");
-    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
-    const count = calls.length;
-    await userEvent.click(screen.getByRole("button", { name: "重新载入" }));
-    expect(confirm).toHaveBeenCalledOnce();
-    expect(calls).toHaveLength(count);
-    expect(screen.getByLabelText("编剧")).toHaveValue("critic");
-    confirm.mockReturnValue(true);
-    await userEvent.click(screen.getByRole("button", { name: "重新载入" }));
+  it("changes grouped usage explicitly and preserves an unsaved draft across route mounts", async () => {
+    const { view, client, calls } = setup();
+    await roleTab();
+    fireEvent.change(screen.getByLabelText("文本创作模型"), {
+      target: { value: "critic" },
+    });
+    fireEvent.click(screen.getByRole("tab", { name: "服务连接" }));
+    expect(screen.getByRole("button", { name: "添加服务" })).toBeDisabled();
+    view.unmount();
+    render(
+      <QueryClientProvider client={client}>
+        <Models notify={vi.fn()} />
+      </QueryClientProvider>,
+    );
+    await roleTab();
+    expect(screen.getByLabelText("文本创作模型")).toHaveValue("critic");
+    fireEvent.click(screen.getByRole("button", { name: "保存分工" }));
     await waitFor(() =>
-      expect(screen.getByLabelText("编剧")).toHaveValue("writer"),
+      expect(screen.getByRole("button", { name: "保存分工" })).toBeDisabled(),
     );
-    expect(screen.getByRole("button", { name: "保存配置" })).toBeDisabled();
+    const payload = calls.find((c) => c.body?.expected_revision)?.body;
+    expect(payload.roles).toMatchObject({
+      screenwriter: "critic",
+      independent_critic: "critic",
+      visual_critic: "writer",
+    });
+    expect(payload.expected_revision).toBe("config-1");
   });
-
-  it("重新载入期间的后续编辑不会被旧响应覆盖", async () => {
-    const { fetch } = setup();
+  it("preserves custom per-role routing until the user changes that group", async () => {
+    const { update } = setup();
     await screen.findByText("writer-a");
-    let finish!: (response: Response) => void;
-    fetch.mockImplementationOnce(
-      () =>
-        new Promise<Response>((resolve) => {
-          finish = resolve;
-        }),
-    );
-    fireEvent.click(screen.getByRole("button", { name: "重新载入" }));
-    await userEvent.selectOptions(screen.getByLabelText("编剧"), "critic");
-    await act(async () =>
-      finish(
-        new Response(JSON.stringify({ ...inventory(), revision: "remote-2" })),
-      ),
-    );
-    expect(screen.getByLabelText("编剧")).toHaveValue("critic");
-    expect(screen.getByRole("button", { name: "保存配置" })).toBeEnabled();
-    expect(await screen.findByText(/其他终端已更新配置/)).toBeVisible();
+    update({
+      roles: [
+        ...inventory().roles,
+        { role: "researcher", label: "选题研究", profile: "critic" },
+      ],
+      role_assignments: {
+        ...inventory().role_assignments,
+        researcher: "critic",
+      },
+    });
+    await roleTab();
+    expect(screen.getByLabelText("文本创作模型")).toHaveValue("__mixed__");
+    expect(screen.getByRole("button", { name: "保存分工" })).toBeDisabled();
+    fireEvent.click(screen.getByText("按角色单独配置 · 总制片代理"));
+    fireEvent.change(screen.getByLabelText("总制片代理"), {
+      target: { value: "critic" },
+    });
+    expect(screen.getByLabelText("文本创作模型")).toHaveValue("__mixed__");
   });
-
-  it("检测中不可重复提交，期间修改后忽略过时检测响应", async () => {
-    const { fetch } = setup();
-    await screen.findByText("writer-a");
-    let finish!: (response: Response) => void;
-    fetch.mockImplementationOnce(
-      () =>
-        new Promise<Response>((resolve) => {
-          finish = resolve;
-        }),
+  it("keeps failed role saves and original revisions instead of overwriting newer configuration", async () => {
+    const { update, calls } = setup();
+    await roleTab();
+    fireEvent.change(screen.getByLabelText("文本创作模型"), {
+      target: { value: "critic" },
+    });
+    update({ revision: "new-config" });
+    fireEvent.click(screen.getByRole("button", { name: "保存分工" }));
+    await waitFor(() =>
+      expect(
+        screen
+          .getAllByRole("alert")
+          .map((e) => e.textContent)
+          .join(),
+      ).toContain("配置已更新"),
     );
-    const card = screen.getByText("writer-a").closest("article")!;
-    const button = within(card).getByRole("button", { name: "测试连接" });
-    fireEvent.click(button);
-    fireEvent.click(button);
-    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(screen.getByLabelText("文本创作模型")).toHaveValue("critic");
     expect(
-      within(card).getByRole("button", { name: "检测中…" }),
-    ).toBeDisabled();
-    await userEvent.selectOptions(screen.getByLabelText("编剧"), "critic");
+      calls.find((c) => c.body?.expected_revision)?.body.expected_revision,
+    ).toBe("config-1");
+  });
+  it("shows pending connection checks, prevents duplicates and discards stale results", async () => {
+    const { fetch, update } = setup();
+    await screen.findByText("writer-a");
+    let finish!: (r: Response) => void;
+    fetch.mockImplementationOnce(
+      () =>
+        new Promise<Response>((r) => {
+          finish = r;
+        }),
+    );
+    const check = screen.getByRole("button", { name: "检查连接" });
+    fireEvent.click(check);
+    fireEvent.click(check);
+    expect(screen.getByRole("button", { name: "检查中…" })).toBeDisabled();
+    update({ revision: "new-config" });
     await act(async () =>
       finish(
         new Response(
-          JSON.stringify({ status: "ready", message: "过时的连接结果" }),
+          JSON.stringify({ status: "ready", message: "stale probe" }),
         ),
       ),
     );
-    expect(screen.queryByText("过时的连接结果")).not.toBeInTheDocument();
+    expect(screen.queryByText("stale probe")).not.toBeInTheDocument();
     expect(
-      within(card).getByRole("button", { name: "测试连接" }),
-    ).toBeDisabled();
+      fetch.mock.calls.filter(([path]) => String(path).endsWith("/test")),
+    ).toHaveLength(1);
   });
-
-  it("保存连接编辑保留高级参数，保存之前禁用目录检测", async () => {
-    const { calls } = setup();
-    await screen.findByText("writer-a");
-    const card = screen.getByText("writer-a").closest("article")!;
-    await userEvent.click(
-      within(card).getByRole("button", { name: "编辑连接" }),
-    );
-    const dialog = screen.getByRole("dialog");
-    await userEvent.clear(
-      within(dialog).getByRole("combobox", { name: "模型标识" }),
-    );
-    await userEvent.type(
-      within(dialog).getByRole("combobox", { name: "模型标识" }),
-      "writer-b",
-    );
-    await userEvent.click(
-      within(dialog).getByRole("button", { name: "加入待保存修改" }),
-    );
-    expect(
-      within(card).getByRole("button", { name: "测试连接" }),
-    ).toBeDisabled();
-    await userEvent.click(screen.getByRole("button", { name: "保存配置" }));
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: "保存配置" })).toBeDisabled(),
-    );
-    const save = calls.find((c) => c.body?.profiles)!;
-    expect(save.body.expected_revision).toBe("config-1");
-    expect(save.body.profiles.writer.model).toBe("writer-b");
-    expect(save.body.profiles.writer.chat_template_kwargs).toEqual({
-      enable_thinking: false,
-    });
-    expect(save.body.profiles.writer.temperature_override).toBe(0.25);
-  });
-  it("冲突时保留角色草稿及原revision，不改写他人的配置", async () => {
-    const { calls, update } = setup();
-    await screen.findByText("writer-a");
-    await userEvent.selectOptions(screen.getByLabelText("编剧"), "critic");
-    update({ revision: "remote-2" });
-    expect(screen.getByLabelText("编剧")).toHaveValue("critic");
-    await userEvent.click(screen.getByRole("button", { name: "保存配置" }));
-    await screen.findByText("配置已更新，草稿已保留");
-    expect(screen.getByLabelText("编剧")).toHaveValue("critic");
-    expect(calls.find((c) => c.body?.profiles)?.body.expected_revision).toBe(
-      "config-1",
-    );
-  });
-  it("切换原生Ollama后输出有效枚举并移除旧模板参数", async () => {
-    const { calls } = setup();
-    await screen.findByText("writer-a");
-    const card = screen.getByText("writer-a").closest("article")!;
-    await userEvent.click(
-      within(card).getByRole("button", { name: "编辑连接" }),
-    );
-    const dialog = screen.getByRole("dialog");
-    await userEvent.selectOptions(
-      within(dialog).getByLabelText("服务类型"),
-      "ollama_native",
-    );
-    expect(within(dialog).getByLabelText("接口地址")).toHaveValue(
-      "http://127.0.0.1:11434",
-    );
-    await userEvent.click(
-      within(dialog).getByRole("button", { name: "加入待保存修改" }),
-    );
-    await userEvent.click(screen.getByRole("button", { name: "保存配置" }));
-    await waitFor(() => expect(calls.some((c) => c.body?.profiles)).toBe(true));
-    const p = calls.find((c) => c.body?.profiles)?.body.profiles.writer;
-    expect(p.context_validation).toBe("conservative_estimate");
-    expect(p.chat_template_kwargs).toBeUndefined();
-    expect(p.response_format).toBe("openai_json_schema");
-  });
-  it("目录跳过保持未验证，文本模型不能选到视觉审核", async () => {
+  it("does not relabel directory-only checks as generation success", async () => {
     setup();
     await screen.findByText("writer-a");
-    const visual = screen.getByLabelText("视觉质检") as HTMLSelectElement;
-    expect(
-      within(visual).getByRole("option", { name: /critic.*不支持图像/ }),
-    ).toBeDisabled();
-    const card = screen.getByText("writer-a").closest("article")!;
-    await userEvent.click(
-      within(card).getByRole("button", { name: "测试连接" }),
+    fireEvent.click(screen.getByRole("button", { name: "检查连接" }));
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "目录跳过，连接尚未验证",
     );
-    await screen.findByText("目录跳过，连接尚未验证");
-    expect(within(card).getByText("尚未验证连接")).toBeVisible();
+    expect(screen.queryByText("连接通过")).not.toBeInTheDocument();
   });
-
-  it("preserves systemd credential authentication and shows mounted state", async () => {
-    const { update, calls } = setup();
+  it("blocks removing an assigned model and supports explicit role reassignment", async () => {
+    setup();
     await screen.findByText("writer-a");
-    const original = inventory();
-    const configured = {
-      editable_profiles: {
-        ...original.editable_profiles,
-        writer: {
-          ...original.editable_profiles.writer,
-          api_key_credential: "qwen38_primary",
-        },
-      },
-      profiles: [
-        {
-          id: "writer",
-          api_key_credential: "qwen38_primary",
-          auth_configured: false,
-        },
-      ],
-    };
-    update(configured);
-    await screen.findByText(/系统凭据：qwen38_primary.*尚未挂载/);
-    update({
-      profiles: [
-        {
-          id: "writer",
-          api_key_credential: "qwen38_primary",
-          auth_configured: true,
-        },
-      ],
-    });
-    const card = screen.getByText("writer-a").closest("article")!;
-    await waitFor(() =>
-      expect(
-        within(card).getByText(/系统凭据：qwen38_primary.*已挂载/),
-      ).toBeVisible(),
-    );
-    await userEvent.click(
-      within(card).getByRole("button", { name: "编辑连接" }),
-    );
-    const dialog = screen.getByRole("dialog");
-    await userEvent.click(
-      within(dialog).getByText("高级连接设置", { exact: true }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: "管理服务" }));
+    fireEvent.click(screen.getByRole("button", { name: "移除 writer-a" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("正在用于制作分工");
     expect(
-      within(dialog).getByText("保留系统凭据关联：qwen38_primary"),
+      screen.getByText("writer-a", { selector: "#service-dialog strong" }),
     ).toBeVisible();
-    await userEvent.click(
-      within(dialog).getByRole("button", { name: "加入待保存修改" }),
-    );
-    await userEvent.click(screen.getByRole("button", { name: "保存配置" }));
-    await waitFor(() =>
-      expect(calls.some((call) => call.body?.profiles)).toBe(true),
-    );
-    const saved = calls.find((call) => call.body?.profiles)!.body.profiles
-      .writer;
-    expect(saved.api_key_credential).toBe("qwen38_primary");
-    expect(saved.api_key_env).toBe("");
   });
+});
+it("keeps visual review separate even when an older inventory omits the vision role flag", async () => {
+  const { update } = setup();
+  await screen.findByText("writer-a");
+  update({
+    roles: inventory().roles.map((r) => ({ ...r, requires_vision: undefined })),
+  });
+  await roleTab();
+  expect(screen.getByLabelText("视觉审核模型")).toHaveValue("writer");
+  expect(
+    within(screen.getByLabelText("视觉审核模型")).getByRole("option", {
+      name: /critic-a/,
+    }),
+  ).toBeDisabled();
+});
+it("removes an unused service with one save and preserves assigned models", async () => {
+  const { update, calls } = setup();
+  await screen.findByText("writer-a");
+  update({
+    role_assignments: {
+      screenwriter: "writer",
+      independent_critic: "writer",
+      visual_critic: "writer",
+    },
+  });
+  fireEvent.click(screen.getByRole("button", { name: /兼容接口.*127.0.0.1/ }));
+  fireEvent.click(screen.getByRole("button", { name: "管理服务" }));
+  fireEvent.click(screen.getByText("高级连接设置"));
+  fireEvent.click(screen.getByRole("button", { name: "移除服务" }));
+  await waitFor(() =>
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+  );
+  const saved = calls.find((c) => c.body?.expected_revision)?.body;
+  expect(Object.keys(saved.profiles)).toEqual(["writer"]);
+  expect(saved.roles.independent_critic).toBe("writer");
 });

@@ -299,6 +299,12 @@ export function Field({
             : element.props["aria-describedby"],
         });
       }
+      if (
+        typeof element.type === "string" &&
+        element.type !== "label" &&
+        element.props.children
+      )
+        return cloneElement(element, {}, connect(element.props.children));
       return node;
     });
   }

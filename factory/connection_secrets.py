@@ -80,6 +80,7 @@ def prepare(updated, changes):
     if not isinstance(changes,dict) or len(changes)>96:
         raise ValueError('Invalid connection key updates')
     additions={}
+    references={}
     for connection,key in changes.items():
         if not isinstance(connection,str) or ':' not in connection:
             raise ValueError('Key update must identify its connection')
@@ -94,7 +95,10 @@ def prepare(updated, changes):
             continue
         if not isinstance(key,str) or not 1<=len(key)<=4096 or any(ord(c)<33 or ord(c)>126 for c in key):
             raise ValueError('API Key must be a nonempty token without spaces or control characters')
-        reference=PREFIX+secrets.token_hex(16)
+        # Models added to one service share the credential rotated in this save.
+        # Never search/deduplicate against previous vault entries: old snapshots
+        # retain their references, and unrelated existing connections stay intact.
+        reference=references.setdefault(key, PREFIX+secrets.token_hex(16))
         profile.pop('api_key_credential',None)
         profile['api_key_env']=reference
         additions[reference]=key

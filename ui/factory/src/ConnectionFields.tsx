@@ -135,6 +135,7 @@ export function CredentialField({
       <div className="credential-input">
         <input
           name="api_key"
+          aria-label={label}
           type={visible ? "text" : "password"}
           autoComplete="new-password"
           defaultValue={value}

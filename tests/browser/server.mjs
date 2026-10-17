@@ -147,10 +147,25 @@ function reset() {
     revision: "config-1",
     editable_profiles: structuredClone(profiles),
     profiles: Object.entries(profiles).map(([id, value]) => ({ id, ...value })),
-    role_assignments: { screenwriter: "writer", visual_critic: "writer" },
+    role_assignments: {
+      screenwriter: "writer",
+      independent_critic: "writer",
+      visual_critic: "writer",
+    },
     roles: [
       { role: "screenwriter", label: "编剧", profile: "writer" },
-      { role: "visual_critic", label: "画面质检", profile: "writer" },
+      {
+        role: "independent_critic",
+        label: "独立审稿",
+        profile: "writer",
+        requires_vision: false,
+      },
+      {
+        role: "visual_critic",
+        label: "画面质检",
+        profile: "writer",
+        requires_vision: true,
+      },
       {
         role: "executive_producer",
         label: "总制片代理",
@@ -192,7 +207,7 @@ const server = http.createServer(async (request, response) => {
       body += part;
       if (body.length > 65536) throw new Error("Fixture body too large");
     }
-    const value = body ? JSON.parse(body) : {};
+    let value = body ? JSON.parse(body) : {};
     if (url.pathname === "/__test/reset" && request.method === "POST") {
       reset();
       return json(response, { reset: true });
@@ -293,7 +308,13 @@ const server = http.createServer(async (request, response) => {
       if (url.pathname === "/api/factory/models/discover")
         return json(response, {
           status: "ready",
-          models: [{ id: "fixture-discovered-model" }],
+          models: [
+            { id: "fixture-discovered-model" },
+            {
+              id: "fixture-image-model",
+              architecture: { input_modalities: ["text", "image"] },
+            },
+          ],
           generation: false,
         });
       if (url.pathname === "/api/factory/models/test")
@@ -306,9 +327,30 @@ const server = http.createServer(async (request, response) => {
         if (request.method === "POST") {
           if (value.expected_revision !== inventory.revision)
             return json(response, { error: "配置已更新" }, 409);
+          // Mirror the write-only credential contract without any vendor request.
+          const savedValue = structuredClone(value),
+            references = new Map();
+          for (const [connection, key] of Object.entries(
+            savedValue.secrets || {},
+          )) {
+            const [kind, ident] = connection.split(":");
+            const group = kind === "llm" ? "profiles" : kind + "_profiles";
+            if (!references.has(key))
+              references.set(
+                key,
+                "STUDIO_KEY_" +
+                  createHash("sha256")
+                    .update(String(key))
+                    .digest("hex")
+                    .slice(0, 32),
+              );
+            savedValue[group][ident].api_key_env = references.get(key);
+          }
+          value = savedValue;
           inventory = {
             ...inventory,
-            revision: "config-2",
+            revision:
+              "config-" + (Number(inventory.revision.split("-")[1]) + 1),
             ...Object.fromEntries(
               [
                 "image_profiles",
@@ -505,6 +547,7 @@ const server = http.createServer(async (request, response) => {
       ".css": "text/css",
       ".mp4": "video/mp4",
       ".png": "image/png",
+      ".svg": "image/svg+xml",
     }[path.extname(file)];
     const content = await readFile(file),
       range = request.headers.range?.match(/^bytes=(\d+)-(\d*)$/);

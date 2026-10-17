@@ -24,7 +24,7 @@ for (const scenario of [
     hash: "view=models",
     route: "/models",
     retry: "重新读取模型配置",
-    ready: ".model-card",
+    ready: ".service-list-item",
   },
   {
     name: "project overview",
