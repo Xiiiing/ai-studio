@@ -40,3 +40,13 @@ def test_typed_image_uses_saved_task_and_preserves_reference_order(tmp_path, mon
     resumed = gpu_client.resume_remote_comfy(cfg, dest, budget)
     assert resumed == result and resumed.read_bytes() == blob
     assert len(posts) == 1 and budget.snapshot()['gpu_seconds'] == 3
+
+
+def test_resident_h3_health_includes_pair_without_giving_it_to_tts(monkeypatch):
+    from factory import gpu_service,qwen_image21
+    from studio import h3
+    monkeypatch.setattr(h3,'installation',lambda:{'model':h3.MODEL,'gpu_count':2,'revision':h3.REVISION,'installed':True})
+    monkeypatch.setattr(qwen_image21,'installed',lambda:True)
+    observed=gpu_service.InferenceEngine({'gpu_cards':[5],'resident_h3':{'base_url':'http://127.0.0.1:8346','gpu_cards':[6,7]}}).health()
+    assert observed['gpu_cards']==[4,5,6,7] and observed['tts_gpu_cards']==[5]
+    assert h3.backend_ready(observed['video_backends']['comfyui_h3'],observed['gpu_cards'])

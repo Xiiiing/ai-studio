@@ -338,6 +338,8 @@ def _render_image(task, prompt, refs, folder, step, budget):
     if profile["provider"] == "dashscope_image":
         return _cloud_image(task, prompt, refs, folder, step)
     config = {**data["config"].get("production", {}), "gpu_service": data["config"].get("gpu_service")} if data["config"].get("gpu_service") else data["config"].get("production", {})
+    if profile['provider']=='comfyui_qwen_image21' and not config.get('gpu_service'):
+        raise ValueError('Qwen-Image-2.1 需要配置 Wkp 持久任务服务')
     seed = int(task["signature"][:8], 16)
     if profile["provider"] == "comfyui_external":
         from .external_comfy import ExternalComfy
