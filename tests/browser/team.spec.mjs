@@ -84,9 +84,11 @@ test("saved optional producer binding enables delegated creation but not final a
     .first()
     .click();
   await page.locator('.main-nav [data-action="models"]').click();
+  await page.getByRole("tab", { name: "制作分工" }).click();
+  await page.getByText("按角色单独配置 · 总制片代理", { exact: true }).click();
   await page.locator("#role-executive_producer").selectOption("writer");
-  await page.locator('[data-model-action="save"]').click();
-  await expect(page.locator('[data-model-action="save"]')).toBeDisabled();
+  await page.locator('[data-model-action="save-roles"]').click();
+  await expect(page.locator('[data-model-action="save-roles"]')).toBeDisabled();
   await page.locator('[data-action="new-project"]').first().click();
   await expect(
     page.locator('#project-dialog option[value="delegated"]'),

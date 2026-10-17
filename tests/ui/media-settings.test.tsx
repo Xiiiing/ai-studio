@@ -4,164 +4,214 @@ import {
   fireEvent,
   waitFor,
   act,
-  within,
 } from "@testing-library/react";
 import { it, expect, vi } from "vitest";
-import { MediaSettings } from "../../ui/factory/src/MediaSettings";
-
-const mediaDraft = {
-  image_profiles: {
-    image: {
-      provider: "comfyui_external",
-      model: "image-model",
-      enabled: true,
-    },
-  },
-  image_roles: { image_generator: "image" },
+import { MediaServiceEditor } from "../../ui/factory/src/MediaServiceEditor";
+import { WorkflowTools } from "../../ui/factory/src/WorkflowTools";
+import type { RecordData } from "../../ui/factory/src/api";
+const h3 = {
+  provider: "comfyui_h3",
+  model: "MiniMax-H3",
+  enabled: true,
+  quality: "production",
+  steps: 20,
+  shift_video: 12,
+  shift_audio: 3,
+  sampler: "euler",
+  revision: "wkp-dualgpu-base-v1",
 };
-const mediaInventory = {
-  ...mediaDraft,
-  media_presets: {
-    image: { comfyui_external: mediaDraft.image_profiles.image },
-  },
-  media_providers: { comfyui_external: { label: "ComfyUI" } },
+const inventory = {
+  revision: "one",
+  editable_profiles: {},
+  roles: [],
+  video_profiles: { h3 },
+  video_roles: { video_generator: "h3" },
+  video_presets: { comfyui_h3: h3 },
+  video_providers: [{ id: "comfyui_h3", label: "ComfyUI H3" }],
 };
-it("检测有进行中反馈且不能重复提交，结果留在对应连接卡片", async () => {
-  let finish!: (response: Response) => void;
-  const fetch = vi.fn(
+it("saves the selected H3 production recipe once and preserves stable assignment", async () => {
+  const onSave = vi.fn().mockResolvedValue(undefined);
+  render(
+    <MediaServiceEditor
+      kind="video"
+      inventory={inventory}
+      service={{
+        id: "video:h3",
+        kind: "video",
+        provider: "comfyui_h3",
+        profiles: [["h3", h3]],
+      }}
+      onSave={onSave}
+      onClose={vi.fn()}
+    />,
+  );
+  fireEvent.change(screen.getByLabelText("采样步数"), {
+    target: { value: "28" },
+  });
+  fireEvent.click(screen.getByText("采样参数"));
+  fireEvent.change(screen.getByLabelText("视频采样偏移"), {
+    target: { value: "10.5" },
+  });
+  fireEvent.change(screen.getByLabelText("采样器"), {
+    target: { value: "heun" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "保存连接" }));
+  await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
+  expect(onSave.mock.calls[0][0].video_profiles.h3).toMatchObject({
+    steps: 28,
+    shift_video: 10.5,
+    shift_audio: 3,
+    sampler: "heun",
+    revision: "wkp-dualgpu-base-v1",
+  });
+  expect(onSave.mock.calls[0][0].video_roles.video_generator).toBe("h3");
+  expect(onSave.mock.calls[0][1]).toBe("one");
+});
+it("switches H3 to the fixed preview recipe without inventing an API key", async () => {
+  const onSave = vi.fn().mockResolvedValue(undefined);
+  render(
+    <MediaServiceEditor
+      kind="video"
+      inventory={inventory}
+      service={{
+        id: "video:h3",
+        kind: "video",
+        provider: "comfyui_h3",
+        profiles: [["h3", h3]],
+      }}
+      onSave={onSave}
+      onClose={vi.fn()}
+    />,
+  );
+  fireEvent.change(screen.getByLabelText("H3 质量档"), {
+    target: { value: "preview" },
+  });
+  expect(screen.queryByLabelText("采样步数")).not.toBeInTheDocument();
+  expect(screen.queryByLabelText("API Key")).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "保存连接" }));
+  await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
+  expect(onSave.mock.calls[0][0].video_profiles.h3).toMatchObject({
+    quality: "preview",
+    steps: 4,
+    shift_video: 12,
+    sampler: "euler",
+    revision: "wkp-dualgpu-turbo4-v1",
+  });
+});
+it("retains cloud speech fields and posts a write-only key in one save", async () => {
+  const onSave = vi.fn().mockResolvedValue(undefined);
+  const preset = {
+    provider: "dashscope_tts",
+    model: "qwen3-tts-flash",
+    enabled: true,
+    base_url: "https://dashscope.aliyuncs.com/api/v1",
+    api_key_env: "DASHSCOPE_API_KEY",
+    default_voice: "Cherry",
+    language: "Chinese",
+    voices: { narrator: "Cherry" },
+  };
+  render(
+    <MediaServiceEditor
+      kind="audio"
+      inventory={{
+        ...inventory,
+        audio_profiles: {},
+        audio_roles: {},
+        media_presets: { audio: { dashscope_tts: preset } },
+        media_providers: { dashscope_tts: { label: "百炼语音 API" } },
+      }}
+      onSave={onSave}
+      onClose={vi.fn()}
+    />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "百炼语音 API" }));
+  fireEvent.change(screen.getByLabelText("API Key"), {
+    target: { value: "fake-speech-key" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "保存连接" }));
+  await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
+  const draft = onSave.mock.calls[0][0],
+    id = Object.keys(draft.audio_profiles)[0];
+  expect(draft.audio_profiles[id]).toMatchObject({
+    ...preset,
+    voices: { narrator: "Cherry" },
+  });
+  expect(draft.secrets).toEqual({ ["audio:" + id]: "fake-speech-key" });
+  expect(JSON.stringify(draft.audio_profiles)).not.toContain("fake-speech-key");
+});
+it("keeps media save errors in the editor and rejects duplicate pending saves", async () => {
+  let finish!: () => void;
+  const onSave = vi.fn(
     () =>
-      new Promise<Response>((resolve) => {
-        finish = resolve;
+      new Promise<void>((_, reject) => {
+        finish = () => reject(new Error("stale revision"));
       }),
   );
-  vi.stubGlobal("fetch", fetch);
   render(
-    <MediaSettings
-      draft={mediaDraft}
-      inventory={mediaInventory}
-      onChange={vi.fn()}
-      notify={vi.fn()}
+    <MediaServiceEditor
+      kind="video"
+      inventory={inventory}
+      service={{
+        id: "video:h3",
+        kind: "video",
+        provider: "comfyui_h3",
+        profiles: [["h3", h3]],
+      }}
+      onSave={onSave}
+      onClose={vi.fn()}
     />,
   );
-  const card = screen.getByText("image").closest("article")!;
-  const button = within(card).getByRole("button", { name: "检查图像配置" });
-  fireEvent.click(button);
-  fireEvent.click(button);
-  expect(fetch).toHaveBeenCalledOnce();
-  expect(within(card).getByRole("button", { name: "检测中…" })).toBeDisabled();
-  await act(async () =>
-    finish(
-      new Response(JSON.stringify({ error: "制作连接无法访问" }), {
-        status: 500,
-      }),
-    ),
-  );
-  expect(within(card).getByRole("status")).toHaveTextContent(
-    "制作连接无法访问",
-  );
-  expect(
-    within(card).getByRole("button", { name: "检查图像配置" }),
-  ).toBeEnabled();
+  const save = screen.getByRole("button", { name: "保存连接" });
+  fireEvent.click(save);
+  fireEvent.click(save);
+  expect(onSave).toHaveBeenCalledOnce();
+  expect(screen.getByRole("button", { name: "保存中…" })).toBeDisabled();
+  await act(async () => finish());
+  expect(screen.getByRole("alert")).toHaveTextContent("stale revision");
+  expect(screen.getByLabelText("模型 ID")).toHaveValue("MiniMax-H3");
 });
-
-it("修改后忽略过时检测，保存中全部媒体编辑入口不可用", async () => {
-  let finish!: (response: Response) => void;
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(
-      () =>
-        new Promise<Response>((resolve) => {
-          finish = resolve;
-        }),
-    ),
-  );
-  const props = {
-    draft: mediaDraft,
-    inventory: mediaInventory,
-    onChange: vi.fn(),
-    notify: vi.fn(),
-  };
-  const view = render(<MediaSettings {...props} />);
-  fireEvent.click(screen.getByRole("button", { name: "检查图像配置" }));
-  view.rerender(<MediaSettings {...props} dirty generation={1} />);
-  await act(async () =>
-    finish(
-      new Response(
-        JSON.stringify({ status: "ready", message: "旧的媒体结果" }),
-      ),
-    ),
-  );
-  expect(screen.queryByText("旧的媒体结果")).not.toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "检查图像配置" })).toBeDisabled();
-  view.rerender(<MediaSettings {...props} saving />);
-  expect(screen.getByRole("button", { name: "添加图像连接" })).toBeDisabled();
-  expect(screen.getByRole("button", { name: "编辑图像连接" })).toBeDisabled();
-  expect(screen.getByLabelText("图像使用的连接")).toBeDisabled();
-  expect(screen.getByLabelText("工作流模板 JSON")).toBeDisabled();
-});
-
-it("停用的制作连接不能检测", () => {
-  const draft = {
-    ...mediaDraft,
-    image_profiles: {
-      image: { ...mediaDraft.image_profiles.image, enabled: false },
-    },
-  };
-  render(
-    <MediaSettings
-      draft={draft}
-      inventory={{ ...mediaInventory, ...draft }}
-      onChange={vi.fn()}
-      notify={vi.fn()}
-    />,
-  );
-  expect(screen.getByRole("button", { name: "检查图像配置" })).toBeDisabled();
-  expect(screen.getByText("已停用")).toBeVisible();
-});
-it("adds a user ComfyUI connection and imports a mapped workflow without generation", async () => {
-  const onChange = vi.fn();
+it("imports workflow templates separately without saving or generating model configuration", async () => {
   const fetch = vi.fn(
-    async (_path: unknown, _init?: RequestInit) =>
+    async (_path: any, _init?: RequestInit) =>
       new Response(JSON.stringify({ id: "a".repeat(64) })),
   );
   vi.stubGlobal("fetch", fetch);
-  render(
-    <MediaSettings
-      draft={{ image_profiles: {}, image_roles: { image_generator: "" } }}
-      inventory={{
-        media_presets: {
-          image: {
-            comfyui_external: {
-              provider: "comfyui_external",
-              model: "custom",
-              enabled: true,
-              base_url: "http://127.0.0.1:8188",
-              network_mode: "loopback",
-              allowed_hosts: [],
-            },
-          },
-        },
-        media_providers: { comfyui_external: { label: "自己的ComfyUI" } },
-      }}
-      onChange={onChange}
-      notify={() => {}}
-    />,
-  );
-  fireEvent.click(screen.getByText("添加图像连接"));
-  fireEvent.change(screen.getByLabelText("制作连接编号"), {
-    target: { value: "mine" },
-  });
-  fireEvent.click(screen.getByText("加入制作配置草稿"));
-  expect(onChange).toHaveBeenCalledTimes(1);
-  const d = onChange.mock.calls[0][0]({ image_profiles: {} });
-  expect(d.image_profiles.mine.base_url).toBe("http://127.0.0.1:8188");
-  fireEvent.click(screen.getByText("高级：ComfyUI 工作流导入／导出"));
+  render(<WorkflowTools notify={vi.fn()} />);
   fireEvent.change(screen.getByLabelText("工作流模板 JSON"), {
-    target: { value: '{"name":"test"}' },
+    target: { value: JSON.stringify({ kind: "image", graph: { node: {} } }) },
   });
-  fireEvent.click(screen.getByText("导入模板"));
+  fireEvent.click(screen.getByRole("button", { name: "导入模板" }));
   await waitFor(() =>
     expect(screen.getByLabelText("模板编号")).toHaveValue("a".repeat(64)),
   );
-  expect(fetch.mock.calls[0][0]).toContain("/workflow-templates");
+  expect(fetch).toHaveBeenCalledOnce();
+  expect(fetch.mock.calls[0][0]).toBe("/api/factory/workflow-templates");
+});
+
+it("preserves an untouched legacy H3 preview cache identity", async () => {
+  const onSave = vi.fn().mockResolvedValue(undefined);
+  const legacy = {
+    provider: "comfyui_h3",
+    model: "MiniMax-H3",
+    enabled: true,
+    revision: "wkp-dualgpu-turbo4-v1",
+  };
+  render(
+    <MediaServiceEditor
+      kind="video"
+      inventory={inventory}
+      service={{
+        id: "video:h3",
+        kind: "video",
+        provider: "comfyui_h3",
+        profiles: [["h3", legacy]],
+      }}
+      onSave={onSave}
+      onClose={vi.fn()}
+    />,
+  );
+  expect(screen.getByLabelText("H3 质量档")).toHaveValue("preview");
+  fireEvent.click(screen.getByRole("button", { name: "保存连接" }));
+  await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
+  expect(onSave.mock.calls[0][0].video_profiles.h3).toEqual(legacy);
 });

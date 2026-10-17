@@ -1,3 +1,4 @@
+import { Field } from "../../ui/factory/src/ui";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, it } from "vitest";
@@ -75,4 +76,28 @@ it("masks a write-only key by default and never reads it from browser storage", 
   expect(input.type).toBe("text");
   expect(localStorage.length).toBe(0);
   expect(sessionStorage.length).toBe(0);
+});
+
+it("does not give independently labelled choices the same field ID", async () => {
+  const { container } = render(
+    <Field label="选择镜头">
+      <div>
+        <label>
+          <input type="checkbox" />
+          镜头 1
+        </label>
+        <label>
+          <input type="checkbox" />
+          镜头 2
+        </label>
+      </div>
+    </Field>,
+  );
+  const ids = Array.from(container.querySelectorAll("[id]")).map(
+    (element) => element.id,
+  );
+  expect(new Set(ids).size).toBe(ids.length);
+  await userEvent.click(screen.getByRole("checkbox", { name: "镜头 2" }));
+  expect(screen.getByRole("checkbox", { name: "镜头 2" })).toBeChecked();
+  expect(screen.getByRole("checkbox", { name: "镜头 1" })).not.toBeChecked();
 });
