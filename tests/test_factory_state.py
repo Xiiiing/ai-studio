@@ -533,3 +533,26 @@ def test_production_block_revision_failed_review_must_be_reviewed_again(
     assert [name for name, _ in calls] == ["review", "review", "produce"]
     assert store.get(pid)["status"] == "awaiting_final"
 
+
+
+def test_resume_captures_existing_video_boundary_without_resetting_accounting(production_block_project,isolated,monkeypatch):
+    import json
+    from studio import core
+    monkeypatch.setattr(core,'ROOT',isolated)
+    p=production_block_project;root=isolated/'production'/p['slug']
+    (root/'factory_owner.json').write_text(json.dumps({'project_id':p['id']}))
+    receipt=root/'renders/S01/take_001/result.json';receipt.parent.mkdir(parents=True)
+    receipt.write_text('{}')
+    q=store.action(p['id'],{'action':'resume','expected_revision':p['revision'],'review_only_existing_videos':True})
+    assert q['production']['review_only_video_results']==[str(receipt.relative_to(isolated))]
+    assert q['production']['review_only_existing_videos'] is True
+    assert {k:v for k,v in q['production'].items() if k not in {'review_only_video_results','review_only_existing_videos'}}==p['production']
+    assert q['budget']==p['budget'] and q['production_revision']==p['production_revision']
+    assert receipt.read_text()=='{}'
+
+
+def test_resume_rejects_ambiguous_review_only_flag(production_block_project):
+    p=production_block_project
+    with pytest.raises(ValueError,match='布尔值'):
+        store.action(p['id'],{'action':'resume','expected_revision':p['revision'],'review_only_existing_videos':'yes'})
+    assert store.get(p['id'])['status']=='blocked'

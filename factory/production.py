@@ -240,7 +240,7 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                if self.config.get("semantic_model_identity") is not None else {}),
             "implementation": {} if explicit_policy else {
                 name: sha256(ROOT / "factory" / name)
-                for name in ("llm.py", "quality.py", "evaluation_sampling.py", "temporal_review.py") if (ROOT / "factory" / name).is_file()},
+                for name in ("llm.py", "quality.py", "evaluation_sampling.py", "temporal_review.py", "spatial_review.py") if (ROOT / "factory" / name).is_file()},
             "evaluator": (getattr(evaluator, "__module__", "") + "." +
                           getattr(evaluator, "__qualname__", type(evaluator).__name__)) if evaluator else None,
         })
@@ -262,6 +262,21 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
             write_json(owner_path, {"project_id": self.ident, "created_at": time.time(),
                                     "schema": "autonomous_factory.owner.v1"})
         self.production = copy.deepcopy(self.project.get("production") or {})
+        self.review_only_existing_videos = self.production.get(
+            "review_only_existing_videos", self.config.get("review_only_existing_videos", self.h3_automatic))
+        if type(self.review_only_existing_videos) is not bool:
+            raise ValueError("review_only_existing_videos must be boolean")
+        # Persist the boundary through remote-GPU yields. A newly generated
+        # video must not accidentally become an old protected video on resume.
+        from .shot_workbench import retained_video_results
+        baseline = self.production.setdefault("review_only_video_results", [
+            str(path.relative_to(ROOT)) for path in retained_video_results(self.folder)]) if self.review_only_existing_videos else []
+        if not isinstance(baseline, list) or any(not isinstance(path, str) for path in baseline):
+            raise ValueError("Invalid retained video boundary")
+        self.existing_video_results = frozenset(within(ROOT, path) for path in baseline)
+        if any(not path.is_relative_to((self.folder / "renders").resolve()) or path.name != "result.json"
+               for path in self.existing_video_results):
+            raise ValueError("Retained videos must belong to this project")
         self.budget = Budget(self.config, self.production)
         self._scheduler = None
         self.max_attempts = int(self.config.get("max_attempts",
@@ -683,6 +698,24 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                 "kind": kind, "signature": signature, "review_signature": review_signature,
                 "compatible_source_signatures": compatible_sources, **extra}
 
+    def _review_only_video(self, target):
+        return (self.review_only_existing_videos and target["kind"] == "video"
+                and any(path.parent.parent == target["folder"] for path in self.existing_video_results))
+
+    def _stop_existing_video(self, target, record=None, receipt=None):
+        if target.get("shot") is not None:
+            target["shot"]["status"] = "failed" if record else "reviewing"
+        self.emit("needs_attention")
+        raise ProductionNeedsDecision(
+            "已有视频仅复审：未通过当前审核或输入已变化；原视频保留，需人工处理，不会自动重制。",
+            "existing_video_review_failed" if record else "existing_video_review_required",
+            {"asset": target["key"], "stage": "video_review",
+             "take": (record or {}).get("take"), "path": (receipt or {}).get("path"),
+             "assessment": (record or {}).get("qa", {}),
+             "retained_receipts": [str(path.relative_to(ROOT)) for path in sorted(self.existing_video_results)
+                                   if path.parent.parent == target["folder"]],
+             "resume_action": "review_existing_assets_only", "regeneration_allowed": False})
+
     def _unfinished_candidate(self, target):
         self._guard_remote_submissions(target)
         for record in reversed(self._attempts(target)):
@@ -745,6 +778,8 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
         return None
 
     def _new_attempt(self, target):
+        if self._review_only_video(target):
+            self._stop_existing_video(target)
         self._team_admit_target(target)
         previous = [record for record in self._attempts(target) if record.get("state") != "prompt_preparing"]
         if len(previous) >= self.max_attempts:
@@ -870,6 +905,10 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                 if candidate:
                     ready.append((target, *candidate))
                 else:
+                    if self._review_only_video(target):
+                        failed = next((row for row in reversed(self._attempts(target))
+                                       if row.get("state") == "failed"), None)
+                        self._stop_existing_video(target, failed, (failed or {}).get("output"))
                     generate.append(target)
             from .bound_media import uses_bound, render_targets
             bound = [target for target in generate if uses_bound(self, target)]
@@ -1073,6 +1112,8 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                                                      "path": saved["path"], "take": saved["take"],
                                                      "detail": semantic.get("detail")})
                     self.emit(phase)
+                    if qa["status"] == "fail" and self._review_only_video(target):
+                        self._stop_existing_video(target, record, saved)
                     self._team_after_target(target)
                     identity = self._team_target(target)
                     if identity:

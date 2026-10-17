@@ -16,6 +16,15 @@ SHOT_RE = re.compile(r"S\d{2,3}\Z")
 TAKE_RE = re.compile(r"(?:take_\d{3,9}|camera_[a-f0-9]{16})\Z")
 
 
+def retained_video_results(root):
+    """Protect existing files even when a result journal needs restoration."""
+    folder = root / "renders"
+    paths = set(folder.glob("*/take_*/result.json"))
+    paths.update(path.parent / "result.json" for path in folder.glob("*/take_*/*")
+                 if path.is_file() and path.suffix.lower() in {".mp4", ".webm", ".mov"})
+    return sorted(paths)
+
+
 def shot_definition(project, shot_id):
     if not isinstance(shot_id, str) or not SHOT_RE.fullmatch(shot_id):
         raise ValueError("镜头编号无效")

@@ -428,7 +428,11 @@ def review_media(project, shot, path, references, config=None, *, output_dir=Non
         from .temporal_review import verify_temporal
         result = verify_temporal(config, schema, context, reference_content,
                                  sampled, sampling, result, path, record)
+    elif contract and contract["motion"] == "generated_video" and shot.get("review_purpose") != "visual_direction_preview":
+        from .spatial_review import verify_spatial
+        result = verify_spatial(config, schema, context, reference_content, result, path, record)
     temporal_pending = result.pop("_temporal_unavailable", False)
+    spatial_pending = result.pop("_spatial_unavailable", False)
     blocking=[issue for issue in result["issues"] if issue["severity"]=="blocking"]
     result["model_status"] = result["status"]
     # The verdict follows the declared severity and configured score gate;
@@ -454,6 +458,16 @@ def review_media(project, shot, path, references, config=None, *, output_dir=Non
         if not (confirmed or other_blocking or mismatch):
             result["status"] = "unavailable"
             result["detail"] = "抽帧时间连续性疑点尚无充分连续帧证据；保留已有视频，需补审，不据此重制。"
+    if spatial_pending:
+        from .spatial_review import is_spatial_issue
+        audit = result.get("spatial_verification", {})
+        confirmed = any(item.get("status") == "confirmed" for item in audit.get("findings", []))
+        other_blocking = any(issue["severity"] == "blocking" and not is_spatial_issue(issue) for issue in result["issues"])
+        mismatch = (result.get("style_alignment", {}).get("status") == "mismatch"
+                    or "mismatch" in result.get("material_alignment", {}).values())
+        if not (confirmed or other_blocking or mismatch):
+            result["status"] = "unavailable"
+            result["detail"] = "接触位置或能量连接的证据仍不清楚；保留首帧待补审，不据此自动返修。"
     selected_model = resolve_llm(config, "visual_critic", require_vision=True)
     result.update(evaluator="vlm_sampled_frames",model=selected_model["model"],
                   profile=selected_model["profile"],endpoint=selected_model.get("base_url"),

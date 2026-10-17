@@ -130,6 +130,7 @@ def test_failed_video_repairs_prompt_after_replacement_frame_gpu_is_released(set
 
 def test_pending_repair_prompt_resumes_same_take_without_extra_frame_generation(setup, monkeypatch):
     project, cfg, target, events, compiles, executions, _ = setup
+    cfg['review_only_existing_videos'] = False  # Explicitly authorized continuation of a repair.
     cfg['semantic_enabled'] = True
     original = h3_prompting.compile_prompt
     unavailable = [True]
@@ -452,3 +453,67 @@ def test_policy_upgrade_never_revives_unusable_failed_media(setup,monkeypatch,in
     core.write_json(path,record)
     resumed=production._Run(run.project,cfg,None,None)
     assert resumed._unfinished_candidate(target(resumed)) is None
+
+
+def test_existing_video_failure_stops_before_any_generation_admission(setup,monkeypatch):
+    run,cfg,target,old,_=frozen_compiler_video(setup,monkeypatch)
+    run.project['production'].pop('review_only_video_results',None)  # New review request boundary.
+    before=core.sha256(old['folder']/'take_001/video.mp4')
+    def no_generation(pid,kind,scope,*,check_locks=True):
+        if kind=='video' and check_locks:pytest.fail('Entered video generation admission')
+    monkeypatch.setattr(production.team_control,'admit',no_generation)
+    calls=[]
+    def failed(*args):
+        calls.append(args);return {'status':'fail','score':40,'issues':[{'code':'action','severity':'blocking','detail':'Approved action is missing'}]}
+    resumed=production._Run(run.project,cfg,None,None,evaluator=failed)
+    with pytest.raises(scheduler.ProductionNeedsDecision) as error:
+        resumed._render_targets([target(resumed)],'diffusion_video')
+    assert error.value.reason=='existing_video_review_failed'
+    assert error.value.details['regeneration_allowed'] is False
+    assert len(setup[4])==len(setup[5])==1
+    assert core.sha256(old['folder']/'take_001/video.mp4')==before
+    again=production._Run(resumed.project,cfg,None,None,evaluator=failed)
+    with pytest.raises(scheduler.ProductionNeedsDecision) as repeated:
+        again._render_targets([target(again)],'diffusion_video')
+    assert repeated.value.reason=='existing_video_review_failed'
+    assert len(calls)==1
+    assert len(list(old['folder'].glob('take_*')))==1
+
+
+def test_existing_video_with_changed_inputs_never_triggers_implicit_regeneration(setup,monkeypatch):
+    run,cfg,target,old,_=frozen_compiler_video(setup,monkeypatch)
+    run.project['production'].pop('review_only_video_results',None)
+    run.project['episode']['shots'][0]['action']='Leave the cup and walk away.'
+    resumed=production._Run(run.project,cfg,None,None)
+    with pytest.raises(scheduler.ProductionNeedsDecision) as error:
+        resumed._render_targets([target(resumed)],'diffusion_video')
+    assert error.value.reason=='existing_video_review_required'
+    with pytest.raises(scheduler.ProductionNeedsDecision):resumed._new_attempt(target(resumed))
+    assert len(setup[5])==1
+
+
+def test_new_video_stays_repairable_across_remote_yield_boundary(setup,monkeypatch):
+    run,cfg,target,old,_=frozen_compiler_video(setup,monkeypatch)
+    assert run.project['production']['review_only_video_results']==[]
+    resumed=production._Run(run.project,cfg,None,None)
+    assert resumed._review_only_video(target(resumed)) is False
+
+
+def test_existing_video_with_missing_receipt_is_preserved_not_replaced(setup,monkeypatch):
+    run,cfg,target,old,_=frozen_compiler_video(setup,monkeypatch)
+    (old['folder']/'take_001/result.json').unlink()
+    run.project['production'].pop('review_only_video_results',None)
+    resumed=production._Run(run.project,cfg,None,None)
+    with pytest.raises(scheduler.ProductionNeedsDecision) as error:
+        resumed._render_targets([target(resumed)],'diffusion_video')
+    assert error.value.reason=='existing_video_review_required'
+    assert len(setup[5])==1 and (old['folder']/'take_001/video.mp4').is_file()
+
+
+def test_explicit_project_review_only_request_overrides_general_repair_setting(setup,monkeypatch):
+    run,cfg,target,old,_=frozen_compiler_video(setup,monkeypatch)
+    cfg['review_only_existing_videos']=False
+    run.project['production']['review_only_existing_videos']=True
+    run.project['production']['review_only_video_results']=[str((old['folder']/'take_001/result.json').relative_to(core.ROOT))]
+    resumed=production._Run(run.project,cfg,None,None)
+    assert resumed._review_only_video(target(resumed)) is True
