@@ -48,7 +48,10 @@ export function AppearanceSettings() {
                   checked={accent === palette.id}
                   onChange={() => chooseAccent(palette.id)}
                 />
-                <span className="appearance-swatch" style={{ backgroundColor: palette.swatch }} aria-hidden="true" />
+                <span className="appearance-swatch" style={{
+                  backgroundColor: palette.swatch,
+                  backgroundImage: `linear-gradient(145deg, ${palette.glow} 0%, ${palette.swatch} 48%, ${palette.mist} 100%)`,
+                }} aria-hidden="true" />
                 <span>{palette.label}</span>
                 {accent === palette.id && <Check className="appearance-check" size={18} aria-hidden="true" />}
               </label>
@@ -62,7 +65,7 @@ export function AppearanceSettings() {
             <span>{selected.label}</span>
           </div>
           <div className="appearance-preview-feature">
-            <span>主题色块</span>
+            <span>重点信息</span>
             <strong>当前制作</strong>
           </div>
           <div className="appearance-preview-items">

@@ -234,7 +234,8 @@ tbody tr:hover {
   min-width: 0;
   padding: 22px;
   border-radius: 16px;
-  background: var(--accent-feature);
+  background-color: var(--accent-feature);
+  background-image: var(--accent-gradient);
   color: var(--on-accent-feature);
 }
 .focus-feature-head {
@@ -461,7 +462,8 @@ tbody tr:hover {
   min-width: 0;
   padding: 18px 20px;
   border-radius: 12px;
-  background: var(--accent-feature);
+  background-color: var(--accent-feature);
+  background-image: var(--accent-gradient);
   color: var(--on-accent-feature);
   overflow-wrap: anywhere;
 }

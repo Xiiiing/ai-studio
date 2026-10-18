@@ -23,7 +23,7 @@ function contrast(a: string, b: string) {
   const l = [luminance(a), luminance(b)].sort((x, y) => y - x);
   return (l[0] + 0.05) / (l[1] + 0.05);
 }
-function colors(id: string, mode: string) {
+function colors(id: string, mode: string): Record<string, string> {
   const selector =
     mode === "dark"
       ? `:root[data-theme="dark"][data-accent="${id}"]`
@@ -31,12 +31,18 @@ function colors(id: string, mode: string) {
   const body = css
     .slice(css.indexOf(selector) + selector.length)
     .match(/\{([^}]+)\}/)![1];
-  return Object.fromEntries(
+  return { ...(mode === "dark" ? colors(id, "light") : {}), ...Object.fromEntries(
     [...body.matchAll(/--([a-z-]+):\s*(#[a-f\d]{6})/g)].map((m) => [
       m[1],
       m[2],
     ]),
-  );
+  ) };
+}
+
+function interpolate(a: string, b: string, t: number) {
+  const channels = (hex: string) => hex.slice(1).match(/../g)!.map(v => parseInt(v, 16));
+  const start = channels(a), end = channels(b);
+  return `#${start.map((v, i) => Math.round(v + (end[i] - v) * t).toString(16).padStart(2, "0")).join("")}`;
 }
 
 for (const palette of ACCENT_PALETTES) {
@@ -59,6 +65,14 @@ for (const palette of ACCENT_PALETTES) {
         expect(contrast(c.accent, background)).toBeGreaterThanOrEqual(3);
       }
       expect(c["accent-feature"]).toBe(palette.swatch);
+      expect(c["accent-glow"]).toBe(palette.glow);
+      expect(c["accent-mist"]).toBe(palette.mist);
+      expect(c["on-accent-feature"]).toBe("#101113");
+      const stops = [c["accent-glow"], c["accent-feature"], c["accent-mist"]];
+      expect(new Set(stops).size).toBe(3);
+      for (let interval = 0; interval < 2; interval++)
+        for (let step = 0; step <= 100; step++)
+          expect(contrast(interpolate(stops[interval], stops[interval + 1], step / 100), c["on-accent-feature"])).toBeGreaterThanOrEqual(4.5);
     });
   }
 }
@@ -72,6 +86,9 @@ it("only overrides accent roles, leaving neutral surfaces and semantic statuses 
     "crop-stroke",
     "accent",
     "accent-feature",
+    "accent-glow",
+    "accent-mist",
+    "accent-gradient",
     "on-accent-feature",
     "accent-hover",
     "accent-text",
@@ -89,6 +106,7 @@ it("only overrides accent roles, leaving neutral surfaces and semantic statuses 
   );
   expect(css).toContain("--focus: var(--accent)");
   expect(css).toContain("--status-running: var(--accent)");
+  expect(css).toContain("--accent-gradient: linear-gradient(145deg, var(--accent-glow) 0%, var(--accent-feature) 48%, var(--accent-mist) 100%)");
 });
 
 

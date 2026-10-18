@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { mkdir } from "node:fs/promises";
 import { lifecycleFixture } from "./lifecycle-fixture.mjs";
-import { paletteViolations } from "./palette.mjs";
+import { paletteViolations, gradientSurfaces } from "./palette.mjs";
 import { openWorkflow } from "./navigation.mjs";
 import { manageService } from "./model-flow.mjs";
 
@@ -10,7 +10,7 @@ import { manageService } from "./model-flow.mjs";
 const unitId = "012345abcdef", dramaId = "dd1122334455", episodeId = "ee1122334455";
 const video = `/media/production/factory-${unitId}/release/v1-aaaaaaaaaaaa/episode.mp4`;
 const frame = `production/factory-${unitId}/frames/frame.png`;
-const palettes = [["slate", "深灰蓝"], ["graphite", "石墨"], ["teal", "青瓷"], ["jade", "松绿"], ["iris", "暮紫"], ["bronze", "暖铜"]];
+const palettes = [["slate", "深灰蓝"], ["graphite", "雾银"], ["teal", "薄荷青"], ["jade", "青柠绿"], ["iris", "雾紫"], ["bronze", "杏桃"]];
 const title = "旧信与车站：在漫长归途中重新发现彼此的约定";
 const asset = { asset_id: "mat_palette_lead", version: 2, library_key: "global", kind: "character", status: "approved", data: { document: { name: "林夏参考", description: "成年女性，短发，灰色外套，稳定身份。", identity_constraints: "成年女性，短发。" }, images: [{ path: frame, label: "正面参考", sha256: "synthetic-palette-frame" }] } };
 
@@ -71,13 +71,25 @@ async function inspect(page, { feature = false } = {}) {
     const badges = [...document.querySelectorAll("#workspace .badge")].filter(visible).map(e => ({ text: e.textContent.trim(), height: e.getBoundingClientRect().height }));
     return { gradients, tintedReading, primary, features, badges, statuses, overflow: document.documentElement.scrollWidth > innerWidth + 1 };
   });
-  expect(colors.gradients).toEqual([]);
+  const gradients = await gradientSurfaces(page);
+  expect(gradients.unexpected).toEqual([]);
+  for (const surface of gradients.surfaces) {
+    expect(surface.image, surface.element).toMatch(/^linear-gradient\(145deg,/);
+    expect(surface.image, surface.element).toMatch(/0%,.*48%,.*100%/);
+    expect(surface.stops, surface.element).toHaveLength(3);
+    expect(surface.distinctStops, surface.element).toBe(3);
+    if (surface.expectedStops) expect(surface.stops, surface.element).toEqual(surface.expectedStops);
+    if (!surface.swatch) {
+      expect(surface.contrast, surface.element).toBeGreaterThanOrEqual(4.5);
+      for (const text of surface.text) expect(text.contrast, text.label).toBeGreaterThanOrEqual(4.5);
+    }
+  }
   expect(colors.tintedReading).toEqual([]);
   expect(colors.overflow).toBe(false);
   if (feature) expect(colors.features.length).toBeGreaterThan(0);
   for (const f of colors.features) {
     expect(f.background).toEqual(f.expectedBackground); expect(f.color).toEqual(f.expectedColor);
-    expect(f.image).toBe("none"); expect(f.contrast).toBeGreaterThanOrEqual(4.5);
+    expect(f.image).toMatch(/^linear-gradient\(145deg,/); expect(f.contrast).toBeGreaterThanOrEqual(4.5);
     expect(f.height).toBeLessThan(f.viewport <= 700 ? 360 : 240);
     for (const text of f.text) { expect(text.color, text.label).toEqual(f.expectedColor); expect(text.contrast, text.label).toBeGreaterThanOrEqual(4.5); }
   }
