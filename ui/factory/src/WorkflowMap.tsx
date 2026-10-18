@@ -7,6 +7,7 @@ import {
   type CSSProperties,
 } from "react";
 import { CornerDownLeft } from "lucide-react";
+import { createPortal } from "react-dom";
 import { rows, roleName, type RecordData } from "./api";
 import { Badge } from "./ui";
 
@@ -25,6 +26,8 @@ export interface StageEdge {
   running: boolean;
   completed: boolean;
   labels: string[];
+  handoffs?: RecordData[];
+  separateReverse?: boolean;
 }
 export function stageFlow(
   graph: RecordData,
@@ -109,6 +112,11 @@ export function stageFlow(
           : "交付下一阶段";
     if (existing) {
       if (!existing.labels.includes(label)) existing.labels.push(label);
+      existing.handoffs?.push(edge);
+      if (graph.flow_kind === "collaboration") {
+        existing.running ||= !!edge.in_progress;
+        existing.completed ||= !!edge.received_count;
+      }
       continue;
     }
     edges.set(id, {
@@ -116,14 +124,30 @@ export function stageFlow(
       source,
       target,
       repair,
-      running: source === activeStage && (!repair || source === "revision"),
+      running:
+        graph.flow_kind === "collaboration"
+          ? !!edge.in_progress
+          : source === activeStage && (!repair || source === "revision"),
       completed:
-        stageNodes.find((n) => n.id === source)?.status === "succeeded" &&
-        stageNodes.find((n) => n.id === target)?.status === "succeeded",
+        graph.flow_kind === "collaboration"
+          ? !!edge.received_count
+          : stageNodes.find((n) => n.id === source)?.status === "succeeded" &&
+            stageNodes.find((n) => n.id === target)?.status === "succeeded",
       labels: [label],
+      handoffs: [edge],
     });
   }
-  return { nodes: stageNodes, edges: [...edges.values()] };
+  const links = [...edges.values()];
+  for (const edge of links)
+    edge.separateReverse =
+      !edge.repair &&
+      links.some(
+        (other) =>
+          !other.repair &&
+          other.source === edge.target &&
+          other.target === edge.source,
+      );
+  return { nodes: stageNodes, edges: links };
 }
 const stageTitles: Record<string, string> = {
   全剧设定与分集大纲: "设定与大纲",
@@ -162,7 +186,24 @@ export function stageEdgePath(
   const sameRow =
     Math.abs(sy - ty) < Math.min(source.height, target.height) / 2;
   const sameColumn = Math.abs(sx - tx) < 5;
-  if (sameRow && !edge.repair && Math.abs(sx - tx) < source.width * 1.6) {
+  const blockedRow = obstacles.some(
+    (b) =>
+      b !== source &&
+      b !== target &&
+      sy > b.y + 1 &&
+      sy < b.y + b.height - 1 &&
+      b.x < Math.max(source.x, target.x) &&
+      b.x + b.width >
+        Math.min(source.x + source.width, target.x + target.width),
+  );
+  if (edge.separateReverse && sameRow && !blockedRow) {
+    const right = tx > sx,
+      offset = right ? -20 : 20;
+    const start = right ? source.x + source.width : source.x,
+      end = right ? target.x : target.x + target.width;
+    return `M ${start} ${sy + offset} L ${end} ${ty + offset}`;
+  }
+  if (sameRow && !edge.repair && !blockedRow) {
     const right = tx > sx,
       start = right ? source.x + source.width : source.x,
       end = right ? target.x : target.x + target.width,
@@ -188,7 +229,8 @@ export function stageEdgePath(
       start = down ? source.y + source.height : source.y,
       end = down ? target.y : target.y + target.height,
       mid = (start + end) / 2;
-    return `M ${sx} ${start} C ${sx} ${mid}, ${tx} ${mid}, ${tx} ${end}`;
+    const offset = edge.separateReverse ? (down ? -20 : 20) : 0;
+    return `M ${sx + offset} ${start} C ${sx + offset} ${mid}, ${tx + offset} ${mid}, ${tx + offset} ${end}`;
   }
   // Route returns through the gaps above rows and the reserved outer gutter.
   // A line from a card's bottom to a bottom lane could cut through lower cards.
@@ -197,7 +239,10 @@ export function stageEdgePath(
   const targetLane = Math.max(6, target.y - offset);
   if (sameRow)
     return `M ${sx} ${source.y} L ${sx} ${sourceLane} L ${tx} ${sourceLane} L ${tx} ${target.y}`;
-  const outer = edge.source === "revision" ? bounds.width - 8 : 8;
+  const outer =
+    edge.source === "revision" || (edge.separateReverse && sy > ty)
+      ? bounds.width - 8
+      : 8;
   return `M ${sx} ${source.y} L ${sx} ${sourceLane} L ${outer} ${sourceLane} L ${outer} ${targetLane} L ${tx} ${targetLane} L ${tx} ${target.y}`;
 }
 export function WorkflowMap({
@@ -211,6 +256,8 @@ export function WorkflowMap({
   navigationLabel = "制作阶段",
   hint = "点击节点查看输入、交付与内部步骤",
   maxColumns = 5,
+  onEdgeSelect,
+  selectedEdge,
 }: {
   graph: RecordData;
   groups: RecordData[];
@@ -222,6 +269,8 @@ export function WorkflowMap({
   navigationLabel?: string;
   hint?: string;
   maxColumns?: number;
+  onEdgeSelect?: (edge: StageEdge) => void;
+  selectedEdge?: string;
 }) {
   const flow = useMemo(
     () => stageFlow(graph, groups, steps),
@@ -246,6 +295,7 @@ export function WorkflowMap({
     ),
   );
   const markerId = useId().replace(/[^a-zA-Z0-9_-]/g, "");
+  const [labelLayer, setLabelLayer] = useState<SVGGElement | null>(null);
   useLayoutEffect(() => {
     const element = ref.current;
     if (!element) return;
@@ -314,10 +364,11 @@ export function WorkflowMap({
         style={{ "--flow-columns": columns } as CSSProperties}
       >
         <svg
-          className="workflow-flow-lines"
+          className={`workflow-flow-lines ${onEdgeSelect ? "is-interactive" : ""}`}
           width={measurement.width}
           height={measurement.height}
-          aria-hidden="true"
+          aria-hidden={onEdgeSelect ? undefined : true}
+          aria-label={onEdgeSelect ? "工作交接连线" : undefined}
         >
           <defs>
             {["pending", "running", "completed", "repair"].map((state) => (
@@ -357,39 +408,23 @@ export function WorkflowMap({
                   ? "completed"
                   : "pending";
             return (
-              <g
+              <InteractiveEdge
                 key={edge.id}
-                data-flow-edge={edge.id}
-                data-source={edge.source}
-                data-target={edge.target}
-                data-flow-state={state}
-                className={`workflow-flow-edge is-${state}`}
-              >
-                <title>
-                  {flow.nodes.find((n) => n.id === edge.source)?.label} →{" "}
-                  {flow.nodes.find((n) => n.id === edge.target)?.label} ·{" "}
-                  {edge.labels.join("、")}
-                </title>
-                <path
-                  className="workflow-flow-line"
-                  d={path}
-                  markerEnd={`url(#${markerId}-${state})`}
-                />
-                {edge.running && (
-                  <>
-                    <path className="workflow-flow-stream" d={path} />
-                    <circle className="workflow-flow-packet" r="3.5">
-                      <animateMotion
-                        dur="2.6s"
-                        repeatCount="indefinite"
-                        path={path}
-                      />
-                    </circle>
-                  </>
-                )}
-              </g>
+                edge={edge}
+                path={path}
+                state={state}
+                markerId={markerId}
+                width={measurement.width}
+                labelLayer={labelLayer}
+                label={`${flow.nodes.find((n) => n.id === edge.source)?.label} → ${flow.nodes.find((n) => n.id === edge.target)?.label}`}
+                selected={selectedEdge === edge.id}
+                onSelect={onEdgeSelect ? () => onEdgeSelect(edge) : undefined}
+              />
             );
           })}
+          {onEdgeSelect && (
+            <g ref={setLabelLayer} className="workflow-edge-labels" />
+          )}
         </svg>
         <div className="workflow-map-grid">
           {flow.nodes.map((node, index) => {
@@ -469,5 +504,136 @@ export function WorkflowMap({
       </nav>
       <p className="workflow-map-hint">{hint}</p>
     </div>
+  );
+}
+
+function InteractiveEdge({
+  edge,
+  path,
+  state,
+  markerId,
+  width,
+  labelLayer,
+  label,
+  selected,
+  onSelect,
+}: {
+  edge: StageEdge;
+  path: string;
+  state: string;
+  markerId: string;
+  width: number;
+  labelLayer: SVGGElement | null;
+  label: string;
+  selected: boolean;
+  onSelect?: () => void;
+}) {
+  const ref = useRef<SVGPathElement>(null);
+  const groupRef = useRef<SVGGElement>(null);
+  const [anchor, setAnchor] = useState<{ x: number; y: number }>();
+  useLayoutEffect(() => {
+    const line = ref.current;
+    if (!line || !onSelect || !line.getTotalLength) return;
+    const point = line.getPointAtLength(line.getTotalLength() / 2);
+    setAnchor({ x: Math.max(20, Math.min(width - 20, point.x)), y: point.y });
+  }, [path, !!onSelect, width]);
+  const count =
+    edge.handoffs?.reduce((n, h) => n + (h.received_count || 0), 0) || 0;
+  const content = count
+    ? `${count} 份已接收`
+    : edge.labels.length > 1
+      ? `${edge.labels.length} 项交接`
+      : edge.labels[0];
+  const short = count
+    ? `${count}份`
+    : edge.labels.length > 1
+      ? `${edge.labels.length}项`
+      : edge.repair
+        ? "退回"
+        : /大纲/.test(content)
+          ? "大纲"
+          : /设定/.test(content)
+            ? "设定"
+            : /场景/.test(content)
+              ? "场景"
+              : /审核|修改/.test(content)
+                ? "意见"
+                : /成片|制作结果/.test(content)
+                  ? "成片"
+                  : "交付";
+  return (
+    <g
+      ref={groupRef}
+      data-flow-edge={edge.id}
+      data-source={edge.source}
+      data-target={edge.target}
+      data-flow-state={state}
+      className={`workflow-flow-edge is-${state} ${selected ? "is-selected" : ""}`}
+      role={onSelect ? "button" : undefined}
+      tabIndex={onSelect ? 0 : undefined}
+      aria-label={
+        onSelect ? `查看交付：${label} · ${edge.labels.join("、")}` : undefined
+      }
+      aria-pressed={onSelect ? selected : undefined}
+      onClick={
+        onSelect
+          ? () => {
+              groupRef.current?.focus({ preventScroll: true });
+              onSelect();
+            }
+          : undefined
+      }
+      onPointerDown={
+        onSelect
+          ? () => groupRef.current?.focus({ preventScroll: true })
+          : undefined
+      }
+      onKeyDown={
+        onSelect
+          ? (event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                onSelect();
+              }
+            }
+          : undefined
+      }
+    >
+      <title>
+        {label} · {edge.labels.join("、")}
+      </title>
+      {onSelect && <path className="workflow-flow-hit" d={path} />}
+      <path
+        ref={ref}
+        className="workflow-flow-line"
+        d={path}
+        markerEnd={`url(#${markerId}-${state})`}
+      />
+      {edge.running && (
+        <>
+          <path className="workflow-flow-stream" d={path} />
+          <circle className="workflow-flow-packet" r="3.5">
+            <animateMotion dur="2.6s" repeatCount="indefinite" path={path} />
+          </circle>
+        </>
+      )}
+      {onSelect &&
+        anchor &&
+        labelLayer &&
+        createPortal(
+          <g
+            className="workflow-edge-label"
+            data-label-edge={edge.id}
+            transform={`translate(${anchor.x},${anchor.y})`}
+            aria-hidden="true"
+          >
+            <rect x={-18} y={-14} width={36} height={28} rx={6} />
+            <text textAnchor="middle" dominantBaseline="central">
+              {short}
+            </text>
+          </g>,
+          labelLayer,
+        )}
+    </g>
   );
 }

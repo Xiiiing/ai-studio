@@ -534,6 +534,10 @@ function ProductionFlow({
       ...task,
       input: flowValue(task.input),
       output: flowValue(task.output),
+      received: rows(task.received).map((r) => ({
+        ...r,
+        value: flowValue(r.value),
+      })),
     })),
     steps: rows(workflow.flow.steps).map((step) => ({
       ...step,
