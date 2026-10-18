@@ -55,6 +55,11 @@ def _receipt_path(record):
     return path
 
 
+def _matching_source(record, target):
+    return (record.get("generation_signature", record.get("source_signature")) == target["signature"]
+            or record.get("source_signature") in target.get("compatible_source_signatures", ()))
+
+
 def _grounded_repair_plan(assessment, stage, attempt, expected=None, reference_roles=()):
     """Route structured diagnoses and ground new prompts in approved shot facts.
 
@@ -104,17 +109,22 @@ def _grounded_repair_plan(assessment, stage, attempt, expected=None, reference_r
     if not isinstance(expected, dict) or technical:
         return repair
 
-    fields = ("action", "continuity", "prompt")
-    if stage == "video":
-        fields += ("motion_prompt",)
+    if stage == "image":
+        from .review_contracts import starting_frame
+        expected = starting_frame(expected)
+        fields = ("prompt", "character_states")
+    else:
+        fields = ("action", "continuity", "prompt", "motion_prompt")
     for field in fields:
         value = expected.get(field)
         if value is not None and value != "" and value != [] and value != {}:
             text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False, sort_keys=True)
             repair["positive_constraints"].append({"field": field, "text": text})
     if route in ("continuity", "action"):
-        focus = ("Render the approved action and the exact approved object placement and state "
-                 "as visibly readable facts in the frame.")
+        focus = (("Render the exact approved starting pose, object placement and state "
+                  if stage == "image" else
+                  "Render the approved action and the exact approved object placement and state ")
+                 + "as visibly readable facts in the frame.")
     elif route == "identity":
         focus = ("Preserve each approved character's exact face, age, hairstyle and clothing "
                  "from the corresponding identity reference while keeping the characters distinct "
@@ -125,8 +135,11 @@ def _grounded_repair_plan(assessment, stage, attempt, expected=None, reference_r
         focus = "Use readable lighting and sharp visible detail while preserving the approved scene."
     else:
         focus = "Render the approved scene facts, cast and composition faithfully."
+    if stage == "image":
+        focus = ("Render only the approved static STARTING frame and starting character positions. "
+                 "Do not advance to an action endpoint or combine multiple action phases. " + focus)
     constraints = [focus]
-    labels = {"action": "Approved action and object state", "continuity": "Approved continuity",
+    labels = {"character_states": "Approved starting character states", "action": "Approved action and object state", "continuity": "Approved continuity",
               "prompt": "Approved visual scene", "motion_prompt": "Approved motion"}
     constraints.extend(labels[item["field"]] + ": " + item["text"]
                        for item in repair["positive_constraints"])
@@ -222,8 +235,11 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
         if not 1 <= self.semantic_max_attempts <= 3:
             raise ValueError("semantic_max_attempts must be between one and three")
         explicit_policy = self.config.get("semantic_review_revision")
+        from .temporal_review import POLICY as temporal_evidence_policy
         self.review_policy = fingerprint({
             "policy": explicit_policy or "local_vlm_review_v2",
+            **({"temporal_evidence_policy": temporal_evidence_policy}
+               if not explicit_policy or self.h3_automatic else {}),
             "model": self.config.get("semantic_model"),
             **({"temporal_sampling": self.config.get("temporal_sampling", {
                 "policy": "uniform_endpoints_and_cut_neighbors.v1", "count": 8})}
@@ -232,7 +248,7 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                if self.config.get("semantic_model_identity") is not None else {}),
             "implementation": {} if explicit_policy else {
                 name: sha256(ROOT / "factory" / name)
-                for name in ("llm.py", "quality.py", "evaluation_sampling.py") if (ROOT / "factory" / name).is_file()},
+                for name in ("llm.py", "quality.py", "evaluation_sampling.py", "temporal_review.py", "spatial_review.py", "review_contracts.py") if (ROOT / "factory" / name).is_file()},
             "evaluator": (getattr(evaluator, "__module__", "") + "." +
                           getattr(evaluator, "__qualname__", type(evaluator).__name__)) if evaluator else None,
         })
@@ -254,6 +270,21 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
             write_json(owner_path, {"project_id": self.ident, "created_at": time.time(),
                                     "schema": "autonomous_factory.owner.v1"})
         self.production = copy.deepcopy(self.project.get("production") or {})
+        self.review_only_existing_videos = self.production.get(
+            "review_only_existing_videos", self.config.get("review_only_existing_videos", self.h3_automatic))
+        if type(self.review_only_existing_videos) is not bool:
+            raise ValueError("review_only_existing_videos must be boolean")
+        # Persist the boundary through remote-GPU yields. A newly generated
+        # video must not accidentally become an old protected video on resume.
+        from .shot_workbench import retained_video_results
+        baseline = self.production.setdefault("review_only_video_results", [
+            str(path.relative_to(ROOT)) for path in retained_video_results(self.folder)]) if self.review_only_existing_videos else []
+        if not isinstance(baseline, list) or any(not isinstance(path, str) for path in baseline):
+            raise ValueError("Invalid retained video boundary")
+        self.existing_video_results = frozenset(within(ROOT, path) for path in baseline)
+        if any(not path.is_relative_to((self.folder / "renders").resolve()) or path.name != "result.json"
+               for path in self.existing_video_results):
+            raise ValueError("Retained videos must belong to this project")
         self.budget = Budget(self.config, self.production)
         self._scheduler = None
         self.max_attempts = int(self.config.get("max_attempts",
@@ -402,7 +433,7 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
         if not selected.exists():
             return None
         record = read_json(selected)
-        if record.get("source_signature") != target["signature"]:
+        if not _matching_source(record, target):
             return None
         _receipt_path(record)
         if record.get("qa", {}).get("status") == "fail":
@@ -491,7 +522,7 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
         records = []
         for path in sorted(target["folder"].glob("take_*/attempt.json")):
             record = read_json(path)
-            if record.get("source_signature") == target["signature"]:
+            if _matching_source(record, target):
                 record["_file"] = str(path)
                 records.append(record)
         return records
@@ -514,7 +545,8 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
     def _team_publish_target(self, target):
         identity = self._team_target(target)
         if identity:
-            team_control.assert_publishable(self.ident, *identity, input_version=target["signature"])
+            team_control.assert_publishable(self.ident, *identity, input_version=target["signature"],
+                                            compatible_input_versions=target.get("compatible_source_signatures", ()))
         else:
             team_control.assert_publishable(self.ident, "stage", "visual_development")
 
@@ -619,15 +651,38 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                                     if (extra.get("shot") or {}).get("render_revisions", {}).get(kind) else {}),
                                  **({"production_profile": profile_signature(self.project)} if explicit_profile(self.project) else {})})
         shot = extra.get("shot") or extra.get("review_context") or {}
+        compatible_sources = []
         if kind == "video" and self.h3_automatic:
-            from .h3_prompting import identity
-            signature = fingerprint({"source": signature,
+            from .h3_prompting import identity, compatible_compiler
+            generation_inputs = {"source": signature,
                 "h3_prompt_compiler": identity(self.config.get("h3_prompt_config", {})),
                 "approved_shot": {key: shot.get(key) for key in (
                     "action", "continuity", "characters", "character_states", "cast", "lip_sync",
                     "camera_motion", "motion_prompt", "prompt", "material_constraints")},
-                "style": self.style_prompt, "cast": self.cast,
-                "first_frame_review": shot.get("image", {}).get("qa")})
+                "style": self.style_prompt, "cast": self.cast}
+            signature = fingerprint(generation_inputs)
+            # Old H3 signatures included the full first-frame QA. Reconstruct
+            # each old hash with its saved QA, but with ALL current generation
+            # inputs (including actual frame bytes, recipe and compiler).
+            # A matching frame alone cannot authorize reuse after a shot edit.
+            for path in folder.glob("take_*/attempt.json"):
+                old = read_json(path)
+                old_refs = old.get("references") or []
+                if not old_refs or not isinstance(old_refs[0], dict):
+                    continue
+                compilers = [generation_inputs["h3_prompt_compiler"]]
+                frozen = (old.get("h3_prompt") or {}).get("compiler")
+                if ((path.parent / "result.json").is_file()
+                        and compatible_compiler(frozen, compilers[0])):
+                    compilers.append(frozen)
+                for compiler in compilers:
+                    inputs = {**generation_inputs, "h3_prompt_compiler": compiler}
+                    for candidate in (inputs, {**inputs, "first_frame_review": old_refs[0].get("qa")}):
+                        legacy = fingerprint(candidate)
+                        if self.creative_contract:
+                            legacy = fingerprint({"source_signature": legacy, "creative_contract": self.creative_contract})
+                        if legacy in (old.get("source_signature"), old.get("generation_signature")):
+                            compatible_sources.append(legacy)
         expected = {key: shot.get(key) for key in (
             "id", "seconds", "prompt", "motion_prompt", "dialogue", "reference_group",
             "reference_shots", "continuity", "camera_motion", "action", "cast", "characters")}
@@ -648,7 +703,26 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
         if self.project.get("team_review_revisions", {}).get(review_key):
             review_signature = fingerprint({"review": review_signature, "producer_review_revision": self.project["team_review_revisions"][review_key]})
         return {"key": key, "folder": folder, "prompt": prompt, "references": refs,
-                "kind": kind, "signature": signature, "review_signature": review_signature, **extra}
+                "kind": kind, "signature": signature, "review_signature": review_signature,
+                "compatible_source_signatures": compatible_sources, **extra}
+
+    def _review_only_video(self, target):
+        return (self.review_only_existing_videos and target["kind"] == "video"
+                and any(path.parent.parent == target["folder"] for path in self.existing_video_results))
+
+    def _stop_existing_video(self, target, record=None, receipt=None):
+        if target.get("shot") is not None:
+            target["shot"]["status"] = "failed" if record else "reviewing"
+        self.emit("needs_attention")
+        raise ProductionNeedsDecision(
+            "已有视频仅复审：未通过当前审核或输入已变化；原视频保留，需人工处理，不会自动重制。",
+            "existing_video_review_failed" if record else "existing_video_review_required",
+            {"asset": target["key"], "stage": "video_review",
+             "take": (record or {}).get("take"), "path": (receipt or {}).get("path"),
+             "assessment": (record or {}).get("qa", {}),
+             "retained_receipts": [str(path.relative_to(ROOT)) for path in sorted(self.existing_video_results)
+                                   if path.parent.parent == target["folder"]],
+             "resume_action": "review_existing_assets_only", "regeneration_allowed": False})
 
     def _unfinished_candidate(self, target):
         self._guard_remote_submissions(target)
@@ -661,8 +735,16 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                      not (folder / "submission.json").exists() and not result.exists())):
                 target["resume_attempt"] = record
                 return None
-            if record.get("state") in ("generated", "reviewing", "semantic_pending", "passed", "rendering") and result.exists():
+            reassess_failed = (
+                record.get("state") == "failed" and self._review_required(target)
+                and record.get("qa", {}).get("technical", {}).get("status") == "pass"
+                and bool(record.get("review_signature"))
+                and record["review_signature"] != target["review_signature"])
+            if (record.get("state") in ("generated", "reviewing", "semantic_pending", "passed", "rendering")
+                    or reassess_failed) and result.exists():
                 media = read_json(result)
+                if reassess_failed and not _matching_source(media, target):
+                    continue
                 _receipt_path(media)
                 return record, media
             if uses_bound(self, target) and record.get("state") == "rendering":
@@ -704,6 +786,8 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
         return None
 
     def _new_attempt(self, target):
+        if self._review_only_video(target):
+            self._stop_existing_video(target)
         self._team_admit_target(target)
         previous = [record for record in self._attempts(target) if record.get("state") != "prompt_preparing"]
         if len(previous) >= self.max_attempts:
@@ -829,6 +913,10 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                 if candidate:
                     ready.append((target, *candidate))
                 else:
+                    if self._review_only_video(target):
+                        failed = next((row for row in reversed(self._attempts(target))
+                                       if row.get("state") == "failed"), None)
+                        self._stop_existing_video(target, failed, (failed or {}).get("output"))
                     generate.append(target)
             from .bound_media import uses_bound, render_targets
             bound = [target for target in generate if uses_bound(self, target)]
@@ -970,6 +1058,13 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                                                  "cloud_diffusion_video" if self._remote_video(target) else "local_diffusion_video")}
                     if target["kind"] == "video":
                         saved.update(motion_method="generated_video", diffusion_video=True)
+                        if self.h3_automatic:
+                            record["generation_signature"] = target["signature"]
+                            saved["generation_signature"] = target["signature"]
+                            # Locks and provenance retain the original source
+                            # receipt. The new canonical identity is separate.
+                            if _matching_source(receipt, target):
+                                saved["source_signature"] = receipt["source_signature"]
                         if record.get("h3_prompt"):
                             saved["h3_prompt"] = copy.deepcopy(record["h3_prompt"])
                         if self.video_connection["provider"] == "comfyui_h3":
@@ -1025,6 +1120,8 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                                                      "path": saved["path"], "take": saved["take"],
                                                      "detail": semantic.get("detail")})
                     self.emit(phase)
+                    if qa["status"] == "fail" and self._review_only_video(target):
+                        self._stop_existing_video(target, record, saved)
                     self._team_after_target(target)
                     identity = self._team_target(target)
                     if identity:

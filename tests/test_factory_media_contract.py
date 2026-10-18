@@ -193,7 +193,9 @@ def test_keyframes_do_not_need_to_complete_future_video_action(tmp_path, preview
     captured = {}
     project = {"slug": "factory-first-frame", "format": "animation", "creative_contract": contract("anime_2d")}
     shot = {"id": "S01", "action": "Raise the amulet from waist to chest.",
-            "motion_prompt": "Raise right arm over time.", "prompt": "Right hand holding an amulet at the waist."}
+            "motion_prompt": "Raise right arm over time.", "prompt": "Right hand holding an amulet at the waist.",
+            "continuity":"The arm rises during this shot."}
+    project['script'] = {'shots':[shot, {'id':'S02','action':'Hand the amulet to another adult.'}]}
     if preview:
         shot["review_purpose"] = "visual_direction_preview"
     def wire(*args, **kwargs):
@@ -205,6 +207,9 @@ def test_keyframes_do_not_need_to_complete_future_video_action(tmp_path, preview
         result = llm.review_media(project, shot, tmp_path / "frame.png", [],
                                   {"llm": {"model": "fixture"}}, output_dir=tmp_path / "review")
     assert "action" not in captured["shot"] and "motion_prompt" not in captured["shot"]
+    assert "continuity" not in captured["shot"]
+    if not preview:
+        assert captured['approved_sequence'] == [{'id':'S02','action':'Hand the amulet to another adult.','continuity':''}]
     assert captured["shot"]["prompt"] == shot["prompt"] and result["status"] == "pass"
 
 

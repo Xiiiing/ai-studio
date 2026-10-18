@@ -221,6 +221,44 @@ def test_locked_result_blocks_existing_shot_edit_and_unlock_releases_it(project)
     assert team_control.process_pending(pid)["status"] == "applied"
 
 
+def test_locked_unreviewed_media_can_gain_provenance_once_without_changing_bytes(project):
+    from factory import team_control
+    pid = project['id']
+    receipt = fixture_candidate(project, 'take_001')
+    raw = {k: receipt[k] for k in ('path', 'sha256', 'bytes')}
+    token = team_ledger.begin_unit(pid, 'video', 'S01', input_version='original')
+    team_ledger.finish_unit(token, artifact=raw)
+    team_control.task_action(pid, 'video:S01', action(project, 'video:S01', 'lock'))
+    current = store.get(pid, False)
+    reviewed = {**raw, 'source_signature':'original', 'plan_signature':'original-plan', 'qa':{'status':'pass'}}
+    shots = copy.deepcopy(current['shots']) or [copy.deepcopy(current['episode']['shots'][0])]
+    shots[0]['video'] = reviewed
+    store.update(pid, {'shots':shots})
+    assert team_control.is_locked(pid, 'video', 'S01')
+    before = database_dump()
+    for field, value in [('sha256','different-bytes'), ('source_signature','changed-source'), ('plan_signature','changed-plan')]:
+        modified = copy.deepcopy(shots)
+        modified[0]['video'][field] = value
+        with pytest.raises(ValueError, match='锁定'):
+            store.update(pid, {'shots':modified})
+        assert database_dump() == before
+
+
+def test_legacy_publication_requires_proven_input_alias_and_retains_intervention_fence(project):
+    from factory import team_control
+    pid = project['id']
+    token = team_ledger.begin_unit(pid, 'video', 'S01', input_version='legacy-source')
+    team_ledger.finish_unit(token)
+    with pytest.raises(team_control.TeamInterventionPending, match='输入版本'):
+        team_control.assert_publishable(pid, 'video', 'S01', 'stable-source')
+    with pytest.raises(team_control.TeamInterventionPending, match='输入版本'):
+        team_control.assert_publishable(pid, 'video', 'S01', 'stable-source', compatible_input_versions=['unrelated-source'])
+    team_control.assert_publishable(pid, 'video', 'S01', 'stable-source', compatible_input_versions=['legacy-source'])
+    team_control.submit(pid, intervention(project))
+    with pytest.raises(team_control.TeamInterventionPending, match='新要求'):
+        team_control.assert_publishable(pid, 'video', 'S01', 'stable-source', compatible_input_versions=['legacy-source'])
+
+
 def test_pause_resume_and_completion_acknowledgement_control_real_admission(project):
     from factory import team_control
 

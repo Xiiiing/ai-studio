@@ -34,6 +34,7 @@
     "max_parallel": 1,
     "max_attempts": 3,
     "h3_prompting": "automatic",
+    "review_only_existing_videos": true,
     "max_wall_seconds": 10800,
     "max_gpu_seconds": 7200,
     "image_width": 736,

@@ -257,7 +257,7 @@ def admit(pid, kind, scope, *, check_locks=True):
                     raise TeamInterventionPending("前置任务已暂停，等待恢复", dep)
 
 
-def assert_publishable(pid, kind, scope, input_version=None):
+def assert_publishable(pid, kind, scope, input_version=None, *, compatible_input_versions=()):
     if not ledger._existing(pid):
         return
     with store.connection() as db:
@@ -275,7 +275,7 @@ def assert_publishable(pid, kind, scope, input_version=None):
             row = db.execute("SELECT data FROM team_work_items WHERE project_id=? AND id=?", (pid, ident)).fetchone()
             if row:
                 current = json.loads(row[0]).get("input_version")
-                if current not in (None, input_version):
+                if current not in (None, input_version, *compatible_input_versions):
                     raise TeamInterventionPending("输入版本已变化，旧成果仅保留为历史候选", ident)
 
 
@@ -455,8 +455,26 @@ def guard_project_write(db, project):
     """Shared mutation fence for old UI, CLI, worker and new team commands."""
     for lock in db.execute("SELECT * FROM team_locks WHERE project_id=?", (project["id"],)):
         task = ledger._data(ledger._stored(db, project["id"], lock["task_id"]))
-        if ledger.fingerprint(_resource(project, task)) != lock["signature"]:
+        current = _resource(project, task)
+        if ledger.fingerprint(current) == lock["signature"]:
+            continue
+        previous = json.loads(lock["data"])
+        enriched = copy.deepcopy(previous)
+        if task["kind"] in {"image", "video"} and isinstance(previous, dict) and isinstance(current, dict):
+            old_media, new_media = previous.get("result"), current.get("result")
+            if (isinstance(old_media, dict) and isinstance(new_media, dict)
+                    and old_media.get("path") and old_media.get("sha256")
+                    and all(old_media.get(k) == new_media.get(k) for k in ("path", "sha256"))):
+                # A generated-but-unreviewed artifact may be locked before
+                # these fields exist. Allow filling them once after review,
+                # with identical bytes and ALL locked inputs unchanged.
+                for key in ("source_signature", "plan_signature"):
+                    if old_media.get(key) is None:
+                        enriched["result"][key] = new_media.get(key)
+        if enriched != current:
             raise ValueError("成果已锁定，修改涉及 " + task["label"] + "；请先解锁或调整范围")
+        db.execute("UPDATE team_locks SET signature=?,data=? WHERE project_id=? AND task_id=?",
+                   (ledger.fingerprint(current), store.encoded(current), project["id"], lock["task_id"]))
     if _APPLYING.get() != project["id"]:
         previous = store._read(db, project["id"])
         tasks = _tasks(db, project["id"])

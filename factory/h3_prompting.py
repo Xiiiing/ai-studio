@@ -23,7 +23,7 @@ from .team_control import requirements_payload
 from .team_planning import task_config
 
 ROLE = "storyboard_director"
-VERSION = "3.0.0"
+VERSION = "3.1.0"
 PROTOCOL = "h3.automatic-shot-prompt.v1"
 
 
@@ -93,6 +93,31 @@ def _references(values):
     return result
 
 
+def compatible_compiler(previous, current):
+    """Recognize an archived writer policy without ignoring model changes.
+
+    A finished video's prompt is frozen. A newer writing policy applies to new
+    renders, while an old render may be reviewed using its original compiler.
+    Callers must still reconstruct the entire generation signature.
+    """
+    if not isinstance(previous, dict) or set(previous) != set(current):
+        return False
+    if (previous.get("role") != ROLE or previous.get("protocol") != PROTOCOL
+            or not isinstance(previous.get("version"), str)):
+        return False
+    if any(previous.get(key) != current.get(key) for key in ("protocol", "role", "model_identity")):
+        return False
+    checksum = previous.get("implementation_sha256")
+    if not isinstance(checksum, str) or len(checksum) != 64 or any(c not in "0123456789abcdef" for c in checksum):
+        return False
+    try:
+        archived = load_prompt(ROLE, previous.get("version"))
+    except (ValueError, OSError):
+        return False
+    return (previous.get("template_sha256") == archived.spec.template_sha256
+            and previous.get("contract_sha256") == archived.spec.contract_sha256)
+
+
 def _repair(value):
     value = value or {}
     diagnosis = value.get("diagnosis", {})
@@ -121,14 +146,16 @@ def _check_plan(value, seconds):
         start, end = beat["start_seconds"], beat["end_seconds"]
         if (isinstance(start, bool) or isinstance(end, bool) or
                 not math.isfinite(start) or not math.isfinite(end) or
-                not 0 <= start < end <= seconds or start < previous_end or
+                not 0 <= start < end <= seconds or abs(start - previous_end) > .001 or
                 not beat["action"].strip()):
             raise ValueError("H3 action timeline must be ordered and fit the approved shot duration")
         previous_end = end
+    if abs(previous_end - seconds) > .001:
+        raise ValueError("H3 action timeline must cover the complete shot")
 
 
 def _render(value, seconds):
-    timeline = " ".join(f"{beat['start_seconds']:.2f}s-{beat['end_seconds']:.2f}s: {beat['action'].strip()}"
+    timeline = "\n".join(f"{beat['start_seconds']:.2f}s-{beat['end_seconds']:.2f}s: {beat['action'].strip()}"
                         for beat in value["timeline"])
     audio = "Silent scene." if value["audio"] == "silent" else "Subtle diegetic scene ambience only."
     return ("For the target video, at 0.00 seconds into the target video, "
@@ -136,8 +163,8 @@ def _render(value, seconds):
             f"integrated_multimodal_description: [Shot 1] {value['visual_description'].strip()} "
             f"Initial state: {value['initial_state'].strip()} "
             f"Preserve the supplied first frame's approved cast, identities, wardrobe, props and spatial relationships. "
-            f"One continuous {seconds:.2f}-second shot. {timeline} "
-            f"End state: {value['end_state'].strip()} Camera: {value['camera'].strip()} "
+            f"One continuous {seconds:.2f}-second shot.\n{timeline}\n"
+            f"End state: {value['end_state'].strip()}\nCamera: {value['camera'].strip()} "
             f"Continuity: {value['continuity'].strip()} Visible mouths remain naturally closed; "
             "clean unobstructed picture with naturally unmarked surfaces.\n\n"
             f"overall_soundscape: {audio}\n\n"
