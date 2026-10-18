@@ -542,7 +542,7 @@ def enable(pid, payload):
         project = store._read(db, pid)
         if ledger.enabled(project):
             return {"enabled": True, "control_revision": ledger._revision(db, pid)}
-        if project.get("workflow_version", 1) != 2:
+        if project.get("workflow_version", 1) not in {2, 3}:
             raise ValueError("旧 v1 项目保留原检查点，仅支持团队观察")
         _cas(db, pid, payload)
         if project["status"] not in {"paused", "blocked", "awaiting_final"} or db.execute("SELECT 1 FROM jobs WHERE project_id=? AND status='running'", (pid,)).fetchone():

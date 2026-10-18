@@ -31,6 +31,8 @@ def topology(workflow_version=1):
         if ident in nodes:
             nodes[ident]['execution_nodes'].append(executable)
             continue
+        if ident == 'unit_ready':
+            decisions[ident] = ('制作单元就绪', ['delivery'], ['unit_ready'])
         if ident in decisions:
             label,inputs,outputs=decisions[ident]
             spec={'label':label,'owner':'producer','reviewer':None,
@@ -97,7 +99,7 @@ def project_graph(project, attention=None, running=False):
         if project.get("status") == "cancelled" and status != "succeeded": status = "cancelled"
         delegated = ident in {"story_decision", "style_decision"} and project.get("team_mode") == "delegated"
         if delegated: owner = "executive_producer"
-        if project.get("workflow_version", 1) == 2 and project.get("team_control_version") == 1:
+        if project.get("workflow_version", 1) in {2, 3} and project.get("team_control_version") == 1:
             from .team_ledger import ROLE_DEPARTMENT
             assigned = obj(project.get("team_assignments")).get("stage:" + ident)
             if assigned in ROLE_DEPARTMENT:

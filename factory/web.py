@@ -22,9 +22,24 @@ class Handler(LocalMediaHandler):
 
     factory_routes = True
 
+    def json(self, value, status=200):
+        def public(item):
+            if isinstance(item, dict): return {k: public(v) for k, v in item.items() if k != 'execution_config'}
+            if isinstance(item, list): return [public(v) for v in item]
+            return item
+        return super().json(public(value), status)
+
     def do_GET(self):
         path=unquote(urlsplit(self.path).path)
         try:
+            if path == '/api/factory/dramas':
+                from .dramas import list_dramas
+                return self.json(list_dramas())
+            match = re.fullmatch(r'/api/factory/dramas/([a-f0-9]{12})(?:/(episodes|batches))?', path)
+            if match:
+                from .dramas import snapshot as drama_snapshot
+                result = drama_snapshot(match[1])
+                return self.json({match[2]: result[match[2]], 'revision': result['revision']} if match[2] else result)
             match = re.fullmatch(r"/api/factory/projects/([a-f0-9]{12})/(team|tasks)(?:/([a-z_]+:[A-Za-z0-9_.-]{1,120}))?", path)
             if match:
                 from .team_ledger import team_snapshot, task_page, task_detail
@@ -168,6 +183,13 @@ class Handler(LocalMediaHandler):
             return super().do_POST()
         try:
             payload=self.read_json_body()
+            if route == '/api/factory/dramas':
+                from .dramas import create as create_drama
+                return self.json(create_drama(payload), 201)
+            match = re.fullmatch(r'/api/factory/dramas/([a-f0-9]{12})/(confirm|generate|actions)', route)
+            if match:
+                from .dramas import confirm, generate, control
+                return self.json({'confirm': confirm, 'generate': generate, 'actions': control}[match[2]](match[1], payload), 202)
             match = re.fullmatch(r"/api/factory/projects/([a-f0-9]{12})/interventions(?:/(preview|[a-f0-9]{32}/dismiss))?", route)
             if match:
                 from .team_control import submit, preview, dismiss

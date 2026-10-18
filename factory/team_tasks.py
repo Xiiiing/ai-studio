@@ -61,7 +61,7 @@ V2_TASKS = MappingProxyType({
 
 
 def definitions(workflow_version=1):
-    return V2_TASKS if workflow_version == 2 else TASKS
+    return V2_TASKS if workflow_version in {2, 3} else TASKS
 
 
 def definition(stage, project):

@@ -31,6 +31,7 @@ for (const [style, format, motion] of [
   }) => {
     await page.goto("/");
     await page.locator('[data-action="new-project"]').first().click();
+    await page.getByRole("button", { name: "使用原单集入口" }).click();
     const dialog = page.getByRole("dialog");
     await expect(dialog.getByLabel("画面与运动方式")).toHaveValue("anime_2d");
     await dialog.getByLabel("画面与运动方式").selectOption(style);

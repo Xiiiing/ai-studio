@@ -156,7 +156,7 @@ test("mobile drawer traps focus, dismisses with Escape or overlay and restores i
   await trigger.click();
   await sidebar.getByRole("button", { name: "新建制作", exact: true }).click();
   await expect(
-    page.getByRole("dialog", { name: "发起一部新制作" }),
+    page.getByRole("dialog", { name: "新建一部剧" }),
   ).toBeVisible();
   await expect(sidebar).toHaveAttribute("inert", "");
 });
@@ -171,7 +171,7 @@ test("named modal restores focus and reduced motion disables transitions", async
     .first();
   await trigger.click();
   const dialog = page.getByRole("dialog");
-  await expect(dialog).toHaveAccessibleName("发起一部新制作");
+  await expect(dialog).toHaveAccessibleName("新建一部剧");
   await page.keyboard.press("Escape");
   await expect(dialog).toHaveCount(0);
   await expect(trigger).toBeFocused();

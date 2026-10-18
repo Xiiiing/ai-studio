@@ -59,7 +59,7 @@ def initialize(db):
 
 
 def enabled(project):
-    return project.get("team_control_version") == 1 and project.get("workflow_version", 1) == 2
+    return project.get("team_control_version") == 1 and project.get("workflow_version", 1) in {2, 3}
 
 
 def fingerprint(value):
@@ -541,9 +541,9 @@ def team_snapshot(pid):
     root = availability["executive_producer"]
     actions = ([{"id": "intervene", "label": "介入并下达要求", "enabled": live, "disabled_reason": None if live else control_reason},
                 {"id": "replan", "label": "向总制片下达要求", "enabled": live and root["available"], "disabled_reason": root["reason"] if live else control_reason}]
-               if control_enabled else [{"id": "enable_control", "label": "启用团队控制", "enabled": not running and project.get("workflow_version", 1) == 2 and project["status"] in {"paused", "blocked", "awaiting_final"}, "disabled_reason": "请在安全边界启用；v1 项目仅支持观察"}])
+               if control_enabled else [{"id": "enable_control", "label": "启用团队控制", "enabled": not running and project.get("workflow_version", 1) in {2, 3} and project["status"] in {"paused", "blocked", "awaiting_final"}, "disabled_reason": "请在安全边界启用；v1 项目仅支持观察"}])
     return {"schema": "ai-studio.team.v1", "enabled": control_enabled,
-            "enable_available": not enabled(project) and project.get("workflow_version", 1) == 2 and not running and project["status"] in {"paused", "blocked", "awaiting_final"},
+            "enable_available": not enabled(project) and project.get("workflow_version", 1) in {2, 3} and not running and project["status"] in {"paused", "blocked", "awaiting_final"},
             "control_revision": revision, "departments": departments, "members": members,
             "task_summary": {"total": len(tasks), "running": sum(t["status"] == "running" for t in tasks),
                              "waiting": sum(t["status"] in {"pending", "waiting", "paused"} for t in tasks), "blocked": sum(t["status"] in {"blocked", "failed"} for t in tasks),

@@ -142,7 +142,7 @@ def attention(project, *, job_running=False):
 def project_summary(project, *, job_running=False):
     issue = attention(project, job_running=job_running)
     phase = obj(project.get("production")).get("phase") if project.get("stage") == "production" else project.get("stage")
-    result = {k: copy.deepcopy(project.get(k)) for k in ("id", "title", "brief", "format", "status", "stage", "progress", "revision", "created_at", "updated_at", "duration_seconds", "team_mode", "is_validation", "budget")}
+    result = {k: copy.deepcopy(project.get(k)) for k in ("id", "title", "brief", "format", "status", "stage", "progress", "revision", "created_at", "updated_at", "duration_seconds", "team_mode", "is_validation", "budget", "record_kind", "drama_id", "episode_count")}
     result["workflow_version"] = project.get("workflow_version", 1)
     shots = rows(project.get("shots"))
     result.update(current_activity=PHASES.get(phase, text(phase, 80) or "项目已建立"), job_running=job_running,
@@ -180,6 +180,7 @@ def dashboard(*, offset=0, limit=100, attention_offset=0, attention_limit=100, q
         # Aggregate the same full snapshot even when the project list is filtered.
         for row in db.execute("SELECT snapshot,revision FROM projects ORDER BY updated DESC"):
             project = json.loads(row[0]); project["revision"] = row[1]
+            if project.get('record_kind') in {'episode', 'scene_unit'}: continue
             summary = project_summary(project, job_running=project["id"] in live)
             titles[project["id"]] = project["title"]
             metrics["projects"] += 1
@@ -242,6 +243,8 @@ def workspace(pid):
     with store.connection() as db:
         db.execute("BEGIN")
         project = store._read(db, pid)
+        if project.get('record_kind') == 'drama':
+            return {'project': project, 'revision': project['revision'], 'operator': {}, 'workflow': {}, 'flow': {}}
         running = bool(db.execute("SELECT 1 FROM jobs WHERE project_id=? AND (status='running' OR (status='queued' AND kind='review_advice')) LIMIT 1", (pid,)).fetchone())
         project["events"] = [{"id": r[0], "at": r[1], "kind": r[2], "message": r[3], "data": json.loads(r[4])}
                              for r in reversed(db.execute("SELECT id,at,kind,message,data FROM events WHERE project_id=? ORDER BY id DESC LIMIT 120", (pid,)).fetchall())]
