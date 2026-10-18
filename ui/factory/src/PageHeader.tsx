@@ -8,7 +8,7 @@ import {
   type ReactNode,
   type RefObject,
 } from "react";
-import { Menu, MoreHorizontal, RefreshCw } from "lucide-react";
+import { Menu, MoreHorizontal, Palette, RefreshCw } from "lucide-react";
 import { ThemeControl } from "./Theme";
 import { StatusIndicator } from "./StatusIndicator";
 
@@ -19,6 +19,7 @@ type HeaderTools = {
   syncError: boolean;
   syncing: boolean;
   refresh: () => void;
+  openSettings?: () => void;
 };
 const ToolsContext = createContext<HeaderTools | null>(null);
 export const PageHeaderProvider = ToolsContext.Provider;
@@ -85,6 +86,20 @@ function WorkspaceTools({ tools }: { tools: HeaderTools }) {
         aria-label="页面工具操作"
       >
         <ThemeControl />
+        {tools.openSettings && (
+          <button
+            type="button"
+            className="icon-button"
+            aria-label="外观设置"
+            title="外观设置"
+            onClick={() => {
+              setOpen(false);
+              tools.openSettings?.();
+            }}
+          >
+            <Palette size={20} aria-hidden="true" />
+          </button>
+        )}
         <span
           className={
             "sync-state " + (tools.syncError ? "error-text" : "sync-compact")

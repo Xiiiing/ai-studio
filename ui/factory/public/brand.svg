@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" fill="none" role="img" aria-labelledby="title desc">
+  <title id="title">AI Studio</title>
+  <desc id="desc">An original blue film frame enclosing a play button, with a golden creative spark.</desc>
+  <defs>
+    <linearGradient id="blue" x1="20" y1="14" x2="110" y2="118" gradientUnits="userSpaceOnUse"><stop stop-color="#5175EB"/><stop offset="1" stop-color="#2846AF"/></linearGradient>
+  </defs>
+  <rect x="4" y="4" width="120" height="120" rx="32" fill="url(#blue)"/>
+  <rect x="27" y="31" width="74" height="70" rx="16" stroke="#fff" stroke-width="5"/>
+  <path d="M56 49L80 65L56 81V49Z" fill="#fff" stroke="#fff" stroke-width="3" stroke-linejoin="round"/>
+  <path d="M27 48H39M27 83H39M89 48H101M89 83H101" stroke="#fff" stroke-width="5" stroke-linecap="round"/>
+  <circle cx="100" cy="29" r="19" fill="#304FBA"/>
+  <path d="M100 12L104 24L116 28L104 32L100 44L96 32L84 28L96 24L100 12Z" fill="#FFD386"/>
+</svg>

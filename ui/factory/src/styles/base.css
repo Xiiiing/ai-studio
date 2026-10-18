@@ -239,6 +239,7 @@ pre {
 .main-nav {
   display: grid;
   gap: 4px;
+  margin-top: 12px;
 }
 .nav-item {
   border: 0;
@@ -257,10 +258,10 @@ pre {
   line-height: var(--leading-ui);
 }
 .nav-item.active {
-  background: var(--surface);
-  color: var(--ink);
+  background: var(--ink);
+  color: var(--panel);
   font-weight: 600;
-  box-shadow: inset 2px 0 var(--accent);
+  box-shadow: none;
 }
 .nav-item:hover {
   background: var(--surface);
@@ -445,12 +446,12 @@ pre {
   text-decoration: none;
   text-align: left;
   font-size: var(--text-ui);
-  color: var(--accent-text);
+  color: var(--ink);
   line-height: var(--leading-ui);
   min-height: var(--target-size);
 }
 .text-link:hover {
-  color: var(--accent);
+  color: var(--ink);
   text-decoration: underline;
 }
 .panel {
@@ -636,6 +637,10 @@ td > strong {
 }
 .badge {
   display: inline-flex;
+  align-self: start;
+  justify-self: start;
+  width: fit-content;
+  max-width: 100%;
   align-items: center;
   gap: 5px;
   border-radius: 5px;
@@ -683,7 +688,7 @@ td > strong {
   display: block;
   height: 100%;
   border-radius: inherit;
-  background: var(--surface-strong);
+  background: var(--accent);
 }
 .attention-row {
   display: grid;
@@ -1177,7 +1182,7 @@ td > strong {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  color: var(--accent-text);
+  color: var(--ink);
   border: 1px solid var(--line);
   background: var(--panel);
   border-radius: 6px;
@@ -1292,10 +1297,10 @@ td > strong {
 }
 .decision-issue {
   border: 1px solid var(--line);
+  border-left: 3px solid var(--warning);
   border-radius: 8px;
   padding: 20px;
-  background: var(--warning-soft);
-  border-color: var(--warning-line);
+  background: var(--panel);
 }
 .decision-issue > p {
   font-size: var(--text-reading);
@@ -1361,7 +1366,7 @@ td > strong {
 }
 .review-choice[aria-pressed="true"] {
   border-color: var(--accent);
-  background: var(--surface);
+  background: var(--panel);
   color: var(--ink);
 }
 .review-choice-check {
@@ -1685,7 +1690,7 @@ legend {
   border-bottom: 1px solid var(--line);
 }
 .shot-list-item.active {
-  background: var(--accent-soft);
+  background: var(--surface);
   box-shadow: inset 3px 0 var(--accent);
 }
 .shot-list-item strong {
@@ -2098,9 +2103,9 @@ legend {
   margin-bottom: 20px;
   overflow-wrap: anywhere;
   font-size: var(--text-ui);
-  background: var(--accent-soft);
+  background: var(--surface);
   border-color: var(--line);
-  color: var(--accent-text);
+  color: var(--ink);
   line-height: var(--leading-ui);
 }
 .notice > div {
@@ -2524,4 +2529,56 @@ dialog[open] {
   justify-content: center;
   width: 16px;
   min-height: 38px;
+}
+
+/* Brand assets retain their source colors; controls use shared color roles. */
+.brand {
+  color: var(--accent-text);
+}
+.brand-symbol {
+  flex-shrink: 0;
+  object-fit: contain;
+  display: block;
+}
+.brand-name {
+  color: var(--ink);
+}
+input[type="checkbox"],
+input[type="radio"],
+progress {
+  accent-color: var(--accent);
+}
+
+/* A status is readable from its label as well as its decorative dot. */
+.badge:has([data-status-indicator="running"]) {
+  color: var(--ink);
+  background: var(--surface);
+}
+.badge:has([data-status-indicator="review"]) {
+  color: var(--warning);
+  background: var(--warning-soft);
+}
+.badge:has([data-status-indicator="failed"]) {
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+.badge:has([data-status-indicator="success"]) {
+  color: var(--success);
+  background: var(--success-soft);
+}
+.notice.error,
+.notice.decision-draft-stale {
+  background: var(--panel);
+  border-color: var(--line);
+  border-left: 3px solid var(--danger);
+  color: var(--ink);
+}
+.notice.error > svg {
+  color: var(--danger);
+}
+.notice.decision-draft-stale {
+  border-left-color: var(--warning);
+}
+.notice.decision-draft-stale > svg {
+  color: var(--warning);
 }

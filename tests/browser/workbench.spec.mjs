@@ -28,7 +28,7 @@ test("project list, model settings and connection preflight use only mock APIs",
   await page.goto("/");
   await expect(page.locator("#project-list")).toContainText("浏览器模拟样片");
   await page.locator('.main-nav [data-action="models"]').click();
-  await expect(page.locator("#workspace h1")).toHaveText("模型与连接");
+  await expect(page.locator("#workspace h1")).toHaveText("模型配置");
   await manageService(page);
   await expect(page.locator("#service-dialog")).toBeVisible();
   await page.locator("#service-dialog .model-options summary").first().click();

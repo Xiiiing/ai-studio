@@ -133,8 +133,9 @@
 .project-subnavigation button.active,
 .project-subnavigation button[aria-current="page"] {
   color: var(--ink);
-  background: var(--surface-strong);
-  font-weight: 500;
+  background: var(--panel);
+  border-bottom-color: var(--accent);
+  font-weight: 600;
 }
 @media (max-width: 1023px) {
   .project-navigation-bar {
@@ -397,17 +398,15 @@
   border-color: var(--line);
 }
 .workflow-map-node.workflow-stage-card.selected {
-  background: var(--surface);
+  background: var(--panel);
   border-color: var(--accent);
+  box-shadow: inset 3px 0 var(--accent);
 }
 .workflow-map-node.workflow-repair-node {
   background: var(--panel);
 }
 .workflow-map-node.workflow-repair-node.selected {
   border-color: var(--accent);
-}
-.workflow-stage-card .badge {
-  background: var(--surface);
 }
 .workflow-map {
   background-image: none;
@@ -417,8 +416,8 @@
 }
 .nav-item.active,
 .project-item.active {
-  background: var(--surface);
-  color: var(--ink);
+  background: var(--ink);
+  color: var(--panel);
 }
 @media (min-width: 1024px) {
   #workspace {

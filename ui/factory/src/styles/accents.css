@@ -1,0 +1,144 @@
+/* Accent roles: readable small marks, one tonal feature gradient, and focus.
+   Primary actions stay neutral black/white, independent of the selected hue.
+   Neutrals and semantic error / warning / success colors remain in tokens.css. */
+:root[data-accent] {
+  --accent-gradient: linear-gradient(145deg, var(--accent-glow) 0%, var(--accent-feature) 48%, var(--accent-mist) 100%);
+  --primary: var(--ink);
+  --primary-hover: var(--inverse);
+  --on-primary: var(--panel);
+  --focus: var(--accent);
+  --status-running: var(--accent);
+  --crop-stroke: var(--accent);
+}
+:root[data-accent="slate"] {
+  --accent-glow: #e1e9f2;
+  --accent-feature: #9fb3c8;
+  --accent-mist: #f1f5f9;
+  --on-accent-feature: #101113;
+  --accent: #46566e;
+  --accent-hover: #3d4c63;
+  --accent-text: #3d4c63;
+  --accent-soft: #f0f2f5;
+  --selection: #e1e6ed;
+  --on-accent: #ffffff;
+  --crop-fill: rgb(70 86 110 / 15%);
+}
+:root[data-theme="dark"][data-accent="slate"] {
+  --accent: #8492a6;
+  --accent-hover: #a8b3c2;
+  --accent-text: #a8b3c2;
+  --accent-soft: #2a3039;
+  --selection: #303947;
+  --on-accent: #14191f;
+  --crop-fill: rgb(132 146 166 / 18%);
+}
+:root[data-accent="graphite"] {
+  --accent-glow: #eef2f3;
+  --accent-feature: #bac3c8;
+  --accent-mist: #f7f8f8;
+  --on-accent-feature: #101113;
+  --accent: #53545b;
+  --accent-hover: #43444b;
+  --accent-text: #4a4b52;
+  --accent-soft: #f1f1f3;
+  --selection: #e4e4e8;
+  --on-accent: #ffffff;
+  --crop-fill: rgb(83 84 91 / 15%);
+}
+:root[data-theme="dark"][data-accent="graphite"] {
+  --accent: #99999f;
+  --accent-hover: #b8b8bf;
+  --accent-text: #b8b8bf;
+  --accent-soft: #2c2c30;
+  --selection: #37373d;
+  --on-accent: #14191f;
+  --crop-fill: rgb(153 153 159 / 18%);
+}
+:root[data-accent="teal"] {
+  --accent-glow: #c8faea;
+  --accent-feature: #6be7cb;
+  --accent-mist: #edfcf6;
+  --on-accent-feature: #101113;
+  --accent: #3e686b;
+  --accent-hover: #31575a;
+  --accent-text: #315d60;
+  --accent-soft: #edf4f4;
+  --selection: #dbe9e9;
+  --on-accent: #ffffff;
+  --crop-fill: rgb(62 104 107 / 15%);
+}
+:root[data-theme="dark"][data-accent="teal"] {
+  --accent: #83abae;
+  --accent-hover: #a0c4c6;
+  --accent-text: #a0c4c6;
+  --accent-soft: #253335;
+  --selection: #2c4143;
+  --on-accent: #14191f;
+  --crop-fill: rgb(131 171 174 / 18%);
+}
+:root[data-accent="jade"] {
+  --accent-glow: #e8fbd3;
+  --accent-feature: #a8ef75;
+  --accent-mist: #f5fce9;
+  --on-accent-feature: #101113;
+  --accent: #4b6656;
+  --accent-hover: #3d5546;
+  --accent-text: #3d5948;
+  --accent-soft: #eff4f0;
+  --selection: #e0e9e2;
+  --on-accent: #ffffff;
+  --crop-fill: rgb(75 102 86 / 15%);
+}
+:root[data-theme="dark"][data-accent="jade"] {
+  --accent: #91ab98;
+  --accent-hover: #afc5b5;
+  --accent-text: #afc5b5;
+  --accent-soft: #29342d;
+  --selection: #344238;
+  --on-accent: #14191f;
+  --crop-fill: rgb(145 171 152 / 18%);
+}
+:root[data-accent="iris"] {
+  --accent-glow: #eee7ff;
+  --accent-feature: #c0aff0;
+  --accent-mist: #f9f5ff;
+  --on-accent-feature: #101113;
+  --accent: #675b7b;
+  --accent-hover: #564b69;
+  --accent-text: #5c4f72;
+  --accent-soft: #f3f0f6;
+  --selection: #e8e2ee;
+  --on-accent: #ffffff;
+  --crop-fill: rgb(103 91 123 / 15%);
+}
+:root[data-theme="dark"][data-accent="iris"] {
+  --accent: #a59ab6;
+  --accent-hover: #c1b6d0;
+  --accent-text: #c1b6d0;
+  --accent-soft: #312c38;
+  --selection: #3c3546;
+  --on-accent: #14191f;
+  --crop-fill: rgb(165 154 182 / 18%);
+}
+:root[data-accent="bronze"] {
+  --accent-glow: #ffeadc;
+  --accent-feature: #f1bca0;
+  --accent-mist: #fff7ec;
+  --on-accent-feature: #101113;
+  --accent: #785c47;
+  --accent-hover: #654b39;
+  --accent-text: #6c503b;
+  --accent-soft: #f6f1ed;
+  --selection: #ece2d8;
+  --on-accent: #ffffff;
+  --crop-fill: rgb(120 92 71 / 15%);
+}
+:root[data-theme="dark"][data-accent="bronze"] {
+  --accent: #b59d88;
+  --accent-hover: #d0b8a2;
+  --accent-text: #d0b8a2;
+  --accent-soft: #373029;
+  --selection: #44392f;
+  --on-accent: #14191f;
+  --crop-fill: rgb(181 157 136 / 18%);
+}

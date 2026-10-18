@@ -399,7 +399,7 @@ test("dashboard navigation filters and mobile viewport remain functional", async
   await expect(page.locator(".console-project-table tbody tr")).toHaveCount(0);
   await page.locator("[data-console-search]").fill("浏览器");
   await expect(page.locator(".console-project-table tbody tr")).toHaveCount(1);
-  await page.locator('.main-nav [data-view="inbox"]').click();
+  await page.locator('.main-nav [data-view="dashboard"]').click();
   await page.locator(".attention-row button").click();
   await expect(page.locator('form[data-form="final"]')).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });

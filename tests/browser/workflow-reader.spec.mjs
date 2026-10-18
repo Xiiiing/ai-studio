@@ -93,7 +93,7 @@ for (const width of [1440, 1024, 390]) {
       );
       const steps = page
         .getByRole("navigation", { name: "阶段内步骤" })
-        .locator("button[data-flow-node]");
+        .locator("button[data-flow-node]:visible");
       for (let i = 0; i < (await steps.count()); i++) {
         const label = await steps
           .nth(i)
@@ -369,4 +369,65 @@ test("narrow screens jump directly to details and can return to the flow", async
       ),
     )
     .toBeLessThan(10);
+});
+
+test("department employee opens the recorded original request in its own workflow", async ({
+  page,
+}) => {
+  await page.goto(`/#project=${id}&tab=workflow`);
+  await expect(
+    page.getByRole("heading", { name: "制作工作流", exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "部门协作", exact: true }).click();
+  const collaboration = page.getByRole("region", { name: "部门协作工作流" });
+  await collaboration
+    .getByRole("navigation", { name: "项目部门" })
+    .locator('[data-map-node="story"]')
+    .click();
+  await collaboration
+    .getByRole("navigation", { name: "部门岗位" })
+    .locator('[data-map-node="screenwriter"]')
+    .click();
+  const employee = collaboration.getByRole("complementary", {
+    name: "岗位工作详情",
+  });
+  const call = employee.locator('[data-execution="writer-current"]');
+  await expect(call).toContainText("mock-writer-current");
+  await call.getByText("第 1 次请求与响应", { exact: true }).click();
+  const original = call
+    .locator(".material-card")
+    .filter({ has: page.getByText("请求原文", { exact: true }) })
+    .first();
+  await original.getByRole("button", { name: "阅读文件", exact: true }).click();
+  await expect(original).toContainText("这是当次保存的完整输入");
+  await expect(original).toContainText("请求原文中的提示词");
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth + 1,
+    ),
+  ).toBe(true);
+});
+
+test("department delivery opens a saved sender result inline without claiming a receiver call", async ({
+  page,
+}) => {
+  await page.goto(`/#project=${id}&tab=workflow`);
+  await page.getByRole("button", { name: "部门协作", exact: true }).click();
+  const team = page.getByRole("region", { name: "部门协作工作流" });
+  const diagram = team.getByRole("navigation", { name: "项目部门" });
+  const edge = diagram
+    .locator('[data-flow-edge][data-source="story"][data-target="review"]')
+    .first();
+  await edge.focus();
+  await page.keyboard.press("Enter");
+  const panel = team.getByRole("complementary", { name: "交付内容详情" });
+  await expect(panel).toContainText("尚未关联到接收方的实际输入");
+  const call = panel.locator('[data-execution="writer-current"]');
+  const original = call
+    .locator(".material-card")
+    .filter({ has: page.getByText("解析结果", { exact: true }) });
+  await original.getByRole("button", { name: "阅读文件", exact: true }).click();
+  await expect(original).toContainText("灯下的约定");
+  await expect(diagram).toBeVisible();
+  expect(page.url()).toContain(`project=${id}&tab=workflow`);
 });

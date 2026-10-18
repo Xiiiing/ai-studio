@@ -707,9 +707,44 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                 "kind": kind, "signature": signature, "review_signature": review_signature,
                 "compatible_source_signatures": compatible_sources, **extra}
 
+    def _continuity_video_repair_allowed(self, target, retained):
+        """A server-recorded return permits only its changed shot in this version.
+
+        The original results remain protected evidence. Matching/compatible inputs
+        still use the existing review path, and unresolved submissions are checked
+        by the normal renderer before any new take can be admitted.
+        """
+        authorization = self.project.get("continuity_video_repair") or {}
+        if (not self.h3_automatic or self.project.get("record_kind") != "scene_unit"
+                or not isinstance(authorization, dict)
+                or authorization.get("source") != "episode_continuity_review"
+                or type(authorization.get("production_revision")) is not int
+                or authorization["production_revision"] != self.project.get("production_revision")
+                or not self.project.get("episode_id")
+                or authorization.get("episode_id") != self.project["episode_id"]):
+            return False
+        shot_ids = authorization.get("shot_ids")
+        shot_id = (target.get("shot") or {}).get("id")
+        if not isinstance(shot_ids, list) or not shot_id or shot_id not in shot_ids:
+            return False
+        if not isinstance(target.get("signature"), str) or not target["signature"]:
+            return False
+        for path in retained:
+            try:
+                receipt = read_json(path)
+            except (OSError, ValueError):
+                return False
+            if (not isinstance(receipt, dict) or not receipt.get("source_signature")
+                    or _matching_source(receipt, target)):
+                return False
+        return True
+
     def _review_only_video(self, target):
-        return (self.review_only_existing_videos and target["kind"] == "video"
-                and any(path.parent.parent == target["folder"] for path in self.existing_video_results))
+        if not self.review_only_existing_videos or target["kind"] != "video":
+            return False
+        retained = [path for path in self.existing_video_results
+                    if path.parent.parent == target["folder"]]
+        return bool(retained) and not self._continuity_video_repair_allowed(target, retained)
 
     def _stop_existing_video(self, target, record=None, receipt=None):
         if target.get("shot") is not None:

@@ -24,6 +24,11 @@ def character_states(shot, cast):
 
 class SeriesProductionMixin:
     def _series_character(self, role):
+        shared = self.project.get('drama_references', {}).get('character:' + role)
+        if shared:
+            from .drama_assets import valid
+            valid(shared['receipt'])
+            return {**shared['receipt'], 'drama_reference': {'entity_id': role, 'version': shared['plan_version']}}
         relevant = [shot for shot in self.shots if role in shot_roles(shot, self.cast)]
         if not relevant or not self.project.get("series_references"):
             return None
@@ -40,6 +45,11 @@ class SeriesProductionMixin:
         return {**first["receipt"], **reference_receipts([first])[0], "series_approved": True}
 
     def _series_shot_inputs(self, shot, roles, references):
+        if self.project.get('drama_references'):
+            states = character_states(shot, self.cast)
+            from .drama_assets import shot_inputs
+            paths, prompt, receipts = shot_inputs(self, shot, references)
+            return paths, prompt + json.dumps({'character_states':states},ensure_ascii=False), receipts
         values = resolved_references(self.project, shot)
         states = character_states(shot, self.cast)
         if not values and not states:

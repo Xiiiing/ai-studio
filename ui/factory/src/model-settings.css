@@ -381,7 +381,8 @@
   display: block;
 }
 .service-probe-result.failed {
-  color: var(--danger);
+  border-left: 3px solid var(--danger);
+  color: var(--ink);
 }
 #service-dialog,
 #media-dialog {

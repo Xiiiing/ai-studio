@@ -10,6 +10,14 @@ GROUPS = (
     {"id": "media", "label": "视觉与声音", "lead": "visual_designer", "roles": ["visual_designer", "prompt_style_compiler", "image_generator", "video_generator", "speech", "dialogue_editor", "editor"], "responsibility": "制作人物、镜头与对白，并完成剪辑、字幕和混音。"},
     {"id": "review", "label": "独立质量审核", "lead": "independent_critic", "roles": ["story_critic", "independent_critic", "visual_critic"], "responsibility": "独立检查叙事、画面与连续性；未通过则返回指定阶段修复。"},
 )
+def collaboration_departments():
+    """Expose the same role membership used by durable production tasks."""
+    from .team_ledger import DEPARTMENTS
+    return [{**group, 'roles': list(group['roles'])} for group in DEPARTMENTS] + [
+        {'id': 'operations', 'label': '流程编排', 'lead': 'orchestrator',
+         'roles': ['orchestrator'], 'responsibility': '协调已建立的剧集、制作单元与任务交接。'}]
+
+
 def topology(workflow_version=1):
     from .workflows import build_graph
     from .team_tasks import contracts
@@ -32,8 +40,9 @@ def topology(workflow_version=1):
             nodes[ident]['execution_nodes'].append(executable)
             continue
         if ident == 'unit_ready':
-            decisions[ident] = ('制作单元就绪', ['delivery'], ['unit_ready'])
-        if ident in decisions:
+            spec={'label':'制作单元就绪','owner':'editor','reviewer':'visual_critic','members':['editor','visual_critic'],
+                  'inputs':['delivery'],'outputs':['unit_ready']}
+        elif ident in decisions:
             label,inputs,outputs=decisions[ident]
             spec={'label':label,'owner':'producer','reviewer':None,
                   'members':['executive_producer','producer'],'inputs':inputs,'outputs':outputs}
@@ -88,6 +97,8 @@ def project_graph(project, attention=None, running=False):
                 status, evidence = "succeeded", "decision_receipt"
         if ident == "delivery" and project.get("status") == "approved":
             status, evidence = "succeeded", "producer_approval"
+        if ident == 'unit_ready' and project.get('status') == 'unit_ready' and project.get('delivery'):
+            status, evidence = 'succeeded', 'unit_delivery_receipt'
         if ident == active:
             if project.get("status") in {"blocked", "failed"}: status = "blocked"
             elif project.get("status") == "paused" or project.get("pause_requested"): status = "paused"
@@ -117,4 +128,4 @@ def project_graph(project, attention=None, running=False):
             "active_node": active, "current_activity": PHASES.get(phase, phase), "nodes": nodes,
             "edges": edges, "presentation": presentation(nodes, project.get("workflow_version", 1)),
             "production_tasks":list(obj(project.get("production_tasks")).values()),
-            "groups": list(GROUPS), "semantics": "execution_nodes map to the existing LangGraph; no editable runtime wiring or inferred approvals"}
+            "groups": list(GROUPS), "departments": collaboration_departments(), "semantics": "execution_nodes map to the existing LangGraph; no editable runtime wiring or inferred approvals"}

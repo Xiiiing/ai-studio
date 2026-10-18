@@ -1,0 +1,450 @@
+.workflow-view-switch {
+  display: flex;
+  gap: 6px;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--line);
+}
+.workflow-view-switch button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 40px;
+  padding: 8px 14px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: var(--text-ui);
+}
+.workflow-view-switch button[aria-pressed="true"] {
+  background: var(--panel);
+  border-color: var(--line);
+  color: var(--ink);
+}
+.workflow-layout[hidden] {
+  display: none;
+}
+.workflow-expand-team {
+  margin-top: 16px;
+}
+.collaboration-workspace {
+  min-width: 0;
+  padding: 16px;
+}
+.collaboration-layout {
+  display: grid;
+  gap: 16px;
+  align-items: start;
+}
+.collaboration-assignment {
+  border: 1px solid var(--line);
+  padding: 14px;
+  border-radius: 10px;
+  margin: 10px 0;
+  font-size: var(--text-ui);
+}
+.collaboration-assignment > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.collaboration-assignment header > span {
+  color: var(--muted);
+  font-size: var(--text-caption);
+}
+.collaboration-assignment p {
+  color: var(--muted);
+  line-height: var(--leading-ui);
+}
+.collaboration-assignment dl {
+  display: grid;
+  grid-template-columns: 60px minmax(0, 1fr);
+  gap: 8px;
+  font-size: var(--text-caption);
+}
+.collaboration-assignment dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.collaboration-assignment dt {
+  color: var(--muted);
+}
+.collaboration-assignment > small {
+  display: block;
+  margin-top: 12px;
+  line-height: var(--leading-caption);
+}
+.collaboration-work-record {
+  margin: 12px 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px;
+  overflow-wrap: anywhere;
+}
+.collaboration-work-record > summary {
+  cursor: pointer;
+  min-height: 44px;
+  font-size: var(--text-ui);
+}
+.collaboration-work-record > summary .badge {
+  margin-left: 8px;
+}
+.collaboration-work-record dd {
+  margin: 8px 0 16px;
+}
+.collaboration-work-record dt {
+  font-size: var(--text-ui);
+  font-weight: 600;
+}
+.collaboration-handoffs {
+  margin: 20px 0 0;
+  padding: 16px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.collaboration-handoffs small {
+  color: var(--muted);
+}
+@media (max-width: 600px) {
+  .collaboration-workspace {
+    padding: 8px;
+  }
+  .workflow-view-switch {
+    padding-inline: 12px;
+  }
+}
+
+/* Keep the same canvas visible while the reader changes its selection. */
+.collaboration-toolbar,
+.collaboration-department > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+.collaboration-toolbar h3,
+.collaboration-department h3 {
+  margin: 0 0 6px;
+  font-size: var(--text-subheading);
+}
+.collaboration-toolbar p,
+.collaboration-department p {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-ui);
+  line-height: var(--leading-ui);
+}
+.collaboration-toolbar > button {
+  flex: none;
+  min-height: 40px;
+}
+.collaboration-activity {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+  padding: 12px 0 18px;
+  font-size: var(--text-ui);
+}
+.collaboration-activity small {
+  color: var(--muted);
+}
+.collaboration-activity-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--muted);
+  flex: none;
+}
+.collaboration-activity-dot.is-working {
+  background: var(--status-running);
+  box-shadow: 0 0 0 4px var(--status-running-bg);
+}
+.collaboration-layout {
+  grid-template-columns: minmax(0, 1fr) minmax(330px, 0.85fr);
+}
+.collaboration-canvas {
+  min-width: 0;
+}
+.collaboration-department {
+  margin-top: 20px;
+}
+.collaboration-inspector,
+.collaboration-inspector.collaboration-member {
+  min-width: 0;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  position: sticky;
+  top: 16px;
+  max-height: calc(100dvh - 40px);
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.collaboration-inspector-tools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  position: sticky;
+  top: -18px;
+  padding: 10px 0;
+  margin-top: -10px;
+  background: var(--panel);
+  z-index: 3;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-size: var(--text-caption);
+}
+.collaboration-inspector-tools button {
+  min-height: 38px;
+}
+.collaboration-inspector > header,
+.collaboration-delivery > header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.collaboration-inspector h3 {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  font-size: var(--text-subheading);
+  margin: 20px 0 10px;
+}
+.collaboration-inspector h4 {
+  font-size: var(--text-ui);
+  margin: 0 0 12px;
+}
+.collaboration-inspector section {
+  margin-block: 22px;
+}
+.collaboration-inspector p {
+  font-size: var(--text-ui);
+  line-height: var(--leading-ui);
+  overflow-wrap: anywhere;
+}
+.collaboration-empty-inspector {
+  color: var(--muted);
+  padding: 16px 0;
+}
+.collaboration-empty-inspector h3 {
+  color: var(--ink);
+}
+.collaboration-empty-inspector small {
+  line-height: var(--leading-caption);
+}
+.collaboration-handoff-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 7px;
+  width: 100%;
+  border: 0;
+  border-top: 1px solid var(--line);
+  padding: 12px 4px;
+  text-align: left;
+  background: none;
+  color: var(--ink);
+  cursor: pointer;
+}
+.collaboration-handoff-row[aria-pressed="true"] {
+  box-shadow: inset 3px 0 var(--accent);
+  padding-left: 12px;
+  background: var(--canvas);
+}
+.collaboration-handoff-row > span:first-child {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: var(--text-ui);
+}
+.collaboration-handoff-row small,
+.collaboration-handoff-evidence {
+  font-size: var(--text-caption);
+  color: var(--muted);
+  line-height: var(--leading-caption);
+}
+.collaboration-delivery-parties {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+  border-block: 1px solid var(--line);
+  padding-block: 14px;
+  font-size: var(--text-caption);
+}
+.collaboration-delivery-parties > span {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.collaboration-delivered-record {
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 12px;
+  margin: 12px 0;
+  overflow-wrap: anywhere;
+}
+.collaboration-delivered-record > summary {
+  cursor: pointer;
+  min-height: 36px;
+  font-size: var(--text-ui);
+}
+.collaboration-delivered-record > summary > span {
+  font-size: var(--text-caption);
+  margin-left: 10px;
+  color: var(--muted);
+}
+.collaboration-workspace .workflow-map-grid {
+  gap: 64px 72px;
+  padding: 38px 40px 48px;
+}
+.collaboration-workspace .workflow-map-node.workflow-stage-card {
+  min-height: 118px;
+  padding: 12px;
+  gap: 8px;
+}
+.collaboration-workspace .workflow-stage-copy {
+  gap: 5px;
+}
+.collaboration-workspace .workflow-node-summary {
+  display: none;
+}
+.collaboration-workspace .workflow-map-node-top {
+  flex-wrap: wrap;
+}
+.collaboration-workspace .workflow-map-node-top .badge {
+  white-space: normal;
+  text-align: left;
+}
+.workflow-flow-lines.is-interactive {
+  z-index: 2;
+}
+.workflow-flow-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 24;
+  pointer-events: stroke;
+  cursor: pointer;
+}
+.workflow-edge-label {
+  pointer-events: all;
+  cursor: pointer;
+}
+.workflow-edge-label rect {
+  fill: var(--panel);
+  stroke: var(--line);
+}
+.workflow-edge-label text {
+  fill: var(--muted);
+  font-size: 11px;
+  font-family: inherit;
+}
+.workflow-flow-edge:is(.is-selected, :focus-visible) .workflow-flow-line {
+  stroke: var(--accent);
+  stroke-width: 3;
+}
+.workflow-flow-edge:is(.is-selected, :focus-visible) .workflow-edge-label rect {
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+.workflow-flow-edge:is(.is-selected, :focus-visible) .workflow-edge-label text {
+  fill: var(--ink);
+}
+.workflow-flow-edge:focus {
+  outline: none;
+}
+@media (max-width: 1100px) {
+  .collaboration-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .collaboration-inspector:not(.is-open) {
+    display: none;
+  }
+  .collaboration-inspector.is-open,
+  .collaboration-inspector.is-open.collaboration-member {
+    position: fixed;
+    inset: auto 20px 16px;
+    max-height: 54dvh;
+    z-index: 42;
+    box-shadow: 0 -8px 40px #0003;
+  }
+  .collaboration-layout.has-detail {
+    padding-bottom: 48dvh;
+  }
+}
+@media (max-width: 600px) {
+  .collaboration-workspace .workflow-map-grid {
+    padding: 38px 40px 42px;
+    gap: 64px 56px;
+  }
+  .collaboration-inspector.is-open,
+  .collaboration-inspector.is-open.collaboration-member {
+    inset-inline: 8px;
+    bottom: 8px;
+    padding: 14px;
+  }
+  .collaboration-inspector-tools {
+    top: -14px;
+  }
+  .collaboration-toolbar {
+    gap: 8px;
+  }
+  .collaboration-toolbar p {
+    font-size: var(--text-caption);
+  }
+  .collaboration-workspace .workflow-map-node.workflow-stage-card {
+    min-height: 130px;
+    padding: 10px;
+  }
+  .collaboration-workspace .workflow-stage-number {
+    display: none;
+  }
+}
+.collaboration-handoffs > summary {
+  cursor: pointer;
+  min-height: 30px;
+  font-weight: 600;
+  font-size: var(--text-ui);
+}
+.collaboration-handoffs > summary small {
+  display: block;
+  margin-top: 7px;
+  font-weight: 400;
+  font-size: var(--text-caption);
+}
+.collaboration-handoffs[open] > summary {
+  margin-bottom: 12px;
+}
+.collaboration-workspace .workflow-stage-number {
+  display: none;
+}
+.collaboration-evidence-note {
+  font-size: var(--text-caption);
+  color: var(--muted);
+  line-height: var(--leading-caption);
+}
+.collaboration-evidence-note > summary {
+  cursor: pointer;
+  min-height: 36px;
+  padding-block: 8px;
+}
+@media (max-width: 600px) {
+  .collaboration-workspace [aria-label="项目部门"] .workflow-node-owner {
+    display: none;
+  }
+  .collaboration-workspace .workflow-map-node.workflow-stage-card {
+    min-height: 110px;
+  }
+}

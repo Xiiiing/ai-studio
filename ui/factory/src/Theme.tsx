@@ -6,6 +6,12 @@ import {
   type ReactNode,
 } from "react";
 import { Monitor, Moon, Sun } from "lucide-react";
+import {
+  ACCENT_STORAGE_KEY,
+  isAccent,
+  readAccent,
+  type AccentPreference,
+} from "./palettes";
 
 export type ThemePreference = "system" | "light" | "dark";
 export const THEME_STORAGE_KEY = "studio.theme";
@@ -35,6 +41,10 @@ export function applyTheme(preference: ThemePreference, systemDark: boolean) {
 
 function useThemeState() {
   const [preference, setPreference] = useState<ThemePreference>(readTheme);
+  const [accent, setAccent] = useState<AccentPreference>(readAccent);
+  useEffect(() => {
+    document.documentElement.dataset.accent = accent;
+  }, [accent]);
   useEffect(() => {
     const media = window.matchMedia("(prefers-color-scheme: dark)");
     const update = () => applyTheme(preference, media.matches);
@@ -46,12 +56,15 @@ function useThemeState() {
     const update = (event: StorageEvent) => {
       if (event.key === THEME_STORAGE_KEY || event.key === null)
         setPreference(readTheme());
+      if (event.key === ACCENT_STORAGE_KEY || event.key === null)
+        setAccent(readAccent());
     };
     window.addEventListener("storage", update);
     return () => window.removeEventListener("storage", update);
   }, []);
   return {
     preference,
+    accent,
     choose: (next: ThemePreference) => {
       try {
         localStorage.setItem(THEME_STORAGE_KEY, next);
@@ -59,6 +72,15 @@ function useThemeState() {
         /* Keep session choice. */
       }
       setPreference(next);
+    },
+    chooseAccent: (next: AccentPreference) => {
+      if (!isAccent(next)) return;
+      try {
+        localStorage.setItem(ACCENT_STORAGE_KEY, next);
+      } catch {
+        // Keep the session choice even when persistence is unavailable.
+      }
+      setAccent(next);
     },
   };
 }
@@ -70,6 +92,12 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   return (
     <ThemeContext.Provider value={theme}>{children}</ThemeContext.Provider>
   );
+}
+export function useAppearance() {
+  const appearance = useContext(ThemeContext);
+  if (!appearance)
+    throw new Error("useAppearance must be used within ThemeProvider");
+  return appearance;
 }
 function StandaloneThemeControl() {
   const theme = useThemeState();

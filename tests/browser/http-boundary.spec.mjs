@@ -29,7 +29,7 @@ test("real Python boundary admits the new console and rejects the retired interf
   await page.locator('#project-list [data-id="' + projectId + '"]').click();
   await expect(page.locator("#workspace h1")).toHaveText("HTTP 边界隔离测试");
   await page.locator('.main-nav [data-action="models"]').click();
-  await expect(page.locator("#workspace h1")).toHaveText("模型与连接");
+  await expect(page.locator("#workspace h1")).toHaveText("模型配置");
   expect(errors).toEqual([]);
   expect((await page.goto(endpoint + "/legacy")).status()).toBe(410);
 });

@@ -1,5 +1,6 @@
 /* Load order: theme tokens, shared UI, project views, workflow, responsive rules. */
 @import "./styles/tokens.css";
+@import "./styles/accents.css";
 @import "./styles/base.css";
 @import "./styles/pages.css";
 @import "./styles/workflow.css";
@@ -10,3 +11,7 @@
 @import "./styles/feedback.css";
 
 @import "./styles/page-header.css";
+@import "./styles/studio-design.css";
+
+@import "./styles/project-flow.css";
+@import "./styles/collaboration.css";

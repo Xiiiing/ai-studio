@@ -56,6 +56,20 @@ export function Panel({
     </section>
   );
 }
+// Shared, bounded theme surface for an actual page-level business summary.
+export function PageFocus({ label, value, detail }: {
+  label: string;
+  value: ReactNode;
+  detail: ReactNode;
+}) {
+  return <section className="page-summary" aria-label={label + "摘要"}>
+    <div className="page-color-focus">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+    <p>{detail}</p>
+  </section>;
+}
 export function Heading({
   title,
   description,

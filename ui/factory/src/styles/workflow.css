@@ -65,8 +65,8 @@
 }
 .workflow-stage-card.selected {
   border-color: var(--accent);
-  background: var(--surface);
-  box-shadow: none;
+  background: var(--panel);
+  box-shadow: inset 3px 0 var(--accent);
 }
 .workflow-stage-card:hover {
   border-color: var(--accent);
@@ -121,7 +121,8 @@
   line-height: var(--leading-caption);
 }
 .workflow-repair .workflow-stage-card {
-  background: var(--warning-soft);
+  background: var(--panel);
+  border-left: 3px solid var(--warning);
 }
 .workflow-inspector {
   min-width: 0;
@@ -160,8 +161,9 @@
 }
 .workflow-steps > button.active {
   border-color: var(--accent);
-  background: var(--surface);
+  background: var(--panel);
   color: var(--ink);
+  box-shadow: inset 0 -2px var(--accent);
 }
 .workflow-steps .badge {
   font-size: var(--text-caption);
@@ -257,7 +259,8 @@
   margin: 16px 0;
   padding: 14px;
   border-radius: 8px;
-  background: var(--warning-soft);
+  background: var(--surface);
+  border-left: 3px solid var(--warning);
   font-size: var(--text-caption);
   line-height: var(--leading-caption);
 }
@@ -369,8 +372,8 @@
   box-shadow: none;
 }
 .workflow-map-node.selected {
-  background: var(--surface);
-  box-shadow: 0 0 0 2px var(--shadow-color);
+  background: var(--panel);
+  box-shadow: inset 3px 0 var(--accent);
 }
 .workflow-map-node-top {
   display: flex;
@@ -409,19 +412,22 @@
   line-height: var(--leading-caption);
 }
 .workflow-repair-node {
-  background: var(--warning-soft);
+  background: var(--panel);
   border-color: var(--warning-line);
 }
 .workflow-repair-node.selected {
-  background: var(--warning-soft);
+  background: var(--panel);
   border-color: var(--accent);
-  box-shadow: none;
+  box-shadow: inset 3px 0 var(--accent);
 }
 .workflow-map-node.status-running {
   border-color: var(--status-running);
 }
-.workflow-map-node:is(.status-human, .status-blocked, .status-failed) {
-  border-color: var(--danger-line);
+.workflow-map-node.status-human {
+  border-left-color: var(--status-review);
+}
+.workflow-map-node:is(.status-blocked, .status-failed) {
+  border-left-color: var(--status-failed);
 }
 .workflow-port {
   position: absolute;
@@ -530,9 +536,10 @@
   line-height: var(--leading-ui);
 }
 .workflow-steps .workflow-step-segment > button.active {
-  background: var(--surface);
+  background: var(--panel);
   border-color: var(--accent);
   color: var(--ink);
+  box-shadow: inset 0 -2px var(--accent);
 }
 .workflow-step-link {
   flex-shrink: 0;
@@ -555,7 +562,7 @@
 }
 .workflow-stage-card.selected,
 .workflow-map-node.selected {
-  background: var(--surface);
+  background: var(--panel);
   border-color: var(--accent);
-  box-shadow: none;
+  box-shadow: inset 3px 0 var(--accent);
 }

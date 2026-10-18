@@ -159,9 +159,9 @@ test("storage unavailable theme survives tools, route changes and responsive rem
   await setTheme(page, "dark");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   await page.locator('[data-action="toggle-navigation"]').click();
-  await page.locator('.main-nav [data-view="workflow"]').click();
+  await page.locator('.main-nav [data-view="projects"]').click();
   await expect(page.locator(".shared-page-header h1")).toHaveText(
-    "制作流程与团队",
+    "全部项目",
   );
   await expect(page.locator("html")).toHaveAttribute(
     "data-theme-preference",
@@ -214,7 +214,7 @@ for (const width of [320, 1440])
         await page.goto("/#view=models", { waitUntil: "domcontentloaded" });
         await expect(page.locator("h1")).toHaveCount(1);
         await expect(page.locator(".shared-page-header h1")).toHaveText(
-          "模型与连接",
+          "模型配置",
         );
         await expect(page.locator(".topbar, .breadcrumb")).toHaveCount(0);
         await expect(await exposeTheme(page)).toBeEnabled();
@@ -238,7 +238,7 @@ for (const width of [320, 1440])
           await expect(page.locator(".service-card-grid")).toBeVisible();
         }
         await expect(page.locator(".shared-page-header h1")).toHaveText(
-          "模型与连接",
+          "模型配置",
         );
       } finally {
         release();
@@ -246,7 +246,7 @@ for (const width of [320, 1440])
     });
 
 for (const theme of ["light", "dark"])
-  test(`semantic colors are confined to marked six pixel dots and active flow in ${theme}`, async ({
+  test(`neutral surfaces, monochrome actions and semantic status colors stay coherent in ${theme}`, async ({
     page,
     request,
   }) => {
@@ -270,6 +270,73 @@ for (const theme of ["light", "dark"])
       expect(circular).toBe(true);
     }
     expect(await paletteViolations(page)).toEqual([]);
+    const surfaces = await page
+      .locator("body, .panel, .metric-card, .drama-card")
+      .evaluateAll((elements) =>
+        elements
+          .filter((element) => element.getClientRects().length)
+          .map((element) => ({
+            name: element.className || element.tagName,
+            background: getComputedStyle(element)
+              .backgroundColor.match(/[\d.]+/g)
+              .slice(0, 3)
+              .map(Number),
+          })),
+      );
+    for (const surface of surfaces)
+      expect(
+        Math.max(...surface.background) - Math.min(...surface.background),
+        surface.name,
+      ).toBeLessThanOrEqual(14);
+    const colors = await page.evaluate(() => {
+      const rgb = (value) =>
+        value
+          .match(/[\d.]+/g)
+          .slice(0, 3)
+          .map(Number);
+      const luminance = (value) =>
+        rgb(value)
+          .map((channel) => {
+            const v = channel / 255;
+            return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+          })
+          .reduce(
+            (sum, value, i) => sum + value * [0.2126, 0.7152, 0.0722][i],
+            0,
+          );
+      const probe = document.createElement("div");
+      probe.innerHTML =
+        `<button class="button primary">开始制作</button>` +
+        ["review", "failed", "success"]
+          .map(
+            (status) =>
+              `<span class="badge"><i data-status-indicator="${status}"></i>状态</span>`,
+          )
+          .join("");
+      document.body.append(probe);
+      const result = [...probe.children].map((element) => {
+        const style = getComputedStyle(element);
+        const fg = luminance(style.color),
+          bg = luminance(style.backgroundColor);
+        return {
+          state:
+            element.querySelector("i")?.dataset.statusIndicator || "primary",
+          color: rgb(style.color),
+          background: rgb(style.backgroundColor),
+          ratio: (Math.max(fg, bg) + 0.05) / (Math.min(fg, bg) + 0.05),
+        };
+      });
+      probe.remove();
+      return result;
+    });
+    for (const color of colors)
+      expect(color.ratio, color.state).toBeGreaterThanOrEqual(4.5);
+    const [primary, review, failed, success] = colors;
+    expect(Math.max(...primary.background) - Math.min(...primary.background)).toBeLessThanOrEqual(8);
+    expect(review.color[0]).toBeGreaterThan(review.color[2] + 40);
+    expect(review.color[1]).toBeGreaterThan(review.color[2] + 30);
+    expect(failed.color[0]).toBeGreaterThan(failed.color[1] + 40);
+    expect(success.color[1]).toBeGreaterThan(success.color[0] + 30);
     await page.screenshot({
       path: `runtime/ui-round3/after/workflow-${theme}-1440.png`,
       fullPage: true,
