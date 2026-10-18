@@ -185,3 +185,186 @@ describe("department and employee evidence", () => {
     },
   );
 });
+
+describe("clickable handoff evidence", () => {
+  it("separates matched receiver input from unassociated sender results", () => {
+    const output = {
+      episodes: [{ number: 1, synopsis: "真实交付的第一集大纲" }],
+    };
+    const result = collaborationModel(
+      graph,
+      {
+        collaboration_tasks: [
+          {
+            id: "writer-1",
+            role: "screenwriter",
+            status: "succeeded",
+            stage_id: "write",
+            output,
+          },
+          {
+            id: "review-1",
+            role: "independent_critic",
+            status: "succeeded",
+            stage_id: "write",
+            output: "审稿结论",
+            received: [
+              {
+                source_task_id: "writer-1",
+                source_role: "screenwriter",
+                label: "分集大纲",
+                input_field: "episodes",
+                value: output,
+                basis: "recorded_input_content_match",
+              },
+            ],
+          },
+        ],
+      },
+      steps,
+    );
+    const review = result.handoffs.find(
+      (h) => h.target === "independent_critic",
+    )!;
+    expect(review.received_count).toBe(1);
+    expect(review.deliveries[0].value).toEqual(output);
+    expect(review.available).toHaveLength(1);
+    const post = result.handoffs.find((h) => h.target === "editor")!;
+    expect(post.received_count).toBe(0);
+    expect(post.available).toHaveLength(1);
+    expect(post.in_progress).toBe(false);
+  });
+
+  it("only marks a current timestamped worker and a linked receiver input as processing", () => {
+    const runningSteps = steps.map((s) => ({
+      ...s,
+      status: s.id === "write" ? "running" : "pending",
+    }));
+    const flow = {
+      collaboration_tasks: [
+        {
+          id: "old-unfinished",
+          role: "screenwriter",
+          stage_id: "write",
+          status: "running",
+          started_at: 5,
+        },
+        {
+          id: "writer-done",
+          role: "screenwriter",
+          stage_id: "write",
+          status: "succeeded",
+          finished_at: 10,
+          output: "大纲",
+        },
+        {
+          id: "review-live",
+          role: "independent_critic",
+          stage_id: "write",
+          status: "running",
+          started_at: 11,
+          received: [
+            {
+              source_task_id: "writer-done",
+              source_role: "screenwriter",
+              input_field: "episodes",
+              label: "大纲",
+              value: "大纲",
+            },
+          ],
+        },
+      ],
+    };
+    const result = collaborationModel(graph, flow, runningSteps);
+    expect(result.members.find((m) => m.id === "screenwriter")?.status).toBe(
+      "pending",
+    );
+    expect(
+      result.members.find((m) => m.id === "independent_critic")?.status,
+    ).toBe("running");
+    expect(
+      result.handoffs.find((h) => h.target === "independent_critic")
+        ?.in_progress,
+    ).toBe(true);
+    expect(
+      result.handoffs.find((h) => h.target === "editor")?.in_progress,
+    ).toBe(false);
+    const paused = collaborationModel(
+      graph,
+      flow,
+      runningSteps.map((s) => ({ ...s, status: "paused" })),
+    );
+    expect(paused.handoffs.some((h) => h.in_progress)).toBe(false);
+  });
+});
+
+it.each([
+  { status: "queued", started: null },
+  { status: "running", started: 30 },
+])(
+  "does not reuse a dangling receipt from before the current job: %s",
+  (current_job) => {
+    const result = collaborationModel(
+      graph,
+      {
+        current_job,
+        collaboration_tasks: [
+          {
+            id: "old-call",
+            role: "screenwriter",
+            stage_id: "write",
+            status: "running",
+            started_at: 20,
+          },
+        ],
+      },
+      steps.map((s) => ({
+        ...s,
+        status: s.id === "write" ? "running" : "pending",
+      })),
+    );
+    expect(result.members.find((m) => m.id === "screenwriter")?.status).toBe(
+      "pending",
+    );
+    expect(result.handoffs.some((h) => h.in_progress)).toBe(false);
+  },
+);
+
+it("keeps concurrent current-job workers active when another task finishes", () => {
+  const result = collaborationModel(
+    graph,
+    {
+      current_job: { status: "running", started: 10 },
+      collaboration_tasks: [
+        {
+          id: "writer-live",
+          role: "screenwriter",
+          stage_id: "write",
+          status: "running",
+          started_at: 11,
+        },
+        {
+          id: "critic-live",
+          role: "independent_critic",
+          stage_id: "write",
+          status: "running",
+          started_at: 12,
+        },
+        {
+          id: "other-finished",
+          role: "editor",
+          stage_id: "edit",
+          status: "succeeded",
+          finished_at: 15,
+        },
+      ],
+    },
+    steps.map((s) => ({
+      ...s,
+      status: s.id === "write" ? "running" : "pending",
+    })),
+  );
+  expect(
+    result.members.filter((m) => m.status === "running").map((m) => m.id),
+  ).toEqual(["screenwriter", "independent_critic"]);
+});

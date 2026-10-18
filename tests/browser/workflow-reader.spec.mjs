@@ -407,3 +407,27 @@ test("department employee opens the recorded original request in its own workflo
     ),
   ).toBe(true);
 });
+
+test("department delivery opens a saved sender result inline without claiming a receiver call", async ({
+  page,
+}) => {
+  await page.goto(`/#project=${id}&tab=workflow`);
+  await page.getByRole("button", { name: "部门协作", exact: true }).click();
+  const team = page.getByRole("region", { name: "部门协作工作流" });
+  const diagram = team.getByRole("navigation", { name: "项目部门" });
+  const edge = diagram
+    .locator('[data-flow-edge][data-source="story"][data-target="review"]')
+    .first();
+  await edge.focus();
+  await page.keyboard.press("Enter");
+  const panel = team.getByRole("complementary", { name: "交付内容详情" });
+  await expect(panel).toContainText("尚未关联到接收方的实际输入");
+  const call = panel.locator('[data-execution="writer-current"]');
+  const original = call
+    .locator(".material-card")
+    .filter({ has: page.getByText("解析结果", { exact: true }) });
+  await original.getByRole("button", { name: "阅读文件", exact: true }).click();
+  await expect(original).toContainText("灯下的约定");
+  await expect(diagram).toBeVisible();
+  expect(page.url()).toContain(`project=${id}&tab=workflow`);
+});

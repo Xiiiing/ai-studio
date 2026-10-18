@@ -401,18 +401,6 @@ export function Workflow({
               });
             }
           }}
-          onInspectStep={(id) => {
-            setTeamSelection((value) => ({ ...value, open: false }));
-            select(id);
-            setInspectorOpen(true);
-            requestAnimationFrame(() => {
-              inspectorRef.current?.focus({ preventScroll: true });
-              inspectorRef.current?.scrollIntoView({
-                block: "start",
-                behavior: "instant",
-              });
-            });
-          }}
         />
       )}
       <div className="workflow-layout" hidden={teamSelection.open}>

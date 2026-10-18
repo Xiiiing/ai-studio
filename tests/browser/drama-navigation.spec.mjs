@@ -44,7 +44,17 @@ function blockedDrama() {
           title: "全剧规划审核",
           role: "independent_critic",
           status: "blocked",
-          input: "三集分集大纲与全剧角色状态。",
+          input: "已生成三集大纲，并交由独立审稿检查。",
+          received: [
+            {
+              source_task_id: "outline-1",
+              source_role: "screenwriter",
+              label: "分集大纲",
+              input_field: "episodes",
+              value: "已生成三集大纲，并交由独立审稿检查。",
+              basis: "recorded_input_content_match",
+            },
+          ],
           output: "未通过，等待修复跨集连续性。",
           issues: ["第2集开场与第1集结尾的角色状态冲突。"],
         },
@@ -664,7 +674,7 @@ for (const width of [1440, 390]) {
     await page.getByRole("button", { name: "部门协作", exact: true }).click();
     const team = page.getByRole("region", { name: "部门协作工作流" });
     await expect(
-      team.getByRole("heading", { name: "项目由各部门协作交付" }),
+      team.getByRole("heading", { name: "团队与数据交接" }),
     ).toBeVisible();
     await page.locator("#workspace h1").click();
     await page.evaluate(() => window.scrollTo(0, 0));
@@ -705,14 +715,19 @@ for (const width of [1440, 390]) {
     await member
       .getByRole("button", { name: "打开此步骤的工作流", exact: true })
       .click();
+    const inlineStep = team.getByRole("complementary", {
+      name: "步骤工作详情",
+    });
     await expect(
-      page
-        .getByRole("complementary", { name: "节点详情" })
-        .getByRole("heading", { name: "全剧设定与分集大纲", exact: true }),
+      inlineStep.getByRole("heading", {
+        name: "全剧设定与分集大纲",
+        exact: true,
+      }),
     ).toBeVisible();
-    await page
-      .getByRole("button", { name: "展开团队分工", exact: true })
+    await inlineStep
+      .getByRole("button", { name: "返回岗位详情", exact: true })
       .click();
+    await member.getByRole("button", { name: "关闭详情", exact: true }).click();
     await expect(roster).toBeVisible();
     await team.getByRole("button", { name: "全部部门", exact: true }).click();
     await team
@@ -726,7 +741,10 @@ for (const width of [1440, 390]) {
     await member.locator(".collaboration-work-record > summary").click();
     await expect(member).toContainText(drama.workflow.tasks[1].output);
     await expect(
-      member.getByRole("region", { name: "岗位实际工作记录" }),
+      member
+        .getByRole("region", { name: "岗位实际工作记录" })
+        .locator("dd")
+        .last(),
     ).not.toContainText(drama.workflow.tasks[0].output);
     await member
       .getByRole("button", { name: "返回部门分工", exact: true })
@@ -736,6 +754,132 @@ for (const width of [1440, 390]) {
     ).toBeFocused();
     await roster.locator('[data-map-node="story_critic"]').click();
     await expect(member).toContainText("此岗位暂无已保存的执行记录");
+    await noHorizontalOverflow(page);
+    expect(errors).toEqual([]);
+    expect(writes).toEqual([]);
+  });
+}
+
+for (const width of [1440, 390]) {
+  test(`department and employee edges open actual deliveries without replacing the canvas at ${width}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 1000 });
+    await page.emulateMedia({ colorScheme: width === 390 ? "dark" : "light" });
+    const drama = blockedDrama();
+    await installDrama(page, drama);
+    drama.workflow.tasks[0].finished_at = 1792281600;
+    drama.workflow.tasks[1].status = "running";
+    drama.workflow.tasks[1].started_at = 1792281660;
+    drama.workflow.graph.nodes.find((n) => n.id === "review").status =
+      "running";
+    const errors = [],
+      writes = [];
+    page.on("pageerror", (e) => errors.push(e.message));
+    page.on("request", (r) => {
+      if (r.url().includes("/api/") && r.method() !== "GET")
+        writes.push(r.url());
+    });
+    await page.goto("/#project=" + dramaId + "&tab=workflow");
+    await page.getByRole("button", { name: "部门协作", exact: true }).click();
+    const team = page.getByRole("region", { name: "部门协作工作流" });
+    const departments = team.getByRole("navigation", { name: "项目部门" });
+    await expect(team.getByRole("status")).toContainText("正在工作：独立审稿");
+    const clippedText = await departments
+      .locator("[data-map-node]")
+      .evaluateAll((nodes) =>
+        nodes.flatMap((node) => {
+          const box = node.getBoundingClientRect();
+          return [
+            ...node.querySelectorAll(".workflow-stage-copy > strong, .badge"),
+          ].flatMap((label) => {
+            const range = document.createRange();
+            range.selectNodeContents(label);
+            return [...range.getClientRects()].some(
+              (r) =>
+                r.left < box.left ||
+                r.right > box.right ||
+                r.top < box.top ||
+                r.bottom > box.bottom,
+            )
+              ? [label.textContent]
+              : [];
+          });
+        }),
+      );
+    expect(clippedText).toEqual([]);
+    const url = page.url();
+    const edge = departments.locator(
+      '[data-source="story"][data-target="review"][data-flow-edge]',
+    );
+    await departments
+      .locator('[data-label-edge="story:review:forward"]')
+      .click();
+    const delivery = team.getByRole("complementary", { name: "交付内容详情" });
+    await expect(
+      delivery.getByRole("heading", { name: /编剧.*独立审稿/ }),
+    ).toBeVisible();
+    const received = delivery.getByRole("region", { name: "已核对接收的交付" });
+    await expect(
+      received
+        .getByText(drama.workflow.tasks[0].output, { exact: true })
+        .first(),
+    ).toBeVisible();
+    await expect(departments).toBeVisible();
+    expect(page.url()).toBe(url);
+    await noHorizontalOverflow(page);
+    await team.evaluate((element) =>
+      element.scrollIntoView({ block: "start" }),
+    );
+    if (width === 1440)
+      await team.screenshot({
+        path: `runtime/browser-report/handoff-delivery-${width}.png`,
+      });
+    else
+      await page.screenshot({
+        path: `runtime/browser-report/handoff-delivery-${width}.png`,
+      });
+    await delivery
+      .getByRole("button", { name: "关闭详情", exact: true })
+      .click();
+    await expect(edge).toBeFocused();
+    await departments.locator('[data-map-node="story"]').click();
+    const roster = team.getByRole("navigation", { name: "部门岗位" });
+    const inner = roster.locator("[data-flow-edge]");
+    await inner.focus();
+    await page.keyboard.press("Enter");
+    await expect(delivery).toContainText("尚未关联到接收方的实际输入");
+    await expect(roster).toBeVisible();
+    await expect(departments).toBeVisible();
+    expect(page.url()).toBe(url);
+    await page.reload();
+    await expect(delivery).toBeVisible();
+    await expect(roster).toBeVisible();
+    await delivery
+      .getByRole("button", { name: "关闭详情", exact: true })
+      .click();
+    for (const lineId of [
+      "direction:operations:forward",
+      "operations:direction:forward",
+    ]) {
+      await departments.locator(`[data-label-edge="${lineId}"]`).click();
+      await expect(delivery).toBeVisible();
+      await delivery
+        .getByRole("button", { name: "关闭详情", exact: true })
+        .click();
+    }
+    await roster.locator('[data-map-node="screenwriter"]').click();
+    await expect(
+      team.getByRole("complementary", { name: "岗位工作详情" }),
+    ).toBeVisible();
+    await expect(roster).toBeVisible();
+    await expect(departments).toBeVisible();
+    await page.locator("#workspace h1").click();
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.screenshot({
+      path: `runtime/browser-report/handoff-workspace-${width}.png`,
+      fullPage: false,
+    });
     await noHorizontalOverflow(page);
     expect(errors).toEqual([]);
     expect(writes).toEqual([]);

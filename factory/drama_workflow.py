@@ -13,7 +13,7 @@ import re
 
 from .config import ROLE_LABELS
 from .creative_evidence_io import digest, read_json
-from .team_flow import _open_directory
+from .team_flow import _open_directory, _artifact_url
 
 MAX_FILES = 512
 MAX_TASKS = 160
@@ -116,7 +116,7 @@ def _evidence(project):
     if not re.fullmatch(r'[a-f0-9]{12}', ident) or project.get('slug') != 'factory-' + ident:
         return [], evidence
     root = core.ROOT / 'production' / project['slug']
-    tasks, hashes = [], {}
+    tasks, hashes, outputs, actual_inputs = [], {}, [], []
     for path in _files(root, ('planning', 'cache'), False, evidence):
         match = re.fullmatch(r'(.+)-([a-f0-9]{24})\.json', path.name)
         kind = _cache_kind(match[1]) if match else None
@@ -141,11 +141,13 @@ def _evidence(project):
             stage=match[1], generated_at=saved.get('generated_at'), evidence='validated_cache',
             execution_status='succeeded')
         tasks.append(task)
+        outputs.append((task, value))
         hashes.setdefault((role, digest(value)), []).append(task)
     for path in sorted(_files(root, ('planning', 'llm', 'calls'), True, evidence), reverse=True):
         saved = _read(root, path / 'receipt.json', evidence)
         if not saved or not isinstance(saved.get('role'), str) or saved['role'] not in ROLE_LABELS: continue
         output_hash = saved.get('output_sha256')
+        parsed = _read(root, path / 'parsed.json', evidence) if saved.get('status') == 'succeeded' else None
         matches = [t for t in hashes.get((saved['role'], output_hash), []) if not t.get('call_id')] if isinstance(output_hash, str) else []
         task = matches[0] if len(matches) == 1 else None
         if len(matches) > 1 and isinstance(saved.get('finished_at'), (int, float)):
@@ -161,15 +163,21 @@ def _evidence(project):
         # which historical model call produced a cache; retain separate evidence.
 
         if task is None:
-            value = _read(root, path / 'parsed.json', evidence) if saved.get('status') == 'succeeded' else None
+            value = parsed
             task = _row('call:' + path.name, ROLE_LABELS[saved['role']] + '调用记录', saved['role'],
                 {'succeeded': 'succeeded', 'failed': 'blocked', 'starting': 'running'}.get(saved.get('status'), 'pending'),
                 {'basis': '当次角色任务资料', 'scope': '输入原文未在此摘要展示'}, _summary(value) if value else '尚无已验证输出',
                 evidence='model_receipt')
             tasks.append(task)
+            if isinstance(value, dict) and (not output_hash or output_hash == digest(value)):
+                outputs.append((task, value))
         task.update(call_id=path.name, model=str(saved.get('response_model') or saved.get('configured_model') or saved.get('model') or '')[:200],
             started_at=saved.get('started_at'), finished_at=saved.get('finished_at'),
             execution_status=saved.get('status'))
+        if isinstance(parsed, dict) and (not output_hash or output_hash == digest(parsed)):
+            original = _artifact_url(root, 'production/' + root.name + '/' + (path / 'parsed.json').as_posix())
+            if original:
+                task['artifacts'] = [{'label': '完整结果原文', 'artifact_url': original}]
         request = _read(root, path / 'request-01.json', evidence)
         # In user-prefix mode this field includes system rules. Only a complete
         # JSON user message may be treated as product input; never split prompts.
@@ -183,8 +191,11 @@ def _evidence(project):
                     continue
                 if isinstance(payload, dict) and (summary := _summary(payload)):
                     task['input'] = {'summary': summary, 'scope': '实际调用输入的内容摘要；省略原剧本与模型提示词'}
+                    actual_inputs.append((task, payload))
                     break
         if saved.get('status') == 'failed': task['issues'] = ['模型调用失败，详细诊断见运行记录']
+    from .handoff_evidence import attach_received_content
+    attach_received_content(outputs, actual_inputs, _summary)
     tasks.sort(key=lambda item: str(item.get('generated_at') or item.get('finished_at') or item.get('started_at') or ''), reverse=True)
     if len(tasks) > MAX_TASKS: evidence['truncated'] = True
     return tasks[:MAX_TASKS], evidence
@@ -304,7 +315,7 @@ def _projection(project, stages, tasks, active_job):
         {**identity, 'steps': steps, 'nodes': [], 'edges': role_handoffs})
 
 
-def build(project, *, episodes=(), batches=(), units=(), active_job=False):
+def build(project, *, episodes=(), batches=(), units=(), active_job=False, current_job=None):
     """No DB writes, mkdir, provider polls or config loads are permitted here."""
     tasks, evidence = _evidence(project)
     for task in tasks:
@@ -367,6 +378,7 @@ def build(project, *, episodes=(), batches=(), units=(), active_job=False):
                 issues=_summary(entry.get('issues', [])), returned_to=entry.get('returned_to', []), project_id=entry['unit_id']))
         tasks.extend(_child_task(u, unit=True) for u in units)
     graph, flow = _projection(project, stages, tasks, active_job)
+    flow['current_job'] = current_job or {'status': 'unrecorded' if active_job else 'idle', 'started': None}
     flow['evidence'] = evidence
     return {'kind': 'drama_lifecycle' if project.get('record_kind') == 'drama' else 'episode_lifecycle',
         'graph': graph, 'flow': flow,

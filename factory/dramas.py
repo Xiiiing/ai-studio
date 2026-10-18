@@ -183,8 +183,9 @@ def snapshot(pid, *, db=None, details=True):
         result['source_text'] = p['source_text']
         result['review_history'] = [{k: copy.deepcopy(entry.get(k)) for k in ('cycle','attempt','at','review','returned_to','phase')}
             for entry in p.get('plan_history', [])]
+        job = db.execute("SELECT status,started FROM jobs WHERE project_id=? AND kind='drama_plan' AND status IN ('queued','running') ORDER BY started DESC LIMIT 1", (pid,)).fetchone()
         result['workflow'] = build(p, episodes=episodes, batches=result['batches'],
-            active_job=db.execute("SELECT 1 FROM jobs WHERE project_id=? AND kind='drama_plan' AND status IN ('queued','running') LIMIT 1", (pid,)).fetchone() is not None)
+            active_job=job is not None, current_job=dict(job) if job else None)
     return result
 
 
@@ -445,7 +446,7 @@ def episode_snapshot(pid, eid):
             value.pop('operation_requests',None)
             value.pop('plan',None)
         from .drama_workflow import build
+        job = db.execute("SELECT status,started FROM jobs WHERE project_id=? AND kind IN ('workflow','drama_episode') AND status IN ('queued','running') ORDER BY started DESC LIMIT 1", (eid,)).fetchone() if e['duration_seconds'] > 90 else None
         return {**e,'units':units,'drama_revision':p['revision'],
-            'workflow':build(e, units=units, active_job=db.execute(
-                "SELECT 1 FROM jobs WHERE project_id=? AND kind IN ('workflow','drama_episode') AND status IN ('queued','running') LIMIT 1",
-                (eid,)).fetchone() is not None) if e['duration_seconds'] > 90 else None}
+            'workflow':build(e, units=units, active_job=job is not None,
+                current_job=dict(job) if job else None) if e['duration_seconds'] > 90 else None}

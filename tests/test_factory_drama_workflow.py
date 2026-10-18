@@ -107,9 +107,13 @@ def test_receipt_uses_recorded_model_and_deduplicates_validated_output(isolated)
     assert len(tasks) == 1
     assert tasks[0]['model'] == 'actual-model'
     assert tasks[0]['output'] == value
+    assert tasks[0]['artifacts'][0]['label'] == '完整结果原文'
+    assert tasks[0]['artifacts'][0]['artifact_url'].endswith('/' + call.name + '/parsed.json')
     assert 'private-' not in json.dumps(tasks)
     assert tasks[0]['input']['summary'] == {'brief': '实际创作方向'}
     assert 'never-return' not in json.dumps(tasks)
+    core.write_json(call / 'parsed.json', {'summary': '已经与回执签名不符的文件'})
+    assert 'artifacts' not in dramas.snapshot(p['id'])['workflow']['tasks'][0]
 
 
 def test_corrupt_or_symlink_evidence_is_not_read(isolated, tmp_path):
@@ -320,3 +324,47 @@ def test_collaboration_department_catalog_matches_production_and_does_not_invent
     # The presentation must not expose mutable role lists from the catalog.
     catalog['story']['roles'].clear()
     assert collaboration_departments()[1]['roles'] == DEPARTMENTS[1]['roles']
+
+
+def test_handoff_reads_actual_receiver_input_and_keeps_product_content_only(isolated):
+    p = dramas.create(input_payload())
+    cache = isolated / 'production' / p['slug'] / 'planning/cache'
+    cache.mkdir(parents=True)
+    world = {'world': '车站与旧城的统一世界设定', 'storyline': '成年旧友寻找旧信的真相'}
+    core.write_json(cache / ('drama-world-1-' + 'd'*24 + '.json'), {
+        'signature': 'd'*64, 'generated_at': '2026-10-18T00:00:00Z', 'value': world})
+    call = cache.parent / 'llm/calls/20261018T000100-screenwriter-handoff'
+    call.mkdir(parents=True)
+    core.write_json(call / 'receipt.json', {'role': 'screenwriter', 'status': 'starting', 'started_at': 1792281660})
+    core.write_json(call / 'request-01.json', {'messages': [
+        {'role': 'system', 'content': 'private-prompt-never-return'},
+        {'role': 'user', 'content': json.dumps({'world': world, 'source_excerpt': 'private-source-never-return'})}]})
+    workflow = dramas.snapshot(p['id'])['workflow']
+    receiver = next(t for t in workflow['tasks'] if t['role'] == 'screenwriter')
+    linked = receiver['received'][0]
+    assert linked['source_role'] == 'story_editor'
+    assert linked['source_task_id'].startswith('cache:drama-world-1-')
+    assert linked['basis'] == 'recorded_input_content_match'
+    assert linked['value'] == world
+    assert 'private-' not in json.dumps(workflow)
+    # A changed receiver input cannot inherit the earlier output's delivery.
+    core.write_json(call / 'request-01.json', {'messages': [
+        {'role': 'user', 'content': json.dumps({'world': {**world, 'world': '另一个世界版本'}})}]})
+    assert 'received' not in next(t for t in dramas.snapshot(p['id'])['workflow']['tasks'] if t['role'] == 'screenwriter')
+
+
+def test_content_handoff_rejects_ambiguous_or_future_outputs_and_short_shared_values():
+    from factory.handoff_evidence import attach_received_content
+    world = {'world': '车站与旧城', 'storyline': '成年旧友沿旧信寻找真相'}
+    first = {'id': 'first', 'role': 'story_editor', 'finished_at': 10}
+    later = {'id': 'later', 'role': 'story_editor', 'finished_at': 30}
+    receiver = {'id': 'receiver', 'role': 'screenwriter', 'started_at': 20}
+    attach_received_content([(first, world), (later, world)], [(receiver, {'world': world})], drama_workflow._summary)
+    assert receiver['received'][0]['source_task_id'] == 'first'
+    receiver.pop('received')
+    first.pop('finished_at')
+    later.pop('finished_at')
+    attach_received_content([(first, world), (later, world)], [(receiver, {'world': world})], drama_workflow._summary)
+    assert 'received' not in receiver
+    attach_received_content([(first, {'passed': True, 'issues': []})], [(receiver, {'review_feedback': []})], drama_workflow._summary)
+    assert 'received' not in receiver

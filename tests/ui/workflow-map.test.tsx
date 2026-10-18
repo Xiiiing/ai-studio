@@ -128,3 +128,33 @@ describe("fixed stage flow", () => {
     );
   });
 });
+
+it("separates two normal directions so both delivery lines remain selectable", () => {
+  const flow = stageFlow(
+    {
+      flow_kind: "collaboration",
+      edges: [
+        { source: "a", target: "b", label: "规划确认" },
+        { source: "b", target: "a", label: "成片交付" },
+      ],
+    },
+    [
+      { id: "one", label: "出品", node_ids: ["a"] },
+      { id: "two", label: "编排", node_ids: ["b"] },
+    ],
+    [{ id: "a" }, { id: "b" }],
+  );
+  expect(flow.edges.every((e) => e.separateReverse && !e.repair)).toBe(true);
+  const one = { x: 40, y: 40, width: 200, height: 120 },
+    two = { x: 312, y: 40, width: 200, height: 120 };
+  const first = stageEdgePath(one, two, flow.edges[0], {
+    width: 552,
+    height: 240,
+  });
+  const second = stageEdgePath(two, one, flow.edges[1], {
+    width: 552,
+    height: 240,
+  });
+  expect(first).toBe("M 240 80 L 312 80");
+  expect(second).toBe("M 312 120 L 240 120");
+});
