@@ -209,7 +209,7 @@ for (const width of [1440, 390]) {
       page.getByRole("status").filter({ hasText: "规划任务正在执行" }),
     ).toBeVisible();
     await expect(
-      page.getByRole("button", { name: "确认全剧规划", exact: true }),
+      page.getByRole("button", { name: "提交修改并重新审核", exact: true }),
     ).toBeDisabled();
     await expect(
       page.getByRole("button", { name: "继续规划", exact: true }),

@@ -27,7 +27,7 @@ _FIELDS = {'summary', 'world', 'storyline', 'visual_rules', 'relationships', 'ch
     'location_id', 'prop_ids', 'passed', 'issues', 'status', 'reason', 'unit_ids', 'unit_order',
     'brief', 'genre', 'visual_style', 'episode_count', 'episode_seconds', 'review_feedback',
     'previous', 'outline', 'feedback', 'producer_feedback', 'unit_count', 'unit_index',
-    'scope', 'boundaries', 'from_unit', 'to_unit'}
+    'scope', 'boundaries', 'from_unit', 'to_unit', 'previous_world', 'previous_outline'}
 
 
 def _summary(value, depth=0, budget=None):
@@ -126,15 +126,15 @@ def _evidence(project):
         if not isinstance(saved.get('signature'), str) or saved['signature'][:24] != match[2]: continue
         value = saved['value']
         title, role, inputs = kind
-        outline_match = re.fullmatch(r'drama-outline-(\d+)-(\d+)', match[1])
+        outline_match = re.fullmatch(r'drama-outline-(?:(\d+)-)?(\d+)-(\d+)', match[1])
         if outline_match:
-            title += f' · 第{outline_match[2]}集（第{outline_match[1]}轮）'
-        elif (review_match := re.fullmatch(r'drama-plan-review-(\d+)-(\d+)', match[1])):
-            first = int(review_match[2]) + 1
+            title += f' · 第{outline_match[3]}集（第{outline_match[2]}轮）'
+        elif (review_match := re.fullmatch(r'drama-plan-review-(?:(\d+)-)?(\d+)-(\d+)', match[1])):
+            first = int(review_match[3]) + 1
             last = min(first + 2, project.get('episode_count', first + 2))
-            title += f' · 第{first}–{last}集（第{review_match[1]}轮）'
-        elif (world_match := re.fullmatch(r'drama-world-(\d+)', match[1])):
-            title += f' · 第{world_match[1]}轮'
+            title += f' · 第{first}–{last}集（第{review_match[2]}轮）'
+        elif (world_match := re.fullmatch(r'drama-world-(?:(\d+)-)?(\d+)', match[1])):
+            title += f' · 第{world_match[2]}轮'
         status = 'blocked' if value.get('passed') is False or value.get('issues') else 'succeeded'
         task = _row('cache:' + path.stem, title, role, status,
             {'basis': inputs, 'scope': '任务依据说明；旧缓存未保存输入正文'}, _summary(value),
@@ -213,12 +213,13 @@ def build(project, *, episodes=(), batches=(), units=(), active_job=False):
         review = project.get('plan_review') or {}
         confirmed = bool(project.get('plan_version'))
         has_plan = bool(plan)
+        repairing = active_job and project.get('plan_phase') in {'writing','returned'}
         stages = [
-            _row('planning', '全剧设定与分集大纲', 'story_editor', 'succeeded' if has_plan or confirmed else current,
+            _row('planning', '全剧设定与分集大纲', 'story_editor', 'running' if repairing else 'succeeded' if has_plan or confirmed else current,
                 {'brief': project.get('brief', '')[:1200], 'episode_count': project.get('episode_count'),
                  'duration_seconds': project.get('duration_seconds')},
                 {'storyline': plan.get('storyline'), 'characters': len(plan.get('characters', [])), 'outlines': len(plan.get('episodes', []))}),
-            _row('review', '全剧规划独立审核', 'story_critic', 'succeeded' if review.get('passed') else 'blocked' if review else current if has_plan else 'pending',
+            _row('review', '全剧规划独立审核', 'story_critic', 'succeeded' if review.get('passed') else 'returned' if repairing and review else 'running' if active_job and project.get('plan_phase') == 'reviewing' else 'blocked' if review else current if has_plan else 'pending',
                 '全剧主线、人物设定与相邻分集大纲', _summary(review) if review else '尚无已保存的独立审核结果', issues=_summary(review.get('issues', []))),
             _row('confirmation', '出品人确认全剧规划', 'producer', 'succeeded' if confirmed else 'waiting' if review.get('passed') else 'pending',
                 '经独立审稿的全剧规划', {'plan_version': project.get('plan_version', 0)}),
@@ -230,6 +231,12 @@ def build(project, *, episodes=(), batches=(), units=(), active_job=False):
                 else 'waiting' if any(e.get('status') == 'awaiting_final' for e in episodes) else 'pending',
                 '每集成片、字幕与制作清单', {'awaiting': sum(e.get('status') == 'awaiting_final' for e in episodes),
                 'approved': sum(e.get('status') == 'approved' for e in episodes)})]
+        for entry in project.get('plan_history', []):
+            tasks.append(_row(f"plan-review:{entry.get('cycle',0)}:{entry.get('attempt',0)}", '规划审核与退回记录',
+                'story_critic', 'succeeded' if (entry.get('review') or {}).get('passed') else 'returned',
+                {'规划次数':entry.get('cycle'), '审核轮次':entry.get('attempt')}, _summary(entry.get('review', {})),
+                issues=_summary((entry.get('review') or {}).get('issues', [])), generated_at=entry.get('at'),
+                returned_to=entry.get('returned_to', [])))
         tasks.extend(_child_task(e) for e in episodes)
         for batch in batches:
             tasks.append(_row('batch:' + batch['id'], '生成批次 · ' + '、'.join(map(str, batch.get('episode_numbers', []))),
@@ -247,6 +254,11 @@ def build(project, *, episodes=(), batches=(), units=(), active_job=False):
                 '逐单元成片、配音、字幕与连续性证据', {'delivery_ready': bool(project.get('delivery')), 'continuity': _summary(project.get('transition_review'))}),
             _row('acceptance', '出品人验收', 'producer', 'succeeded' if status == 'approved' else 'waiting' if status == 'awaiting_final' else 'pending',
                 '完整单集与制作清单', {'status': status})]
+        for entry in project.get('continuity_repair_history', []):
+            tasks.append(_row(f"continuity-return:{entry.get('cycle',1)}:{entry.get('from_unit')}:{entry.get('unit_id')}:{entry['round']}",
+                '连续性审核退回', 'visual_critic', 'blocked' if entry['status'] == 'exhausted' else 'returned',
+                {'审核轮次': entry['round'], '最多轮次': entry['max_rounds']}, _summary(entry.get('review', {})),
+                issues=_summary(entry.get('issues', [])), returned_to=entry.get('returned_to', []), project_id=entry['unit_id']))
         tasks.extend(_child_task(u, unit=True) for u in units)
     return {'kind': 'drama_lifecycle' if project.get('record_kind') == 'drama' else 'episode_lifecycle',
         'stages': stages, 'tasks': tasks, 'evidence': evidence, 'active_job': bool(active_job),

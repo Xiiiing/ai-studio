@@ -8,6 +8,7 @@ import {
   Modal,
   ErrorNotice,
   Loading,
+  Badge,
   Empty,
   Readable,
 } from "./ui";
@@ -28,6 +29,9 @@ const statusNames: Record<string, string> = {
   pending: "等待执行",
   completed: "已完成",
   running: "执行中",
+  returned: "已退回返修",
+  repairing: "自动返修中",
+  exhausted: "返修额度用尽",
   draft: "未生成",
   ready: "规划已确认",
   awaiting_plan: "待确认全剧规划",
@@ -205,9 +209,11 @@ function PlanEditor({
   document,
   busy,
   confirm,
+  reviewPassed,
 }: {
   document: RecordData;
   busy: boolean;
+  reviewPassed: boolean;
   confirm: (value: RecordData) => void;
 }) {
   const [draft, setDraft] = useState<RecordData>(() =>
@@ -353,9 +359,9 @@ function PlanEditor({
         </div>
       )}
       <button className="button primary" disabled={busy} type="submit">
-        确认全剧规划
+        {reviewPassed ? "确认全剧规划" : "提交修改并重新审核"}
       </button>
-      <small>修改规划后会重新独立审核，审核通过后再确认。</small>
+      <p>审核未通过会自动退回策划与编剧返修，通过后再由你确认。</p>
     </form>
   );
 }
@@ -371,6 +377,9 @@ const dramaTabs = [
 ];
 
 const flowLabels: Record<string, string> = {
+  previous_world: "返修前设定",
+  previous_outline: "返修前大纲",
+  review_feedback: "审核意见",
   basis: "工作依据",
   scope: "记录范围",
   outlines: "分集大纲数",
@@ -429,10 +438,7 @@ function ProductionFlow({
 }) {
   return (
     <Panel title="制作流程与团队">
-      <p className="muted">
-        按实际规划、审核和制作记录查看进度。打开具体任务可查看负责角色、工作输入与结果。
-      </p>
-      {workflow?.note && <p className="muted">{workflow.note}</p>}
+      <p className="muted">展开任务查看负责人、输入和结果。</p>
       {!workflow && <p>暂无流程记录，请刷新后重试。</p>}
       {workflow?.evidence?.truncated && (
         <p>仅显示部分执行记录，其他记录仍保留在项目中。</p>
@@ -444,7 +450,10 @@ function ProductionFlow({
         {rows(workflow?.stages).map((stage) => (
           <li key={stage.id}>
             <strong>{stage.title}</strong>
-            <span>{statusNames[stage.status] || stage.status}</span>
+            <Badge
+              status={stage.status}
+              label={statusNames[stage.status] || stage.status}
+            />
             {stage.role && <span>{roleName(stage.role)}</span>}
             {stage.output && <Readable value={flowValue(stage.output)} />}
           </li>
@@ -461,6 +470,9 @@ function ProductionFlow({
             {statusNames[task.status] || task.status}
           </summary>
           {task.model && <p>执行模型：{task.model}</p>}
+          {!!task.returned_to?.length && (
+            <p>退回：{task.returned_to.map(roleName).join("、")}</p>
+          )}
           {(task.finished_at || task.generated_at || task.started_at) && (
             <p>
               记录时间：
@@ -599,6 +611,75 @@ export function DramaDetail({
           </button>
         ))}
       </nav>
+      {["overview", "plan", "workflow"].includes(tab) &&
+        p.plan_phase &&
+        (!p.plan_version ||
+          ["writing", "reviewing", "returned", "exhausted"].includes(
+            p.plan_phase,
+          ) ||
+          p.status === "awaiting_plan") && (
+          <Panel title="审核与自动返修">
+            <Badge
+              status={
+                p.plan_phase === "exhausted"
+                  ? "blocked"
+                  : p.plan_phase === "approved"
+                    ? "passed"
+                    : p.plan_phase === "returned"
+                      ? "reviewing"
+                      : "running"
+              }
+              label={
+                p.plan_phase === "exhausted"
+                  ? "返修额度用尽"
+                  : p.plan_phase === "approved"
+                    ? "审核通过，待确认"
+                    : p.plan_phase === "reviewing"
+                      ? "独立审稿中"
+                      : p.plan_attempt > 1 || rows(p.review_history).length
+                        ? "策划与编剧正在返修"
+                        : "策划与编剧创作中"
+              }
+            />
+            <p>
+              第{p.plan_attempt || 1} / {p.plan_max_attempts || 3}轮审核
+              {p.plan_cycle > 1 ? ` · 第${p.plan_cycle}次规划` : ""}
+            </p>
+            <p>
+              {p.plan_phase === "exhausted"
+                ? "仍有阻断问题，所有草稿和审核意见已保留。可调整规划后提交，或继续规划授权下一轮返修。"
+                : p.plan_phase === "approved"
+                  ? "审核已通过，请检查规划并确认后开始选集制作。"
+                  : "审核不通过会带着问题退回策划和编剧，修复后自动再次审核。"}
+            </p>
+            {!!rows(p.review_history).length && (
+              <details>
+                <summary>查看审核与退回记录</summary>
+                {rows(p.review_history).map((entry, i) => (
+                  <article className="drama-card" key={i}>
+                    <strong>
+                      {entry.cycle ? `第${entry.cycle}次规划` : "历史规划"} ·{" "}
+                      {entry.attempt ? `第${entry.attempt}轮` : "已保存审核"} ·{" "}
+                      {entry.review?.passed
+                        ? "通过"
+                        : entry.phase === "exhausted"
+                          ? "返修额度用尽"
+                          : "已退回作者"}
+                    </strong>
+                    {(entry.returned_to || []).length > 0 && (
+                      <p>退回：{entry.returned_to.map(roleName).join("、")}</p>
+                    )}
+                    {(entry.review?.issues || []).map(
+                      (issue: string, n: number) => (
+                        <p key={n}>{issue}</p>
+                      ),
+                    )}
+                  </article>
+                ))}
+              </details>
+            )}
+          </Panel>
+        )}
       {tab === "overview" && (
         <>
           <Panel title="项目总览">
@@ -759,6 +840,7 @@ export function DramaDetail({
               key={JSON.stringify(p.draft_plan)}
               document={p.draft_plan}
               busy={busy || !!p.workflow?.active_job}
+              reviewPassed={!!p.plan_review?.passed}
               confirm={(value) => void operation("confirm", { plan: value })}
             />
           ) : (
@@ -770,7 +852,11 @@ export function DramaDetail({
             <p>
               {p.plan_review.passed
                 ? "全剧规划已通过独立审核"
-                : "规划需要修改后重新审核"}
+                : p.workflow?.active_job
+                  ? "审核意见已交回作者，返修后会自动复审"
+                  : p.plan_phase === "exhausted"
+                    ? "自动返修额度用尽，可修改方向后继续规划"
+                    : "点击继续规划，系统会带上审核意见自动返修"}
             </p>
           )}
           {!!p.affected_episodes?.length && (

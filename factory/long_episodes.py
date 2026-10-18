@@ -146,8 +146,82 @@ def revise_units(episode, config):
                 unit.update(revision_request=None,workflow_restart_from='story_resolution',
                     story_feedback=unit.get('story_feedback','')+'\n出品人追加修改：'+feedback)
             store._write(db,unit)
-        current.update(revision_action=None,production_revision=current['production_revision']+1)
+        current.update(revision_action=None,production_revision=current['production_revision']+1,
+            continuity_repair_cycle=current.get('continuity_repair_cycle',1)+1,continuity_repair=None)
         store._write(db,current)
+
+
+def return_continuity_issue(episode, failure):
+    """Route a failed boundary back to its owner, keeping completed work and caps."""
+    details = failure.details
+    if details.get('type') != 'episode_continuity': return False
+    uid = details.get('unit_id')
+    order = episode.get('edit_unit_order', episode['unit_ids'])
+    if uid not in order or order.index(uid) == 0: return False
+    previous_id = order[order.index(uid)-1]
+    review = details.get('review') or {}
+    if review.get('from_unit', previous_id) != previous_id or review.get('to_unit', uid) != uid: return False
+    with store.connection() as db:
+        db.execute('BEGIN IMMEDIATE')
+        current = store._read(db, episode['id'])
+        if current.get('pause_requested') or current['status'] == 'cancelled':
+            raise ProductionPaused('已在连续性返修边界暂停')
+        history = current.get('continuity_repair_history', [])
+        cycle = current.get('continuity_repair_cycle', 1)
+        prior = [entry for entry in history if entry['cycle'] == cycle
+            and entry['from_unit'] == previous_id and entry['unit_id'] == uid]
+        maximum = current.get('budget', {}).get('max_attempts', 3)
+        round_index = min(len(prior)+1, maximum)
+        state = {'unit_id': uid, 'from_unit': previous_id, 'round': round_index,
+            'max_rounds': maximum, 'status': 'repairing', 'issues': review.get('issues', []), 'cycle': cycle}
+        if round_index >= maximum:
+            state['status'] = 'exhausted'
+            if not prior or prior[-1].get('status') != 'exhausted':
+                history = [*history, {**state, 'at': store.now(), 'review': copy.deepcopy(review), 'returned_to': []}]
+            current.update(continuity_repair=state, transition_review=review,continuity_repair_history=history)
+            store._write(db, current)
+        else:
+            unit = store._read(db, uid)
+            if unit.get('episode_id') != episode['id']: raise ValueError('连续性返修单元不属于本集')
+            if unit.get('delivery'):
+                unit['delivery_history'] = [*unit.get('delivery_history', []), copy.deepcopy(unit['delivery'])]
+            issues = review.get('issues') or [review.get('summary') or '交界帧人物与承接状态存在矛盾']
+            notes = ('连续性审核退回，请根据前一单元已完成的结尾修复本单元开场，保留其他已通过内容。'
+                + '\n审核意见：' + '\n'.join(str(v) for v in issues))
+            shots = (unit.get('script') or {}).get('shots') or []
+            previous = store._read(db, previous_id)
+            notes += '\n前单元实际结尾：' + store.encoded({'ending':(previous.get('script') or {}).get('ending'),
+                'last_shot':((previous.get('script') or {}).get('shots') or [{}])[-1].get('continuity')})
+            feedback = {'notes': notes, 'shot_ids': [shots[0]['id']]} if shots else notes
+            unit['previous_unit_state'] = {'unit': previous.get('global_prefix'),
+                'ending': (previous.get('script') or {}).get('ending'),
+                'last_shot_continuity': ((previous.get('script') or {}).get('shots') or [{}])[-1].get('continuity')}
+            unit.update(status='queued', pause_requested=False, error=None, needs_decision=None,
+                revision_request={'choice': 'revise', 'feedback': feedback},
+                production_revision=unit['production_revision']+1, delivery=None,
+                script_generation=unit['script_generation']+1,
+                workflow_restart_from='revision', workflow_restart_revision=unit['revision']+1)
+            if not unit.get('script'):
+                unit.update(revision_request=None, workflow_restart_from='story_resolution',
+                    story_feedback=unit.get('story_feedback', '')+'\n'+notes)
+            unit['continuity_video_repair'] = {'shot_ids': [shots[0]['id']] if shots else [],
+                'production_revision': unit['production_revision'], 'source': 'episode_continuity_review',
+                'episode_id': current['id'], 'cycle': cycle, 'round': round_index}
+            store._write(db, unit)
+            history = [*history, {**state, 'at': store.now(), 'review': copy.deepcopy(review),
+                'returned_to': ['screenwriter', 'storyboard_director']}]
+            current.update(continuity_repair=state, continuity_repair_history=history,
+                transition_review=review, stage='continuity_repair', status='producing',
+                active_unit_id=uid, production_revision=current['production_revision']+1,
+                error=None, needs_decision=None)
+            store._write(db, current)
+            store._event(db, current['id'], '连续性审核已退回对应单元自动返修', 'review_return',
+                {'unit_id': uid, 'round': round_index, 'max_rounds': maximum})
+    if state['status'] == 'exhausted':
+        from .workflows import ReviewBlocked
+        raise ReviewBlocked(f'跨单元连续性已审核{maximum}轮，自动返修额度用尽，原素材与问题已保留',
+            {**details, 'automation': state})
+    return True
 
 
 def run(episode, config):
@@ -159,42 +233,52 @@ def run(episode, config):
     plan_units(episode,config)
     episode=store.get(episode['id'],False)
     if episode.get('revision_action'): revise_units(episode,config)
-    episode=store.get(episode['id'],False)
-    for i, uid in enumerate(episode['unit_ids']):
-        check_parent(episode['id'])
-        unit=store.get(uid,False)
-        if unit['status']=='unit_ready': continue
-        if unit['status'] in {'blocked','paused','failed'}:
-            store.update(uid,{'status':'queued','pause_requested':False,'error':None})
-        if i and not unit.get('production_profile'):
-            previous=store.get(episode['unit_ids'][i-1],False)
-            script=previous.get('script') or {}
-            store.update(uid,{'previous_unit_state':{'unit':previous['global_prefix'],'ending':script.get('ending'),
-                'last_shot_continuity':(script.get('shots') or [{}])[-1].get('continuity')}})
-        setup_episode(store.get(uid,False))
-        from .drama_assets import prepare
-        try:
-            prepare(uid,config,lambda:bool(store.get(episode['id'],False).get('pause_requested')))
-            advance(uid)
-        except Exception:
-            # Surface the actual failed unit on its parent without discarding state.
-            store.update(episode['id'],{'active_unit_id':uid,'stage':'scene_units'})
-            raise
-        finally:
+    while True:
+        episode=store.get(episode['id'],False)
+        for i, uid in enumerate(episode['unit_ids']):
+            check_parent(episode['id'])
+            unit=store.get(uid,False)
+            if unit['status']=='unit_ready': continue
+            if unit['status'] in {'blocked','paused','failed'}:
+                store.update(uid,{'status':'queued','pause_requested':False,'error':None})
+            if i and not unit.get('production_profile'):
+                previous=store.get(episode['unit_ids'][i-1],False)
+                script=previous.get('script') or {}
+                store.update(uid,{'previous_unit_state':{'unit':previous['global_prefix'],'ending':script.get('ending'),
+                    'last_shot_continuity':(script.get('shots') or [{}])[-1].get('continuity')}})
+            setup_episode(store.get(uid,False))
+            from .drama_assets import prepare
+            try:
+                prepare(uid,config,lambda:bool(store.get(episode['id'],False).get('pause_requested')))
+                advance(uid)
+            except Exception:
+                # Surface the actual failed unit on its parent without discarding state.
+                store.update(episode['id'],{'active_unit_id':uid,'stage':'scene_units'})
+                raise
+            finally:
+                units=[store.get(value,False) for value in episode['unit_ids']]
+                store.update(episode['id'],{'production':{'gpu_seconds':sum(u.get('production',{}).get('gpu_seconds',0) for u in units)}})
+            unit=store.get(uid,False)
+            if unit['status']!='unit_ready':
+                raise ReviewBlocked('制作单元尚未自动完成，已保留审核与交接记录',{'unit_id':uid,'status':unit['status']})
             units=[store.get(value,False) for value in episode['unit_ids']]
-            store.update(episode['id'],{'production':{'gpu_seconds':sum(u.get('production',{}).get('gpu_seconds',0) for u in units)}})
-        unit=store.get(uid,False)
-        if unit['status']!='unit_ready':
-            raise ReviewBlocked('制作单元尚未自动完成，已保留审核与交接记录',{'unit_id':uid,'status':unit['status']})
-        units=[store.get(value,False) for value in episode['unit_ids']]
-        store.update(episode['id'],{'active_unit_id':uid,'progress':10+math.floor(75*(i+1)/len(units)),
-            'production':{'gpu_seconds':sum(u.get('production',{}).get('gpu_seconds',0) for u in units)}})
-    from .episode_assembly import assemble
-    episode=store.get(episode['id'],False)
-    order=episode.get('edit_unit_order',episode['unit_ids'])
-    units=[store.get(uid,False) for uid in order]
-    from .drama_continuity import review
-    transition_review=review(episode,units,config,lambda:bool(store.get(episode['id'],False).get('pause_requested')))
+            store.update(episode['id'],{'active_unit_id':uid,'progress':10+math.floor(75*(i+1)/len(units)),
+                'production':{'gpu_seconds':sum(u.get('production',{}).get('gpu_seconds',0) for u in units)}})
+        from .episode_assembly import assemble
+        episode=store.get(episode['id'],False)
+        order=episode.get('edit_unit_order',episode['unit_ids'])
+        units=[store.get(uid,False) for uid in order]
+        from .drama_continuity import review
+        try:
+            transition_review=review(episode,units,config,lambda:bool(store.get(episode['id'],False).get('pause_requested')))
+        except ReviewBlocked as failure:
+            if not return_continuity_issue(episode, failure): raise
+            continue
+        repair = episode.get('continuity_repair')
+        if repair:
+            store.update(episode['id'], {'continuity_repair': {**repair, 'status': 'passed',
+                'round': repair['round']+1}})
+        break
     store.update(episode['id'],{'transition_review':transition_review})
     episode['transition_review']=transition_review
     store.update(episode['id'],{'stage':'assembly','status':'producing'})

@@ -167,3 +167,18 @@ def test_summary_size_is_bounded_across_nested_content():
         'characters': [{'name': '人'*30, 'identity_constraints': '设'*2000} for _ in range(16)]}
     summary = drama_workflow._summary(value)
     assert len(json.dumps(summary, ensure_ascii=False)) < 6000
+
+
+def test_active_return_and_public_history_do_not_publish_private_drafts(isolated):
+    p = dramas.create(input_payload())
+    store.update(p['id'], {'draft_plan':plan(), 'plan_phase':'writing', 'plan_attempt':2,
+        'plan_review':{'passed':False,'issues':['承接冲突']},
+        'plan_repair_basis':{'private_input':'never-expose-repair-basis'},
+        'plan_history':[{'cycle':1,'attempt':1,'draft_plan':{'archive':'never-expose-archived-draft'},
+            'review':{'passed':False,'issues':['承接冲突']},'returned_to':['screenwriter']}]})
+    result = dramas.snapshot(p['id'])
+    assert stages(result)['planning']['status'] == 'running'
+    assert stages(result)['review']['status'] == 'returned'
+    assert result['review_history'][0]['review']['issues'] == ['承接冲突']
+    assert 'plan_history' not in result and 'plan_repair_basis' not in result
+    assert 'never-expose' not in json.dumps(result)

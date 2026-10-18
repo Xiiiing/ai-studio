@@ -157,7 +157,7 @@ def snapshot(pid, *, db=None, details=True):
             episode.pop(field,None)
         if episode.get('delivery'):
             episode['delivery']={k:v for k,v in episode['delivery'].items() if k not in {'sources','artifacts','scenes'}}
-    result = {k: copy.deepcopy(v) for k, v in p.items() if k not in {'operation_requests', 'source_text', 'planning_cache'}}
+    result = {k: copy.deepcopy(v) for k, v in p.items() if k not in {'operation_requests', 'source_text', 'planning_cache', 'plan_repair_basis', 'plan_history'}}
     result['episodes'] = episodes
     result['batches'] = [{**b, 'members': [{'id': e['id'], 'number': e['episode_number'], 'status': e['status'],
         'progress': e['progress'], 'error': e.get('error')} for e in episodes if e['id'] in b['episode_ids']]}
@@ -181,6 +181,8 @@ def snapshot(pid, *, db=None, details=True):
     if details:
         from .drama_workflow import build
         result['source_text'] = p['source_text']
+        result['review_history'] = [{k: copy.deepcopy(entry.get(k)) for k in ('cycle','attempt','at','review','returned_to','phase')}
+            for entry in p.get('plan_history', [])]
         result['workflow'] = build(p, episodes=episodes, batches=result['batches'],
             active_job=db.execute("SELECT 1 FROM jobs WHERE project_id=? AND kind='drama_plan' AND status IN ('queued','running') LIMIT 1", (pid,)).fetchone() is not None)
     return result
@@ -217,6 +219,8 @@ def confirm(pid, payload):
         plan = validate_plan(payload.get('plan', p.get('draft_plan')), p)
         if not (p.get('plan_review') or {}).get('passed') or fingerprint(plan) != fingerprint(p.get('draft_plan')):
             # Edited plans go back through independent review before confirmation.
+            from .drama_planning import start_cycle
+            start_cycle(p, edited=True)
             p.update(draft_plan=plan, plan_review=None, status='queued', stage='plan_review')
             store._enqueue(db, pid, 'drama_plan')
         else:
@@ -348,6 +352,13 @@ def control(pid, payload):
             if p['episodes'] or payload.get('episode_id') or payload.get('batch_id') or action not in {'pause','cancel','resume','retry'}:
                 raise ValueError('未找到属于本剧的目标剧集')
             if p['status']=='cancelled': raise ValueError('规划已取消，请建立新项目')
+            if action in {'resume', 'retry'}:
+                if db.execute("SELECT 1 FROM jobs WHERE project_id=? AND status='running'", (pid,)).fetchone():
+                    raise ValueError('请等待当前任务到达安全边界')
+                if p.get('plan_phase') == 'exhausted' or (not p.get('plan_phase') and p['status'] in {'blocked', 'failed'}):
+                    from .drama_planning import start_cycle
+                    start_cycle(p)
+                p.update(error=None, needs_decision=None)
             p.update(pause_requested=action in {'pause','cancel'},status='cancelled' if action=='cancel' else 'paused' if action=='pause' else 'queued')
             db.execute("UPDATE jobs SET status='cancelled',finished=? WHERE project_id=? AND status='queued'",(time.time(),pid))
             p['operation_requests'][key]={'signature':signature}
@@ -369,6 +380,11 @@ def control(pid, payload):
                     if payload.get('episode_id'): raise ValueError('该集当前不支持继续或重试')
                     continue
                 if db.execute("SELECT 1 FROM jobs WHERE project_id=? AND status='running'", (e['id'],)).fetchone(): raise ValueError('请等待当前任务到达安全边界')
+                if e['duration_seconds'] > 90 and not e.get('unit_ids') and (e.get('needs_decision') or {}).get('type') == 'episode_scenes':
+                    e.update(scene_generation=e.get('scene_generation',1)+1,
+                        scene_feedback='\n'.join((e.get('needs_decision') or {}).get('issues') or ['根据已保存的场景审核意见定向返修']))
+                if (e.get('continuity_repair') or {}).get('status') == 'exhausted':
+                    e.update(continuity_repair_cycle=e.get('continuity_repair_cycle',1)+1,continuity_repair=None)
                 e.update(status='queued', pause_requested=False, error=None, needs_decision=None)
             else:
                 if payload.get('expected_episode_revision')!=e['revision']: raise ValueError('剧集已更新，请重新读取成片版本后验收或修改')
