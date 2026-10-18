@@ -1,3 +1,4 @@
+import { expandRole } from "./fixed-canvas.mjs";
 import { test, expect } from "@playwright/test";
 
 for (const width of [1440, 390])
@@ -20,18 +21,8 @@ for (const width of [1440, 390])
           writes.push(r.url());
       });
       await page.goto("/#project=012345abcdef&tab=workflow");
-      await page.getByRole("button", { name: "部门协作", exact: true }).click();
-      const collaboration = page.getByRole("region", {
-        name: "部门协作工作流",
-      });
-      await collaboration
-        .getByRole("navigation", { name: "项目部门" })
-        .locator('[data-map-node="story"]')
-        .click();
-      await collaboration
-        .getByRole("navigation", { name: "部门岗位" })
-        .locator('[data-map-node="screenwriter"]')
-        .click();
+      await (await expandRole(page, "screenwriter", "script")).click();
+      const collaboration = page.locator(".workflow-fixed-workspace");
       const call = collaboration.locator('[data-execution="writer-current"]');
       await call.getByText("本次收到的材料 · 1 项", { exact: true }).click();
       await expect(call.getByText("合成验收要求：结尾保留悬念")).toBeVisible();

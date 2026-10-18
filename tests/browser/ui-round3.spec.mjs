@@ -254,9 +254,9 @@ for (const theme of ["light", "dark"])
     await page.goto(`/#project=${projectId}&tab=overview`);
     await setTheme(page, theme);
     await openWorkflow(page);
-    await expect(page.locator('[data-flow-state="running"]')).not.toHaveCount(
-      0,
-    );
+    await expect(page.locator('[data-stage="script"]')).toContainText("执行中");
+    // A working stage is not proof that a downstream task received a handoff.
+    await expect(page.locator(".workflow-flow-stream")).toHaveCount(0);
     const dots = page.locator("[data-status-indicator]:visible");
     expect(await dots.count()).toBeGreaterThan(0);
     for (const dot of await dots.all()) {

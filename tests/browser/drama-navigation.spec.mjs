@@ -1,3 +1,9 @@
+import {
+  expandRole,
+  canvasState,
+  pointerEdge,
+  assertUnobstructedLines,
+} from "./fixed-canvas.mjs";
 import { test, expect } from "@playwright/test";
 import { lifecycleFixture } from "./lifecycle-fixture.mjs";
 
@@ -281,10 +287,6 @@ for (const width of [1440, 390]) {
     await expect(
       writer.getByText(drama.workflow.tasks[0].output, { exact: true }),
     ).toBeVisible();
-    if (width < 1200)
-      await page
-        .getByRole("button", { name: "返回流程图", exact: true })
-        .click();
     await page.locator('[data-stage="review"]').click();
     await page.getByRole("button", { name: "执行记录", exact: true }).click();
     await expect(writer).toHaveCount(0);
@@ -296,10 +298,6 @@ for (const width of [1440, 390]) {
       drama.plan_review.issues[0],
     );
     await expect(page.getByLabel("全剧主线", { exact: true })).toHaveCount(0);
-    if (width < 1200)
-      await page
-        .getByRole("button", { name: "返回流程图", exact: true })
-        .click();
     await noHorizontalOverflow(page);
     await page.screenshot({
       path: `runtime/browser-report/drama-workflow-${width}.png`,
@@ -425,16 +423,8 @@ for (const width of [1440, 390]) {
         .getByRole("button", { name: "制作流程与团队", exact: true }),
     ).toHaveAttribute("aria-pressed", "true");
     await noHorizontalOverflow(page);
-    await page.getByRole("button", { name: "部门协作", exact: true }).click();
-    const collaboration = page.getByRole("region", { name: "部门协作工作流" });
-    await collaboration
-      .getByRole("navigation", { name: "项目部门" })
-      .locator('[data-map-node="operations"]')
-      .click();
-    await collaboration
-      .getByRole("navigation", { name: "部门岗位" })
-      .locator('[data-map-node="orchestrator"]')
-      .click();
+    await (await expandRole(page, "orchestrator")).click();
+    const collaboration = page.locator(".workflow-fixed-workspace");
     await collaboration.locator(".collaboration-work-record > summary").click();
     await collaboration
       .getByRole("button", { name: "打开此任务的工作流", exact: true })
@@ -444,7 +434,7 @@ for (const width of [1440, 390]) {
       page.getByRole("heading", { name: "制作工作流", exact: true }),
     ).toBeVisible();
     await expect(
-      page.getByRole("button", { name: "部门协作", exact: true }),
+      page.getByRole("region", { name: "项目协作画布", exact: true }),
     ).toBeVisible();
     await noHorizontalOverflow(page);
     expect(errors).toEqual([]);
@@ -562,7 +552,7 @@ for (const width of [1440, 390, 320]) {
       await page.emulateMedia({ colorScheme: theme, reducedMotion: "reduce" });
       const nav = page.getByRole("navigation", { name: "整剧工作区" });
       await expect(nav.getByRole("button")).toHaveCount(4);
-      await expect(page.locator(".workflow-inspector")).toBeHidden();
+      await expect(page.locator(".workflow-inspector")).toBeVisible();
       await expect(
         page.getByRole("heading", { name: "审核与自动返修" }),
       ).toHaveCount(0);
@@ -635,10 +625,12 @@ for (const width of [1440, 390, 320]) {
       await expect(
         inspector.getByRole("region", { name: "输入材料" }),
       ).toBeVisible();
+      const beforeClose = await canvasState(page);
       await inspector
-        .getByRole("button", { name: "返回流程图", exact: true })
+        .getByRole("button", { name: "关闭详情", exact: true })
         .click();
-      await expect(inspector).toBeHidden();
+      await expect(inspector).toContainText("查看工作与交付");
+      expect(await canvasState(page)).toEqual(beforeClose);
       await nav.locator("summary").click();
       await expect(
         nav.getByRole("button", { name: "全剧规划", exact: true }),
@@ -653,7 +645,77 @@ for (const width of [1440, 390, 320]) {
 }
 
 for (const width of [1440, 390]) {
-  test(`project departments drill into employee work and exact results at ${width}`, async ({
+  test(`fixed canvas expands employees and reads exact results at ${width}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 1000 });
+    const drama = blockedDrama();
+    await installDrama(page, drama);
+    const errors = [],
+      writes = [];
+    page.on("pageerror", (e) => errors.push(e.message));
+    page.on("request", (r) => {
+      if (r.url().includes("/api/") && r.method() !== "GET")
+        writes.push(r.url());
+    });
+    await page.goto("/#project=" + dramaId + "&tab=workflow");
+    await expect(page.locator(".workflow-canvas-board")).toHaveCount(1);
+    await expect(
+      page.getByRole("button", { name: "部门协作", exact: true }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "完整流程", exact: true }),
+    ).toHaveCount(0);
+    const writer = await expandRole(page, "screenwriter", "planning");
+    const before = await canvasState(page);
+    await writer.click();
+    expect(await canvasState(page)).toEqual(before);
+    const member = page.getByRole("complementary", { name: "节点详情" });
+    await expect(
+      member.getByRole("heading", { name: "编剧", exact: true }),
+    ).toBeVisible();
+    await member
+      .locator(".collaboration-work-record > summary")
+      .first()
+      .click();
+    await expect(member).toContainText(drama.workflow.tasks[0].input);
+    await expect(member).toContainText(drama.workflow.tasks[0].output);
+    await page
+      .locator(".workflow-fixed-workspace")
+      .screenshot({ path: `runtime/browser-report/fixed-writer-${width}.png` });
+    await expect(
+      member.getByRole("region", { name: "岗位实际工作记录" }),
+    ).not.toContainText(drama.workflow.tasks[1].output);
+    await page.reload();
+    await expect(
+      member.getByRole("heading", { name: "编剧", exact: true }),
+    ).toBeVisible();
+    expect(await canvasState(page)).toEqual(before);
+    await member
+      .getByRole("button", { name: "查看步骤材料", exact: true })
+      .click();
+    await expect(
+      member.getByRole("heading", { name: "全剧设定与分集大纲", exact: true }),
+    ).toBeVisible();
+    expect(await canvasState(page)).toEqual(before);
+    const critic = await expandRole(page, "independent_critic", "review");
+    await critic.click();
+    await member
+      .locator(".collaboration-work-record > summary")
+      .first()
+      .click();
+    await expect(member).toContainText(drama.workflow.tasks[1].output);
+    const empty = await expandRole(page, "story_critic");
+    await empty.click();
+    await expect(member).toContainText("此岗位暂无已保存的执行记录");
+    await noHorizontalOverflow(page);
+    await page.locator(".workflow-fixed-workspace").screenshot({
+      path: `runtime/browser-report/fixed-employees-${width}.png`,
+    });
+    expect(errors).toEqual([]);
+    expect(writes).toEqual([]);
+  });
+  test(`fixed department and employee lines expose actual deliveries at ${width}`, async ({
     page,
   }) => {
     await page.setViewportSize({ width, height: 1000 });
@@ -661,111 +723,6 @@ for (const width of [1440, 390]) {
       colorScheme: width === 390 ? "dark" : "light",
       reducedMotion: "reduce",
     });
-    const drama = blockedDrama();
-    await installDrama(page, drama);
-    const errors = [],
-      writes = [];
-    page.on("pageerror", (e) => errors.push(e.message));
-    page.on("request", (r) => {
-      if (r.url().includes("/api/") && r.method() === "POST")
-        writes.push(r.url());
-    });
-    await page.goto("/#project=" + dramaId + "&tab=workflow");
-    await page.getByRole("button", { name: "部门协作", exact: true }).click();
-    const team = page.getByRole("region", { name: "部门协作工作流" });
-    await expect(
-      team.getByRole("heading", { name: "团队与数据交接" }),
-    ).toBeVisible();
-    await page.locator("#workspace h1").click();
-    await page.evaluate(() => window.scrollTo(0, 0));
-    await page.screenshot({
-      path: `runtime/browser-report/departments-${width}.png`,
-      fullPage: true,
-    });
-    await team
-      .getByRole("navigation", { name: "项目部门" })
-      .locator('[data-map-node="story"]')
-      .click();
-    const roster = team.getByRole("navigation", { name: "部门岗位" });
-    await expect(
-      roster.locator('[data-map-node="screenwriter"]'),
-    ).toBeVisible();
-    await roster.locator('[data-map-node="screenwriter"]').click();
-    const member = team.getByRole("complementary", { name: "岗位工作详情" });
-    await expect(
-      member.getByRole("heading", { name: "编剧", exact: true }),
-    ).toBeVisible();
-    await expect(
-      member.getByRole("region", { name: "岗位实际工作记录" }),
-    ).not.toContainText(drama.workflow.tasks[1].output);
-    await member.locator(".collaboration-work-record > summary").click();
-    await expect(member).toContainText(drama.workflow.tasks[0].input);
-    await expect(member).toContainText(drama.workflow.tasks[0].output);
-    await noHorizontalOverflow(page);
-    await page.locator("#workspace h1").click();
-    await page.evaluate(() => window.scrollTo(0, 0));
-    await page.screenshot({
-      path: `runtime/browser-report/department-member-${width}.png`,
-      fullPage: true,
-    });
-    await page.reload();
-    await expect(
-      member.getByRole("heading", { name: "编剧", exact: true }),
-    ).toBeVisible();
-    await member
-      .getByRole("button", { name: "打开此步骤的工作流", exact: true })
-      .click();
-    const inlineStep = team.getByRole("complementary", {
-      name: "步骤工作详情",
-    });
-    await expect(
-      inlineStep.getByRole("heading", {
-        name: "全剧设定与分集大纲",
-        exact: true,
-      }),
-    ).toBeVisible();
-    await inlineStep
-      .getByRole("button", { name: "返回岗位详情", exact: true })
-      .click();
-    await member.getByRole("button", { name: "关闭详情", exact: true }).click();
-    await expect(roster).toBeVisible();
-    await team.getByRole("button", { name: "全部部门", exact: true }).click();
-    await team
-      .getByRole("navigation", { name: "项目部门" })
-      .locator('[data-map-node="review"]')
-      .click();
-    await roster.locator('[data-map-node="independent_critic"]').click();
-    await expect(
-      member.getByRole("heading", { name: "独立审稿", exact: true }),
-    ).toBeVisible();
-    await member.locator(".collaboration-work-record > summary").click();
-    await expect(member).toContainText(drama.workflow.tasks[1].output);
-    await expect(
-      member
-        .getByRole("region", { name: "岗位实际工作记录" })
-        .locator("dd")
-        .last(),
-    ).not.toContainText(drama.workflow.tasks[0].output);
-    await member
-      .getByRole("button", { name: "返回部门分工", exact: true })
-      .click();
-    await expect(
-      roster.locator('[data-map-node="independent_critic"]'),
-    ).toBeFocused();
-    await roster.locator('[data-map-node="story_critic"]').click();
-    await expect(member).toContainText("此岗位暂无已保存的执行记录");
-    await noHorizontalOverflow(page);
-    expect(errors).toEqual([]);
-    expect(writes).toEqual([]);
-  });
-}
-
-for (const width of [1440, 390]) {
-  test(`department and employee edges open actual deliveries without replacing the canvas at ${width}`, async ({
-    page,
-  }) => {
-    await page.setViewportSize({ width, height: 1000 });
-    await page.emulateMedia({ colorScheme: width === 390 ? "dark" : "light" });
     const drama = blockedDrama();
     await installDrama(page, drama);
     drama.workflow.tasks[0].finished_at = 1792281600;
@@ -781,106 +738,87 @@ for (const width of [1440, 390]) {
         writes.push(r.url());
     });
     await page.goto("/#project=" + dramaId + "&tab=workflow");
-    await page.getByRole("button", { name: "部门协作", exact: true }).click();
-    const team = page.getByRole("region", { name: "部门协作工作流" });
-    const departments = team.getByRole("navigation", { name: "项目部门" });
-    await expect(team.getByRole("status")).toContainText("正在工作：独立审稿");
-    const clippedText = await departments
-      .locator("[data-map-node]")
-      .evaluateAll((nodes) =>
-        nodes.flatMap((node) => {
-          const box = node.getBoundingClientRect();
-          return [
-            ...node.querySelectorAll(".workflow-stage-copy > strong, .badge"),
-          ].flatMap((label) => {
-            const range = document.createRange();
-            range.selectNodeContents(label);
-            return [...range.getClientRects()].some(
-              (r) =>
-                r.left < box.left ||
-                r.right > box.right ||
-                r.top < box.top ||
-                r.bottom > box.bottom,
-            )
-              ? [label.textContent]
-              : [];
-          });
-        }),
-      );
-    expect(clippedText).toEqual([]);
-    const url = page.url();
-    const edge = departments.locator(
-      '[data-source="story"][data-target="review"][data-flow-edge]',
-    );
-    await departments
-      .locator('[data-label-edge="story:review:forward"]')
-      .click();
-    const delivery = team.getByRole("complementary", { name: "交付内容详情" });
+    for (const phase of ["planning", "review"]) {
+      await page
+        .locator(`[data-stage="${phase}"]`)
+        .locator("..")
+        .locator(":scope > button[aria-expanded]")
+        .click();
+    }
+    const dept = page
+      .locator('[data-flow-edge][data-source="story"][data-target="review"]')
+      .first();
+    await pointerEdge(page, dept);
+    const detail = page.getByRole("complementary", { name: "节点详情" });
     await expect(
-      delivery.getByRole("heading", { name: /编剧.*独立审稿/ }),
+      detail.getByRole("heading", { name: /编剧.*独立审稿/ }),
     ).toBeVisible();
-    const received = delivery.getByRole("region", { name: "已核对接收的交付" });
+    const received = detail.getByRole("region", { name: "已核对接收的交付" });
     await expect(
       received
         .getByText(drama.workflow.tasks[0].output, { exact: true })
         .first(),
     ).toBeVisible();
-    await expect(departments).toBeVisible();
-    expect(page.url()).toBe(url);
-    await noHorizontalOverflow(page);
-    await team.evaluate((element) =>
-      element.scrollIntoView({ block: "start" }),
+    await expect(dept).toHaveClass(/is-running/);
+    const stream = dept.locator(".workflow-flow-stream");
+    expect(
+      await stream.evaluate((el) => getComputedStyle(el).animationName),
+    ).toBe("none");
+    await page.emulateMedia({ reducedMotion: "no-preference" });
+    expect(
+      await stream.evaluate((el) => getComputedStyle(el).animationName),
+    ).toBe("fixed-flow");
+    const offset = await stream.evaluate(
+      (el) => getComputedStyle(el).strokeDashoffset,
     );
-    if (width === 1440)
-      await team.screenshot({
-        path: `runtime/browser-report/handoff-delivery-${width}.png`,
-      });
-    else
-      await page.screenshot({
-        path: `runtime/browser-report/handoff-delivery-${width}.png`,
-      });
-    await delivery
-      .getByRole("button", { name: "关闭详情", exact: true })
-      .click();
-    await expect(edge).toBeFocused();
-    await departments.locator('[data-map-node="story"]').click();
-    const roster = team.getByRole("navigation", { name: "部门岗位" });
-    const inner = roster.locator("[data-flow-edge]");
-    await inner.focus();
-    await page.keyboard.press("Enter");
-    await expect(delivery).toContainText("尚未关联到接收方的实际输入");
-    await expect(roster).toBeVisible();
-    await expect(departments).toBeVisible();
-    expect(page.url()).toBe(url);
-    await page.reload();
-    await expect(delivery).toBeVisible();
-    await expect(roster).toBeVisible();
-    await delivery
-      .getByRole("button", { name: "关闭详情", exact: true })
-      .click();
-    for (const lineId of [
-      "direction:operations:forward",
-      "operations:direction:forward",
-    ]) {
-      await departments.locator(`[data-label-edge="${lineId}"]`).click();
-      await expect(delivery).toBeVisible();
-      await delivery
-        .getByRole("button", { name: "关闭详情", exact: true })
-        .click();
-    }
-    await roster.locator('[data-map-node="screenwriter"]').click();
+    await expect
+      .poll(() =>
+        stream.evaluate((el) => getComputedStyle(el).strokeDashoffset),
+      )
+      .not.toBe(offset);
+    await page.emulateMedia({ reducedMotion: "reduce" });
+
+    const beforeClose = await canvasState(page);
+    await detail.getByRole("button", { name: "关闭详情", exact: true }).click();
+    expect(await canvasState(page)).toEqual(beforeClose);
+    await expandRole(page, "screenwriter", "planning");
+    await expandRole(page, "independent_critic", "review");
+    const edge = page
+      .locator(
+        '[data-flow-edge][data-source="screenwriter"][data-target="independent_critic"]',
+      )
+      .first();
+    await pointerEdge(page, edge);
+    await assertUnobstructedLines(page);
     await expect(
-      team.getByRole("complementary", { name: "岗位工作详情" }),
+      received
+        .getByText(drama.workflow.tasks[0].output, { exact: true })
+        .first(),
     ).toBeVisible();
-    await expect(roster).toBeVisible();
-    await expect(departments).toBeVisible();
-    await page.locator("#workspace h1").click();
-    await page.evaluate(() => window.scrollTo(0, 0));
-    await page.screenshot({
-      path: `runtime/browser-report/handoff-workspace-${width}.png`,
-      fullPage: false,
-    });
+    const selected = await canvasState(page),
+      url = page.url();
+    await page.reload();
+    await expect(
+      received
+        .getByText(drama.workflow.tasks[0].output, { exact: true })
+        .first(),
+    ).toBeVisible();
+    expect(await canvasState(page)).toEqual(selected);
+    expect(page.url()).toBe(url);
+    await page
+      .locator(".workflow-fixed-workspace")
+      .screenshot({
+        path: `runtime/browser-report/fixed-delivery-${width}.png`,
+      });
+    drama.workflow.graph.nodes.find((n) => n.id === "review").status = "paused";
+    drama.workflow.tasks[1].status = "paused";
+    await page.reload();
+    await expect(page.locator(".workflow-canvas-board")).toBeVisible();
+    await expect(page.locator(".workflow-flow-stream")).toHaveCount(0);
     await noHorizontalOverflow(page);
+    await page.locator(".workflow-fixed-workspace").screenshot({
+      path: `runtime/browser-report/fixed-paused-delivery-${width}.png`,
+    });
     expect(errors).toEqual([]);
     expect(writes).toEqual([]);
   });

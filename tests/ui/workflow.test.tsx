@@ -98,7 +98,9 @@ describe("real server workflow and agent handoffs", () => {
       }),
     );
     expect(screen.queryByTestId("rf__wrapper")).not.toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: /验收大阶段/ }));
+    await userEvent.click(
+      document.querySelector('[data-stage="check-group"]')!,
+    );
     expect(
       screen.getByRole("heading", { name: "服务器定义的验收步骤" }),
     ).toBeVisible();
@@ -174,9 +176,7 @@ describe("real server workflow and agent handoffs", () => {
         },
       ],
     });
-    fireEvent.click(
-      screen.getByRole("button", { name: "执行记录" }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: "执行记录" }));
     expect(screen.getByText(/本次模型/)).toBeVisible();
     expect(screen.queryByText(/其他步骤模型/)).not.toBeInTheDocument();
     expect(screen.getByText(/未记录步骤归属/)).toBeVisible();
@@ -758,7 +758,7 @@ describe("real server workflow and agent handoffs", () => {
         production_tasks: tasks,
       }),
     );
-    fireEvent.click(screen.getByRole("button", {name: "执行记录"}));
+    fireEvent.click(screen.getByRole("button", { name: "执行记录" }));
     const rows = within(screen.getByRole("table")).getAllByRole("row");
     expect(rows[1]).toHaveTextContent(/复用|reused/);
     expect(rows[1]).toHaveTextContent("v1");

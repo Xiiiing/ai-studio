@@ -1,3 +1,4 @@
+import { expandRole, canvasState } from "./fixed-canvas.mjs";
 import { refreshPage } from "./header-flow.mjs";
 import { openWorkflow } from "./navigation.mjs";
 import { test, expect } from "@playwright/test";
@@ -23,14 +24,14 @@ for (const width of [1440, 1024, 390]) {
     const inspector = page.getByRole("complementary", { name: "节点详情" });
     await expect(page.locator("[data-stage]")).toHaveCount(5);
     for (const card of await page
-      .locator(".workflow-stage-copy > strong")
+      .locator(".workflow-fixed-node-select > strong")
       .all()) {
       expect(
         await card.evaluate((el) => el.getBoundingClientRect().height),
       ).toBeLessThan(40);
     }
     await expect(page.locator(".workflow-flow-line")).toHaveCount(7);
-    await page.locator(".workflow-stages").screenshot({
+    await page.locator(".workflow-canvas-viewport").screenshot({
       path: `runtime/browser-report/workflow-stages-${width}.png`,
     });
     const routing = await page.locator(".workflow-map").evaluate((map) => {
@@ -81,11 +82,6 @@ for (const width of [1440, 1024, 390]) {
       "production",
       "delivery",
     ]) {
-      if (
-        width <= 1200 &&
-        (await page.locator(".workflow-workspace.inspector-open").count())
-      )
-        await page.getByRole("button", { name: "返回流程图" }).click();
       await page.locator(`[data-stage="${stage}"]`).click();
       await expect(page.locator(`[data-stage="${stage}"]`)).toHaveAttribute(
         "aria-pressed",
@@ -104,8 +100,6 @@ for (const width of [1440, 1024, 390]) {
         );
       }
     }
-    if (width <= 1200)
-      await page.getByRole("button", { name: "返回流程图" }).click();
     await page.locator('[data-stage="script"]').click();
     await page.locator('[data-flow-node="screenplay"]').click();
     const inputs = inspector.getByRole("region", { name: "输入材料" });
@@ -156,9 +150,7 @@ for (const width of [1440, 1024, 390]) {
       .getByRole("dialog")
       .getByRole("button", { name: "关闭", exact: true })
       .click();
-    if (width <= 1200)
-      await page.getByRole("button", { name: "返回流程图" }).click();
-    await page.getByRole("button", { name: /定向返修/ }).click();
+    await page.locator('[data-branch="revision"]').click();
     await expect(inspector).toContainText("返修后接续");
     await inspector
       .locator(".workflow-transitions")
@@ -190,7 +182,9 @@ test("call attempts expose exact originals and history can locate its step", asy
   await expect(request).toContainText("请求原文中的提示词");
   await call.getByText("第 2 次请求与响应", { exact: true }).click();
   const response = call
-    .locator("details", { has: page.locator("summary", { hasText: /^第 2 次请求与响应$/ }) })
+    .locator("details", {
+      has: page.locator("summary", { hasText: /^第 2 次请求与响应$/ }),
+    })
     .locator(".material-card")
     .filter({ has: page.getByText("响应原文", { exact: true }) });
   await response.getByRole("button", { name: "阅读文件" }).click();
@@ -272,35 +266,18 @@ test("workflow and document controls work with keyboard navigation", async ({
   await expect(page.getByRole("dialog")).toHaveCount(0);
 });
 
-test("data flows animate during execution, stop on pause and human gates, and respect reduced motion", async ({
+test("data flow does not invent a transmission without receiving-task evidence", async ({
   page,
   request,
 }) => {
   await request.post("/__test/scenario", { data: { kind: "repairing" } });
-  await page.goto(`/#project=${id}&tab=overview`);
-  await openWorkflow(page);
-  const edge = page.locator('[data-flow-edge="script:visual:forward"]');
-  await expect(edge).toHaveAttribute("data-flow-state", "running");
-  const packet = edge.locator("circle");
-  const before = await packet.boundingBox();
-  await page.waitForTimeout(180);
-  const after = await packet.boundingBox();
-  expect(
-    Math.abs(after.x - before.x) + Math.abs(after.y - before.y),
-  ).toBeGreaterThan(1);
-  expect(
-    await edge
-      .locator(".workflow-flow-stream")
-      .evaluate((el) => getComputedStyle(el).animationName),
-  ).toBe("workflow-stream");
-  await page
-    .locator(".workflow-map-panel")
-    .screenshot({ path: "runtime/browser-report/workflow-flow-running.png" });
+  await page.goto(`/#project=${id}&tab=workflow`);
+  await expect(page.locator('[data-stage="script"]')).toContainText("执行中");
+  await expect(page.locator(".workflow-flow-stream")).toHaveCount(0);
   const pause = async (route) => {
     const response = await route.fetch(),
       body = await response.json();
     body.project.status = "paused";
-    body.operator.current_activity = "制作已暂停";
     body.workflow.nodes = body.workflow.nodes.map((n) =>
       n.id === body.workflow.active_node ? { ...n, status: "paused" } : n,
     );
@@ -309,65 +286,29 @@ test("data flows animate during execution, stop on pause and human gates, and re
   await page.route("**/workspace", pause);
   await refreshPage(page);
   await expect(page.locator('[data-flow-state="running"]')).toHaveCount(0);
-  await expect(page.locator(".workflow-flow-packet")).toHaveCount(0);
   await page.unroute("**/workspace", pause);
   await request.post("/__test/scenario", { data: { kind: "final" } });
   await refreshPage(page);
   await expect(page.locator('[data-stage="delivery"]')).toContainText(
     "等待你处理",
   );
-  await expect(page.locator('[data-flow-state="running"]')).toHaveCount(0);
-  await page.emulateMedia({ reducedMotion: "reduce" });
-  await request.post("/__test/scenario", { data: { kind: "repairing" } });
-  await refreshPage(page);
-  await expect(edge).toHaveAttribute("data-flow-state", "running");
-  await expect(edge.locator("circle")).toBeHidden();
-  expect(
-    await page
-      .locator(".workflow-map-node.status-running .badge")
-      .evaluate((el) => getComputedStyle(el).animationName),
-  ).toBe("none");
-  expect(
-    await edge
-      .locator(".workflow-flow-stream")
-      .evaluate((el) => getComputedStyle(el).animationName),
-  ).toBe("none");
+  await expect(page.locator(".workflow-flow-stream")).toHaveCount(0);
 });
 
-test("narrow screens jump directly to details and can return to the flow", async ({
-  page,
-}) => {
+test("narrow screens keep the canvas and reader in place", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto(`/#project=${id}&tab=overview`);
-  await openWorkflow(page);
-  await page.locator('[data-stage="script"]').click();
-  const inspector = page.locator(".workflow-inspector");
-  await expect
-    .poll(async () =>
-      Math.abs(
-        (await inspector.evaluate((el) => el.getBoundingClientRect().top)) -
-          (await page
-            .locator(".project-navigation-bar")
-            .evaluate((el) => el.getBoundingClientRect().bottom)) -
-          6,
-      ),
-    )
-    .toBeLessThan(10);
-  await inspector.getByRole("button", { name: "返回流程图" }).click();
-  await expect(page.locator('[data-stage="script"]')).toBeFocused();
-  await expect
-    .poll(async () =>
-      Math.abs(
-        (await page
-          .locator(".workflow-map-container")
-          .evaluate((el) => el.getBoundingClientRect().top)) -
-          (await page
-            .locator(".project-navigation-bar")
-            .evaluate((el) => el.getBoundingClientRect().bottom)) -
-          6,
-      ),
-    )
-    .toBeLessThan(10);
+  await page.goto(`/#project=${id}&tab=workflow`);
+  const stage = page.locator('[data-stage="script"]');
+  await stage.scrollIntoViewIfNeeded();
+  const before = await canvasState(page);
+  await stage.click();
+  await expect(page.locator(".workflow-step-heading h3")).toHaveText(
+    "故事目标落实与独立审核",
+  );
+  expect(await canvasState(page)).toEqual(before);
+  await page.getByRole("button", { name: "关闭详情", exact: true }).click();
+  expect(await canvasState(page)).toEqual(before);
+  await expect(page.locator(".workflow-canvas-viewport")).toBeVisible();
 });
 
 test("department employee opens the recorded original request in its own workflow", async ({
@@ -377,19 +318,8 @@ test("department employee opens the recorded original request in its own workflo
   await expect(
     page.getByRole("heading", { name: "制作工作流", exact: true }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "部门协作", exact: true }).click();
-  const collaboration = page.getByRole("region", { name: "部门协作工作流" });
-  await collaboration
-    .getByRole("navigation", { name: "项目部门" })
-    .locator('[data-map-node="story"]')
-    .click();
-  await collaboration
-    .getByRole("navigation", { name: "部门岗位" })
-    .locator('[data-map-node="screenwriter"]')
-    .click();
-  const employee = collaboration.getByRole("complementary", {
-    name: "岗位工作详情",
-  });
+  await (await expandRole(page, "screenwriter", "script")).click();
+  const employee = page.getByRole("complementary", { name: "节点详情" });
   const call = employee.locator('[data-execution="writer-current"]');
   await expect(call).toContainText("mock-writer-current");
   await call.getByText("第 1 次请求与响应", { exact: true }).click();
@@ -411,15 +341,16 @@ test("department delivery opens a saved sender result inline without claiming a 
   page,
 }) => {
   await page.goto(`/#project=${id}&tab=workflow`);
-  await page.getByRole("button", { name: "部门协作", exact: true }).click();
-  const team = page.getByRole("region", { name: "部门协作工作流" });
-  const diagram = team.getByRole("navigation", { name: "项目部门" });
+  await expandRole(page, "screenwriter");
+  const diagram = page.locator(".workflow-canvas-board");
   const edge = diagram
-    .locator('[data-flow-edge][data-source="story"][data-target="review"]')
+    .locator(
+      '[data-flow-edge][data-source="screenwriter"][data-target="independent_critic"]',
+    )
     .first();
   await edge.focus();
   await page.keyboard.press("Enter");
-  const panel = team.getByRole("complementary", { name: "交付内容详情" });
+  const panel = page.getByRole("complementary", { name: "节点详情" });
   await expect(panel).toContainText("尚未关联到接收方的实际输入");
   const call = panel.locator('[data-execution="writer-current"]');
   const original = call
