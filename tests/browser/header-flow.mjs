@@ -32,3 +32,10 @@ export async function refreshPage(page) {
   await (await exposePageControl(page, refresh)).click();
   await closePageTools(page);
 }
+
+export async function openSystemSettings(page) {
+  const nav = page.getByRole("navigation", { name: "主导航", exact: true });
+  if (!(await nav.isVisible())) await page.getByRole("button", { name: "展开导航", exact: true }).click();
+  await nav.getByRole("button", { name: "系统设置", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "系统设置", exact: true })).toBeVisible();
+}

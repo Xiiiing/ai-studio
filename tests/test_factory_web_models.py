@@ -104,6 +104,25 @@ def test_inventory_and_real_topology_are_read_only(endpoint):
     assert calls == []
 
 
+def test_system_identity_is_read_only_and_has_only_public_fields(endpoint, monkeypatch):
+    from factory import system_info
+    client, calls, _, _ = endpoint
+    monkeypatch.setattr(system_info, "_SOURCE_COMMIT", "a" * 40)
+    monkeypatch.setattr(system_info, "_ENVIRONMENT", "test")
+    code, headers, data = client.request("GET", "/api/factory/system")
+    assert code == 200 and headers["Cache-Control"] == "no-store"
+    assert data == {
+        "schema": "ai-studio.system.v1", "service": "drama-studio",
+        "version": web.__version__, "source_commit": "a" * 40,
+        "started_at": system_info._STARTED_AT, "environment": "test",
+    }
+    assert calls == []
+    assert client.request("POST", "/api/factory/system", {})[0] == 405
+    assert calls == []
+    monkeypatch.setattr(system_info, "_ENVIRONMENT", "private-path-or-secret")
+    assert client.request("GET", "/api/factory/system")[2]["environment"] == "unspecified"
+
+
 def test_saved_profile_probe_has_no_generation(endpoint):
     client, calls, _, _ = endpoint
     code, _, data = client.request("POST", "/api/factory/models/test", {"profile_id": "writer"})

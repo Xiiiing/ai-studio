@@ -1,5 +1,4 @@
 import { Check, Monitor, Moon, Sun } from "lucide-react";
-import { PageHeader } from "./PageHeader";
 import { useAppearance, type ThemePreference } from "./Theme";
 import { ACCENT_PALETTES } from "./palettes";
 import { Badge, Panel } from "./ui";
@@ -16,7 +15,6 @@ export function AppearanceSettings() {
   const selected = ACCENT_PALETTES.find((palette) => palette.id === accent)!;
   return (
     <div className="appearance-settings">
-      <PageHeader title="设置" />
       <Panel title="外观">
         <fieldset className="appearance-fieldset">
           <legend>显示模式</legend>
