@@ -53,9 +53,11 @@ for (const width of [1440, 1024, 390]) {
           distance < path.getTotalLength() - 2;
           distance += 4
         ) {
-          const point = path.getPointAtLength(distance),
-            x = point.x + bounds.left,
-            y = point.y + bounds.top;
+          const point = path
+              .getPointAtLength(distance)
+              .matrixTransform(path.getScreenCTM()),
+            x = point.x,
+            y = point.y;
           if (
             boxes.some(
               (b) =>

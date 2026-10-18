@@ -368,3 +368,67 @@
   stroke: var(--focus);
   stroke-width: 2;
 }
+
+/* Compact hierarchy shares aligned rows; selecting details never changes these sizes. */
+.workflow-fixed-node.kind-department .workflow-fixed-node-select,
+.workflow-fixed-node.kind-role .workflow-fixed-node-select {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-content: center;
+  align-items: center;
+  column-gap: 4px;
+  row-gap: 2px;
+  padding: 6px 8px;
+}
+.workflow-fixed-node.kind-department .workflow-fixed-node-meta,
+.workflow-fixed-node.kind-role .workflow-fixed-node-meta {
+  grid-column: 2;
+  grid-row: 1;
+}
+.workflow-fixed-node.kind-department .workflow-fixed-node-meta > small,
+.workflow-fixed-node.kind-role .workflow-fixed-node-meta > small {
+  display: none;
+}
+.workflow-fixed-node.kind-department .workflow-fixed-node-select > strong,
+.workflow-fixed-node.kind-role .workflow-fixed-node-select > strong {
+  grid-column: 1;
+  grid-row: 1;
+  font-size: 13px;
+}
+.workflow-fixed-node.kind-role .workflow-fixed-node-select > small {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  font-size: 11px;
+}
+.workflow-fixed-node.kind-department .workflow-fixed-disclosure {
+  padding: 5px 8px;
+  font-size: 11px;
+}
+.workflow-fixed-node-meta > .badge {
+  align-self: center;
+}
+.workflow-fixed-links .workflow-flow-line {
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.workflow-canvas-viewport {
+  height: 740px;
+}
+.workflow-workspace.workflow-fixed-workspace .workflow-fixed-inspector {
+  height: 826px;
+}
+.drama-next-action > .badge,
+.workflow-progress-strip > span > .badge {
+  align-self: center;
+}
+.drama-next-action > span:nth-child(2) {
+  line-height: 1.5;
+}
+@media (max-width: 760px) {
+  .workflow-canvas-viewport {
+    height: 440px;
+  }
+  .workflow-workspace.workflow-fixed-workspace .workflow-fixed-inspector {
+    height: 420px;
+  }
+}

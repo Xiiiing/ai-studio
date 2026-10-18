@@ -1,6 +1,10 @@
+import { fixedWorkflowRouter } from "../../ui/factory/src/FixedWorkflowRouting";
 import { fireEvent, render } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { FixedWorkflowCanvas } from "../../ui/factory/src/FixedWorkflowCanvas";
+import {
+  FixedWorkflowCanvas,
+  fixedWorkflowLayout,
+} from "../../ui/factory/src/FixedWorkflowCanvas";
 import {
   collaborationModel,
   handoffForPhases,
@@ -146,4 +150,96 @@ it("keeps a current handoff animation out of a previous draft's phase", () => {
   expect(
     handoffForPhases(handoff, model, ["rewrite"], ["review"]),
   ).toMatchObject({ received_count: 1, in_progress: true });
+});
+
+it("lays five phases out in two aligned rows without repacking on status changes", () => {
+  const steps = Array.from({ length: 5 }, (_, i) => ({
+    id: `phase-${i}`,
+    label: `阶段${i + 1}`,
+    owner: "producer",
+    members: ["producer"],
+    status: "pending",
+  }));
+  const graph = {
+    nodes: steps,
+    edges: [],
+    departments: [{ id: "direction", label: "制片", roles: ["producer"] }],
+  };
+  const groups = steps.map((s) => ({ ...s, node_ids: [s.id] }));
+  const model = collaborationModel(graph, {}, steps);
+  const layout = fixedWorkflowLayout(graph, groups, steps, model, 3);
+  const phases = layout.boxes.filter((b) => b.kind === "stage");
+  expect(phases[0].y).toBe(phases[2].y);
+  expect(phases[3].y).toBe(phases[4].y);
+  expect(phases[3].y).toBeGreaterThan(phases[0].y);
+  expect(phases[3].x).toBe(phases[2].x);
+  expect(phases[4].x).toBe(phases[1].x);
+  const updated = steps.map((s) => ({ ...s, status: "running" }));
+  expect(
+    fixedWorkflowLayout(
+      { ...graph, nodes: updated },
+      groups,
+      updated,
+      collaborationModel(graph, {}, updated),
+      3,
+    ).boxes.map(({ id, x, y, width, height }) => ({ id, x, y, width, height })),
+  ).toEqual(
+    layout.boxes.map(({ id, x, y, width, height }) => ({
+      id,
+      x,
+      y,
+      width,
+      height,
+    })),
+  );
+});
+
+it("routes a row turn outside all reserved cards and keeps its label readable", () => {
+  const boxes = [
+    { id: "top", kind: "stage", x: 320, y: 48, width: 196, height: 148 },
+    {
+      id: "department",
+      kind: "department",
+      x: 328,
+      y: 232,
+      width: 188,
+      height: 72,
+    },
+    { id: "worker", kind: "role", x: 344, y: 328, width: 172, height: 64 },
+    { id: "bottom", kind: "stage", x: 320, y: 440, width: 196, height: 148 },
+  ];
+  const route = fixedWorkflowRouter(boxes, { width: 564, height: 680 })(
+    boxes[0],
+    boxes[3],
+  );
+  const points = [...route.path.matchAll(/[ML]\s+([-\d.]+)\s+([-\d.]+)/g)].map(
+    (m) => ({ x: Number(m[1]), y: Number(m[2]) }),
+  );
+  for (let i = 1; i < points.length; i++) {
+    const a = points[i - 1],
+      b = points[i],
+      length = Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
+    for (let d = 2; d < length; d += 2) {
+      const x = a.x + ((b.x - a.x) * d) / length,
+        y = a.y + ((b.y - a.y) * d) / length;
+      expect(
+        boxes.some(
+          (box) =>
+            x > box.x + 0.5 &&
+            x < box.x + box.width - 0.5 &&
+            y > box.y + 0.5 &&
+            y < box.y + box.height - 0.5,
+        ),
+      ).toBe(false);
+    }
+  }
+  expect(
+    boxes.some(
+      (b) =>
+        route.x + 29 > b.x &&
+        route.x - 29 < b.x + b.width &&
+        route.y + 8 > b.y &&
+        route.y - 14 < b.y + b.height,
+    ),
+  ).toBe(false);
 });

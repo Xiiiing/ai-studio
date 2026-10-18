@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { type RecordData, roleName } from "./api";
 import { Badge } from "./ui";
+import { fixedWorkflowRouter } from "./FixedWorkflowRouting";
 import { stageFlow, stageTitles } from "./WorkflowMap";
 import {
   handoffForPhases,
@@ -48,20 +49,27 @@ export function fixedWorkflowLayout(
   groups: RecordData[],
   steps: RecordData[],
   model: Model,
+  columns = 3,
 ) {
   const phases = stageFlow(graph, groups, steps);
   const boxes: Box[] = [];
+  let rowY = 48;
   phases.nodes.forEach((phase, index) => {
-    const x = 48 + index * 292;
-    const rootY = phase.id === "revision" ? 352 : 80;
+    const row = Math.floor(index / columns),
+      offset = index % columns;
+    if (offset === 0 && index > 0)
+      rowY = Math.max(...boxes.map((b) => b.y + b.height)) + 40;
+    const col = row % 2 ? columns - 1 - offset : offset;
+    const x = 48 + col * 272;
+    const rootY = rowY;
     boxes.push({
       id: phase.id,
       stage: phase.id,
       kind: "stage",
       x,
       y: rootY,
-      width: 212,
-      height: 168,
+      width: 196,
+      height: 148,
       data: phase,
     });
     const members = new Set(
@@ -69,7 +77,7 @@ export function fixedWorkflowLayout(
         .filter((s) => phase.node_ids.includes(s.id))
         .flatMap((s) => s.members || []),
     );
-    let y = rootY + 272;
+    let y = rootY + 184;
     model.departments.forEach((dept) => {
       const roles = dept.node_ids.filter((r) => members.has(r));
       if (!roles.length) return;
@@ -80,8 +88,8 @@ export function fixedWorkflowLayout(
         kind: "department",
         x: x + 8,
         y,
-        width: 204,
-        height: 116,
+        width: 188,
+        height: 72,
         data: { ...dept, node_ids: roles },
         parent: phase.id,
       });
@@ -91,21 +99,21 @@ export function fixedWorkflowLayout(
           stage: phase.id,
           kind: "role",
           x: x + 24,
-          y: y + 148 + ri * 112,
-          width: 188,
-          height: 92,
+          y: y + 96 + ri * 76,
+          width: 172,
+          height: 64,
           data: model.members.find((m) => m.id === role)!,
           parent: id,
         });
       });
       // Reserve all descendants, including collapsed ones. Expansion never repacks siblings.
-      y += 148 + roles.length * 112 + 48;
+      y += 96 + roles.length * 76 + 20;
     });
   });
   return {
     boxes,
     phases,
-    width: Math.max(600, phases.nodes.length * 292 + 16),
+    width: Math.max(292, Math.min(columns, phases.nodes.length) * 272 + 20),
     height: Math.max(620, ...boxes.map((b) => b.y + b.height + 56)),
   };
 }
@@ -114,7 +122,11 @@ function stored(project?: string): RecordData {
     const v = JSON.parse(
       sessionStorage.getItem(`studio.fixed-canvas.${project}`) || "{}",
     );
-    return v && typeof v === "object" ? v : {};
+    return v && typeof v === "object"
+      ? v.layout === "compact-rows"
+        ? v
+        : { selection: v.selection }
+      : {};
   } catch {
     return {};
   }
@@ -178,9 +190,19 @@ export function FixedWorkflowCanvas({
     left: Number(initial.left) || 0,
     top: Number(initial.top) || 0,
   });
+  const [columns] = useState(() =>
+    window.innerWidth <= 760 ? 1 : window.innerWidth < 1200 ? 2 : 3,
+  );
   const layout = useMemo(
-    () => fixedWorkflowLayout(graph, groups, steps, model),
-    [graph, groups, steps, model],
+    () => fixedWorkflowLayout(graph, groups, steps, model, columns),
+    [graph, groups, steps, model, columns],
+  );
+  const geometry = layout.boxes
+    .map((b) => `${b.id}:${b.x}:${b.y}:${b.width}:${b.height}`)
+    .join("|");
+  const route = useMemo(
+    () => fixedWorkflowRouter(layout.boxes, layout),
+    [geometry],
   );
   const marker = useId().replace(/:/g, "");
   const visible = layout.boxes.filter(
@@ -194,7 +216,13 @@ export function FixedWorkflowCanvas({
     try {
       sessionStorage.setItem(
         key,
-        JSON.stringify({ expanded, zoom, selection, ...camera.current }),
+        JSON.stringify({
+          layout: "compact-rows",
+          expanded,
+          zoom,
+          selection,
+          ...camera.current,
+        }),
       );
     } catch {
       /* Optional preference. */
@@ -204,6 +232,8 @@ export function FixedWorkflowCanvas({
   useLayoutEffect(() => {
     const el = viewport.current;
     if (el) {
+      if (initial.zoom == null)
+        setZoom(Math.min(1, Math.max(0.65, el.clientWidth / layout.width)));
       el.scrollLeft = camera.current.left;
       el.scrollTop = camera.current.top;
     }
@@ -243,7 +273,7 @@ export function FixedWorkflowCanvas({
     );
     if (box && viewport.current) {
       viewport.current.scrollLeft = Math.max(0, box.x * zoom - 36);
-      viewport.current.scrollTop = 0;
+      viewport.current.scrollTop = Math.max(0, box.y * zoom - 36);
     }
   };
   const edges: {
@@ -272,18 +302,11 @@ export function FixedWorkflowCanvas({
         ),
       )
       .map((h) => handoffForPhases(h, model, s.data.node_ids, t.data.node_ids));
-    const forward = t.x > s.x && !edge.repair;
-    const lane = 32 + index * 6;
-    const sx = s.x + s.width / 2,
-      tx = t.x + t.width / 2;
+    const routed = route(s, t, edge.repair);
     edges.push({
       ...edge,
-      path: forward
-        ? `M ${s.x + s.width} ${s.y + 84} H ${t.x}`
-        : `M ${sx} ${s.y} V ${lane} H ${tx} V ${t.y}`,
+      ...routed,
       label: edge.repair ? "退回修改" : "阶段交付",
-      x: forward ? (s.x + s.width + t.x) / 2 : (sx + tx) / 2,
-      y: forward ? s.y + 70 : lane - 8,
       running: relevant.some((h) => h.in_progress),
       completed: relevant.some((h) => h.received_count),
       selection: {
@@ -358,24 +381,13 @@ export function FixedWorkflowCanvas({
       existing.completed ||= !!scoped.received_count;
       return;
     }
-    const sx = s.x + s.width,
-      sy = s.y + s.height / 2,
-      ty = t.y + t.height / 2;
-    const gutter = s.x + s.width + 16 + (index % 4) * 5;
-    const same = s.stage === t.stage;
-    const targetGutter = phaseById(t.stage).x - 12 - (index % 3) * 4;
-    const lane = 276 + (index % 9) * 6;
-    const path = same
-      ? `M ${sx} ${sy} H ${gutter} V ${ty} H ${t.x + t.width}`
-      : `M ${sx} ${sy} H ${gutter} V ${lane} H ${targetGutter} V ${ty} H ${t.x}`;
+    const routed = route(s, t, !!h.loop);
     edges.push({
       id: routeId,
       source: s.data.id,
       target: t.data.id,
-      path,
+      ...routed,
       label: `${s.kind === "department" ? s.data.label : roleName(h.source)} → ${t.kind === "department" ? t.data.label : roleName(h.target)}`,
-      x: same ? gutter + 4 : (gutter + targetGutter) / 2,
-      y: same ? (sy + ty) / 2 : lane - 5,
       repair: !!h.loop,
       running: !!scoped.in_progress,
       completed: !!scoped.received_count,

@@ -557,36 +557,7 @@ for (const width of [1440, 390, 320]) {
         page.getByRole("heading", { name: "审核与自动返修" }),
       ).toHaveCount(0);
       await expect(page.locator("[data-stage]")).toHaveCount(5);
-      // Every edge stays outside cards, including the return from review to writing.
-      const intersections = await page
-        .locator(".workflow-map")
-        .evaluate((map) => {
-          const rect = map.getBoundingClientRect(),
-            boxes = [...map.querySelectorAll("[data-map-node]")].map((n) =>
-              n.getBoundingClientRect(),
-            );
-          return [...map.querySelectorAll(".workflow-flow-line")].flatMap(
-            (p) => {
-              for (let d = 2; d < p.getTotalLength() - 2; d += 3) {
-                const point = p.getPointAtLength(d),
-                  x = point.x + rect.left,
-                  y = point.y + rect.top;
-                if (
-                  boxes.some(
-                    (b) =>
-                      x > b.left + 2 &&
-                      x < b.right - 2 &&
-                      y > b.top + 2 &&
-                      y < b.bottom - 2,
-                  )
-                )
-                  return [p.parentElement.dataset.flowEdge];
-              }
-              return [];
-            },
-          );
-        });
-      expect(intersections).toEqual([]);
+      await assertUnobstructedLines(page);
       await noHorizontalOverflow(page);
       await page.locator("#workspace h1").click();
       await page.screenshot({
@@ -805,11 +776,9 @@ for (const width of [1440, 390]) {
     ).toBeVisible();
     expect(await canvasState(page)).toEqual(selected);
     expect(page.url()).toBe(url);
-    await page
-      .locator(".workflow-fixed-workspace")
-      .screenshot({
-        path: `runtime/browser-report/fixed-delivery-${width}.png`,
-      });
+    await page.locator(".workflow-fixed-workspace").screenshot({
+      path: `runtime/browser-report/fixed-delivery-${width}.png`,
+    });
     drama.workflow.graph.nodes.find((n) => n.id === "review").status = "paused";
     drama.workflow.tasks[1].status = "paused";
     await page.reload();
@@ -821,5 +790,53 @@ for (const width of [1440, 390]) {
     });
     expect(errors).toEqual([]);
     expect(writes).toEqual([]);
+  });
+}
+
+for (const width of [1920, 1440, 390, 320]) {
+  test(`status notice is centered and stage overview wraps at ${width}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 1100 });
+    const drama = blockedDrama();
+    drama.plan_phase = "draft";
+    await installDrama(page, drama);
+    await page.goto("/#project=" + dramaId);
+    const notice = page.locator(".drama-next-action");
+    await expect(notice).toBeVisible();
+    const aligned = await notice.evaluate((el) => {
+      const badge = el.querySelector(".badge").getBoundingClientRect(),
+        text = el
+          .querySelector(":scope > span:nth-child(2)")
+          .getBoundingClientRect();
+      return Math.abs(badge.y + badge.height / 2 - text.y - text.height / 2);
+    });
+    expect(aligned).toBeLessThan(1);
+    await notice.screenshot({
+      path: `runtime/browser-report/aligned-status-notice-${width}.png`,
+    });
+    await page
+      .getByRole("navigation", { name: "整剧工作区" })
+      .getByRole("button", { name: "制作流程与团队", exact: true })
+      .click();
+    const positions = await page.locator("[data-stage]").evaluateAll((nodes) =>
+      nodes.map((el) => {
+        const b = el.getBoundingClientRect();
+        return { x: b.x, y: b.y };
+      }),
+    );
+    expect(new Set(positions.map((p) => Math.round(p.y))).size).toBeGreaterThan(
+      1,
+    );
+    if (width >= 1200) {
+      expect(positions[0].y).toBe(positions[2].y);
+      expect(positions[3].y).toBe(positions[4].y);
+      expect(positions[3].y).toBeGreaterThan(positions[0].y);
+    }
+    await noHorizontalOverflow(page);
+    await assertUnobstructedLines(page);
+    await page.locator(".workflow-fixed-workspace").screenshot({
+      path: `runtime/browser-report/compact-stage-overview-${width}.png`,
+    });
   });
 }
