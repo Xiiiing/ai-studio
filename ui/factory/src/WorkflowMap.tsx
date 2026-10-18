@@ -149,7 +149,7 @@ export function stageFlow(
       );
   return { nodes: stageNodes, edges: links };
 }
-const stageTitles: Record<string, string> = {
+export const stageTitles: Record<string, string> = {
   全剧设定与分集大纲: "设定与大纲",
   全剧规划独立审核: "规划审核",
   出品人确认全剧规划: "规划确认",

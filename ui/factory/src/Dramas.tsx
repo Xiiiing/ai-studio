@@ -5,6 +5,7 @@ import { PageHeader } from "./PageHeader";
 import {
   Panel,
   PageFocus,
+  WorkFocus,
   Field,
   Modal,
   ErrorNotice,
@@ -790,43 +791,39 @@ export function DramaDetail({
         )}
       {tab === "overview" && (
         <>
-          {(p.plan_phase || p.status === "awaiting_plan") && (
-            <div className="drama-next-action">
-              <Badge status={p.status} />
-              <span>
-                {p.plan_phase === "exhausted"
-                  ? "规划审核需要处理，草稿与意见已保留"
-                  : p.status === "awaiting_plan"
-                    ? "规划已通过审核，等待你的确认"
-                    : p.workflow?.active_job
-                      ? "规划与审核正在执行"
-                      : p.plan_version
-                        ? "全剧规划已确认，可按集继续制作"
-                        : "先完成全剧规划，再选择剧集制作"}
-              </span>
-              <button className="text-link" onClick={() => setTab("plan")}>
-                查看规划与审核
-              </button>
-            </div>
-          )}
-          <Panel title="项目总览">
-            <PageFocus
-              label="已出片剧集"
-              value={`${rows(p.episodes).filter((e) => ["approved", "awaiting_final"].includes(e.status)).length} / ${p.episode_count} 集`}
-              detail={
-                <>
-                  规划
-                  {p.plan_version ? `已确认 v${p.plan_version}` : "尚未确认"}
-                  ；已建立{rows(p.episodes).length} / {p.episode_count}
-                  集，按集进入制作与验收。
-                </>
-              }
-            />
+          <WorkFocus
+            eyebrow="项目总览"
+            title={
+              rows(p.workflow?.graph?.nodes).find(
+                (n) => n.id === p.workflow?.graph?.active_node,
+              )?.label || (p.plan_version ? "按集推进制作" : "完成全剧规划")
+            }
+            context={
+              <>
+                {(p.plan_phase || p.status === "awaiting_plan") && (
+                  <div className="drama-next-action">
+                    <Badge status={p.status} />
+                    <span>
+                      {p.plan_phase === "exhausted"
+                        ? "规划审核需要处理，草稿与意见已保留"
+                        : p.status === "awaiting_plan"
+                          ? "规划已通过审核，等待你的确认"
+                          : p.workflow?.active_job
+                            ? "规划与审核正在执行"
+                            : p.plan_version
+                              ? "全剧规划已确认，可按集继续制作"
+                              : "先完成全剧规划，再选择剧集制作"}
+                    </span>
+                    <button className="text-link" onClick={() => setTab("plan")}>
+                      查看规划与审核
+                    </button>
+                  </div>
+                )}
+              </>
+            }
+          >
             <div className="drama-actions">
-              <button
-                className="button primary"
-                onClick={() => setTab("workflow")}
-              >
+              <button className="button primary" onClick={() => setTab("workflow")}>
                 打开制作流程
               </button>
               <button className="button" onClick={() => setTab("plan")}>
@@ -841,7 +838,26 @@ export function DramaDetail({
                 </button>
               )}
             </div>
-          </Panel>
+          </WorkFocus>
+          <PageFocus
+            label="已出片剧集"
+            progress={{
+              completed: rows(p.episodes).filter((e) =>
+                ["approved", "awaiting_final"].includes(e.status),
+              ).length,
+              total: p.episode_count,
+            }}
+            value={`${rows(p.episodes).filter((e) => ["approved", "awaiting_final"].includes(e.status)).length} / ${p.episode_count} 集`}
+            detail={
+              <>
+                规划
+                {p.plan_version ? `已确认 v${p.plan_version}` : "尚未确认"}
+                ；已建立{rows(p.episodes).length} / {p.episode_count}
+                集，按集进入制作与验收。
+              </>
+            }
+          />
+
           {p.error && (
             <details className="drama-overview-issues">
               <summary>
@@ -1591,10 +1607,25 @@ export function LongEpisodeDetail({
         </>
       ) : (
         <>
+          <WorkFocus
+            eyebrow="剧集制作"
+            title={
+              rows(p.workflow?.graph?.nodes).find(
+                (n) => n.id === p.workflow?.graph?.active_node,
+              )?.label ||
+              statusNames[p.status] ||
+              p.status
+            }
+            context={<p>{p.outline.synopsis}</p>}
+          >
+            <button className="button primary" onClick={() => onTab("workflow")}>
+              查看制作流程
+            </button>
+          </WorkFocus>
           <Panel title="剧集进度">
-            <p>{p.outline.synopsis}</p>
             <PageFocus
               label="完成单元"
+              progress={{completed: rows(p.units).filter(u => u.status === "unit_ready").length, total: rows(p.units).length}}
               value={`${rows(p.units).filter((u) => u.status === "unit_ready").length} / ${rows(p.units).length}`}
               detail={
                 <>

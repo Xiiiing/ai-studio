@@ -47,6 +47,10 @@ async function checkOverview(page, expected = ["7", "2", "8", "11"]) {
   await expect(feature).not.toHaveAttribute("aria-hidden", "true");
   await expect(feature).toContainText("等待成片验收");
   await expect(feature).toContainText("95%");
+  const progress = focus.getByRole("progressbar", { name: "当前制作进度", exact: true });
+  await expect(progress).toHaveAttribute("aria-valuenow", "95");
+  await expect(progress).toHaveAttribute("aria-valuemax", "100");
+  await expect(focus.locator(".dashboard-focus-next").getByRole("button", { name: "打开当前项目", exact: true })).toBeVisible();
   await expect(focus.locator(".dashboard-focus-copy")).not.toContainText(/等待成片验收|95%/);
   await expect(feature.locator("button,a,input,[tabindex]")).toHaveCount(0);
   await expect(focus.locator(".focus-film-frame")).toHaveCount(0);
@@ -67,17 +71,20 @@ async function checkOverview(page, expected = ["7", "2", "8", "11"]) {
   expect(projectTitle.ellipsis).not.toBe("ellipsis");
   await page.mouse.move(0, 0);
   const hierarchy = await colorHierarchy(page);
-  expect(hierarchy.focus.background).toEqual(hierarchy.tokens.panel);
+  expect(hierarchy.focus.rawBackground).toBe("rgba(0, 0, 0, 0)");
+  expect(hierarchy.feature.mask).not.toBe("none");
+  await expect(focus.locator(".dashboard-focus-next .primary")).toBeVisible();
+  await expect(feature).toHaveCSS("background-image", "none");
   expect(hierarchy.focus.image).toBe("none");
   expect(hierarchy.primary.background).toEqual(hierarchy.tokens.primary);
   expect(Math.max(...hierarchy.primary.background) - Math.min(...hierarchy.primary.background)).toBeLessThanOrEqual(8);
   expect(hierarchy.primary.contrast).toBeGreaterThanOrEqual(4.5);
-  expect(hierarchy.feature.background).toEqual(hierarchy.tokens["accent-feature"]);
+  expect(hierarchy.feature.background).toEqual(hierarchy.tokens["feature-color"]);
   expect(hierarchy.feature.image).toMatch(/^linear-gradient\(145deg,/);
-  expect(hierarchy.feature.color).toEqual(hierarchy.tokens["on-accent-feature"]);
+  expect(hierarchy.feature.color).toEqual(hierarchy.tokens["feature-ink"]);
   expect(hierarchy.feature.contrast).toBeGreaterThanOrEqual(4.5);
   for (const text of hierarchy.featureText) {
-    expect(text.color, text.text).toEqual(hierarchy.tokens["on-accent-feature"]);
+    expect(text.color, text.text).toEqual(hierarchy.tokens["feature-ink"]);
     expect(text.contrast, text.text).toBeGreaterThanOrEqual(4.5);
   }
   for (const metric of hierarchy.metrics) {
@@ -86,7 +93,7 @@ async function checkOverview(page, expected = ["7", "2", "8", "11"]) {
   }
   const gradients = await gradientSurfaces(page);
   expect(gradients.unexpected).toEqual([]);
-  expect(gradients.surfaces.length).toBeGreaterThan(0);
+  expect(gradients.surfaces.some(s => !s.swatch)).toBe(true);
   for (const surface of gradients.surfaces) {
     expect(surface.image, surface.element).toMatch(/^linear-gradient\(145deg,/);
     expect(surface.image, surface.element).toMatch(/0%,.*48%,.*100%/);
@@ -94,6 +101,7 @@ async function checkOverview(page, expected = ["7", "2", "8", "11"]) {
     expect(surface.distinctStops, surface.element).toBe(3);
     if (surface.expectedStops) expect(surface.stops, surface.element).toEqual(surface.expectedStops);
     if (!surface.swatch) {
+      expect(surface.surfaceContrast, surface.element).toBeLessThanOrEqual(3);
       expect(surface.contrast, surface.element).toBeGreaterThanOrEqual(4.5);
       for (const text of surface.text) expect(text.contrast, text.label).toBeGreaterThanOrEqual(4.5);
     }
@@ -187,7 +195,7 @@ test("existing poster stays inside the current-work thumbnail and a failed poste
 });
 
 for (const width of [1440, 390]) for (const theme of ["light", "dark"]) {
-  test(`all six accent choices preserve black-white hierarchy and a tonal gradient theme feature at ${width} ${theme}`, async ({ page, request }) => {
+  test(`all six accent choices preserve black-white hierarchy and mode-aware layered theme surfaces at ${width} ${theme}`, async ({ page, request }) => {
     await page.setViewportSize({ width, height: 1000 });
     await page.emulateMedia({ colorScheme: theme });
     await fixture(page, request);

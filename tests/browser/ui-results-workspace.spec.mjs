@@ -1,3 +1,4 @@
+import { openDetails, closeDetails } from "./fixed-canvas.mjs";
 import { setTheme } from "./theme.mjs";
 import { test, expect } from "@playwright/test";
 import { readFile } from "node:fs/promises";
@@ -87,25 +88,22 @@ for (const theme of ["light", "dark"])
       await openProjectPage(page, "overview");
       await openWorkflow(page);
       await page.locator('[data-stage="script"]').click();
+      await openDetails(page);
       await page.locator('[data-flow-node="screenplay"]').click();
       await expect(page.locator(".workflow-step-heading h3")).toHaveText(
         "剧本创作",
       );
-      // Folding the process must preserve the selected step and mounted reader.
-      const inspector = await page
-        .locator(".workflow-inspector")
-        .elementHandle();
+      await closeDetails(page);
+      // Folding the process preserves the selected summary and canvas.
+      const inspector = await page.locator(".workflow-summary").elementHandle();
       await page.locator(".project-process > summary").click();
       await openWorkflow(page);
       expect(
         await inspector.evaluate(
-          (element) =>
-            element === document.querySelector(".workflow-inspector"),
+          (element) => element === document.querySelector(".workflow-summary"),
         ),
       ).toBe(true);
-      await expect(page.locator(".workflow-step-heading h3")).toHaveText(
-        "剧本创作",
-      );
+      await expect(page.locator(".workflow-summary h3")).toHaveText("剧本创作");
     });
 
 test("unfinished projects show available shots and explain why full video cannot be downloaded", async ({
@@ -150,6 +148,7 @@ test("a team receipt opens its exact workflow step while project actions remain 
   await expect(page.locator(".execution-record-focus")).toContainText(
     "mock-writer-current",
   );
+  await closeDetails(page);
   const summary = page.locator(".project-actions-menu > summary");
   await summary.click();
   await expect(

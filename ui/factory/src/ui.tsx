@@ -56,19 +56,75 @@ export function Panel({
     </section>
   );
 }
-// Shared, bounded theme surface for an actual page-level business summary.
-export function PageFocus({ label, value, detail }: {
+// Counts remain supporting information. Theme emphasis belongs to the current work.
+export function PageFocus({
+  label,
+  value,
+  detail,
+  progress,
+}: {
   label: string;
   value: ReactNode;
   detail: ReactNode;
+  progress?: { completed: number; total: number };
 }) {
-  return <section className="page-summary" aria-label={label + "摘要"}>
-    <div className="page-color-focus">
-      <span>{label}</span>
-      <strong>{value}</strong>
+  return (
+    <section className="page-summary" aria-label={label + "摘要"}>
+      <div className="page-summary-value">
+        <span>{label}</span>
+        <strong>{value}</strong>
+      </div>
+      <p>{detail}</p>
+      {progress && <WorkProgress label={label} {...progress} />}
+    </section>
+  );
+}
+export function WorkProgress({
+  label,
+  completed,
+  total,
+}: {
+  label: string;
+  completed: number;
+  total: number;
+}) {
+  if (!(total > 0) || !Number.isFinite(total) || !Number.isFinite(completed))
+    return null;
+  const value = Math.min(total, Math.max(0, completed));
+  return (
+    <div
+      className="work-progress"
+      role="progressbar"
+      aria-label={label}
+      aria-valuemin={0}
+      aria-valuemax={total}
+      aria-valuenow={value}
+    >
+      <span style={{ width: `${(value / total) * 100}%` }} />
     </div>
-    <p>{detail}</p>
-  </section>;
+  );
+}
+export function WorkFocus({
+  title,
+  eyebrow = "当前工作",
+  context,
+  children,
+}: {
+  title: string;
+  eyebrow?: string;
+  context?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <section className="work-focus" aria-label="当前工作区">
+      <div className="work-focus-copy">
+        <small>{eyebrow}</small>
+        <h2>{title}</h2>
+        {context}
+      </div>
+      <div className="work-focus-next">{children}</div>
+    </section>
+  );
 }
 export function Heading({
   title,

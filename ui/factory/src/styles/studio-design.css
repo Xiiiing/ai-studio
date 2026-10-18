@@ -234,9 +234,11 @@ tbody tr:hover {
   min-width: 0;
   padding: 22px;
   border-radius: 16px;
-  background-color: var(--accent-feature);
-  background-image: var(--accent-gradient);
-  color: var(--on-accent-feature);
+  background-color: var(--feature-color);
+  background-image: var(--feature-gradient);
+  border: 1px solid var(--feature-border);
+  box-shadow: inset 0 1px 0 var(--feature-sheen);
+  color: var(--feature-ink);
 }
 .focus-feature-head {
   display: flex;
@@ -462,9 +464,11 @@ tbody tr:hover {
   min-width: 0;
   padding: 18px 20px;
   border-radius: 12px;
-  background-color: var(--accent-feature);
-  background-image: var(--accent-gradient);
-  color: var(--on-accent-feature);
+  background-color: var(--feature-color);
+  background-image: var(--feature-gradient);
+  border: 1px solid var(--feature-border);
+  box-shadow: inset 0 1px 0 var(--feature-sheen);
+  color: var(--feature-ink);
   overflow-wrap: anywhere;
 }
 .page-color-focus > span,
@@ -524,4 +528,12 @@ tbody tr:hover {
 .project-context > article.page-color-focus > small {
   font-size: var(--text-caption);
   line-height: var(--leading-caption);
+}
+
+/* The current production is the visual focus; repeated summaries stay softer. */
+.dashboard-focus-feature {
+  --feature-strength: 68%;
+}
+:root[data-theme="dark"] .dashboard-focus-feature {
+  --feature-strength: 28%;
 }

@@ -75,25 +75,20 @@ for (const scenario of [
   });
 }
 
-test("mobile workflow keyboard selection transfers focus to details and returns to the selected stage", async ({
+test("mobile workflow keyboard selection preserves canvas and focus", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.emulateMedia({ reducedMotion: "reduce" });
-  await page.goto(`/#project=${projectId}&tab=overview`);
-  await openWorkflow(page);
+  await page.goto(`/#project=${projectId}&tab=workflow`);
   const stage = page.locator('[data-stage="script"]');
-  await expect(stage).toBeVisible();
   await stage.focus();
   await page.keyboard.press("Enter");
-  const inspector = page.getByRole("complementary", { name: "节点详情" });
-  await expect(page.locator(".workflow-map-container")).toBeHidden();
-  await expect(inspector).toBeVisible();
-  await expect(inspector).toBeFocused();
-  await inspector.getByRole("button", { name: "返回流程图" }).click();
-  await expect(page.locator(".workflow-map-container")).toBeVisible();
-  await expect(stage).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator(".workflow-canvas-viewport")).toBeVisible();
   await expect(stage).toBeFocused();
+  await expect(stage).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator(".workflow-summary h3")).toHaveText(
+    "故事目标落实与独立审核",
+  );
 });
 
 test("composition dragging previews the region, saves normalized coordinates, and cancels a later drag", async ({

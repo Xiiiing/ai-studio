@@ -1,3 +1,4 @@
+import { openDetails, closeDetails } from "./fixed-canvas.mjs";
 import { refreshPage } from "./header-flow.mjs";
 import { openWorkflow } from "./navigation.mjs";
 import { openProjectPage } from "./navigation.mjs";
@@ -317,9 +318,11 @@ test("automatic supervisor gate is not a phantom human decision", async ({
   await page.locator('#project-list [data-id="' + id + '"]').click();
   await openWorkflow(page);
   await page.locator('[data-stage="story"]').click();
+  await openDetails(page);
   await expect(page.locator('[data-flow-node="story_decision"]')).toContainText(
     "执行中",
   );
+  await closeDetails(page);
   await expect(page.locator(".project-attention-banner")).toHaveCount(0);
   await openProjectPage(page, "decisions");
   await expect(page.locator("#workspace")).toContainText("当前没有人工待办");

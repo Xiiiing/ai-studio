@@ -15,3 +15,7 @@
 
 @import "./styles/project-flow.css";
 @import "./styles/collaboration.css";
+
+@import "./styles/fixed-workflow.css";
+
+@import "./styles/theme-layout.css";
