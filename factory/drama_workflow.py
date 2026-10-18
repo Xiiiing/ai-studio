@@ -285,11 +285,23 @@ def _projection(project, stages, tasks, active_job):
         'label': '按验收意见局部返修', 'loop': True})
     for task in tasks:
         task['stage_id'] = _task_stage(task, drama)
+    from .team_blueprint import collaboration_departments
     identity = {'project_id': project['id'], 'revision': project.get('revision', 0)}
+    # Declared handoffs mirror planning calls, not observed packet transfers.
+    role_handoffs = ([
+        {'source': 'story_editor', 'target': 'screenwriter', 'label': '全剧设定、人物与画风要求'},
+        {'source': 'screenwriter', 'target': 'story_critic', 'label': '分集大纲与集间承接'},
+        {'source': 'story_critic', 'target': 'story_editor', 'label': '设定修改要求', 'loop': True},
+        {'source': 'story_critic', 'target': 'screenwriter', 'label': '大纲修改要求', 'loop': True},
+    ] if drama else [
+        {'source': 'screenwriter', 'target': 'independent_critic', 'label': '单集场景方案'},
+        {'source': 'independent_critic', 'target': 'screenwriter', 'label': '场景修改意见', 'loop': True},
+    ])
     return ({**identity, 'active_node': active, 'nodes': nodes, 'edges': edges,
+        'departments': collaboration_departments(),
         'presentation': {'stages': [{'id': row['id'], 'label': row['title'], 'node_ids': [row['id']]}
             for row in stages], 'branches': []}},
-        {**identity, 'steps': steps, 'nodes': []})
+        {**identity, 'steps': steps, 'nodes': [], 'edges': role_handoffs})
 
 
 def build(project, *, episodes=(), batches=(), units=(), active_job=False):

@@ -11,6 +11,12 @@ import { rows, roleName, date, activityName, type RecordData } from "./api";
 import { Badge, Panel, Empty, Artifact } from "./ui";
 import { ExecutionRecord, MaterialCard } from "./DocumentReader";
 import { WorkflowMap } from "./WorkflowMap";
+import {
+  WorkflowCollaboration,
+  readCollaboration,
+  saveCollaboration,
+  type CollaborationSelection,
+} from "./WorkflowCollaboration";
 
 export function workflowNodes(
   graph: RecordData,
@@ -147,6 +153,7 @@ export function Workflow({
   onSelectNode,
   selectedExecution,
   renderRecords,
+  onProject,
 }: {
   graph: RecordData;
   flow?: RecordData;
@@ -158,7 +165,15 @@ export function Workflow({
   onSelectNode?: (id: string) => void;
   selectedExecution?: string;
   renderRecords?: (node: RecordData) => ReactNode;
+  onProject?: (id: string) => void;
 }) {
+  const [teamSelection, setTeamSelection] = useState<CollaborationSelection>(
+    () => readCollaboration(graph.project_id),
+  );
+  useEffect(
+    () => saveCollaboration(graph.project_id, teamSelection),
+    [graph.project_id, teamSelection],
+  );
   const [selection, setSelection] = useState("");
   const [detailView, setDetailView] = useState("materials");
   const [inspectorOpen, setInspectorOpen] = useState(
@@ -183,6 +198,7 @@ export function Workflow({
   };
   useEffect(() => {
     if (selectedExecution) {
+      setTeamSelection((value) => ({ ...value, open: false }));
       setInspectorOpen(true);
       setDetailView("records");
       const frame = requestAnimationFrame(() => {
@@ -282,6 +298,7 @@ export function Workflow({
           <button
             className="text-link"
             onClick={() => {
+              setTeamSelection((value) => ({ ...value, open: false }));
               select(graph.active_node || stages[0].id);
               setInspectorOpen(true);
               requestAnimationFrame(() => {
@@ -300,7 +317,10 @@ export function Workflow({
           {inspectorOpen && (
             <button
               className="text-link"
-              onClick={() => setInspectorOpen(false)}
+              onClick={() => {
+                setInspectorOpen(false);
+                setTeamSelection((value) => ({ ...value, open: false }));
+              }}
             >
               <Maximize2 size={15} />
               完整流程
@@ -313,6 +333,29 @@ export function Workflow({
           </small>
         </div>
       </header>
+      <div
+        className="workflow-view-switch"
+        role="group"
+        aria-label="工作流查看方式"
+      >
+        <button
+          aria-pressed={!teamSelection.open}
+          onClick={() =>
+            setTeamSelection((value) => ({ ...value, open: false }))
+          }
+        >
+          项目流程
+        </button>
+        <button
+          aria-pressed={teamSelection.open}
+          onClick={() =>
+            setTeamSelection((value) => ({ ...value, open: true }))
+          }
+        >
+          <Users size={15} />
+          部门协作
+        </button>
+      </div>
       <div className="workflow-progress-strip">
         <span>
           <Badge
@@ -334,7 +377,45 @@ export function Workflow({
       {stale && (
         <p className="notice">材料正在同步，保留上次记录；文件入口暂时停用。</p>
       )}
-      <div className="workflow-layout">
+      {teamSelection.open && (
+        <WorkflowCollaboration
+          graph={graph}
+          flow={flow || {}}
+          steps={stages}
+          selection={teamSelection}
+          stale={stale}
+          onProject={onProject}
+          onSelection={(value) => {
+            setTeamSelection(value);
+            if (!value.open) {
+              setInspectorOpen(false);
+              requestAnimationFrame(() => {
+                mapRef.current
+                  ?.querySelector<HTMLButtonElement>('[aria-pressed="true"]')
+                  ?.focus({ preventScroll: true });
+                if (window.matchMedia("(max-width: 1200px)").matches)
+                  mapRef.current?.scrollIntoView({
+                    block: "start",
+                    behavior: "instant",
+                  });
+              });
+            }
+          }}
+          onInspectStep={(id) => {
+            setTeamSelection((value) => ({ ...value, open: false }));
+            select(id);
+            setInspectorOpen(true);
+            requestAnimationFrame(() => {
+              inspectorRef.current?.focus({ preventScroll: true });
+              inspectorRef.current?.scrollIntoView({
+                block: "start",
+                behavior: "instant",
+              });
+            });
+          }}
+        />
+      )}
+      <div className="workflow-layout" hidden={teamSelection.open}>
         <div ref={mapRef} className="workflow-map-container">
           <WorkflowMap
             graph={graph}
@@ -457,6 +538,26 @@ export function Workflow({
               {selected.conditional && <small>按需执行</small>}
             </span>
           </header>
+          <button
+            className="button workflow-expand-team"
+            onClick={() => {
+              const definitions = rows(graph.departments).length
+                ? rows(graph.departments)
+                : rows(graph.groups);
+              const department = definitions.find((d) =>
+                d.roles?.includes(selected.owner),
+              );
+              setTeamSelection({
+                open: true,
+                department: department?.id || "",
+                role: "",
+              });
+            }}
+          >
+            <Users size={15} />
+            展开团队分工
+            <ArrowRight size={14} />
+          </button>
           <div
             className="workflow-detail-switch"
             role="group"

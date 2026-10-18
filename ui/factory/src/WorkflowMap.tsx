@@ -50,21 +50,25 @@ export function stageFlow(
       id: g.id,
       label: g.label,
       node_ids: g.node_ids,
-      status,
+      status:
+        graph.flow_kind === "collaboration" && g.status ? g.status : status,
       completedSteps: done,
       totalSteps: members.length,
-      ownerLabel: roleName(
-        current?.owner ||
-          members[0]?.owner ||
-          members[0]?.role ||
-          "orchestrator",
-      ),
+      ownerLabel:
+        g.ownerLabel ||
+        roleName(
+          current?.owner ||
+            members[0]?.owner ||
+            members[0]?.role ||
+            "orchestrator",
+        ),
       summary:
-        members.length === 1
+        g.summary ||
+        (members.length === 1
           ? members[0]?.output
             ? `交付：${members[0].output}`
             : "等待交付"
-          : `${members.length} 个步骤 · ${done} 个已完成`,
+          : `${members.length} 个步骤 · ${done} 个已完成`),
     } as FlowStage;
   });
   const revision = steps.find((n) => n.id === "revision");
@@ -90,15 +94,19 @@ export function stageFlow(
       !!edge.loop ||
       source === "revision" ||
       target === "revision" ||
-      stageNodes.findIndex((n) => n.id === target) <
-        stageNodes.findIndex((n) => n.id === source);
+      (graph.flow_kind !== "collaboration" &&
+        stageNodes.findIndex((n) => n.id === target) <
+          stageNodes.findIndex((n) => n.id === source));
     const id = `${source}:${target}:${repair ? "repair" : "forward"}`;
     const existing = edges.get(id);
-    const label = repair
-      ? source === "revision"
-        ? "返修后接续"
-        : "按需返修"
-      : "交付下一阶段";
+    const label =
+      graph.flow_kind === "collaboration" && edge.label
+        ? edge.label
+        : repair
+          ? source === "revision"
+            ? "返修后接续"
+            : "按需返修"
+          : "交付下一阶段";
     if (existing) {
       if (!existing.labels.includes(label)) existing.labels.push(label);
       continue;
@@ -145,6 +153,7 @@ export function stageEdgePath(
   target: FlowBox,
   edge: StageEdge,
   bounds: { width: number; height: number },
+  obstacles: FlowBox[] = [],
 ) {
   const sx = middleX(source),
     sy = middleY(source),
@@ -160,7 +169,21 @@ export function stageEdgePath(
       mid = (start + end) / 2;
     return `M ${start} ${sy} C ${mid} ${sy}, ${mid} ${ty}, ${end} ${ty}`;
   }
-  if (sameColumn && !edge.repair) {
+  const verticalStart = Math.min(
+    source.y + source.height,
+    target.y + target.height,
+  );
+  const verticalEnd = Math.max(source.y, target.y);
+  const blockedColumn = obstacles.some(
+    (b) =>
+      b !== source &&
+      b !== target &&
+      sx > b.x + 1 &&
+      sx < b.x + b.width - 1 &&
+      b.y < verticalEnd &&
+      b.y + b.height > verticalStart,
+  );
+  if (sameColumn && !edge.repair && !blockedColumn) {
     const down = ty > sy,
       start = down ? source.y + source.height : source.y,
       end = down ? target.y : target.y + target.height,
@@ -184,6 +207,10 @@ export function WorkflowMap({
   selectedGroup,
   selectedStep,
   onSelect,
+  caption = "阶段与数据流向",
+  navigationLabel = "制作阶段",
+  hint = "点击节点查看输入、交付与内部步骤",
+  maxColumns = 5,
 }: {
   graph: RecordData;
   groups: RecordData[];
@@ -191,6 +218,10 @@ export function WorkflowMap({
   selectedGroup?: string;
   selectedStep?: string;
   onSelect: (id: string) => void;
+  caption?: string;
+  navigationLabel?: string;
+  hint?: string;
+  maxColumns?: number;
 }) {
   const flow = useMemo(
     () => stageFlow(graph, groups, steps),
@@ -202,12 +233,18 @@ export function WorkflowMap({
     height: 0,
     boxes: {},
   });
-  const columns =
-    measurement.width && measurement.width < 520
-      ? 2
-      : measurement.width >= 1050 && flow.nodes.length <= 5
-        ? flow.nodes.length
-        : 3;
+  const columns = Math.max(
+    1,
+    Math.min(
+      maxColumns,
+      flow.nodes.length || 1,
+      measurement.width && measurement.width < 520
+        ? 2
+        : measurement.width >= 1050 && flow.nodes.length <= 5
+          ? flow.nodes.length
+          : 3,
+    ),
+  );
   const markerId = useId().replace(/[^a-zA-Z0-9_-]/g, "");
   useLayoutEffect(() => {
     const element = ref.current;
@@ -242,7 +279,7 @@ export function WorkflowMap({
   return (
     <div className="workflow-map-panel">
       <div className="workflow-map-caption">
-        <strong>阶段与数据流向</strong>
+        <strong>{caption}</strong>
         <div className="workflow-flow-legend">
           <span>
             <i
@@ -273,7 +310,7 @@ export function WorkflowMap({
       <nav
         ref={ref}
         className="workflow-stages workflow-map"
-        aria-label="制作阶段"
+        aria-label={navigationLabel}
         style={{ "--flow-columns": columns } as CSSProperties}
       >
         <svg
@@ -305,7 +342,13 @@ export function WorkflowMap({
             const source = measurement.boxes[edge.source],
               target = measurement.boxes[edge.target];
             if (!source?.width || !target?.width) return null;
-            const path = stageEdgePath(source, target, edge, measurement);
+            const path = stageEdgePath(
+              source,
+              target,
+              edge,
+              measurement,
+              Object.values(measurement.boxes),
+            );
             const state = edge.running
               ? "running"
               : edge.repair
@@ -376,7 +419,7 @@ export function WorkflowMap({
                       String(index + 1).padStart(2, "0")
                     )}
                   </span>
-                  <Badge status={node.status} />
+                  <Badge status={node.status} label={node.status_label} />
                 </span>
                 <span className="workflow-stage-copy">
                   <strong title={node.label}>
@@ -399,7 +442,7 @@ export function WorkflowMap({
                 ) && (
                   <small className="workflow-internal-repair">含审核返修</small>
                 )}
-                {node.totalSteps > 0 && (
+                {graph.flow_kind !== "collaboration" && node.totalSteps > 0 && (
                   <span
                     className="workflow-node-progress"
                     aria-label={`${node.completedSteps} / ${node.totalSteps} 步骤已完成`}
@@ -424,7 +467,7 @@ export function WorkflowMap({
           })}
         </div>
       </nav>
-      <p className="workflow-map-hint">点击节点查看输入、交付与内部步骤</p>
+      <p className="workflow-map-hint">{hint}</p>
     </div>
   );
 }

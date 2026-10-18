@@ -18,9 +18,11 @@ export function lifecycleFixture(workflow, projectId, episode = false) {
   for (const t of tasks)
     t.stage_id = episode
       ? "units"
-      : /critic/.test(t.role)
-        ? "review"
-        : "planning";
+      : /^(episode|batch):/.test(t.id)
+        ? "production"
+        : /critic/.test(t.role)
+          ? "review"
+          : "planning";
   const nodes = definitions.map(([id, label, role]) => ({
     id,
     label,
@@ -48,6 +50,43 @@ export function lifecycleFixture(workflow, projectId, episode = false) {
       project_id: projectId,
       revision: 8,
       active_node: episode ? "units" : "review",
+      departments: [
+        {
+          id: "direction",
+          label: "制片统筹",
+          lead: "producer",
+          roles: ["producer"],
+          responsibility: "确认规划并验收成果。",
+        },
+        {
+          id: "story",
+          label: "故事编剧",
+          lead: "story_editor",
+          roles: ["story_editor", "screenwriter"],
+          responsibility: "整理故事设定并创作分集大纲。",
+        },
+        {
+          id: "post",
+          label: "后期制作",
+          lead: "editor",
+          roles: ["editor"],
+          responsibility: "剪辑与合成交付。",
+        },
+        {
+          id: "review",
+          label: "独立质检",
+          lead: "independent_critic",
+          roles: ["story_critic", "independent_critic", "visual_critic"],
+          responsibility: "独立审核与有依据的退回。",
+        },
+        {
+          id: "operations",
+          label: "流程编排",
+          lead: "orchestrator",
+          roles: ["orchestrator"],
+          responsibility: "协调剧集和制作单元。",
+        },
+      ],
       nodes,
       edges,
       presentation: {
@@ -62,6 +101,21 @@ export function lifecycleFixture(workflow, projectId, episode = false) {
       project_id: projectId,
       revision: 8,
       nodes: [],
+      edges: episode
+        ? [
+            {
+              source: "screenwriter",
+              target: "independent_critic",
+              label: "场景方案",
+            },
+          ]
+        : [
+            {
+              source: "story_editor",
+              target: "screenwriter",
+              label: "全剧设定与角色约束",
+            },
+          ],
       steps: nodes.map((n) => ({ id: n.id, inputs: [], outputs: [] })),
     },
   };

@@ -303,3 +303,20 @@ def test_revised_shared_plan_does_not_reuse_older_confirmation(isolated):
     assert stages(p)['confirmation']['output'] == {'plan_version': 2}
     store.update(p['id'], {'status': 'producing'})
     assert dramas.snapshot(p['id'])['workflow']['graph']['active_node'] == 'production'
+
+
+def test_collaboration_department_catalog_matches_production_and_does_not_invent_staff_runs(isolated):
+    from factory.team_ledger import DEPARTMENTS
+    from factory.team_blueprint import collaboration_departments
+    project = dramas.create(input_payload())
+    result = dramas.snapshot(project['id'])['workflow']
+    catalog = {d['id']: d for d in result['graph']['departments']}
+    assert catalog['story']['roles'] == ['researcher', 'creator', 'story_editor', 'screenwriter']
+    assert catalog['review']['roles'] == ['story_critic', 'independent_critic', 'visual_critic']
+    assert catalog['operations']['roles'] == ['orchestrator']
+    assert all(catalog[d['id']]['roles'] == d['roles'] for d in DEPARTMENTS)
+    assert result['tasks'] == []
+    assert result['flow']['nodes'] == []
+    # The presentation must not expose mutable role lists from the catalog.
+    catalog['story']['roles'].clear()
+    assert collaboration_departments()[1]['roles'] == DEPARTMENTS[1]['roles']

@@ -370,3 +370,40 @@ test("narrow screens jump directly to details and can return to the flow", async
     )
     .toBeLessThan(10);
 });
+
+test("department employee opens the recorded original request in its own workflow", async ({
+  page,
+}) => {
+  await page.goto(`/#project=${id}&tab=workflow`);
+  await expect(
+    page.getByRole("heading", { name: "制作工作流", exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "部门协作", exact: true }).click();
+  const collaboration = page.getByRole("region", { name: "部门协作工作流" });
+  await collaboration
+    .getByRole("navigation", { name: "项目部门" })
+    .locator('[data-map-node="story"]')
+    .click();
+  await collaboration
+    .getByRole("navigation", { name: "部门岗位" })
+    .locator('[data-map-node="screenwriter"]')
+    .click();
+  const employee = collaboration.getByRole("complementary", {
+    name: "岗位工作详情",
+  });
+  const call = employee.locator('[data-execution="writer-current"]');
+  await expect(call).toContainText("mock-writer-current");
+  await call.getByText("第 1 次请求与响应", { exact: true }).click();
+  const original = call
+    .locator(".material-card")
+    .filter({ has: page.getByText("请求原文", { exact: true }) })
+    .first();
+  await original.getByRole("button", { name: "阅读文件", exact: true }).click();
+  await expect(original).toContainText("这是当次保存的完整输入");
+  await expect(original).toContainText("请求原文中的提示词");
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth + 1,
+    ),
+  ).toBe(true);
+});

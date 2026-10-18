@@ -1234,12 +1234,32 @@ function Project({
       <FloatingErrorNotice error={workspace.error || (!control ? error : "")} />
       <div className="project-content-layout">
         <ProjectNavigation
-          tab={tab}
+          tab={tab === "workflow" ? "overview" : tab}
           onTab={onTab}
           attention={attention?.blocking}
         />
         <div className="project-pane">
-          {tab === "overview" ? (
+          {tab === "workflow" ? (
+                  <Workflow
+                    key={id}
+                    onProject={projectId=>{location.hash=new URLSearchParams({project:projectId,tab:"workflow"}).toString();}}
+                    graph={graph}
+                    flow={actualFlow}
+                    attention={attention}
+                    selectedNode={selectedFlowNode}
+                    onSelectNode={(node) => {
+                      setSelectedFlowNode(node);
+                      setSelectedExecution("");
+                    }}
+                    selectedExecution={selectedExecution}
+                    onOpen={onTab}
+                    onDecision={() => onTab("decisions")}
+                    onShot={(shot) => {
+                      setSelectedShot(shot);
+                      onTab("shots");
+                    }}
+                  />
+          ) : tab === "overview" ? (
             <>
               <div className="project-context">
                 <article className="page-color-focus">
@@ -1365,6 +1385,7 @@ function Project({
                 {(workflowOpen || workflowSeen) && (
                   <Workflow
                     key={id}
+                    onProject={projectId=>{location.hash=new URLSearchParams({project:projectId,tab:"workflow"}).toString();}}
                     graph={graph}
                     flow={actualFlow}
                     attention={attention}

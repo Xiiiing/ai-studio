@@ -524,12 +524,17 @@ function ProductionFlow({
   openProject,
 }: {
   workflow?: RecordData;
-  openProject: (id: string) => void;
+  openProject: (id: string, tab?: string) => void;
 }) {
   const [selected, setSelected] = useState("");
   const graph = workflow?.graph;
   const flow = workflow?.flow && {
     ...workflow.flow,
+    collaboration_tasks: rows(workflow.tasks).map((task) => ({
+      ...task,
+      input: flowValue(task.input),
+      output: flowValue(task.output),
+    })),
     steps: rows(workflow.flow.steps).map((step) => ({
       ...step,
       inputs: rows(step.inputs).map((item) => ({
@@ -606,6 +611,7 @@ function ProductionFlow({
           selectedNode={selected || undefined}
           onSelectNode={setSelected}
           renderRecords={records}
+          onProject={(id) => openProject(id, "workflow")}
         />
       )}
       {workflow?.evidence?.truncated && (
@@ -878,11 +884,12 @@ export function DramaDetail({
         <>
           <ProductionFlow
             workflow={p.workflow}
-            openProject={(projectId) => {
+            openProject={(projectId, targetTab) => {
               const episode = rows(p.episodes).find((e) => e.id === projectId);
               openEpisode(
                 projectId,
-                episode?.duration_seconds > 90 ? "workflow" : "team",
+                targetTab ||
+                  (episode?.duration_seconds > 90 ? "workflow" : "team"),
               );
             }}
           />
@@ -1552,7 +1559,9 @@ export function LongEpisodeDetail({
         <>
           <ProductionFlow
             workflow={p.workflow}
-            openProject={(id) => openProject(id, "team")}
+            openProject={(id, targetTab) =>
+              openProject(id, targetTab || "team")
+            }
           />
           <Panel title="单元团队工作台">
             {!rows(p.units).length && (

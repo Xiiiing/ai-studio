@@ -104,4 +104,27 @@ describe("fixed stage flow", () => {
     expect(b).toContain("198");
     expect(a).not.toBe(b);
   });
+  it("routes a long department handoff around an intervening card", () => {
+    const source = { x: 30, y: 30, width: 150, height: 130 },
+      target = { x: 30, y: 470, width: 150, height: 130 },
+      middle = { x: 30, y: 250, width: 150, height: 130 };
+    const edge = {
+      id: "department-handoff",
+      source: "a",
+      target: "c",
+      repair: false,
+    } as StageEdge;
+    const bounds = { width: 600, height: 700 };
+    const direct = stageEdgePath(source, target, edge, bounds);
+    const around = stageEdgePath(source, target, edge, bounds, [
+      source,
+      middle,
+      target,
+    ]);
+    expect(around).not.toBe(direct);
+    expect(around).toContain("L 8 ");
+    expect(stageEdgePath(source, target, edge, bounds, [source, target])).toBe(
+      direct,
+    );
+  });
 });
