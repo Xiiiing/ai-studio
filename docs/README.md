@@ -45,6 +45,7 @@
 | [通用生产验收](PRODUCTION_ACCEPTANCE.md) | 绑定项目、制作版本与媒体校验值的只读验收 |
 | [可审计成片评估](QUALITY_EVALUATION.md) | 技术质量、ASR、VLM、可选 VBench 与证据边界 |
 | [版本化创作 Prompt](VERSIONED_CREATIVE_PROMPTS.md) | Prompt 模块、来源、签名、兼容与失效规则 |
+| [角色输入来源与版本追踪](AGENT_CONTEXT_TRACE.md) | 实际输入、反馈版本、窗口预算和缓存复用来源 |
 | [离线创作 A/B 协议](CREATIVE_AB_PROTOCOL.md) | 冻结案例、匿名评审与回归汇总 |
 | [参考架构研究](REFERENCE_ARCHITECTURES.md) | 上游官方来源、设计取舍与许可范围 |
 | [贡献与本地验证](../CONTRIBUTING.md) | 开发准备、变更组织、测试与文档维护 |

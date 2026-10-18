@@ -190,8 +190,7 @@ test("call attempts expose exact originals and history can locate its step", asy
   await expect(request).toContainText("请求原文中的提示词");
   await call.getByText("第 2 次请求与响应", { exact: true }).click();
   const response = call
-    .locator("details")
-    .nth(1)
+    .locator("details", { has: page.locator("summary", { hasText: /^第 2 次请求与响应$/ }) })
     .locator(".material-card")
     .filter({ has: page.getByText("响应原文", { exact: true }) });
   await response.getByRole("button", { name: "阅读文件" }).click();

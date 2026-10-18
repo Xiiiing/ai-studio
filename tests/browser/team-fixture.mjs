@@ -68,6 +68,14 @@ export function teamFlowFixture(project) {
             run_id: "fixture-run",
             scope: "current_run",
             model: "mock-writer-current",
+            context_manifest: {
+              schema: "ai-studio.context-manifest.v1", delivery: "response_received",
+              project_version: { script_generation: 2 }, prompt: { version: "1.0.0" },
+              budget: { fits: true, prompt_tokens: 300, context_tokens: 32768 },
+              materials: [{ field: "producer_feedback", label: "出品人反馈", state: "selected",
+                summary: "合成验收要求：结尾保留悬念", reason: "包含在本次输入",
+                sha256: "a".repeat(64), bytes: 39, version: { version: 1 } }],
+            },
             status: "succeeded",
             started_at: "2026-10-16T04:00:00Z",
             artifacts: [

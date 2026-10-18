@@ -174,6 +174,8 @@ def _evidence(project):
         task.update(call_id=path.name, model=str(saved.get('response_model') or saved.get('configured_model') or saved.get('model') or '')[:200],
             started_at=saved.get('started_at'), finished_at=saved.get('finished_at'),
             execution_status=saved.get('status'))
+        from .context_manifest import public as public_context
+        task['context_manifest'] = public_context(saved.get('context_manifest'))
         if isinstance(parsed, dict) and (not output_hash or output_hash == digest(parsed)):
             original = _artifact_url(root, 'production/' + root.name + '/' + (path / 'parsed.json').as_posix())
             if original:
@@ -194,6 +196,15 @@ def _evidence(project):
                     actual_inputs.append((task, payload))
                     break
         if saved.get('status') == 'failed': task['issues'] = ['模型调用失败，详细诊断见运行记录']
+    for path in _files(root, ('planning', 'context-reuse'), False, evidence):
+        saved = _read(root, path, evidence)
+        if not saved or saved.get('schema') != 'ai-studio.context-reuse.v1' or saved.get('role') not in ROLE_LABELS:
+            continue
+        from .context_manifest import public as public_context
+        tasks.append(_row('reuse:' + path.stem, ROLE_LABELS[saved['role']] + '复用已完成步骤', saved['role'],
+            'succeeded', {'basis': '缓存命中，未发起新的模型调用'}, '复用已保存结果', reused=True,
+            origin_call_id=(saved.get('origin') or {}).get('call_id'), context_manifest=public_context(saved.get('context_manifest')),
+            started_at=saved.get('started_at'), stage=saved.get('stage'), evidence='cache_reuse'))
     from .handoff_evidence import attach_received_content
     attach_received_content(outputs, actual_inputs, _summary)
     tasks.sort(key=lambda item: str(item.get('generated_at') or item.get('finished_at') or item.get('started_at') or ''), reverse=True)

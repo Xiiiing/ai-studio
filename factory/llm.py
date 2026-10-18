@@ -74,9 +74,9 @@ def _request(config, role, system, payload, schema, output_dir, max_tokens=4096,
             from .team_ledger import record_call
             from .execution_context import current_execution
             record_call(current_execution.get(), role, redact_secrets(value, llm), folder / name)
+            from .context_manifest import completed
+            completed(folder, redact_secrets(value, llm))
     user_content = content if content is not None else json.dumps(payload,ensure_ascii=False,allow_nan=False)
-    if content is None and len(user_content) > 100000:
-        raise ValueError("Creative context exceeds the bounded project input")
     rules = _system_rules(llm, system, schema)
     # Hash the actual composed system rules, including provider schema instructions.
     import hashlib
@@ -107,25 +107,40 @@ def _request(config, role, system, payload, schema, output_dir, max_tokens=4096,
     from .execution_context import current_execution
     if current_execution.get() is not None:
         receipt["execution_context"] = dict(current_execution.get())
+    from .context_manifest import build as build_context
+    from .creative_evidence_io import digest
+    manifest = build_context(role, payload, prompt_meta, current_execution.get(), content=content)
+    manifest["delivery"] = "not_submitted"
+    receipt["context_manifest"] = manifest
     save("receipt.json", receipt)
     started = time.monotonic()
     try:
+        if content is None and len(user_content) > 100000:
+            raise ValueError("创作上下文超出输入上限；已保留全部必需材料，请拆分任务或减少可选参考资料后重试")
         served = check_model(llm)
         receipt["served_model_ids"] = [item.get("id") for item in served.get("data", [])
                                       if isinstance(item,dict)] if isinstance(served,dict) else []
         receipt["model_discovery"] = served.get("discovery", "verified")
         limit = llm.get("max_schema_attempts", 2)
         for attempt in range(1, limit + 1):
+            manifest.update(delivery="not_submitted", attempt=attempt)
             route, request = chat_request(llm, messages, schema, role, parameters)
             receipt["api_route"] = route
             budget = context_budget(llm, messages, max_tokens)
             receipt.setdefault("context_checks", []).append(budget)
+            manifest["budget"] = budget
+            manifest["request_sha256"] = digest(request)
+            save("receipt.json", receipt)
+            save(f"context-{attempt:02d}.json", manifest)
             if not budget["fits"]:
-                raise ValueError("创作上下文超出模型窗口，请减少参考资料")
+                raise ValueError("创作上下文超出模型窗口；未裁剪用户要求、已确认设定或当前稿件。请拆分任务、减少可选参考资料或选择更大窗口的模型")
             save(f"request-{attempt:02d}.json", request)
+            manifest["delivery"] = "attempted"
+            save("receipt.json", receipt)
             response = request_json(llm["base_url"], route, request,
                                     timeout=parameters["request_timeout_seconds"],
                                     api_key_env=llm.get("api_key_env"), profile=llm)
+            manifest["delivery"] = "response_received"
             response = redact_secrets(response, llm)
             save(f"response-{attempt:02d}.json", response)
             response = chat_response(llm, response)
@@ -414,8 +429,10 @@ def review_media(project, shot, path, references, config=None, *, output_dir=Non
                         {"type":"image_url","image_url":{"url":_image_url(sample)}}])
     if not samples:
         return {"status":"fail","issues":[{"code":"decode","detail":"没有可解码画面"}],"evaluator":"technical"}
-    result=_request(config,"visual_critic",REVIEW_SYSTEM,
-                    None,schema,record,max_tokens=2200 if contract else 1600,temperature=.15,content=content)
+    from .context_manifest import capture
+    with capture(project, "quality_review"):
+        result=_request(config,"visual_critic",REVIEW_SYSTEM,
+                        None,schema,record,max_tokens=2200 if contract else 1600,temperature=.15,content=content)
     errors = list(Draft202012Validator(schema).iter_errors(result))
     if errors:
         raise ValueError("VLM result does not match the visual review contract")

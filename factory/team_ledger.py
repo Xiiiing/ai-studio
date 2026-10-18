@@ -360,6 +360,8 @@ def record_call(context, role, receipt, path):
                 "profile_id": receipt.get("profile"), "started_at": receipt.get("started_at"), "finished_at": receipt.get("finished_at"),
                 "receipt": _artifact(relative) if relative else None,
                 "usage": [a.get("usage") for a in receipt.get("attempts", []) if a.get("usage")]}
+        from .context_manifest import public as public_context
+        call["context_manifest"] = public_context(receipt.get("context_manifest"))
         data["executions"] = ([c for c in data.get("executions", []) if c["id"] != call["id"]] + [call])[-30:]
         if receipt.get("actual_member", role) == data["owner"]:
             data["model"] = call["model"]
