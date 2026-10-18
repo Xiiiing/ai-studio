@@ -21,6 +21,7 @@ import {
   date,
   type RecordData,
 } from "./api";
+import { Workflow } from "./Workflow";
 import "./dramas.css";
 
 export const dramaDefaults = { seconds: 300, maxSeconds: 900 };
@@ -436,76 +437,94 @@ function ProductionFlow({
   workflow?: RecordData;
   openProject: (id: string) => void;
 }) {
+  const [selected, setSelected] = useState("");
+  const graph = workflow?.graph;
+  const flow = workflow?.flow && {
+    ...workflow.flow,
+    steps: rows(workflow.flow.steps).map((step) => ({
+      ...step,
+      inputs: rows(step.inputs).map((item) => ({
+        ...item,
+        value: flowValue(item.value),
+      })),
+      outputs: rows(step.outputs).map((item) => ({
+        ...item,
+        value: flowValue(item.value),
+      })),
+    })),
+  };
+  function records(node: RecordData) {
+    const tasks = rows(workflow?.tasks).filter(
+      (task) => task.stage_id === node.id,
+    );
+    return (
+      <div className="drama-node-records">
+        {!tasks.length && <p>此节点暂无执行记录。</p>}
+        {tasks.map((task) => (
+          <details className="drama-task" key={task.id}>
+            <summary>
+              {task.title} · {roleName(task.role || "orchestrator")} ·{" "}
+              {statusNames[task.status] || task.status}
+            </summary>
+            {task.model && <p>执行模型：{task.model}</p>}
+            {!!task.returned_to?.length && (
+              <p>退回：{task.returned_to.map(roleName).join("、")}</p>
+            )}
+            {(task.finished_at || task.generated_at || task.started_at) && (
+              <p>
+                记录时间：
+                {date(task.finished_at || task.generated_at || task.started_at)}
+              </p>
+            )}
+            <dl>
+              <dt>输入</dt>
+              <dd>
+                <Readable value={flowValue(task.input || "暂无输入记录")} />
+              </dd>
+              <dt>输出</dt>
+              <dd>
+                <Readable value={flowValue(task.output || "暂无输出记录")} />
+              </dd>
+            </dl>
+            {!!task.issues?.length && (
+              <div role="note">
+                {task.issues.map((issue: string, i: number) => (
+                  <p key={i}>{issue}</p>
+                ))}
+              </div>
+            )}
+            {task.project_id && (
+              <button
+                className="button"
+                onClick={() => openProject(task.project_id)}
+              >
+                打开工作台
+              </button>
+            )}
+          </details>
+        ))}
+      </div>
+    );
+  }
   return (
-    <Panel title="制作流程与团队">
-      <p className="muted">展开任务查看负责人、输入和结果。</p>
-      {!workflow && <p>暂无流程记录，请刷新后重试。</p>}
+    <Panel title="制作流程与团队" className="drama-workflow-panel">
+      {!graph?.nodes?.length ? (
+        <p>暂无流程图记录，请刷新后重试。</p>
+      ) : (
+        <Workflow
+          graph={graph}
+          flow={flow}
+          selectedNode={selected || undefined}
+          onSelectNode={setSelected}
+          renderRecords={records}
+        />
+      )}
       {workflow?.evidence?.truncated && (
         <p>仅显示部分执行记录，其他记录仍保留在项目中。</p>
       )}
       {!!workflow?.evidence?.unreadable && (
         <p>部分执行回执无法读取，当前仅展示可核实的记录。</p>
       )}
-      <ol className="drama-flow-stages">
-        {rows(workflow?.stages).map((stage) => (
-          <li key={stage.id}>
-            <strong>{stage.title}</strong>
-            <Badge
-              status={stage.status}
-              label={statusNames[stage.status] || stage.status}
-            />
-            {stage.role && <span>{roleName(stage.role)}</span>}
-            {stage.output && <Readable value={flowValue(stage.output)} />}
-          </li>
-        ))}
-      </ol>
-      <h3>团队工作与结果</h3>
-      {!rows(workflow?.tasks).length && (
-        <p>暂无执行回执。任务开始后在这里显示工作记录。</p>
-      )}
-      {rows(workflow?.tasks).map((task) => (
-        <details className="drama-task" key={task.id}>
-          <summary>
-            {task.title} · {roleName(task.role || "orchestrator")} ·{" "}
-            {statusNames[task.status] || task.status}
-          </summary>
-          {task.model && <p>执行模型：{task.model}</p>}
-          {!!task.returned_to?.length && (
-            <p>退回：{task.returned_to.map(roleName).join("、")}</p>
-          )}
-          {(task.finished_at || task.generated_at || task.started_at) && (
-            <p>
-              记录时间：
-              {date(task.finished_at || task.generated_at || task.started_at)}
-            </p>
-          )}
-          <dl>
-            <dt>输入</dt>
-            <dd>
-              <Readable value={flowValue(task.input || "暂无输入记录")} />
-            </dd>
-            <dt>输出</dt>
-            <dd>
-              <Readable value={flowValue(task.output || "暂无输出记录")} />
-            </dd>
-          </dl>
-          {!!task.issues?.length && (
-            <div role="note">
-              {task.issues.map((issue: string, i: number) => (
-                <p key={i}>{issue}</p>
-              ))}
-            </div>
-          )}
-          {task.project_id && (
-            <button
-              className="button"
-              onClick={() => openProject(task.project_id)}
-            >
-              打开工作台
-            </button>
-          )}
-        </details>
-      ))}
     </Panel>
   );
 }

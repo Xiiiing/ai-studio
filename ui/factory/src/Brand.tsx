@@ -1,15 +1,13 @@
-/** Shared with the browser icon: three film frames opening into a play symbol. */
+/** The README logo, served unchanged as the browser icon and navigation mark. */
 export function BrandMark({ size = 34 }: { size?: number }) {
   return (
-    <svg
+    <img
       className="brand-symbol"
+      src={`${import.meta.env.BASE_URL}brand.svg`}
       width={size}
       height={size}
-      viewBox="0 0 36 36"
+      alt=""
       aria-hidden="true"
-      focusable="false"
-    >
-      <use href={`${import.meta.env.BASE_URL}brand.svg#mark`} />
-    </svg>
+    />
   );
 }

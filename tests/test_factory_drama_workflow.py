@@ -182,3 +182,124 @@ def test_active_return_and_public_history_do_not_publish_private_drafts(isolated
     assert result['review_history'][0]['review']['issues'] == ['承接冲突']
     assert 'plan_history' not in result and 'plan_repair_basis' not in result
     assert 'never-expose' not in json.dumps(result)
+
+
+def test_drama_graph_links_real_lifecycle_and_scopes_review_records(isolated):
+    p = dramas.create(input_payload())
+    store.update(p['id'], {'draft_plan': plan(), 'plan_review': {'passed': False, 'issues': ['承接冲突']},
+        'status': 'blocked', 'stage': 'plan_repair', 'plan_phase': 'blocked',
+        'plan_history': [{'cycle': 1, 'attempt': 1, 'review': {'passed': False, 'issues': ['承接冲突']}}]})
+    workflow = dramas.snapshot(p['id'])['workflow']
+    graph, flow = workflow['graph'], workflow['flow']
+    assert graph['project_id'] == flow['project_id'] == p['id']
+    assert graph['revision'] == flow['revision']
+    assert graph['active_node'] == 'review'
+    assert [node['id'] for node in graph['nodes']] == [row['id'] for row in workflow['stages']]
+    assert [group['node_ids'] for group in graph['presentation']['stages']] == [[row['id']] for row in workflow['stages']]
+    assert any(edge['source'] == 'review' and edge['target'] == 'planning' and edge['loop'] for edge in graph['edges'])
+    assert any(edge['source'] == 'acceptance' and edge['target'] == 'production' and edge['loop'] for edge in graph['edges'])
+    assert all(isinstance(node['input'], str) and isinstance(node['output'], str) for node in graph['nodes'])
+    assert next(node for node in graph['nodes'] if node['id'] == 'review')['status'] == 'blocked'
+    assert flow['nodes'] == []  # A lifecycle projection does not fabricate executions.
+    review = next(step for step in flow['steps'] if step['id'] == 'review')
+    assert review['outputs'][0]['value']['issues'] == ['承接冲突']
+    assert workflow['tasks'][0]['stage_id'] == 'review'
+
+
+def test_pending_and_returning_graphs_do_not_claim_success_without_evidence(isolated):
+    p = dramas.create(input_payload())
+    workflow = p['workflow']
+    assert all(node['status'] == 'pending' for node in workflow['graph']['nodes'])
+    assert workflow['graph']['active_node'] == 'planning'
+    store.update(p['id'], {'draft_plan': plan(), 'plan_review': {'passed': False, 'issues': ['退回编剧']},
+        'plan_phase': 'writing', 'plan_attempt': 2})
+    workflow = dramas.snapshot(p['id'])['workflow']
+    assert workflow['graph']['active_node'] == 'planning'
+    assert next(node for node in workflow['graph']['nodes'] if node['id'] == 'planning')['status'] == 'running'
+    assert next(node for node in workflow['graph']['nodes'] if node['id'] == 'review')['status'] == 'blocked'
+    assert not workflow['flow']['nodes']
+
+
+def test_long_graph_retains_unit_links_and_continuity_return_route(isolated):
+    p = ready()
+    eid = p['episodes'][0]['id']
+    unit = dramas.record('scene_unit', 'E001-C01-U001', '场景制作', parent_id=eid,
+        episode_id=eid, drama_id=p['id'], scene_id='C01', global_prefix='E001-C01-U001',
+        status='unit_ready', stage='complete', progress=100)
+    with store.connection() as db:
+        dramas.insert(db, unit)
+        store._enqueue(db, eid, 'drama_episode')
+    store.update(eid, {'duration_seconds': 300, 'unit_ids': [unit['id']],
+        'scene_plan': [{'scene_id': 'C01'}], 'scene_review': {'passed': True},
+        'status': 'producing', 'stage': 'assembly'})
+    workflow = dramas.episode_snapshot(p['id'], eid)['workflow']
+    graph = workflow['graph']
+    assert graph['active_node'] == 'assembly'
+    assert [node['id'] for node in graph['nodes']] == ['scenes', 'units', 'assembly', 'acceptance']
+    assert next(node for node in graph['nodes'] if node['id'] == 'assembly')['status'] == 'running'
+    assert any(edge['source'] == 'assembly' and edge['target'] == 'units' and edge['loop'] for edge in graph['edges'])
+    task = next(task for task in workflow['tasks'] if task.get('project_id') == unit['id'])
+    assert task['stage_id'] == 'units'
+
+
+def test_confirmation_node_is_human_only_after_review_and_never_invents_legacy_review(isolated):
+    p = dramas.create(input_payload())
+    store.update(p['id'], {'draft_plan': plan(), 'plan_review': {'passed': True, 'issues': []}})
+    workflow = dramas.snapshot(p['id'])['workflow']
+    assert workflow['graph']['active_node'] == 'confirmation'
+    assert next(node for node in workflow['graph']['nodes'] if node['id'] == 'confirmation')['status'] == 'human'
+    p = ready()
+    store.update(p['id'], {'plan_review': None})
+    workflow = dramas.snapshot(p['id'])['workflow']
+    assert next(node for node in workflow['graph']['nodes'] if node['id'] == 'review')['status'] == 'pending'
+    assert workflow['graph']['active_node'] == 'production'
+    assert all(task['stage_id'] == 'production' for task in workflow['tasks'] if task.get('project_id'))
+
+
+def test_paused_planning_graph_keeps_saved_draft_and_paused_work_state(isolated):
+    p = dramas.create(input_payload())
+    with store.connection() as db:
+        db.execute("UPDATE jobs SET status='completed'")
+    store.update(p['id'], {'draft_plan': plan(), 'plan_phase': 'writing', 'status': 'paused'})
+    workflow = dramas.snapshot(p['id'])['workflow']
+    assert workflow['graph']['active_node'] == 'planning'
+    assert next(node for node in workflow['graph']['nodes'] if node['id'] == 'planning')['status'] == 'paused'
+    assert next(step for step in workflow['flow']['steps'] if step['id'] == 'planning')['outputs'][0]['value']['storyline']
+
+
+def test_revised_shared_plan_does_not_reuse_older_confirmation(isolated):
+    p = ready()
+    assert p['plan_version'] == 1
+    assert p['workflow']['graph']['active_node'] == 'production'
+    changed = json.loads(json.dumps(p['draft_plan']))
+    changed['world'] += '，补充新的车站区域'
+    p = dramas.confirm(p['id'], {'expected_revision': p['revision'], 'request_id': 'edit-plan', 'plan': changed})
+    assert p['plan_version'] == 1 and p['plan_phase'] == 'reviewing'
+    assert p['workflow']['graph']['active_node'] == 'review'
+    assert stages(p)['confirmation']['status'] == 'pending'
+    assert stages(p)['confirmation']['output'] == {'plan_version': 0, 'previous_plan_version': 1}
+    assert next(node for node in p['workflow']['graph']['nodes'] if node['id'] == 'review')['status'] == 'running'
+
+    for phase, expected in [('writing', 'planning'), ('returned', 'planning'), ('exhausted', 'review')]:
+        store.update(p['id'], {'plan_phase': phase, 'plan_review': {'passed': False, 'issues': ['修改要求']}})
+        current = dramas.snapshot(p['id'])
+        assert current['workflow']['graph']['active_node'] == expected
+        assert stages(current)['confirmation']['status'] == 'pending'
+
+    with store.connection() as db:
+        db.execute("UPDATE jobs SET status='completed'")
+    store.update(p['id'], {'plan_phase': 'approved', 'plan_review': {'passed': True, 'issues': []},
+        'status': 'awaiting_plan', 'stage': 'plan_confirmation'})
+    p = dramas.snapshot(p['id'])
+    assert p['workflow']['graph']['active_node'] == 'confirmation'
+    assert stages(p)['confirmation']['status'] == 'waiting'
+    assert stages(p)['confirmation']['output']['previous_plan_version'] == 1
+    assert next(node for node in p['workflow']['graph']['nodes'] if node['id'] == 'confirmation')['status'] == 'human'
+
+    p = dramas.confirm(p['id'], {'expected_revision': p['revision'], 'request_id': 'confirm-revised-plan'})
+    assert p['plan_version'] == 2 and p['status'] == 'ready' and p['plan_phase'] == 'approved'
+    assert p['workflow']['graph']['active_node'] == 'production'
+    assert stages(p)['confirmation']['status'] == 'succeeded'
+    assert stages(p)['confirmation']['output'] == {'plan_version': 2}
+    store.update(p['id'], {'status': 'producing'})
+    assert dramas.snapshot(p['id'])['workflow']['graph']['active_node'] == 'production'

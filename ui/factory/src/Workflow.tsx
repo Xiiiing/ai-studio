@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ArrowRight, Users, CircleCheck, ArrowUp } from "lucide-react";
 import { rows, roleName, date, activityName, type RecordData } from "./api";
 import { Badge, Panel, Empty, Artifact } from "./ui";
@@ -139,6 +139,7 @@ export function Workflow({
   selectedNode,
   onSelectNode,
   selectedExecution,
+  renderRecords,
 }: {
   graph: RecordData;
   flow?: RecordData;
@@ -149,6 +150,7 @@ export function Workflow({
   selectedNode?: string;
   onSelectNode?: (id: string) => void;
   selectedExecution?: string;
+  renderRecords?: (node: RecordData) => ReactNode;
 }) {
   const [selection, setSelection] = useState("");
   const [inspectorOpen, setInspectorOpen] = useState(
@@ -486,7 +488,9 @@ export function Workflow({
           )}
           <section className="workflow-section" aria-label="步骤执行记录">
             <h4>执行记录</h4>
-            {records.length ? (
+            {renderRecords ? (
+              renderRecords(selected)
+            ) : records.length ? (
               records.map((e) => (
                 <div
                   key={e.id}
@@ -516,7 +520,7 @@ export function Workflow({
               </p>
             )}
           </section>
-          {selected.id === "production" && (
+          {selected.id === "production" && !renderRecords && (
             <section className="workflow-section production-tasks">
               <h4>镜头与后期实际任务</h4>
               {productionTasks.length ? (

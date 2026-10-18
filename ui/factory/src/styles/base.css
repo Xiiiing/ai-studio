@@ -636,6 +636,10 @@ td > strong {
 }
 .badge {
   display: inline-flex;
+  align-self: start;
+  justify-self: start;
+  width: fit-content;
+  max-width: 100%;
   align-items: center;
   gap: 5px;
   border-radius: 5px;
@@ -2526,12 +2530,14 @@ dialog[open] {
   min-height: 38px;
 }
 
-/* Brand, primary actions and selected navigation share the same blue. */
+/* Primary actions and selected navigation share a restrained slate accent. */
 .brand {
   color: var(--accent-text);
 }
 .brand-symbol {
   flex-shrink: 0;
+  object-fit: contain;
+  display: block;
 }
 .brand-name {
   color: var(--ink);

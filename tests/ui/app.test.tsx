@@ -158,7 +158,11 @@ it("导航保留单一品牌和可理解的阶段，不重复显示宣传小字"
   await screen.findByRole("heading", { name: "制片总览" });
   const home = screen.getByRole("link", { name: "映序首页" });
   expect(within(home).getByText("映序")).toBeVisible();
-  expect(home.querySelector("svg")).toHaveAttribute("aria-hidden", "true");
+  expect(home.querySelector("img.brand-symbol")).toHaveAttribute(
+    "src",
+    `${import.meta.env.BASE_URL}brand.svg`,
+  );
+  expect(home.querySelector("img.brand-symbol")).toHaveAttribute("alt", "");
   expect(document.querySelector("#project-list")).toHaveTextContent(
     "全剧规划返修",
   );

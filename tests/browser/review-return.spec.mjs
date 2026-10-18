@@ -89,8 +89,8 @@ for (const width of [1440, 390])
         .locator('link[rel="icon"]')
         .getAttribute("href");
       expect(iconHref).toContain("brand.svg");
-      const symbol = page.locator(".brand-symbol use");
-      await expect(symbol).toHaveAttribute("href", /brand.svg#mark$/);
+      const symbol = page.locator(".brand-symbol");
+      await expect(symbol).toHaveAttribute("src", /brand.svg$/);
       if (width < 1024) {
         await expect(page.locator(".brand-symbol")).toBeVisible();
       } else await expect(page.locator(".brand-symbol")).toBeVisible();

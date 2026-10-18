@@ -54,22 +54,6 @@
     min-height: 44px;
   }
 }
-.drama-flow-stages {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
-  gap: 0.8rem;
-  padding: 0;
-  list-style: none;
-}
-.drama-flow-stages li {
-  border: 1px solid var(--border, #7775);
-  border-radius: 10px;
-  padding: 1rem;
-  display: grid;
-  gap: 0.5rem;
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
 .drama-task {
   border-bottom: 1px solid var(--border, #7775);
   padding: 1rem 0;
@@ -85,4 +69,14 @@
 }
 .drama-task dt {
   font-weight: 600;
+}
+
+.drama-workflow-panel .workflow-workspace {
+  border: 0;
+}
+.drama-node-records {
+  min-width: 0;
+}
+.drama-task summary {
+  overflow-wrap: anywhere;
 }

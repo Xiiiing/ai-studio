@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { lifecycleFixture } from "./lifecycle-fixture.mjs";
 
 const dramaId = "dd1122334455";
 
@@ -72,6 +73,7 @@ function blockedDrama() {
 }
 
 async function installDrama(page, drama, calls = []) {
+  drama.workflow = lifecycleFixture(drama.workflow, drama.id);
   await page.route(`**/api/factory/projects/${dramaId}/workspace`, (route) =>
     route.fulfill({
       json: {
@@ -232,8 +234,9 @@ for (const width of [1440, 390]) {
     await expect(
       page.getByRole("heading", { name: "制作流程与团队", exact: true }),
     ).toBeVisible();
+    await page.locator('[data-stage="planning"]').click();
     await expect(
-      page.getByRole("heading", { name: "团队工作与结果", exact: true }),
+      page.getByRole("heading", { name: "执行记录", exact: true }),
     ).toBeVisible();
     const writer = page.locator("details").filter({
       has: page.locator("summary", { hasText: "分集大纲 · 编剧 ·" }),
@@ -244,7 +247,7 @@ for (const width of [1440, 390]) {
       }),
     });
     await expect(writer).toHaveCount(1);
-    await expect(critic).toHaveCount(1);
+    await expect(critic).toHaveCount(0);
     await expect(
       writer.getByText(drama.workflow.tasks[0].input, { exact: true }),
     ).not.toBeVisible();
@@ -261,6 +264,12 @@ for (const width of [1440, 390]) {
     await expect(
       writer.getByText(drama.workflow.tasks[0].output, { exact: true }),
     ).toBeVisible();
+    if (width < 1200)
+      await page
+        .getByRole("button", { name: "返回流程图", exact: true })
+        .click();
+    await page.locator('[data-stage="review"]').click();
+    await expect(writer).toHaveCount(0);
     await critic.locator("summary").click();
     await expect(
       critic.getByText(drama.workflow.tasks[1].output, { exact: true }),
@@ -269,6 +278,8 @@ for (const width of [1440, 390]) {
       drama.plan_review.issues[0],
     );
     await expect(page.getByLabel("全剧主线", { exact: true })).toHaveCount(0);
+    if (width < 1200)
+      await page.getByRole("button", { name: "返回流程图", exact: true }).click();
     await noHorizontalOverflow(page);
     await page.screenshot({
       path: `runtime/browser-report/drama-workflow-${width}.png`,
@@ -341,6 +352,7 @@ for (const width of [1440, 390]) {
       plan_review: { passed: true },
       episodes: [{ ...episode, episode_number: 1 }],
     };
+    episode.workflow = lifecycleFixture(episode.workflow, episode.id, true);
     await installDrama(page, drama);
     await page.route(
       `**/api/factory/projects/${episodeId}/workspace`,
@@ -452,3 +464,43 @@ for (const width of [1440, 390]) {
     await noHorizontalOverflow(page);
   });
 }
+
+for (const width of [1440, 390])
+  test(`global workflow opens a blocked project diagram at ${width}`, async ({
+    page,
+    request,
+  }) => {
+    await page.setViewportSize({ width, height: 1000 });
+    const drama = blockedDrama();
+    const consoleData = await (
+      await request.get("/api/factory/console")
+    ).json();
+    await page.route("**/api/factory/console", (r) =>
+      r.fulfill({
+        json: { ...consoleData, projects: [drama], running_tasks: [] },
+      }),
+    );
+    await installDrama(page, drama);
+    await page.goto("/#view=workflow");
+    await expect(
+      page.getByRole("heading", { name: "项目工作流", exact: true }),
+    ).toBeVisible();
+    await page
+      .getByRole("button", { name: "查看实际流程", exact: true })
+      .click();
+    await expect(page).toHaveURL(
+      new RegExp("project=" + dramaId + "&tab=workflow"),
+    );
+    await expect(page.locator("[data-stage]")).toHaveCount(5);
+    await expect(page.locator("[data-flow-edge]")).not.toHaveCount(0);
+    const sizes = await page
+      .locator(".workflow-workspace .badge")
+      .evaluateAll((nodes) =>
+        nodes
+          .filter((n) => n.getClientRects().length)
+          .map((n) => n.getBoundingClientRect().height),
+      );
+    expect(sizes.length).toBeGreaterThan(0);
+    for (const height of sizes) expect(height).toBeLessThan(40);
+    await noHorizontalOverflow(page);
+  });

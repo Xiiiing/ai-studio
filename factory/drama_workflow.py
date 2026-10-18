@@ -199,6 +199,99 @@ def _child_task(child, *, unit=False):
         issues=[str(child['error'])[:1200]] if child.get('error') else [])
 
 
+_CONTRACTS = {
+    'planning': ('创作需求与来源资料', '全剧设定、人物关系和分集大纲',
+        '编剧依据创作需求编写全剧规划；收到审核问题后带原稿返修。', ['story_editor', 'screenwriter']),
+    'review': ('全剧设定与分集大纲', '审核结论与具体修改要求',
+        '审稿检查剧情、人物和集间承接；未通过时退回编剧，修改后重新审核。', ['story_critic']),
+    'confirmation': ('审核通过的全剧规划', '已确认的规划版本',
+        '出品人确认规划，后续剧集固定引用该版本。', ['producer']),
+    'production': ('已确认大纲、共享设定与选集批次', '逐集制作结果和待处理问题',
+        '按选集批次推进剧本、分镜、素材、配音与剪辑；打开剧集查看具体任务。', ['orchestrator']),
+    'scenes': ('已确认单集大纲、时长与共享设定', '经审核的场景方案',
+        '编剧按单集大纲拆分场景，并交由独立审稿检查。', ['screenwriter', 'independent_critic']),
+    'units': ('场景方案、人物身份与声线', '制作单元成片、配音与字幕',
+        '按场景分块制作；打开制作单元查看分镜、生成与剪辑任务。', ['orchestrator']),
+    'assembly': ('已完成单元与跨镜连续性证据', '完整单集与连续性检查结果',
+        '检查跨单元连续性并合成单集，发现问题时退回对应单元返修。', ['editor', 'visual_critic']),
+    'acceptance': ('完整成片、字幕与制作清单', '验收决定或局部修改要求',
+        '出品人观看成片后验收，或指定局部修改；内部制作完成不等于人工通过。', ['producer']),
+}
+
+
+def _task_stage(task, drama):
+    """Assign saved evidence to its lifecycle step, without inventing runs."""
+    ident, stage, role = task['id'], task.get('stage', ''), task['role']
+    if drama:
+        if ident.startswith('plan-review:') or stage.startswith('drama-plan-review-'):
+            return 'review'
+        if ident.startswith(('episode:', 'batch:')):
+            return 'production'
+        return 'review' if role in {'story_critic', 'independent_critic'} else 'planning'
+    if ident.startswith('unit:'):
+        return 'units'
+    if ident.startswith('continuity-return:') or stage.startswith(('episode-reedit-', 'episode-revision-scope-')):
+        return 'assembly'
+    return 'assembly' if role in {'editor', 'edit_director', 'visual_critic'} else 'scenes'
+
+
+def _current_plan_confirmed(project):
+    """An older pinned version does not confirm a new draft under review."""
+    return bool(project.get('plan_version')) and project.get('plan_phase') not in {
+        'writing', 'reviewing', 'returned', 'exhausted'} and project.get('status') != 'awaiting_plan'
+
+
+def _projection(project, stages, tasks, active_job):
+    """The shared workflow reader displays lifecycle state, not a LangGraph run."""
+    drama = project.get('record_kind') == 'drama'
+    ids = [stage['id'] for stage in stages]
+    phase = project.get('plan_phase')
+    if drama and not _current_plan_confirmed(project):
+        active = ('planning' if phase in {'writing', 'returned'} else
+            'review' if phase == 'reviewing' else
+            'confirmation' if (project.get('plan_review') or {}).get('passed') else
+            'review' if project.get('plan_review') else 'planning')
+    else:
+        remaining = stages[3:] if drama else stages
+        active = next((stage['id'] for stage in remaining
+            if stage['status'] in {'running', 'blocked', 'failed', 'waiting', 'paused', 'cancelled'}),
+            next((stage['id'] for stage in remaining if stage['status'] != 'succeeded'), ids[-1]))
+    nodes, steps = [], []
+    for stage in stages:
+        ident = stage['id']
+        input_label, output_label, description, members = _CONTRACTS[ident]
+        status = stage['status']
+        if status == 'returned':
+            status = 'running' if active_job and ident == active else 'blocked'
+        if ident == active and not active_job and project.get('status') in {'paused', 'cancelled', 'failed', 'blocked'}:
+            status = _state(project)
+        # Waiting is a human decision only where that decision is actually due.
+        if status == 'waiting' and ident in {'confirmation', 'acceptance'}:
+            status = 'human'
+        node = {'id': ident, 'label': stage['title'], 'status': status,
+            'owner': stage['role'], 'members': members, 'description': description,
+            'input': input_label, 'output': output_label, 'evidence': 'current_project_state'}
+        if stage.get('issues'):
+            node['issues'] = stage['issues']
+        nodes.append(node)
+        steps.append({'id': ident,
+            'inputs': [{'label': input_label, 'kind': 'json', 'value': stage['input']}],
+            'outputs': [{'label': output_label, 'kind': 'json', 'value': stage['output']}]})
+    edges = [{'source': source, 'target': target, 'label': '交付下一阶段'}
+        for source, target in zip(ids, ids[1:])]
+    edges.append({'source': 'review' if drama else 'assembly',
+        'target': 'planning' if drama else 'units', 'label': '审核未通过，退回返修', 'loop': True})
+    edges.append({'source': 'acceptance', 'target': 'production' if drama else 'units',
+        'label': '按验收意见局部返修', 'loop': True})
+    for task in tasks:
+        task['stage_id'] = _task_stage(task, drama)
+    identity = {'project_id': project['id'], 'revision': project.get('revision', 0)}
+    return ({**identity, 'active_node': active, 'nodes': nodes, 'edges': edges,
+        'presentation': {'stages': [{'id': row['id'], 'label': row['title'], 'node_ids': [row['id']]}
+            for row in stages], 'branches': []}},
+        {**identity, 'steps': steps, 'nodes': []})
+
+
 def build(project, *, episodes=(), batches=(), units=(), active_job=False):
     """No DB writes, mkdir, provider polls or config loads are permitted here."""
     tasks, evidence = _evidence(project)
@@ -211,7 +304,7 @@ def build(project, *, episodes=(), batches=(), units=(), active_job=False):
     if project.get('record_kind') == 'drama':
         plan = project.get('draft_plan') or {}
         review = project.get('plan_review') or {}
-        confirmed = bool(project.get('plan_version'))
+        confirmed = _current_plan_confirmed(project)
         has_plan = bool(plan)
         repairing = active_job and project.get('plan_phase') in {'writing','returned'}
         stages = [
@@ -222,7 +315,8 @@ def build(project, *, episodes=(), batches=(), units=(), active_job=False):
             _row('review', '全剧规划独立审核', 'story_critic', 'succeeded' if review.get('passed') else 'returned' if repairing and review else 'running' if active_job and project.get('plan_phase') == 'reviewing' else 'blocked' if review else current if has_plan else 'pending',
                 '全剧主线、人物设定与相邻分集大纲', _summary(review) if review else '尚无已保存的独立审核结果', issues=_summary(review.get('issues', []))),
             _row('confirmation', '出品人确认全剧规划', 'producer', 'succeeded' if confirmed else 'waiting' if review.get('passed') else 'pending',
-                '经独立审稿的全剧规划', {'plan_version': project.get('plan_version', 0)}),
+                '经独立审稿的全剧规划', {'plan_version': project.get('plan_version', 0) if confirmed else 0,
+                    **({'previous_plan_version': project['plan_version']} if not confirmed and project.get('plan_version') else {})}),
             _row('production', '按集制作与团队协作', 'orchestrator',
                 'running' if any(e.get('status') in _ACTIVE for e in episodes) else 'blocked' if any(e.get('status') in {'blocked', 'failed', 'waiting_dependency'} for e in episodes)
                 else 'succeeded' if episodes and all(e.get('status') in _GOOD for e in episodes) else 'pending',
@@ -260,6 +354,9 @@ def build(project, *, episodes=(), batches=(), units=(), active_job=False):
                 {'审核轮次': entry['round'], '最多轮次': entry['max_rounds']}, _summary(entry.get('review', {})),
                 issues=_summary(entry.get('issues', [])), returned_to=entry.get('returned_to', []), project_id=entry['unit_id']))
         tasks.extend(_child_task(u, unit=True) for u in units)
+    graph, flow = _projection(project, stages, tasks, active_job)
+    flow['evidence'] = evidence
     return {'kind': 'drama_lifecycle' if project.get('record_kind') == 'drama' else 'episode_lifecycle',
+        'graph': graph, 'flow': flow,
         'stages': stages, 'tasks': tasks, 'evidence': evidence, 'active_job': bool(active_job),
         'note': '阶段为制作状态汇总；角色记录来自已有缓存或调用回执。编剧与审稿是独立任务，可共享同一模型。'}

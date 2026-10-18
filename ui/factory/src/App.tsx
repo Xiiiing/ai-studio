@@ -436,9 +436,16 @@ function Workbench() {
                           openProject={openProject}
                         />
                       </Panel>
+                      <Panel title="项目工作流">
+                        {!projects.length ? <Empty title="尚无项目" /> : <div className="drama-cards">{projects.map(p => <article className="drama-card" key={p.id}>
+                          <strong>{p.title}</strong>
+                          <p>{activityName(p.stage || p.status)}</p>
+                          <button className="button" onClick={() => openProject(p.id, p.record_kind === "drama" || (p.record_kind === "episode" && p.duration_seconds > 90) ? "workflow" : "overview")}>查看实际流程</button>
+                        </article>)}</div>}
+                      </Panel>
                       <Panel
-                        title="标准制作流程"
-                        description="读取服务器工作流定义；项目中的实际运行和返修记录分别展示。"
+                        title="短片标准流程"
+                        description="此处为短片流程参考，具体执行与返修请打开上方项目工作流。"
                       >
                         <FloatingErrorNotice error={spec.error} />
                         {spec.error && (
@@ -992,7 +999,7 @@ function RunningTasks({
       ))}
     </div>
   ) : (
-    <Empty title="当前没有执行中的任务">有新需求时，AI 团队会自动接续。</Empty>
+    <Empty title="当前没有执行中的任务">可从项目工作流查看待确认、暂停或阻塞的进度。</Empty>
   );
 }
 function ActivityList({

@@ -13,6 +13,8 @@
 
 Logo 与横幅由本项目以 SVG 路径、几何图形和系统字体绘制，未使用第三方品牌、图片或打包字体。SVG 包含可访问标题与说明，不包含脚本或外部资源。品牌资产沿用项目当前的许可状态；没有另行授予商标或素材许可。
 
+`logo.svg`同时用于 README、工作台侧栏和浏览器图标。前端静态副本为`ui/factory/public/brand.svg`，保留完整图形与原色，品牌单测校验两文件逐字一致。修改 Logo 后执行`cp docs/assets/logo.svg ui/factory/public/brand.svg`同步；构建会将静态副本复制到前端产物，无需运行时读取文档目录。
+
 截图来自基线 `0b936b0` 的真实 React 生产构建，使用 `tests/browser/server.mjs`、`tests/browser/console-fixture.mjs` 和 `scripts/browser_fixtures.py` 中的隔离模拟数据。主页面使用 `automatic` 场景，项目流程使用同一场景的 `overview` 标签。它们展示界面与导航，**不是生产项目、真实模型输出或成片质量证据**；没有连接 Wkp、读取生产数据库或调用付费 API。界面当前为中文；英文 README 不代表应用已提供英文界面。
 
 SVG artwork is original to this repository and contains no scripts, embedded fonts or external resources. Screenshots show the actual React production build at base commit `0b936b0`, populated by isolated browser fixtures in the `automatic` scenario. They demonstrate the interface, not real inference or production quality. The application UI shown is Chinese.

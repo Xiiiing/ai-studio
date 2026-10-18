@@ -1,4 +1,4 @@
-/* White and black carry the page; blue identifies actions and selection.
+/* White and black carry the page; slate blue identifies actions and selection.
    Red, amber and green are reserved for small, meaningful status treatments. */
 :root,
 :root[data-theme="light"] {
@@ -11,13 +11,13 @@
   --muted: #626269;
   --line: #e4e4e7;
   --line-strong: #bdbdc4;
-  --accent: #2563eb;
-  --accent-hover: #1d4ed8;
-  --accent-text: #1d4ed8;
-  --accent-soft: #eff5ff;
+  --accent: #46566e;
+  --accent-hover: #3d4c63;
+  --accent-text: #3d4c63;
+  --accent-soft: #f0f2f5;
   --on-accent: #ffffff;
-  --primary: #2563eb;
-  --primary-hover: #1d4ed8;
+  --primary: #46566e;
+  --primary-hover: #3d4c63;
   --on-primary: #ffffff;
   --success: #17683b;
   --success-soft: #edf8f1;
@@ -28,8 +28,8 @@
   --danger: #b42332;
   --danger-soft: #fff0f1;
   --danger-line: #e4a9af;
-  --focus: #2563eb;
-  --selection: #dce9ff;
+  --focus: #46566e;
+  --selection: #e1e6ed;
   --flow-line: #a1a1aa;
   --grid-dot: #d4d4d8;
   --media: #18181b;
@@ -40,8 +40,8 @@
   --shadow-sm: 0 1px 2px rgb(0 0 0 / 4%);
   --shadow-md: 0 6px 24px rgb(0 0 0 / 8%);
   --shadow-lg: 0 20px 60px rgb(0 0 0 / 18%);
-  --crop-fill: rgb(37 99 235 / 15%);
-  --crop-stroke: #60a5fa;
+  --crop-fill: rgb(70 86 110 / 15%);
+  --crop-stroke: #8492a6;
   --radius: 8px;
   --control-radius: 6px;
   --duration: 120ms;
@@ -62,7 +62,7 @@
   --target-size: 44px;
   --logo-size: 40px;
   --logo-list-size: 32px;
-  --status-running: #2563eb;
+  --status-running: #46566e;
   --status-review: #a86b0a;
   --status-failed: #c43b45;
   --status-success: #268052;
@@ -78,14 +78,14 @@
   --muted: #b0b0b8;
   --line: #35353a;
   --line-strong: #606069;
-  --accent: #60a5fa;
-  --accent-hover: #93c5fd;
-  --accent-text: #93c5fd;
-  --accent-soft: #202d40;
-  --primary: #60a5fa;
-  --primary-hover: #93c5fd;
-  --on-primary: #111827;
-  --on-accent: #111827;
+  --accent: #8492a6;
+  --accent-hover: #a8b3c2;
+  --accent-text: #a8b3c2;
+  --accent-soft: #2a3039;
+  --primary: #8492a6;
+  --primary-hover: #a8b3c2;
+  --on-primary: #14191f;
+  --on-accent: #14191f;
   --success: #86d5a3;
   --success-soft: #1d3026;
   --success-line: #3f7652;
@@ -95,8 +95,8 @@
   --danger: #ff9da8;
   --danger-soft: #382327;
   --danger-line: #8c4b55;
-  --focus: #60a5fa;
-  --selection: #28466d;
+  --focus: #8492a6;
+  --selection: #303947;
   --flow-line: #85858f;
   --grid-dot: #414148;
   --media: #111113;
@@ -107,8 +107,8 @@
   --shadow-sm: 0 1px 2px rgb(0 0 0 / 10%);
   --shadow-md: 0 6px 24px rgb(0 0 0 / 25%);
   --shadow-lg: 0 20px 60px rgb(0 0 0 / 40%);
-  --crop-fill: rgb(96 165 250 / 18%);
-  --status-running: #60a5fa;
+  --crop-fill: rgb(132 146 166 / 18%);
+  --status-running: #8492a6;
   --status-review: #dcb66a;
   --status-failed: #ee8d98;
   --status-success: #78be94;
