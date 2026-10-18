@@ -100,8 +100,8 @@ describe("fixed stage flow", () => {
         height: 430,
       }),
       b = stageEdgePath(target, source, reverse, { width: 520, height: 430 });
-    expect(a).toContain("388");
-    expect(b).toContain("412");
+    expect(a).toContain("188");
+    expect(b).toContain("198");
     expect(a).not.toBe(b);
   });
 });

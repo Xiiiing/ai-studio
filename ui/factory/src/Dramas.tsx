@@ -1,6 +1,6 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, ChevronDown } from "lucide-react";
 import { PageHeader } from "./PageHeader";
 import {
   Panel,
@@ -377,6 +377,94 @@ const dramaTabs = [
   ["batches", "生成批次"],
   ["results", "成果"],
 ];
+const dramaPrimary = [
+  ["overview", "总览", "项目总览"],
+  ["episodes", "剧集", "剧集"],
+  ["workflow", "制作", "制作流程与团队"],
+  ["results", "成果", "成果"],
+];
+function DramaNavigation({
+  tab,
+  onTab,
+}: {
+  tab: string;
+  onTab: (tab: string) => void;
+}) {
+  const more = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    if (more.current) more.current.open = false;
+  }, [tab]);
+  useEffect(() => {
+    const outside = (event: PointerEvent) => {
+      if (more.current && !more.current.contains(event.target as Node))
+        more.current.open = false;
+    };
+    document.addEventListener("pointerdown", outside);
+    return () => document.removeEventListener("pointerdown", outside);
+  }, []);
+  const section = ["plan", "assets"].includes(tab)
+    ? "overview"
+    : tab === "batches"
+      ? "episodes"
+      : tab;
+  function go(value: string) {
+    if (more.current) more.current.open = false;
+    onTab(value);
+  }
+  return (
+    <nav className="drama-navigation" aria-label="整剧工作区">
+      <div className="drama-primary-tabs">
+        {dramaPrimary.map(([key, label, accessible]) => (
+          <button
+            key={key}
+            aria-label={accessible}
+            aria-pressed={section === key}
+            aria-current={section === key ? "page" : undefined}
+            onClick={() => go(key)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      <details
+        className="drama-more"
+        ref={more}
+        onBlur={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget as Node))
+            event.currentTarget.open = false;
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            event.currentTarget.open = false;
+            event.currentTarget.querySelector("summary")?.focus();
+          }
+        }}
+      >
+        <summary>
+          项目资料 <ChevronDown size={14} />
+        </summary>
+        <div>
+          {dramaTabs
+            .filter(([key]) => ["plan", "assets", "batches"].includes(key))
+            .map(([key, label]) => (
+              <button
+                key={key}
+                aria-pressed={tab === key}
+                onClick={() => go(key)}
+              >
+                {label}
+              </button>
+            ))}
+        </div>
+      </details>
+      {["plan", "assets", "batches"].includes(tab) && (
+        <span className="drama-location">
+          {dramaTabs.find(([key]) => key === tab)?.[1]}
+        </span>
+      )}
+    </nav>
+  );
+}
 
 const flowLabels: Record<string, string> = {
   previous_world: "返修前设定",
@@ -508,7 +596,7 @@ function ProductionFlow({
     );
   }
   return (
-    <Panel title="制作流程与团队" className="drama-workflow-panel">
+    <section className="drama-workflow-panel" aria-label="制作流程与团队">
       {!graph?.nodes?.length ? (
         <p>暂无流程图记录，请刷新后重试。</p>
       ) : (
@@ -526,7 +614,7 @@ function ProductionFlow({
       {!!workflow?.evidence?.unreadable && (
         <p>部分执行回执无法读取，当前仅展示可核实的记录。</p>
       )}
-    </Panel>
+    </section>
   );
 }
 
@@ -600,6 +688,7 @@ export function DramaDetail({
   return (
     <>
       <PageHeader
+        className="page-heading drama-page-header"
         title={p.title}
         parent={
           <button
@@ -619,19 +708,8 @@ export function DramaDetail({
         }
       />
       <ErrorNotice error={error || query.error} />
-      <nav className="drama-tabs" aria-label="整剧工作区">
-        {dramaTabs.map(([key, label]) => (
-          <button
-            key={key}
-            className={"button " + (tab === key ? "primary" : "")}
-            aria-pressed={tab === key}
-            onClick={() => setTab(key)}
-          >
-            {label}
-          </button>
-        ))}
-      </nav>
-      {["overview", "plan", "workflow"].includes(tab) &&
+      <DramaNavigation tab={tab} onTab={setTab} />
+      {tab === "plan" &&
         p.plan_phase &&
         (!p.plan_version ||
           ["writing", "reviewing", "returned", "exhausted"].includes(
@@ -702,8 +780,38 @@ export function DramaDetail({
         )}
       {tab === "overview" && (
         <>
+          {(p.plan_phase || p.status === "awaiting_plan") && (
+            <div className="drama-next-action">
+              <Badge status={p.status} />
+              <span>
+                {p.plan_phase === "exhausted"
+                  ? "规划审核需要处理，草稿与意见已保留"
+                  : p.status === "awaiting_plan"
+                    ? "规划已通过审核，等待你的确认"
+                    : p.workflow?.active_job
+                      ? "规划与审核正在执行"
+                      : p.plan_version
+                        ? "全剧规划已确认，可按集继续制作"
+                        : "先完成全剧规划，再选择剧集制作"}
+              </span>
+              <button className="text-link" onClick={() => setTab("plan")}>
+                查看规划与审核
+              </button>
+            </div>
+          )}
           <Panel title="项目总览">
-            <PageFocus label="已出片剧集" value={`${rows(p.episodes).filter((e) => ["approved", "awaiting_final"].includes(e.status)).length} / ${p.episode_count} 集`} detail={<>规划{p.plan_version ? `已确认 v${p.plan_version}` : "尚未确认"}；已建立{rows(p.episodes).length} / {p.episode_count}集，按集进入制作与验收。</>} />
+            <PageFocus
+              label="已出片剧集"
+              value={`${rows(p.episodes).filter((e) => ["approved", "awaiting_final"].includes(e.status)).length} / ${p.episode_count} 集`}
+              detail={
+                <>
+                  规划
+                  {p.plan_version ? `已确认 v${p.plan_version}` : "尚未确认"}
+                  ；已建立{rows(p.episodes).length} / {p.episode_count}
+                  集，按集进入制作与验收。
+                </>
+              }
+            />
             <div className="drama-actions">
               <button
                 className="button primary"
@@ -714,6 +822,9 @@ export function DramaDetail({
               <button className="button" onClick={() => setTab("plan")}>
                 查看全剧规划
               </button>
+              <button className="text-link" onClick={() => setTab("assets")}>
+                共享设定
+              </button>
               {!!p.plan_version && (
                 <button className="button" onClick={() => setTab("episodes")}>
                   选择剧集制作
@@ -722,16 +833,18 @@ export function DramaDetail({
             </div>
           </Panel>
           {p.error && (
-            <Panel title="需要处理">
+            <details className="drama-overview-issues">
+              <summary>
+                {p.plan_review?.issues?.length
+                  ? `${p.plan_review.issues.length} 项规划审核问题`
+                  : "规划需要处理"}{" "}
+                · 查看说明
+              </summary>
               <p>{p.error}</p>
-              <p>
-                {p.plan_review?.issues?.length || 0}
-                项规划审核问题，草稿和已完成成果已保留。
-              </p>
-              <button className="button" onClick={() => setTab("plan")}>
+              <button className="text-link" onClick={() => setTab("plan")}>
                 处理规划问题
               </button>
-            </Panel>
+            </details>
           )}
           {!!rows(p.episodes).length && (
             <Panel title="剧集进度">
@@ -1467,7 +1580,16 @@ export function LongEpisodeDetail({
         <>
           <Panel title="剧集进度">
             <p>{p.outline.synopsis}</p>
-            <PageFocus label="完成单元" value={`${rows(p.units).filter((u) => u.status === "unit_ready").length} / ${rows(p.units).length}`} detail={<>个制作单元已完成；累计{p.budget?.spent_gpu_minutes || 0}卡分钟。完成后按场景与整集合成。</>} />
+            <PageFocus
+              label="完成单元"
+              value={`${rows(p.units).filter((u) => u.status === "unit_ready").length} / ${rows(p.units).length}`}
+              detail={
+                <>
+                  个制作单元已完成；累计{p.budget?.spent_gpu_minutes || 0}
+                  卡分钟。完成后按场景与整集合成。
+                </>
+              }
+            />
             {p.total_authorized_gpu_minutes && (
               <p>
                 本集授权上限：{p.total_authorized_gpu_minutes}卡分钟；每单元最多

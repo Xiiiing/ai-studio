@@ -62,6 +62,8 @@ function mount(
     </QueryClientProvider>
   );
   const result = render(view(initial));
+  if (initial.nodes?.length)
+    fireEvent.click(screen.getByRole("button", { name: "当前步骤" }));
   return {
     ...result,
     onDecision,
@@ -141,6 +143,7 @@ describe("real server workflow and agent handoffs", () => {
     const inspector = within(
       screen.getByRole("complementary", { name: "节点详情" }),
     );
+    await userEvent.click(inspector.getByText(/参与 Agent 与职责/));
     expect(inspector.getByText("独立审稿")).toBeVisible();
     expect(inspector.getByText("当前稿件")).toBeVisible();
     expect(inspector.getByRole("button", { name: "阅读文件" })).toBeVisible();
@@ -171,6 +174,9 @@ describe("real server workflow and agent handoffs", () => {
         },
       ],
     });
+    fireEvent.click(
+      screen.getByRole("button", { name: "执行记录" }),
+    );
     expect(screen.getByText(/本次模型/)).toBeVisible();
     expect(screen.queryByText(/其他步骤模型/)).not.toBeInTheDocument();
     expect(screen.getByText(/未记录步骤归属/)).toBeVisible();
@@ -752,6 +758,7 @@ describe("real server workflow and agent handoffs", () => {
         production_tasks: tasks,
       }),
     );
+    fireEvent.click(screen.getByRole("button", {name: "执行记录"}));
     const rows = within(screen.getByRole("table")).getAllByRole("row");
     expect(rows[1]).toHaveTextContent(/复用|reused/);
     expect(rows[1]).toHaveTextContent("v1");

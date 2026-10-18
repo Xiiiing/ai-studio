@@ -1,5 +1,12 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ArrowRight, Users, CircleCheck, ArrowUp } from "lucide-react";
+import {
+  ArrowRight,
+  Users,
+  CircleCheck,
+  ArrowUp,
+  LocateFixed,
+  Maximize2,
+} from "lucide-react";
 import { rows, roleName, date, activityName, type RecordData } from "./api";
 import { Badge, Panel, Empty, Artifact } from "./ui";
 import { ExecutionRecord, MaterialCard } from "./DocumentReader";
@@ -153,6 +160,7 @@ export function Workflow({
   renderRecords?: (node: RecordData) => ReactNode;
 }) {
   const [selection, setSelection] = useState("");
+  const [detailView, setDetailView] = useState("materials");
   const [inspectorOpen, setInspectorOpen] = useState(
     !!selectedNode || !!selectedExecution,
   );
@@ -169,15 +177,20 @@ export function Workflow({
   const select = (id: string) => {
     if (id !== selected?.id && inspectorRef.current)
       inspectorRef.current.scrollTop = 0;
+    setDetailView("materials");
     setSelection(id);
     onSelectNode?.(id);
   };
   useEffect(() => {
     if (selectedExecution) {
       setInspectorOpen(true);
-      Array.from(document.querySelectorAll<HTMLElement>("[data-execution]"))
-        .find((el) => el.dataset.execution === selectedExecution)
-        ?.scrollIntoView({ block: "center" });
+      setDetailView("records");
+      const frame = requestAnimationFrame(() => {
+        Array.from(document.querySelectorAll<HTMLElement>("[data-execution]"))
+          .find((el) => el.dataset.execution === selectedExecution)
+          ?.scrollIntoView({ block: "center" });
+      });
+      return () => cancelAnimationFrame(frame);
     }
   }, [selectedExecution, selected?.id]);
   if (!selected)
@@ -257,7 +270,7 @@ export function Workflow({
     >
       <header className="workflow-heading">
         <div>
-          <strong>制作工作流</strong>
+          <h2>制作工作流</h2>
           <p>
             {activityName(
               graph.current_activity,
@@ -265,12 +278,59 @@ export function Workflow({
             )}
           </p>
         </div>
-        <small>
-          {graph.project_id
-            ? `项目版本 ${graph.revision ?? "—"}`
-            : "标准流程说明"}
-        </small>
+        <div className="workflow-heading-actions">
+          <button
+            className="text-link"
+            onClick={() => {
+              select(graph.active_node || stages[0].id);
+              setInspectorOpen(true);
+              requestAnimationFrame(() => {
+                inspectorRef.current?.focus({ preventScroll: true });
+                if (window.matchMedia("(max-width: 1200px)").matches)
+                  inspectorRef.current?.scrollIntoView({
+                    block: "start",
+                    behavior: "instant",
+                  });
+              });
+            }}
+          >
+            <LocateFixed size={15} />
+            当前步骤
+          </button>
+          {inspectorOpen && (
+            <button
+              className="text-link"
+              onClick={() => setInspectorOpen(false)}
+            >
+              <Maximize2 size={15} />
+              完整流程
+            </button>
+          )}
+          <small>
+            {graph.project_id
+              ? `项目版本 ${graph.revision ?? "—"}`
+              : "标准流程说明"}
+          </small>
+        </div>
       </header>
+      <div className="workflow-progress-strip">
+        <span>
+          <Badge
+            status={
+              stages.find((n) => n.id === graph.active_node)?.status ||
+              "pending"
+            }
+          />
+          {stages.find((n) => n.id === graph.active_node)?.label || "等待开始"}
+        </span>
+        <small>
+          {
+            stages.filter((n) => n.status === "succeeded" && !n.conditional)
+              .length
+          }{" "}
+          / {stages.filter((n) => !n.conditional).length} 步骤已完成
+        </small>
+      </div>
       {stale && (
         <p className="notice">材料正在同步，保留上次记录；文件入口暂时停用。</p>
       )}
@@ -311,6 +371,7 @@ export function Workflow({
         </div>
         <aside
           ref={inspectorRef}
+          hidden={!inspectorOpen}
           tabIndex={-1}
           className="workflow-inspector"
           aria-label="节点详情"
@@ -337,7 +398,11 @@ export function Workflow({
             <ArrowUp size={14} />
             返回流程图
           </button>
-          <nav className="workflow-steps" aria-label="阶段内步骤">
+          <nav
+            className="workflow-steps"
+            aria-label="阶段内步骤"
+            hidden={!group || group.node_ids.length < 2}
+          >
             {stages
               .filter((n) =>
                 group ? group.node_ids.includes(n.id) : n.id === selected.id,
@@ -358,7 +423,6 @@ export function Workflow({
                   >
                     {n.label}
                     <Badge status={n.status} />
-                    {n.conditional && <small>按需执行</small>}
                   </button>
                   {nodes[index + 1] &&
                     rows(graph.edges).some(
@@ -383,212 +447,247 @@ export function Workflow({
           </nav>
           <header className="workflow-step-heading">
             <div>
-              <small>{group?.label || "返修分支"}</small>
+              {group?.label !== selected.label && (
+                <small>{group?.label || "返修分支"}</small>
+              )}
               <h3>{selected.label || selected.id}</h3>
             </div>
-            <Badge status={selected.status} />
+            <span>
+              <Badge status={selected.status} />
+              {selected.conditional && <small>按需执行</small>}
+            </span>
           </header>
-          <p className="workflow-description">
-            {selected.description ||
-              `${roleName(selected.owner || selected.role || "orchestrator")}负责此步骤。`}
-          </p>
-          <dl className="workflow-contract">
-            <div>
-              <dt>接收</dt>
-              <dd>{selected.input || "查看下方输入材料"}</dd>
-            </div>
-            <div>
-              <dt>交付</dt>
-              <dd>{selected.output || "查看下方交付内容"}</dd>
-            </div>
-          </dl>
-          <section className="workflow-section">
-            <h4>参与 Agent 与职责</h4>
-            <div className="workflow-members">
-              {selected.members.map((r: string) => (
-                <span key={r}>
-                  <Users size={14} />
-                  <strong>{roleName(r)}</strong>
-                  <small>
-                    {roleKind(r)}
-                    {r === selected.owner
-                      ? " · 负责"
-                      : r === selected.reviewer
-                        ? " · 审核"
-                        : ""}
-                  </small>
-                </span>
-              ))}
-            </div>
-          </section>
-          {(transitions.length > 0 || returnTarget) && (
-            <div className="workflow-transitions">
-              <strong>返修与返回</strong>
-              {transitions.map((e, i) => (
-                <p key={i}>
-                  <span>
-                    {stages.find((n) => n.id === e.source)?.label || e.source}
+          <div
+            className="workflow-detail-switch"
+            role="group"
+            aria-label="节点内容"
+          >
+            <button
+              aria-pressed={detailView === "materials"}
+              onClick={() => {
+                setDetailView("materials");
+                if (inspectorRef.current) inspectorRef.current.scrollTop = 0;
+              }}
+            >
+              材料与职责
+            </button>
+            <button
+              aria-pressed={detailView === "records"}
+              onClick={() => {
+                setDetailView("records");
+                if (inspectorRef.current) inspectorRef.current.scrollTop = 0;
+              }}
+            >
+              执行记录
+            </button>
+          </div>
+          <div hidden={detailView !== "materials"}>
+            <p className="workflow-description">
+              {selected.description ||
+                `${roleName(selected.owner || selected.role || "orchestrator")}负责此步骤。`}
+            </p>
+            <dl className="workflow-contract">
+              <div>
+                <dt>接收</dt>
+                <dd>{selected.input || "查看下方输入材料"}</dd>
+              </div>
+              <div>
+                <dt>交付</dt>
+                <dd>{selected.output || "查看下方交付内容"}</dd>
+              </div>
+            </dl>
+            <details className="workflow-section workflow-role-details">
+              <summary>
+                参与 Agent 与职责 · {selected.members.length} 位
+              </summary>
+              <div className="workflow-members">
+                {selected.members.map((r: string) => (
+                  <span key={r}>
+                    <Users size={14} />
+                    <strong>{roleName(r)}</strong>
+                    <small>
+                      {roleKind(r)}
+                      {r === selected.owner
+                        ? " · 负责"
+                        : r === selected.reviewer
+                          ? " · 审核"
+                          : ""}
+                    </small>
                   </span>
-                  <ArrowRight size={13} />
-                  <button
-                    className="text-link"
-                    onClick={() => select(e.target)}
-                  >
-                    {stages.find((n) => n.id === e.target)?.label || e.target}
-                  </button>
-                  <small>
-                    {(
-                      {
-                        repair: "审核未通过",
-                        repropose: "重新提案",
-                        restyle: "重新设计",
-                        continue: "按返修要求接续",
-                      } as RecordData
-                    )[e.label] || e.label}
-                  </small>
-                </p>
-              ))}
-              {returnTarget &&
-                !transitions.some((e) => e.target === returnTarget) && (
-                  <p>
-                    完成后返回{" "}
+                ))}
+              </div>
+            </details>
+            {(transitions.length > 0 || returnTarget) && (
+              <div className="workflow-transitions">
+                <strong>返修与返回</strong>
+                {transitions.map((e, i) => (
+                  <p key={i}>
+                    <span>
+                      {stages.find((n) => n.id === e.source)?.label || e.source}
+                    </span>
+                    <ArrowRight size={13} />
                     <button
                       className="text-link"
-                      onClick={() => select(returnTarget)}
+                      onClick={() => select(e.target)}
                     >
-                      {stages.find((n) => n.id === returnTarget)?.label ||
-                        returnTarget}
+                      {stages.find((n) => n.id === e.target)?.label || e.target}
                     </button>
+                    <small>
+                      {(
+                        {
+                          repair: "审核未通过",
+                          repropose: "重新提案",
+                          restyle: "重新设计",
+                          continue: "按返修要求接续",
+                        } as RecordData
+                      )[e.label] || e.label}
+                    </small>
                   </p>
-                )}
-            </div>
-          )}
-          {attention?.blocking && selected.id === graph.active_node && (
-            <button className="button primary" onClick={onDecision}>
-              处理当前事项
-              <ArrowRight size={16} />
-            </button>
-          )}
-          <section className="workflow-section" aria-label="输入材料">
-            <h4>输入材料</h4>
-            {io("inputs")}
-          </section>
-          <section className="workflow-section" aria-label="交付内容">
-            <h4>交付内容</h4>
-            {io("outputs")}
-          </section>
-          {onOpen && productTab(selected.id) && (
-            <button
-              className="text-link"
-              onClick={() => onOpen(productTab(selected.id))}
-            >
-              打开对应功能
-              <ArrowRight size={14} />
-            </button>
-          )}
-          <section className="workflow-section" aria-label="步骤执行记录">
-            <h4>执行记录</h4>
-            {renderRecords ? (
-              renderRecords(selected)
-            ) : records.length ? (
-              records.map((e) => (
-                <div
-                  key={e.id}
-                  className={
-                    e.id === selectedExecution ? "execution-record-focus" : ""
-                  }
-                >
-                  <ExecutionRecord
-                    execution={
-                      stale
-                        ? { ...e, artifacts: [], attempts: [], receipt: null }
-                        : e
+                ))}
+                {returnTarget &&
+                  !transitions.some((e) => e.target === returnTarget) && (
+                    <p>
+                      完成后返回{" "}
+                      <button
+                        className="text-link"
+                        onClick={() => select(returnTarget)}
+                      >
+                        {stages.find((n) => n.id === returnTarget)?.label ||
+                          returnTarget}
+                      </button>
+                    </p>
+                  )}
+              </div>
+            )}
+            {attention?.blocking && selected.id === graph.active_node && (
+              <button className="button primary" onClick={onDecision}>
+                处理当前事项
+                <ArrowRight size={16} />
+              </button>
+            )}
+            <section className="workflow-section" aria-label="输入材料">
+              <h4>输入材料</h4>
+              {io("inputs")}
+            </section>
+            <section className="workflow-section" aria-label="交付内容">
+              <h4>交付内容</h4>
+              {io("outputs")}
+            </section>
+            {onOpen && productTab(selected.id) && (
+              <button
+                className="text-link"
+                onClick={() => onOpen(productTab(selected.id))}
+              >
+                打开对应功能
+                <ArrowRight size={14} />
+              </button>
+            )}
+          </div>
+          <div hidden={detailView !== "records"}>
+            <section className="workflow-section" aria-label="步骤执行记录">
+              <h4>执行记录</h4>
+              {renderRecords ? (
+                renderRecords(selected)
+              ) : records.length ? (
+                records.map((e) => (
+                  <div
+                    key={e.id}
+                    className={
+                      e.id === selectedExecution ? "execution-record-focus" : ""
                     }
-                    role={e.role}
-                    projectId={graph.project_id || flow?.project_id}
-                  />
-                </div>
-              ))
-            ) : (
-              <p className="muted">
-                尚无此步骤的调用记录。历史角色调用仅在有保存记录时显示。
-              </p>
-            )}
-            {flow?.evidence?.truncated && (
-              <p className="muted">
-                历史记录较多，当前展示最近保存的部分记录。
-              </p>
-            )}
-          </section>
-          {selected.id === "production" && !renderRecords && (
-            <section className="workflow-section production-tasks">
-              <h4>镜头与后期实际任务</h4>
-              {productionTasks.length ? (
-                <div className="table-scroll">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>镜头 / 阶段</th>
-                        <th>负责 / 审核</th>
-                        <th>版本 / 尝试</th>
-                        <th>状态</th>
-                        <th>产物</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {productionTasks.map((t, i) => (
-                        <tr key={t.id || i}>
-                          <td>
-                            {t.shot_id ? (
-                              <button
-                                className="text-link"
-                                onClick={() => onShot?.(t.shot_id)}
-                              >
-                                {t.shot_id}
-                                <ArrowRight size={13} />
-                              </button>
-                            ) : (
-                              t.phase || t.stage
-                            )}
-                          </td>
-                          <td>
-                            {roleName(t.owner)} / {roleName(t.reviewer)}
-                          </td>
-                          <td>
-                            {t.production_revision == null
-                              ? "版本未记录"
-                              : `v${t.production_revision}`}{" "}
-                            · {t.attempt || "—"} 次
-                          </td>
-                          <td>
-                            <Badge status={t.status} />
-                          </td>
-                          <td>
-                            {t.artifact && !stale && (
-                              <Artifact
-                                item={{
-                                  url:
-                                    typeof t.artifact === "string"
-                                      ? t.artifact
-                                      : t.artifact.path,
-                                  label: "查看产物",
-                                }}
-                                projectId={graph.project_id}
-                              />
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                  >
+                    <ExecutionRecord
+                      execution={
+                        stale
+                          ? { ...e, artifacts: [], attempts: [], receipt: null }
+                          : e
+                      }
+                      role={e.role}
+                      projectId={graph.project_id || flow?.project_id}
+                    />
+                  </div>
+                ))
               ) : (
                 <p className="muted">
-                  尚无实际制作记录，生成后显示镜头、配音、剪辑与质检子任务。
+                  尚无此步骤的调用记录。历史角色调用仅在有保存记录时显示。
+                </p>
+              )}
+              {flow?.evidence?.truncated && (
+                <p className="muted">
+                  历史记录较多，当前展示最近保存的部分记录。
                 </p>
               )}
             </section>
-          )}
+            {selected.id === "production" && !renderRecords && (
+              <section className="workflow-section production-tasks">
+                <h4>镜头与后期实际任务</h4>
+                {productionTasks.length ? (
+                  <div className="table-scroll">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>镜头 / 阶段</th>
+                          <th>负责 / 审核</th>
+                          <th>版本 / 尝试</th>
+                          <th>状态</th>
+                          <th>产物</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {productionTasks.map((t, i) => (
+                          <tr key={t.id || i}>
+                            <td>
+                              {t.shot_id ? (
+                                <button
+                                  className="text-link"
+                                  onClick={() => onShot?.(t.shot_id)}
+                                >
+                                  {t.shot_id}
+                                  <ArrowRight size={13} />
+                                </button>
+                              ) : (
+                                t.phase || t.stage
+                              )}
+                            </td>
+                            <td>
+                              {roleName(t.owner)} / {roleName(t.reviewer)}
+                            </td>
+                            <td>
+                              {t.production_revision == null
+                                ? "版本未记录"
+                                : `v${t.production_revision}`}{" "}
+                              · {t.attempt || "—"} 次
+                            </td>
+                            <td>
+                              <Badge status={t.status} />
+                            </td>
+                            <td>
+                              {t.artifact && !stale && (
+                                <Artifact
+                                  item={{
+                                    url:
+                                      typeof t.artifact === "string"
+                                        ? t.artifact
+                                        : t.artifact.path,
+                                    label: "查看产物",
+                                  }}
+                                  projectId={graph.project_id}
+                                />
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <p className="muted">
+                    尚无实际制作记录，生成后显示镜头、配音、剪辑与质检子任务。
+                  </p>
+                )}
+              </section>
+            )}
+          </div>
           <p className="workflow-evidence">
             状态依据：
             {(

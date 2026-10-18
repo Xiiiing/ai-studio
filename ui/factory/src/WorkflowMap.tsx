@@ -7,7 +7,7 @@ import {
   type CSSProperties,
 } from "react";
 import { CornerDownLeft } from "lucide-react";
-import { rows, type RecordData } from "./api";
+import { rows, roleName, type RecordData } from "./api";
 import { Badge } from "./ui";
 
 export interface FlowStage extends RecordData {
@@ -47,8 +47,24 @@ export function stageFlow(
         : "pending");
     return {
       ...g,
+      id: g.id,
+      label: g.label,
+      node_ids: g.node_ids,
       status,
-      summary: current?.label || `${members.length} 个步骤 · ${done} 个已完成`,
+      completedSteps: done,
+      totalSteps: members.length,
+      ownerLabel: roleName(
+        current?.owner ||
+          members[0]?.owner ||
+          members[0]?.role ||
+          "orchestrator",
+      ),
+      summary:
+        members.length === 1
+          ? members[0]?.output
+            ? `交付：${members[0].output}`
+            : "等待交付"
+          : `${members.length} 个步骤 · ${done} 个已完成`,
     } as FlowStage;
   });
   const revision = steps.find((n) => n.id === "revision");
@@ -101,6 +117,16 @@ export function stageFlow(
   }
   return { nodes: stageNodes, edges: [...edges.values()] };
 }
+const stageTitles: Record<string, string> = {
+  全剧设定与分集大纲: "设定与大纲",
+  全剧规划独立审核: "规划审核",
+  出品人确认全剧规划: "规划确认",
+  按集制作与团队协作: "剧集制作",
+  逐集验收与成果: "验收与成果",
+  单集场景创作与独立审核: "场景与审核",
+  分镜与制作单元: "分镜与单元",
+  连续性检查与单集合成: "连续性与合成",
+};
 export interface FlowBox {
   x: number;
   y: number;
@@ -127,7 +153,7 @@ export function stageEdgePath(
   const sameRow =
     Math.abs(sy - ty) < Math.min(source.height, target.height) / 2;
   const sameColumn = Math.abs(sx - tx) < 5;
-  if (sameRow && Math.abs(sx - tx) < source.width * 1.6) {
+  if (sameRow && !edge.repair && Math.abs(sx - tx) < source.width * 1.6) {
     const right = tx > sx,
       start = right ? source.x + source.width : source.x,
       end = right ? target.x : target.x + target.width,
@@ -141,22 +167,15 @@ export function stageEdgePath(
       mid = (start + end) / 2;
     return `M ${sx} ${start} C ${sx} ${mid}, ${tx} ${mid}, ${tx} ${end}`;
   }
-  const lane = bounds.height - (edge.source === "revision" ? 18 : 42);
+  // Route returns through the gaps above rows and the reserved outer gutter.
+  // A line from a card's bottom to a bottom lane could cut through lower cards.
+  const offset = edge.source === "revision" ? 12 : 22;
+  const sourceLane = Math.max(6, source.y - offset);
+  const targetLane = Math.max(6, target.y - offset);
   if (sameRow)
-    return `M ${sx} ${source.y + source.height} L ${sx} ${lane} L ${tx} ${lane} L ${tx} ${target.y + target.height}`;
-  // Reserve an outer lane for return routes so the line never crosses another stage card.
-  const left = source.x < bounds.width / 2 || target.x < bounds.width / 2;
-  const outer = left
-    ? edge.source === "revision"
-      ? 8
-      : 18
-    : bounds.width - (edge.source === "revision" ? 8 : 18);
-  if (edge.source === "revision") {
-    const end = left ? target.x : target.x + target.width;
-    return `M ${sx} ${source.y + source.height} L ${sx} ${lane} L ${outer} ${lane} L ${outer} ${ty} L ${end} ${ty}`;
-  }
-  const start = left ? source.x : source.x + source.width;
-  return `M ${start} ${sy} L ${outer} ${sy} L ${outer} ${lane} L ${tx} ${lane} L ${tx} ${target.y + target.height}`;
+    return `M ${sx} ${source.y} L ${sx} ${sourceLane} L ${tx} ${sourceLane} L ${tx} ${target.y}`;
+  const outer = edge.source === "revision" ? bounds.width - 8 : 8;
+  return `M ${sx} ${source.y} L ${sx} ${sourceLane} L ${outer} ${sourceLane} L ${outer} ${targetLane} L ${tx} ${targetLane} L ${tx} ${target.y}`;
 }
 export function WorkflowMap({
   graph,
@@ -183,7 +202,12 @@ export function WorkflowMap({
     height: 0,
     boxes: {},
   });
-  const columns = measurement.width && measurement.width < 520 ? 2 : 3;
+  const columns =
+    measurement.width && measurement.width < 520
+      ? 2
+      : measurement.width >= 1050 && flow.nodes.length <= 5
+        ? flow.nodes.length
+        : 3;
   const markerId = useId().replace(/[^a-zA-Z0-9_-]/g, "");
   useLayoutEffect(() => {
     const element = ref.current;
@@ -355,8 +379,15 @@ export function WorkflowMap({
                   <Badge status={node.status} />
                 </span>
                 <span className="workflow-stage-copy">
-                  <strong>{node.label}</strong>
-                  <small>{node.summary}</small>
+                  <strong title={node.label}>
+                    {stageTitles[node.label] || node.label}
+                  </strong>
+                  <small className="workflow-node-owner">
+                    {node.ownerLabel || "按需返修"}
+                  </small>
+                  <small className="workflow-node-summary">
+                    {node.summary}
+                  </small>
                 </span>
                 {node.node_ids.some((id) =>
                   rows(graph.edges).some(
@@ -367,6 +398,19 @@ export function WorkflowMap({
                   ),
                 ) && (
                   <small className="workflow-internal-repair">含审核返修</small>
+                )}
+                {node.totalSteps > 0 && (
+                  <span
+                    className="workflow-node-progress"
+                    aria-label={`${node.completedSteps} / ${node.totalSteps} 步骤已完成`}
+                  >
+                    {Array.from({ length: node.totalSteps }, (_, i) => (
+                      <i
+                        key={i}
+                        className={i < node.completedSteps ? "done" : ""}
+                      />
+                    ))}
+                  </span>
                 )}
                 {["top", "right", "bottom", "left"].map((side) => (
                   <i

@@ -93,7 +93,7 @@ for (const width of [1440, 1024, 390]) {
       );
       const steps = page
         .getByRole("navigation", { name: "阶段内步骤" })
-        .locator("button[data-flow-node]");
+        .locator("button[data-flow-node]:visible");
       for (let i = 0; i < (await steps.count()); i++) {
         const label = await steps
           .nth(i)

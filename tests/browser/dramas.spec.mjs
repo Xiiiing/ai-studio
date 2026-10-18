@@ -77,6 +77,10 @@ for (const width of [1440, 390])
     await expect.poll(() => calls.length).toBe(1);
     expect(calls[0].episode_numbers).toEqual([1, 3]);
     expect(calls[0].expected_revision).toBe(4);
+    await page
+      .getByRole("navigation", { name: "整剧工作区" })
+      .locator("summary")
+      .click();
     await page.getByRole("button", { name: "生成批次", exact: true }).click();
     await expect(page.getByText("第1、3集 · 设定v1")).toBeVisible();
     await page.getByRole("button", { name: "暂停批次", exact: true }).click();
