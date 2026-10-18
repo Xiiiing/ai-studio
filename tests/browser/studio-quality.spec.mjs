@@ -35,9 +35,9 @@ for (const width of [1440, 1024, 390]) {
       ["dashboard", "制片总览"],
       ["projects", "全部项目"],
       ["library", "统一素材库"],
-      ["inbox", "待办决策"],
-      ["workflow", "制作流程与团队"],
-      ["models", "模型与连接"],
+      ["inbox", "制片总览"],
+      ["workflow", "全部项目"],
+      ["models", "模型配置"],
       ["activity", "运行记录"],
     ]) {
       await page.goto(server.endpoint + "/#view=" + view);

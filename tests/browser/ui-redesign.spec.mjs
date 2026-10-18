@@ -372,7 +372,7 @@ for (const theme of ["light", "dark"])
     await page.emulateMedia({ colorScheme: theme });
     await page.goto("/#view=models");
     await expect(
-      page.getByRole("heading", { name: "模型与连接" }),
+      page.getByRole("heading", { name: "模型配置" }),
     ).toBeVisible();
     const results = await page.evaluate(() => {
       const rgb = (value) =>

@@ -11,7 +11,7 @@ test.beforeEach(async ({ request, page }) => {
 });
 async function models(page) {
   await page.goto("/#view=models");
-  await expect(page.locator("#workspace h1")).toHaveText("模型与连接");
+  await expect(page.locator("#workspace h1")).toHaveText("模型配置");
   await expect(page.locator(".model-service-card").first()).toBeVisible();
 }
 async function saveCalls(request) {

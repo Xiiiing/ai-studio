@@ -5,7 +5,6 @@ import {
   FolderKanban,
   Inbox,
   Settings2,
-  Palette,
   Activity,
   Plus,
   Clapperboard,
@@ -81,8 +80,10 @@ import {
 type Route = { view: string; project: string; tab: string };
 function readRoute(): Route {
   const p = new URLSearchParams(location.hash.slice(1));
+  const requested = p.get("view") || "dashboard";
+  const view = requested === "inbox" ? "dashboard" : requested === "workflow" ? "projects" : requested;
   return {
-    view: p.get("view") || "dashboard",
+    view: ["dashboard", "projects", "library", "activity", "models", "settings"].includes(view) ? view : "dashboard",
     project: p.get("project") || "",
     tab: p.get("tab") || "overview",
   };
@@ -91,11 +92,8 @@ const links = [
   ["dashboard", "总览", LayoutDashboard],
   ["projects", "项目", FolderKanban],
   ["library", "素材库", FolderKanban],
-  ["inbox", "待办", Inbox],
-  ["workflow", "制作流程与团队", Bot],
-  ["models", "模型与连接", Settings2],
   ["activity", "运行记录", Activity],
-  ["settings", "设置", Palette],
+  ["models", "模型配置", Settings2],
 ] as const;
 export default function App() {
   return (
@@ -152,11 +150,6 @@ function Workbench() {
     models = useQuery({
       queryKey: keys.models,
       queryFn: () => request("/models"),
-      staleTime: 60000,
-    }),
-    spec = useQuery({
-      queryKey: keys.workflow,
-      queryFn: () => request("/workflow"),
       staleTime: 60000,
     }),
     profiles = useQuery({
@@ -281,14 +274,8 @@ function Workbench() {
             <Plus size={16} />
             新建制作
           </button>
-          <nav className="main-nav">
-            {[
-              { label: "工作室", entries: links.slice(0, 4) },
-              { label: "管理", entries: [links[5], links[4], links[6], links[7]] },
-            ].map((group) => (
-              <div className="nav-group" key={group.label}>
-                <div className="sidebar-label">{group.label}</div>
-                {group.entries.map(([view, label, Icon]) => (
+          <nav className="main-nav" aria-label="主导航">
+                {links.map(([view, label, Icon]) => (
                   <button
                     key={view}
                     className={
@@ -310,15 +297,8 @@ function Workbench() {
                   >
                     <Icon size={17} />
                     {label}
-                    {view === "inbox" && (
-                      <span className="nav-count">
-                        {metrics.attention || 0}
-                      </span>
-                    )}
                   </button>
                 ))}
-              </div>
-            ))}
           </nav>
           <div className="sidebar-label row-between">
             <span>最近制作</span>
@@ -355,6 +335,7 @@ function Workbench() {
               syncError: overview.isError,
               syncing: overview.isFetching,
               refresh,
+              openSettings: () => navigate("settings"),
             }}
           >
             <main id="workspace" tabIndex={-1}>
@@ -411,8 +392,6 @@ function Workbench() {
                       openProject={openProject}
                       create={() => setCreate(true)}
                     />
-                  ) : route.view === "inbox" ? (
-                    <InboxPage openProject={openProject} />
                   ) : route.view === "activity" ? (
                     <>
                       <Heading
@@ -428,80 +407,7 @@ function Workbench() {
                         />
                       </Panel>
                     </>
-                  ) : (
-                    <>
-                      <Heading
-                        eyebrow="PRODUCTION WORKFLOW"
-                        title="制作流程与团队"
-                        description="查看团队如何分工、交接与独立审核，进入项目追踪实际执行。"
-                      />
-                      <Panel title="当前执行任务">
-                        <RunningTasks
-                          tasks={rows(overview.data.running_tasks)}
-                          openProject={openProject}
-                        />
-                      </Panel>
-                      <Panel title="项目工作流">
-                        {!projects.length ? <Empty title="尚无项目" /> : <div className="drama-cards">{projects.map(p => <article className="drama-card" key={p.id}>
-                          <strong>{p.title}</strong>
-                          <p>{activityName(p.stage || p.status)}</p>
-                          <button className="button" onClick={() => openProject(p.id, p.record_kind === "drama" || (p.record_kind === "episode" && p.duration_seconds > 90) ? "workflow" : "overview")}>查看实际流程</button>
-                        </article>)}</div>}
-                      </Panel>
-                      <Panel
-                        title="短片标准流程"
-                        description="此处为短片流程参考，具体执行与返修请打开上方项目工作流。"
-                      >
-                        <FloatingErrorNotice error={spec.error} />
-                        {spec.error && (
-                          <button
-                            className="button"
-                            onClick={() => spec.refetch()}
-                          >
-                            重新读取制作流程
-                          </button>
-                        )}
-                        {spec.isPending ? (
-                          <Loading />
-                        ) : (
-                          !spec.error && (
-                            <Workflow
-                              graph={
-                                spec.data?.production_graph ||
-                                spec.data?.workflow || {
-                                  nodes: rows(spec.data?.nodes),
-                                  edges: rows(spec.data?.edges),
-                                }
-                              }
-                            />
-                          )
-                        )}
-                      </Panel>
-                      <Panel title="已配置的 Agent">
-                        <div className="agent-grid">
-                          {rows(models.data?.roles).map((r) => (
-                            <article className="agent-card" key={r.role}>
-                              <span className="agent-avatar">
-                                <Bot size={20} />
-                              </span>
-                              <h3>{r.label || roleName(r.role)}</h3>
-                              <p>
-                                {r.model ||
-                                  models.data?.editable_profiles?.[r.profile]
-                                    ?.model ||
-                                  "自动编排 / 尚未分配"}
-                              </p>
-                              <small>
-                                {r.requires_vision
-                                  ? "需要图像理解"
-                                  : "工作流角色"}
-                              </small>
-                            </article>
-                          ))}
-                        </div>
-                      </Panel>
-                    </>
-                  )}
+                  ) : null}
                 </>
               )}
             </main>
@@ -622,23 +528,7 @@ function Dashboard({
             />
           )}
         </Panel>
-        <Panel
-          title="需要你的决定"
-          description="每项待办都有明确的原因与下一步"
-          action={
-            <button className="text-link" onClick={() => navigate("inbox")}>
-              全部待办
-              <ArrowUpRight size={14} />
-            </button>
-          }
-          className="dashboard-inbox"
-        >
-          <Attention
-            projects={rows(o.attention_projects || o.projects)}
-            openProject={openProject}
-            limit={3}
-          />
-        </Panel>
+        <PendingDecisions overview={o} openProject={openProject} />
         <Panel title="最近动态" className="dashboard-activity">
           <ActivityList
             events={rows(o.activity).slice(0, 5)}
@@ -2203,9 +2093,11 @@ function Pagination({
     </div>
   );
 }
-function InboxPage({
+function PendingDecisions({
+  overview,
   openProject,
 }: {
+  overview: RecordData;
   openProject: (id: string, tab?: string) => void;
 }) {
   const [offset, setOffset] = useState(0),
@@ -2215,34 +2107,30 @@ function InboxPage({
         request("/console?attention_offset=" + offset + "&attention_limit=100"),
       refetchInterval: 10000,
     });
+  const snapshot = query.data || (offset === 0 ? overview : undefined);
   return (
-    <>
-      <Heading
-        eyebrow="DECISION INBOX"
-        title="待办决策"
-        description="按实际阻断与人工关卡整理，较早项目的待办同样保留。"
-      />
-      <Panel title="需要你处理">
+      <Panel title="待办" className="dashboard-inbox">
         <FloatingErrorNotice error={query.error} />
-        {query.data ? (
+        {snapshot ? (
           <>
             <Attention
               projects={rows(
-                query.data.attention_projects || query.data.projects,
+                snapshot.attention_projects || snapshot.projects,
               )}
               openProject={openProject}
             />
             <Pagination
-              pagination={query.data.attention_pagination}
+              pagination={snapshot.attention_pagination}
               offset={offset}
               onOffset={setOffset}
+              disabled={query.isFetching}
             />
           </>
         ) : (
-          <Loading />
+          query.error ? <Empty title="待办暂时无法读取" /> : <Loading />
         )}
+        {query.error && <button className="button" onClick={() => query.refetch()}>重新读取待办</button>}
       </Panel>
-    </>
   );
 }
 function CurrentOutput({ project: p }: { project: RecordData }) {

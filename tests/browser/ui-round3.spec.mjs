@@ -159,9 +159,9 @@ test("storage unavailable theme survives tools, route changes and responsive rem
   await setTheme(page, "dark");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   await page.locator('[data-action="toggle-navigation"]').click();
-  await page.locator('.main-nav [data-view="workflow"]').click();
+  await page.locator('.main-nav [data-view="projects"]').click();
   await expect(page.locator(".shared-page-header h1")).toHaveText(
-    "制作流程与团队",
+    "全部项目",
   );
   await expect(page.locator("html")).toHaveAttribute(
     "data-theme-preference",
@@ -214,7 +214,7 @@ for (const width of [320, 1440])
         await page.goto("/#view=models", { waitUntil: "domcontentloaded" });
         await expect(page.locator("h1")).toHaveCount(1);
         await expect(page.locator(".shared-page-header h1")).toHaveText(
-          "模型与连接",
+          "模型配置",
         );
         await expect(page.locator(".topbar, .breadcrumb")).toHaveCount(0);
         await expect(await exposeTheme(page)).toBeEnabled();
@@ -238,7 +238,7 @@ for (const width of [320, 1440])
           await expect(page.locator(".service-card-grid")).toBeVisible();
         }
         await expect(page.locator(".shared-page-header h1")).toHaveText(
-          "模型与连接",
+          "模型配置",
         );
       } finally {
         release();

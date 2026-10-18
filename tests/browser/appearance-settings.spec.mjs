@@ -1,5 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { mkdir } from "node:fs/promises";
+import { exposePageControl } from "./header-flow.mjs";
+import { openWorkflow } from "./navigation.mjs";
 import { paletteViolations } from "./palette.mjs";
 
 const palettes = [
@@ -28,8 +30,7 @@ for (const width of [1440, 390]) for (const theme of ["light", "dark"]) {
     page.on("pageerror", (e) => errors.push(e.message));
     page.on("request", (r) => { if(r.url().includes("/api/") && !["GET", "HEAD"].includes(r.method())) writes.push(r.url()); });
     await page.goto("/");
-    if (width < 1024) await page.getByRole("button", { name: "展开导航", exact: true }).click();
-    await page.getByRole("button", { name: "设置", exact: true }).click();
+    await (await exposePageControl(page, page.getByRole("button", { name: "外观设置", exact: true }))).click();
     await expect(page).toHaveURL(/view=settings$/);
     await expect(page.getByRole("heading", { name: "设置", exact: true })).toBeVisible();
     await expect(group(page).getByRole("radio")).toHaveCount(6);
@@ -58,7 +59,7 @@ for (const width of [1440, 390]) for (const theme of ["light", "dark"]) {
     await page.goto("/#project=012345abcdef&tab=overview");
     await expect(page.locator("html")).toHaveAttribute("data-accent", "bronze");
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
-    await page.goto("/#view=workflow");
+    await openWorkflow(page);
     await expect(page.locator("[data-stage]").first()).toBeVisible();
     expect(await paletteViolations(page)).toEqual([]);
     expect(errors).toEqual([]);

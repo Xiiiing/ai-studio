@@ -171,7 +171,7 @@ export function Models({ notify }: { notify: (v: string) => void }) {
   if (!inventory || !draft)
     return (
       <>
-        <Heading eyebrow="MODEL SETTINGS" title="模型与连接" />
+        <Heading eyebrow="MODEL SETTINGS" title="模型配置" />
         <FloatingErrorNotice error={query.error} />
         {query.error ? (
           <button className="button" onClick={() => query.refetch()}>
@@ -196,7 +196,7 @@ export function Models({ notify }: { notify: (v: string) => void }) {
   };
   return (
     <div className="model-settings">
-      <Heading eyebrow="MODEL SETTINGS" title="模型与连接" />
+      <Heading eyebrow="MODEL SETTINGS" title="模型配置" />
       <div
         className={
           "model-settings-toolbar" +

@@ -466,7 +466,7 @@ for (const width of [1440, 390]) {
 }
 
 for (const width of [1440, 390])
-  test(`global workflow opens a blocked project diagram at ${width}`, async ({
+  test(`project list opens a blocked project diagram at ${width}`, async ({
     page,
     request,
   }) => {
@@ -475,19 +475,15 @@ for (const width of [1440, 390])
     const consoleData = await (
       await request.get("/api/factory/console")
     ).json();
-    await page.route("**/api/factory/console", (r) =>
+    await page.route("**/api/factory/console**", (r) =>
       r.fulfill({
         json: { ...consoleData, projects: [drama], running_tasks: [] },
       }),
     );
     await installDrama(page, drama);
-    await page.goto("/#view=workflow");
-    await expect(
-      page.getByRole("heading", { name: "项目工作流", exact: true }),
-    ).toBeVisible();
-    await page
-      .getByRole("button", { name: "查看实际流程", exact: true })
-      .click();
+    await page.goto("/#view=projects");
+    await page.locator(".console-project-table").getByText(drama.title, { exact: true }).click();
+    await page.getByRole("navigation", { name: "整剧工作区" }).getByRole("button", { name: "制作流程与团队", exact: true }).click();
     await expect(page).toHaveURL(
       new RegExp("project=" + dramaId + "&tab=workflow"),
     );

@@ -153,10 +153,10 @@ function setup(options: { attention?: boolean; activity?: string } = {}) {
   );
   return { calls, fetch, client };
 }
-it("外观设置通过管理导航打开，选择主题色不提交业务写请求", async () => {
+it("外观设置从页面工具打开，选择主题色不提交业务写请求", async () => {
   const { calls } = setup();
   await screen.findByRole("heading", { name: "制片总览" });
-  await userEvent.click(screen.getByRole("button", { name: "设置" }));
+  await userEvent.click(screen.getByRole("button", { name: "外观设置" }));
   expect(location.hash).toBe("#view=settings");
   expect(screen.getByRole("heading", { name: "设置" })).toBeVisible();
   await userEvent.click(screen.getByRole("radio", { name: "青瓷" }));
@@ -166,7 +166,7 @@ it("外观设置通过管理导航打开，选择主题色不提交业务写请�
   delete document.documentElement.dataset.accent;
 });
 it("导航保留单一品牌和可理解的阶段，不重复显示宣传小字", async () => {
-  setup({ activity: "plan_repair" });
+  const { calls } = setup({ activity: "plan_repair" });
   await screen.findByRole("heading", { name: "制片总览" });
   const home = screen.getByRole("link", { name: "映序首页" });
   expect(within(home).getByText("映序")).toBeVisible();
@@ -182,14 +182,28 @@ it("导航保留单一品牌和可理解的阶段，不重复显示宣传小字"
   expect(screen.queryByText("AI PRODUCTION STUDIO")).not.toBeInTheDocument();
   expect(screen.queryByText("自主协作 · 人工掌舵")).not.toBeInTheDocument();
   expect(screen.queryByText("创作、审核与交付记录可追溯")).not.toBeInTheDocument();
-  expect(screen.getByRole("navigation")).toHaveTextContent("待办");
+  const nav = screen.getByRole("navigation", { name: "主导航" });
+  expect(within(nav).getAllByRole("button").map((button) => button.textContent)).toEqual([
+    "总览", "项目", "素材库", "运行记录", "模型配置",
+  ]);
+  expect(screen.queryByText("工作室", { exact: true })).not.toBeInTheDocument();
+  expect(screen.queryByText("管理", { exact: true })).not.toBeInTheDocument();
+  expect(calls.some((call) => call.path === "/api/factory/workflow")).toBe(false);
+});
+it.each([
+  ["inbox", "制片总览", "dashboard"],
+  ["workflow", "全部项目", "projects"],
+])("旧 %s 链接显示 %s 并保留地址", async (view, heading, selected) => {
+  history.replaceState({}, "", "/#view=" + view);
+  setup();
+  await screen.findByRole("heading", { name: heading });
+  expect(location.hash).toBe("#view=" + view);
+  expect(document.querySelector(`.main-nav [data-view="${selected}"]`)).toHaveAttribute("aria-current", "page");
 });
 it("实际导航从总览进入具体故事选择，提交绑定当前gate与revision", async () => {
   const { calls } = setup();
   await screen.findByRole("heading", { name: "制片总览" });
-  const nav = screen.getByRole("navigation");
-  await userEvent.click(within(nav).getByRole("button", { name: /待办/ }));
-  await screen.findByRole("heading", { name: "待办决策" });
+  await screen.findByRole("heading", { name: "待办" });
   await userEvent.click(screen.getByRole("button", { name: "处理" }));
   await screen.findByRole("button", { name: "选择这个故事" });
   expect(screen.queryByText("未通过候选")).not.toBeInTheDocument();

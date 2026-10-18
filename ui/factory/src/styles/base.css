@@ -239,6 +239,7 @@ pre {
 .main-nav {
   display: grid;
   gap: 4px;
+  margin-top: 12px;
 }
 .nav-item {
   border: 0;
