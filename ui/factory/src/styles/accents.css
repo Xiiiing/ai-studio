@@ -1,130 +1,143 @@
-/* Custom muted accent scales. Composition follows Radix Colors role guidance:
-   soft / selected backgrounds, solid / hover backgrounds, separate text and focus.
+/* Accent roles: readable small marks, one distinct feature surface, and focus.
+   Primary actions stay neutral black/white, independent of the selected hue.
    Neutrals and semantic error / warning / success colors remain in tokens.css. */
 :root[data-accent] {
-  --primary: var(--accent);
-  --primary-hover: var(--accent-hover);
+  --primary: var(--ink);
+  --primary-hover: var(--inverse);
+  --on-primary: var(--panel);
   --focus: var(--accent);
   --status-running: var(--accent);
   --crop-stroke: var(--accent);
 }
 :root[data-accent="slate"] {
+  --accent-feature: #46566e;
+  --on-accent-feature: #ffffff;
   --accent: #46566e;
   --accent-hover: #3d4c63;
   --accent-text: #3d4c63;
   --accent-soft: #f0f2f5;
   --selection: #e1e6ed;
-  --on-primary: #ffffff;
   --on-accent: #ffffff;
   --crop-fill: rgb(70 86 110 / 15%);
 }
 :root[data-theme="dark"][data-accent="slate"] {
+  --accent-feature: #46566e;
+  --on-accent-feature: #ffffff;
   --accent: #8492a6;
   --accent-hover: #a8b3c2;
   --accent-text: #a8b3c2;
   --accent-soft: #2a3039;
   --selection: #303947;
-  --on-primary: #14191f;
   --on-accent: #14191f;
   --crop-fill: rgb(132 146 166 / 18%);
 }
 :root[data-accent="graphite"] {
+  --accent-feature: #b9bac1;
+  --on-accent-feature: #101113;
   --accent: #53545b;
   --accent-hover: #43444b;
   --accent-text: #4a4b52;
   --accent-soft: #f1f1f3;
   --selection: #e4e4e8;
-  --on-primary: #ffffff;
   --on-accent: #ffffff;
   --crop-fill: rgb(83 84 91 / 15%);
 }
 :root[data-theme="dark"][data-accent="graphite"] {
+  --accent-feature: #b9bac1;
+  --on-accent-feature: #101113;
   --accent: #99999f;
   --accent-hover: #b8b8bf;
   --accent-text: #b8b8bf;
   --accent-soft: #2c2c30;
   --selection: #37373d;
-  --on-primary: #14191f;
   --on-accent: #14191f;
   --crop-fill: rgb(153 153 159 / 18%);
 }
 :root[data-accent="teal"] {
+  --accent-feature: #5ddbc7;
+  --on-accent-feature: #101113;
   --accent: #3e686b;
   --accent-hover: #31575a;
   --accent-text: #315d60;
   --accent-soft: #edf4f4;
   --selection: #dbe9e9;
-  --on-primary: #ffffff;
   --on-accent: #ffffff;
   --crop-fill: rgb(62 104 107 / 15%);
 }
 :root[data-theme="dark"][data-accent="teal"] {
+  --accent-feature: #5ddbc7;
+  --on-accent-feature: #101113;
   --accent: #83abae;
   --accent-hover: #a0c4c6;
   --accent-text: #a0c4c6;
   --accent-soft: #253335;
   --selection: #2c4143;
-  --on-primary: #14191f;
   --on-accent: #14191f;
   --crop-fill: rgb(131 171 174 / 18%);
 }
 :root[data-accent="jade"] {
+  --accent-feature: #77ed94;
+  --on-accent-feature: #101113;
   --accent: #4b6656;
   --accent-hover: #3d5546;
   --accent-text: #3d5948;
   --accent-soft: #eff4f0;
   --selection: #e0e9e2;
-  --on-primary: #ffffff;
   --on-accent: #ffffff;
   --crop-fill: rgb(75 102 86 / 15%);
 }
 :root[data-theme="dark"][data-accent="jade"] {
+  --accent-feature: #77ed94;
+  --on-accent-feature: #101113;
   --accent: #91ab98;
   --accent-hover: #afc5b5;
   --accent-text: #afc5b5;
   --accent-soft: #29342d;
   --selection: #344238;
-  --on-primary: #14191f;
   --on-accent: #14191f;
   --crop-fill: rgb(145 171 152 / 18%);
 }
 :root[data-accent="iris"] {
+  --accent-feature: #b8a0ed;
+  --on-accent-feature: #101113;
   --accent: #675b7b;
   --accent-hover: #564b69;
   --accent-text: #5c4f72;
   --accent-soft: #f3f0f6;
   --selection: #e8e2ee;
-  --on-primary: #ffffff;
   --on-accent: #ffffff;
   --crop-fill: rgb(103 91 123 / 15%);
 }
 :root[data-theme="dark"][data-accent="iris"] {
+  --accent-feature: #b8a0ed;
+  --on-accent-feature: #101113;
   --accent: #a59ab6;
   --accent-hover: #c1b6d0;
   --accent-text: #c1b6d0;
   --accent-soft: #312c38;
   --selection: #3c3546;
-  --on-primary: #14191f;
   --on-accent: #14191f;
   --crop-fill: rgb(165 154 182 / 18%);
 }
 :root[data-accent="bronze"] {
+  --accent-feature: #e3b786;
+  --on-accent-feature: #101113;
   --accent: #785c47;
   --accent-hover: #654b39;
   --accent-text: #6c503b;
   --accent-soft: #f6f1ed;
   --selection: #ece2d8;
-  --on-primary: #ffffff;
   --on-accent: #ffffff;
   --crop-fill: rgb(120 92 71 / 15%);
 }
 :root[data-theme="dark"][data-accent="bronze"] {
+  --accent-feature: #e3b786;
+  --on-accent-feature: #101113;
   --accent: #b59d88;
   --accent-hover: #d0b8a2;
   --accent-text: #d0b8a2;
   --accent-soft: #373029;
   --selection: #44392f;
-  --on-primary: #14191f;
   --on-accent: #14191f;
   --crop-fill: rgb(181 157 136 / 18%);
 }

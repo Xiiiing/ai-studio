@@ -2,7 +2,7 @@ import { test, expect } from "@playwright/test";
 import { mkdir } from "node:fs/promises";
 import { exposePageControl } from "./header-flow.mjs";
 import { openWorkflow } from "./navigation.mjs";
-import { paletteViolations } from "./palette.mjs";
+import { paletteViolations, colorHierarchy } from "./palette.mjs";
 
 const palettes = [
   ["slate", "深灰蓝"], ["graphite", "石墨"], ["teal", "青瓷"],
@@ -13,7 +13,7 @@ const choose = (page, name) => group(page).getByText(name, { exact: true }).clic
 const overflow = async (page) => expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
 const tokens = (page) => page.evaluate(() => {
   const style = getComputedStyle(document.documentElement);
-  return Object.fromEntries(["canvas", "panel", "success", "warning", "danger", "primary", "accent"].map((token) => [token, style.getPropertyValue(`--${token}`).trim()]));
+  return Object.fromEntries(["canvas", "panel", "success", "warning", "danger", "primary", "accent", "accent-feature"].map((token) => [token, style.getPropertyValue(`--${token}`).trim()]));
 });
 
 test.beforeEach(async ({ page, request }) => {
@@ -34,19 +34,32 @@ for (const width of [1440, 390]) for (const theme of ["light", "dark"]) {
     await expect(page).toHaveURL(/view=settings$/);
     await expect(page.getByRole("heading", { name: "设置", exact: true })).toBeVisible();
     await expect(group(page).getByRole("radio")).toHaveCount(6);
-    const initial = await tokens(page), primaryColors = new Set();
+    const initial = await tokens(page), featureColors = new Set();
     for (const [id, label] of palettes) {
       await choose(page, label);
       await expect(group(page).getByRole("radio", { name: label, exact: true })).toBeChecked();
       await expect(page.locator("html")).toHaveAttribute("data-accent", id);
       const values = await tokens(page);
       for (const key of ["canvas", "panel", "success", "warning", "danger"]) expect(values[key]).toBe(initial[key]);
-      primaryColors.add(values.primary);
-      expect(values.primary).toBe(values.accent);
+      expect(values.primary).toBe(initial.primary);
+      featureColors.add(values["accent-feature"]);
+      const hierarchy = await colorHierarchy(page);
+      expect(hierarchy.primary.background).toEqual(hierarchy.tokens.primary);
+      expect(Math.max(...hierarchy.primary.background) - Math.min(...hierarchy.primary.background)).toBeLessThanOrEqual(8);
+      expect(hierarchy.primary.contrast).toBeGreaterThanOrEqual(4.5);
+      expect(hierarchy.feature.background).toEqual(hierarchy.tokens["accent-feature"]);
+      expect(hierarchy.feature.color).toEqual(hierarchy.tokens["on-accent-feature"]);
+      expect(hierarchy.feature.contrast).toBeGreaterThanOrEqual(4.5);
+      for (const text of hierarchy.featureText) {
+        expect(text.color, text.text).toEqual(hierarchy.tokens["on-accent-feature"]);
+        expect(text.contrast, text.text).toBeGreaterThanOrEqual(4.5);
+      }
+      expect(hierarchy.feature.image).toBe("none");
+      expect(hierarchy.gradients).toEqual([]);
       expect(await paletteViolations(page)).toEqual([]);
       await overflow(page);
     }
-    expect(primaryColors.size).toBe(6);
+    expect(featureColors.size).toBe(6);
     await page.reload();
     await expect(group(page).getByRole("radio", { name: "暖铜", exact: true })).toBeChecked();
     await page.getByRole("radio", { name: theme === "dark" ? "浅色" : "深色", exact: true }).locator("..").click();

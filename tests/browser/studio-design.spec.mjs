@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { mkdir } from "node:fs/promises";
 import { exposePageControl } from "./header-flow.mjs";
-import { paletteViolations } from "./palette.mjs";
+import { paletteViolations, colorHierarchy } from "./palette.mjs";
 
 // The production bundle is served with test-only API responses. These are
 // interface checks, not model performance or production-resource evidence.
@@ -42,9 +42,14 @@ async function checkOverview(page, expected = ["7", "2", "8", "11"]) {
   expect(await page.locator("[data-metric]").allTextContents()).toEqual(expected);
   for (const heading of ["制作中的任务", "待办", "最近动态", "制作资源"])
     await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible();
-  const art = focus.locator(".dashboard-focus-art");
-  await expect(art).toHaveAttribute("aria-hidden", "true");
-  await expect(art.locator("button,a,input,[tabindex]")).toHaveCount(0);
+  const feature = focus.locator(".dashboard-focus-feature");
+  await expect(feature).toBeVisible();
+  await expect(feature).not.toHaveAttribute("aria-hidden", "true");
+  await expect(feature).toContainText("等待成片验收");
+  await expect(feature).toContainText("95%");
+  await expect(focus.locator(".dashboard-focus-copy")).not.toContainText(/等待成片验收|95%/);
+  await expect(feature.locator("button,a,input,[tabindex]")).toHaveCount(0);
+  await expect(focus.locator(".focus-film-frame")).toHaveCount(0);
   await expect(focus).not.toContainText(/节省|52\.6|节能/);
   await focus.getByRole("button", { name: "打开当前项目", exact: true }).click({ trial: true });
   const copy = await focus.locator(".dashboard-focus-copy").evaluate((element) => {
@@ -60,6 +65,32 @@ async function checkOverview(page, expected = ["7", "2", "8", "11"]) {
   expect(projectTitle.contentWidth).toBeLessThanOrEqual(projectTitle.width + 1);
   expect(["none", "", "0"]).toContain(projectTitle.clamp);
   expect(projectTitle.ellipsis).not.toBe("ellipsis");
+  await page.mouse.move(0, 0);
+  const hierarchy = await colorHierarchy(page);
+  expect(hierarchy.focus.background).toEqual(hierarchy.tokens.panel);
+  expect(hierarchy.focus.image).toBe("none");
+  expect(hierarchy.primary.background).toEqual(hierarchy.tokens.primary);
+  expect(Math.max(...hierarchy.primary.background) - Math.min(...hierarchy.primary.background)).toBeLessThanOrEqual(8);
+  expect(hierarchy.primary.contrast).toBeGreaterThanOrEqual(4.5);
+  expect(hierarchy.feature.background).toEqual(hierarchy.tokens["accent-feature"]);
+  expect(hierarchy.feature.image).toBe("none");
+  expect(hierarchy.feature.color).toEqual(hierarchy.tokens["on-accent-feature"]);
+  expect(hierarchy.feature.contrast).toBeGreaterThanOrEqual(4.5);
+  for (const text of hierarchy.featureText) {
+    expect(text.color, text.text).toEqual(hierarchy.tokens["on-accent-feature"]);
+    expect(text.contrast, text.text).toBeGreaterThanOrEqual(4.5);
+  }
+  for (const metric of hierarchy.metrics) {
+    expect(metric.background).toEqual(hierarchy.tokens.panel);
+    expect(metric.image).toBe("none");
+  }
+  expect(hierarchy.gradients).toEqual([]);
+  if (page.viewportSize().width <= 700) {
+    const bounds = await feature.boundingBox();
+    const copyBounds = await focus.locator(".dashboard-focus-copy").boundingBox();
+    expect(bounds.y).toBeGreaterThanOrEqual(copyBounds.y + copyBounds.height - 1);
+    expect(await feature.evaluate((element) => element.scrollHeight <= element.clientHeight + 1)).toBe(true);
+  }
   expect(await paletteViolations(page)).toEqual([]);
   await fit(page);
 }
@@ -104,7 +135,7 @@ for (const width of [1920, 1440, 390, 320]) for (const theme of ["light", "dark"
   });
 }
 
-test("existing poster stays inside its decorative frame and a failed poster keeps the usable fallback", async ({ page, request }) => {
+test("existing poster stays inside the current-work thumbnail and a failed poster keeps the usable fallback", async ({ page, request }) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
   const poster = `/media/production/factory-${id}/frames/frame.png`;
   const response = await request.get(poster);
@@ -117,7 +148,8 @@ test("existing poster stays inside its decorative frame and a failed poster keep
     : route.fulfill({ status: 200, contentType: "image/png", body: png }));
   await page.goto("/");
   const focus = page.locator(".dashboard-focus");
-  const frame = focus.locator(".focus-film-frame").first();
+  const frame = focus.locator(".dashboard-focus-feature .focus-poster");
+  await expect(frame).toHaveAttribute("aria-hidden", "true");
   const image = frame.locator("img");
   await expect(image).toBeVisible();
   await expect.poll(() => image.evaluate((element) => element.naturalWidth)).toBeGreaterThan(0);
@@ -127,6 +159,9 @@ test("existing poster stays inside its decorative frame and a failed poster keep
     return { contained: image.left >= outer.left && image.right <= outer.right && image.top >= outer.top && image.bottom <= outer.bottom };
   });
   expect(bounds.contained).toBe(true);
+  const thumbnail = await frame.boundingBox();
+  expect(thumbnail.width).toBeLessThanOrEqual(72);
+  expect(thumbnail.height).toBeLessThanOrEqual(72);
   await focus.getByRole("button", { name: "打开当前项目", exact: true }).click({ trial: true });
   broken = true;
   await page.reload();
@@ -138,14 +173,15 @@ test("existing poster stays inside its decorative frame and a failed poster keep
   expect(writes).toEqual([]);
 });
 
-for (const width of [1440, 390]) {
-  test(`all six accent choices preserve neutral hierarchy and working focus at ${width}`, async ({ page, request }) => {
+for (const width of [1440, 390]) for (const theme of ["light", "dark"]) {
+  test(`all six accent choices preserve black-white hierarchy and a solid theme feature at ${width} ${theme}`, async ({ page, request }) => {
     await page.setViewportSize({ width, height: 1000 });
+    await page.emulateMedia({ colorScheme: theme });
     await fixture(page, request);
     await page.goto("/#view=settings");
     const neutral = await page.evaluate(() => {
       const style = getComputedStyle(document.documentElement);
-      return ["canvas", "panel", "surface", "ink", "success", "warning", "danger"].map((token) => style.getPropertyValue(`--${token}`).trim());
+      return ["canvas", "panel", "surface", "ink", "primary", "on-primary", "success", "warning", "danger"].map((token) => style.getPropertyValue(`--${token}`).trim());
     });
     const accents = new Set();
     for (const [accent, label] of palettes) {
@@ -154,16 +190,24 @@ for (const width of [1440, 390]) {
       await expect(page.locator("html")).toHaveAttribute("data-accent", accent);
       const current = await page.evaluate(() => {
         const style = getComputedStyle(document.documentElement);
-        return { accent: style.getPropertyValue("--accent").trim(), neutral: ["canvas", "panel", "surface", "ink", "success", "warning", "danger"].map((token) => style.getPropertyValue(`--${token}`).trim()) };
+        return { accent: style.getPropertyValue("--accent-feature").trim(), neutral: ["canvas", "panel", "surface", "ink", "primary", "on-primary", "success", "warning", "danger"].map((token) => style.getPropertyValue(`--${token}`).trim()) };
       });
       expect(current.neutral).toEqual(neutral);
       accents.add(current.accent);
       await checkOverview(page);
+      if (accent === "jade") {
+        await mkdir("docs/images/studio-design", { recursive: true });
+        await page.screenshot({ path: `docs/images/studio-design/overview-jade-${theme}-${width}.png`, fullPage: true });
+        if (width === 1440 && theme === "light")
+          await page.locator(".dashboard-focus").screenshot({ path: "docs/images/studio-design/focus-jade-light-1440.png" });
+      }
       await (await exposePageControl(page, page.getByRole("button", { name: "外观设置", exact: true }))).click();
     }
     expect(accents.size).toBe(6);
   });
+}
 
+for (const width of [1440, 390]) {
   test(`empty overview opens the existing drama creation dialog at ${width}`, async ({ page, request }) => {
     await page.setViewportSize({ width, height: 1000 });
     await fixture(page, request, { empty: true });

@@ -246,7 +246,7 @@ for (const width of [320, 1440])
     });
 
 for (const theme of ["light", "dark"])
-  test(`neutral surfaces, slate actions and semantic status colors stay coherent in ${theme}`, async ({
+  test(`neutral surfaces, monochrome actions and semantic status colors stay coherent in ${theme}`, async ({
     page,
     request,
   }) => {
@@ -332,8 +332,7 @@ for (const theme of ["light", "dark"])
     for (const color of colors)
       expect(color.ratio, color.state).toBeGreaterThanOrEqual(4.5);
     const [primary, review, failed, success] = colors;
-    expect(primary.background[2]).toBeGreaterThan(primary.background[0] + 10);
-    expect(Math.max(...primary.background) - Math.min(...primary.background)).toBeLessThanOrEqual(50);
+    expect(Math.max(...primary.background) - Math.min(...primary.background)).toBeLessThanOrEqual(8);
     expect(review.color[0]).toBeGreaterThan(review.color[2] + 40);
     expect(review.color[1]).toBeGreaterThan(review.color[2] + 30);
     expect(failed.color[0]).toBeGreaterThan(failed.color[1] + 40);

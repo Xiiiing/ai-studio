@@ -1,4 +1,4 @@
-/* White and black carry the page; slate blue identifies actions and selection.
+/* White and black carry reading surfaces and actions; color marks bounded focus.
    Red, amber and green are reserved for small, meaningful status treatments. */
 :root,
 :root[data-theme="light"] {
@@ -11,13 +11,15 @@
   --muted: #626269;
   --line: #e4e4e7;
   --line-strong: #bdbdc4;
+  --accent-feature: #46566e;
+  --on-accent-feature: #ffffff;
   --accent: #46566e;
   --accent-hover: #3d4c63;
   --accent-text: #3d4c63;
   --accent-soft: #f0f2f5;
   --on-accent: #ffffff;
-  --primary: #46566e;
-  --primary-hover: #3d4c63;
+  --primary: #202024;
+  --primary-hover: #252529;
   --on-primary: #ffffff;
   --success: #17683b;
   --success-soft: #edf8f1;
@@ -78,13 +80,15 @@
   --muted: #b0b0b8;
   --line: #35353a;
   --line-strong: #606069;
+  --accent-feature: #46566e;
+  --on-accent-feature: #ffffff;
   --accent: #8492a6;
   --accent-hover: #a8b3c2;
   --accent-text: #a8b3c2;
   --accent-soft: #2a3039;
-  --primary: #8492a6;
-  --primary-hover: #a8b3c2;
-  --on-primary: #14191f;
+  --primary: #f1f1f3;
+  --primary-hover: #efeff1;
+  --on-primary: #1e1e21;
   --on-accent: #14191f;
   --success: #86d5a3;
   --success-soft: #1d3026;

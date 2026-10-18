@@ -490,12 +490,11 @@ function Dashboard({
         <div className="dashboard-focus-copy">
           <small>{focus ? "当前制作" : "你的创作空间"}</small>
           <h2>{focus?.title || "开始第一部作品"}</h2>
-          <p>{focus ? activityName(focus.current_activity || focus.stage || focus.status) : "从故事梗概或已有剧本开始，规划一部属于你的剧。"}</p>
+          {!focus && <p>从故事梗概或已有剧本开始，规划一部属于你的剧。</p>}
           {focus && <div className="dashboard-focus-meta">
             <Badge status={focus.status} />
             {focus.record_kind === "drama" && !!focus.episode_count && <span>{focus.episode_count} 集</span>}
             {!!focus.duration_seconds && <span>{focus.record_kind === "drama" ? "每集 " : ""}{focus.duration_seconds} 秒</span>}
-            {focusProgress !== undefined && <span>制作进度 {Math.round(focusProgress)}%</span>}
           </div>}
           <div className="dashboard-focus-actions">
             {focus ? <button className="button primary" onClick={() => openProject(focus.id, focus.attention?.target_tab || "overview")}>
@@ -505,14 +504,20 @@ function Dashboard({
             </button>}
           </div>
         </div>
-        <div className="dashboard-focus-art" aria-hidden="true">
-          {[0, 1, 2].map((frame) => <div className="focus-film-frame" key={frame}>
-            <span />
-            <Clapperboard size={frame === 0 ? 48 : 36} />
-            {frame === 0 && poster && <img key={poster} src={poster} alt="" loading="lazy" onError={(event) => { event.currentTarget.hidden = true; }} />}
-            <span />
-          </div>)}
-        </div>
+        {focus && <section className="dashboard-focus-feature" aria-label="制作进展">
+          <div className="focus-feature-head">
+            <span>当前阶段</span>
+            <div className="focus-poster" aria-hidden="true">
+              <Clapperboard size={28} />
+              {poster && <img key={poster} src={poster} alt="" loading="lazy" onError={(event) => { event.currentTarget.hidden = true; }} />}
+            </div>
+          </div>
+          <strong>{activityName(focus.current_activity || focus.stage || focus.status)}</strong>
+          {focusProgress !== undefined && <div className="focus-feature-progress">
+            <span>{Math.round(focusProgress)}<small>%</small></span>
+            <span>制作进度</span>
+          </div>}
+        </section>}
       </section>
       <section className="console-metrics">
         {stats.map(([label, value, detail, Icon], i) => (

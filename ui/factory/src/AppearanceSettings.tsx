@@ -61,6 +61,10 @@ export function AppearanceSettings() {
             <h3>效果预览</h3>
             <span>{selected.label}</span>
           </div>
+          <div className="appearance-preview-feature">
+            <span>主题色块</span>
+            <strong>当前制作</strong>
+          </div>
           <div className="appearance-preview-items">
             <span className="appearance-preview-action">主操作</span>
             <span className="appearance-preview-selection">选中状态</span>

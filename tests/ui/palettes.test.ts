@@ -41,16 +41,14 @@ function colors(id: string, mode: string) {
 
 for (const palette of ACCENT_PALETTES) {
   for (const mode of ["light", "dark"]) {
-    it(`${palette.id} ${mode} has readable actions, colored text, selection and visible focus`, () => {
+    it(`${palette.id} ${mode} has readable feature surfaces, colored text, selection and visible focus`, () => {
       const c = colors(palette.id, mode);
       const surfaces =
         mode === "light"
           ? ["#f7f7f8", "#ffffff", "#f2f2f3"]
           : ["#171719", "#1e1e21", "#27272b"];
-      expect(contrast(c.accent, c["on-primary"])).toBeGreaterThanOrEqual(4.5);
-      expect(
-        contrast(c["accent-hover"], c["on-primary"]),
-      ).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(c["accent-feature"], c["on-accent-feature"])).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(c["accent-hover"], c["on-accent"])).toBeGreaterThanOrEqual(4.5);
       expect(contrast(c.accent, c["on-accent"])).toBeGreaterThanOrEqual(4.5);
       for (const background of [...surfaces, c["accent-soft"], c.selection]) {
         expect(contrast(c["accent-text"], background)).toBeGreaterThanOrEqual(
@@ -60,7 +58,7 @@ for (const palette of ACCENT_PALETTES) {
       for (const background of surfaces) {
         expect(contrast(c.accent, background)).toBeGreaterThanOrEqual(3);
       }
-      if (mode === "light") expect(c.accent).toBe(palette.swatch);
+      expect(c["accent-feature"]).toBe(palette.swatch);
     });
   }
 }
@@ -73,6 +71,8 @@ it("only overrides accent roles, leaving neutral surfaces and semantic statuses 
     "status-running",
     "crop-stroke",
     "accent",
+    "accent-feature",
+    "on-accent-feature",
     "accent-hover",
     "accent-text",
     "accent-soft",
@@ -90,6 +90,8 @@ it("only overrides accent roles, leaving neutral surfaces and semantic statuses 
   expect(css).toContain("--focus: var(--accent)");
   expect(css).toContain("--status-running: var(--accent)");
 });
+
+
 
 function initialize(savedAccent: string | null, dark = false, blocked = false) {
   const document = {

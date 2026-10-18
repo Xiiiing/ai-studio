@@ -65,9 +65,10 @@ it("总览焦点展示真实待办项目，保留原始四项指标与制作区�
   expect([...document.querySelectorAll("[data-metric]")].map((e) => e.textContent)).toEqual(["7", "2", "8", "11"]);
   for (const name of ["制作中的任务", "待办", "最近动态", "制作资源"])
     expect(screen.getByRole("heading", { name })).toBeInTheDocument();
-  const decoration = focus.querySelector(".dashboard-focus-art")!;
-  expect(decoration).toHaveAttribute("aria-hidden", "true");
-  expect(decoration.querySelector("button,a,input,[tabindex] ")).toBeNull();
+  const progress = within(focus as HTMLElement).getByRole("region", { name: "制作进展" });
+  expect(progress).toHaveTextContent("等待成片验收");
+  expect(progress.querySelector(".focus-poster")).toHaveAttribute("aria-hidden", "true");
+  expect(progress.querySelector("button,a,input,[tabindex] ")).toBeNull();
   expect(focus.textContent).not.toMatch(/节省|52\.6|节能/);
 });
 

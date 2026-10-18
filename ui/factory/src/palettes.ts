@@ -1,7 +1,7 @@
 export const ACCENT_STORAGE_KEY = "studio.accent";
 
-// Custom muted scales, composed using Radix Colors' background / solid / text
-// roles. These are application colors, not the unmodified Radix color scales.
+// The swatch represents the feature surface; small marks use a readable shade
+// of the same hue. Primary actions and reading surfaces remain neutral.
 export const ACCENT_PALETTES = [
   {
     id: "slate",
@@ -13,16 +13,16 @@ export const ACCENT_PALETTES = [
     id: "graphite",
     label: "石墨",
     description: "克制的中性灰",
-    swatch: "#53545b",
+    swatch: "#b9bac1",
   },
-  { id: "teal", label: "青瓷", description: "柔和的灰青色", swatch: "#3e686b" },
-  { id: "jade", label: "松绿", description: "沉稳的灰绿色", swatch: "#4b6656" },
-  { id: "iris", label: "暮紫", description: "柔和的灰紫色", swatch: "#675b7b" },
+  { id: "teal", label: "青瓷", description: "清透的青色焦点", swatch: "#5ddbc7" },
+  { id: "jade", label: "松绿", description: "鲜明的绿色焦点", swatch: "#77ed94" },
+  { id: "iris", label: "暮紫", description: "清晰的紫色焦点", swatch: "#b8a0ed" },
   {
     id: "bronze",
     label: "暖铜",
-    description: "温润的棕铜色",
-    swatch: "#785c47",
+    description: "温暖的铜色焦点",
+    swatch: "#e3b786",
   },
 ] as const;
 
