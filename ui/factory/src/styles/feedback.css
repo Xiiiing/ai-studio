@@ -189,3 +189,17 @@ dialog.project-status-drawer[open] {
     border: 0;
   }
 }
+
+/* Keep message bodies neutral; the icon and edge carry the outcome. */
+.feedback-error {
+  border-left: 3px solid var(--danger);
+}
+.feedback-error > svg {
+  color: var(--danger);
+}
+.feedback-success {
+  border-left: 3px solid var(--success);
+}
+.feedback-success > svg {
+  color: var(--success);
+}

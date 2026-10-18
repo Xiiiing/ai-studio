@@ -65,7 +65,7 @@
 }
 .workflow-stage-card.selected {
   border-color: var(--accent);
-  background: var(--surface);
+  background: var(--accent-soft);
   box-shadow: none;
 }
 .workflow-stage-card:hover {
@@ -121,7 +121,8 @@
   line-height: var(--leading-caption);
 }
 .workflow-repair .workflow-stage-card {
-  background: var(--warning-soft);
+  background: var(--panel);
+  border-left: 3px solid var(--warning);
 }
 .workflow-inspector {
   min-width: 0;
@@ -160,8 +161,8 @@
 }
 .workflow-steps > button.active {
   border-color: var(--accent);
-  background: var(--surface);
-  color: var(--ink);
+  background: var(--accent-soft);
+  color: var(--accent-text);
 }
 .workflow-steps .badge {
   font-size: var(--text-caption);
@@ -257,7 +258,8 @@
   margin: 16px 0;
   padding: 14px;
   border-radius: 8px;
-  background: var(--warning-soft);
+  background: var(--surface);
+  border-left: 3px solid var(--warning);
   font-size: var(--text-caption);
   line-height: var(--leading-caption);
 }
@@ -369,7 +371,7 @@
   box-shadow: none;
 }
 .workflow-map-node.selected {
-  background: var(--surface);
+  background: var(--accent-soft);
   box-shadow: 0 0 0 2px var(--shadow-color);
 }
 .workflow-map-node-top {
@@ -409,11 +411,11 @@
   line-height: var(--leading-caption);
 }
 .workflow-repair-node {
-  background: var(--warning-soft);
+  background: var(--panel);
   border-color: var(--warning-line);
 }
 .workflow-repair-node.selected {
-  background: var(--warning-soft);
+  background: var(--accent-soft);
   border-color: var(--accent);
   box-shadow: none;
 }
@@ -530,9 +532,9 @@
   line-height: var(--leading-ui);
 }
 .workflow-steps .workflow-step-segment > button.active {
-  background: var(--surface);
+  background: var(--accent-soft);
   border-color: var(--accent);
-  color: var(--ink);
+  color: var(--accent-text);
 }
 .workflow-step-link {
   flex-shrink: 0;
@@ -555,7 +557,7 @@
 }
 .workflow-stage-card.selected,
 .workflow-map-node.selected {
-  background: var(--surface);
+  background: var(--accent-soft);
   border-color: var(--accent);
   box-shadow: none;
 }

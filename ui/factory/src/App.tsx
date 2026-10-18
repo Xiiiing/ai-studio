@@ -24,6 +24,7 @@ import {
   ArrowLeft,
 } from "lucide-react";
 import { ThemeProvider } from "./Theme";
+import { BrandMark } from "./Brand";
 import { PageHeader, PageHeaderProvider } from "./PageHeader";
 import { ProjectNavigation } from "./ProjectNavigation";
 import {
@@ -248,13 +249,14 @@ function Workbench() {
           }}
         >
           <div className="sidebar-header">
-            <a className="brand" href="#" onClick={() => navigate("dashboard")}>
-              <span className="brand-mark">
-                <Clapperboard size={22} />
-              </span>
-              <span>
-                映序<small>AI PRODUCTION STUDIO</small>
-              </span>
+            <a
+              className="brand"
+              href="#"
+              aria-label="映序首页"
+              onClick={() => navigate("dashboard")}
+            >
+              <BrandMark />
+              <span className="brand-name">映序</span>
             </a>
             <button
               type="button"
@@ -339,15 +341,6 @@ function Workbench() {
             {!projects.length && !overview.isPending && (
               <p className="sidebar-empty">从一段故事需求开始。</p>
             )}
-          </div>
-          <div className="sidebar-bottom">
-            <span className="workspace-symbol">
-              <Bot size={17} />
-            </span>
-            <div>
-              <strong>AI 制片工作室</strong>
-              <small>自主协作 · 人工掌舵</small>
-            </div>
           </div>
         </aside>
         <div className="main-shell" inert={mobile && narrow ? true : undefined}>
@@ -501,10 +494,6 @@ function Workbench() {
               )}
             </main>
           </PageHeaderProvider>
-          <footer className="workspace-footer">
-            <span>映序 · AI 制片工作室</span>
-            <span>创作、审核与交付记录可追溯</span>
-          </footer>
         </div>
       </div>
       <ActionNotice message={toast} />

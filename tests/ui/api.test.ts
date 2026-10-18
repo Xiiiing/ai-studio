@@ -1,7 +1,27 @@
 import { describe, it, expect } from "vitest";
-import { ownedMedia, parseMoney, pendingGate } from "../../ui/factory/src/api";
+import {
+  activityName,
+  ownedMedia,
+  parseMoney,
+  pendingGate,
+} from "../../ui/factory/src/api";
 const id = "012345abcdef";
 describe("媒体归属与精确计价边界", () => {
+  it("规划和长集生产阶段显示中文，已提供的中文运行信息保持完整", () => {
+    for (const stage of [
+      "plan_review",
+      "plan_repair",
+      "plan_confirmation",
+      "scene_units",
+      "assembly",
+      "dependency",
+    ])
+      expect(activityName(stage)).toMatch(/[\u4e00-\u9fff]/);
+    expect(activityName("总制片正在分析返修方案")).toBe(
+      "总制片正在分析返修方案",
+    );
+    expect(activityName(undefined)).toBe("等待调度");
+  });
   it("允许当前项目规范路径并拒绝其它项目、外部URL及路径变体", () => {
     const path =
       "/media/production/factory-" +

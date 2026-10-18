@@ -257,8 +257,8 @@ pre {
   line-height: var(--leading-ui);
 }
 .nav-item.active {
-  background: var(--surface);
-  color: var(--ink);
+  background: var(--accent-soft);
+  color: var(--accent-text);
   font-weight: 600;
   box-shadow: inset 2px 0 var(--accent);
 }
@@ -683,7 +683,7 @@ td > strong {
   display: block;
   height: 100%;
   border-radius: inherit;
-  background: var(--surface-strong);
+  background: var(--accent);
 }
 .attention-row {
   display: grid;
@@ -963,7 +963,7 @@ td > strong {
 }
 .tabbar button.active {
   border-color: var(--accent);
-  color: var(--ink);
+  color: var(--accent-text);
   font-weight: 600;
 }
 .tabbar i {
@@ -1292,10 +1292,10 @@ td > strong {
 }
 .decision-issue {
   border: 1px solid var(--line);
+  border-left: 3px solid var(--warning);
   border-radius: 8px;
   padding: 20px;
-  background: var(--warning-soft);
-  border-color: var(--warning-line);
+  background: var(--panel);
 }
 .decision-issue > p {
   font-size: var(--text-reading);
@@ -1361,7 +1361,7 @@ td > strong {
 }
 .review-choice[aria-pressed="true"] {
   border-color: var(--accent);
-  background: var(--surface);
+  background: var(--accent-soft);
   color: var(--ink);
 }
 .review-choice-check {
@@ -2524,4 +2524,54 @@ dialog[open] {
   justify-content: center;
   width: 16px;
   min-height: 38px;
+}
+
+/* Brand, primary actions and selected navigation share the same blue. */
+.brand {
+  color: var(--accent-text);
+}
+.brand-symbol {
+  flex-shrink: 0;
+}
+.brand-name {
+  color: var(--ink);
+}
+input[type="checkbox"],
+input[type="radio"],
+progress {
+  accent-color: var(--accent);
+}
+
+/* A status is readable from its label as well as its decorative dot. */
+.badge:has([data-status-indicator="running"]) {
+  color: var(--accent-text);
+  background: var(--accent-soft);
+}
+.badge:has([data-status-indicator="review"]) {
+  color: var(--warning);
+  background: var(--warning-soft);
+}
+.badge:has([data-status-indicator="failed"]) {
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+.badge:has([data-status-indicator="success"]) {
+  color: var(--success);
+  background: var(--success-soft);
+}
+.notice.error,
+.notice.decision-draft-stale {
+  background: var(--panel);
+  border-color: var(--line);
+  border-left: 3px solid var(--danger);
+  color: var(--ink);
+}
+.notice.error > svg {
+  color: var(--danger);
+}
+.notice.decision-draft-stale {
+  border-left-color: var(--warning);
+}
+.notice.decision-draft-stale > svg {
+  color: var(--warning);
 }

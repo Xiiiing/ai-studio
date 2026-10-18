@@ -5,7 +5,7 @@ import { expect, it, vi } from "vitest";
 import App from "../../ui/factory/src/App";
 import { keys } from "../../ui/factory/src/api";
 const id = "012345abcdef";
-function setup(options: { attention?: boolean } = {}) {
+function setup(options: { attention?: boolean; activity?: string } = {}) {
   let revision = 7;
   const calls: { path: string; body: any }[] = [];
   const project = {
@@ -15,6 +15,7 @@ function setup(options: { attention?: boolean } = {}) {
     brief: "成年修表师与邻居解开旧时钟的谜题。",
     status: "awaiting_story",
     stage: "story_decision",
+    current_activity: options.activity,
     format: "motion_comic",
     duration_seconds: 30,
     shots: [],
@@ -152,6 +153,21 @@ function setup(options: { attention?: boolean } = {}) {
   );
   return { calls, fetch, client };
 }
+it("导航保留单一品牌和可理解的阶段，不重复显示宣传小字", async () => {
+  setup({ activity: "plan_repair" });
+  await screen.findByRole("heading", { name: "制片总览" });
+  const home = screen.getByRole("link", { name: "映序首页" });
+  expect(within(home).getByText("映序")).toBeVisible();
+  expect(home.querySelector("svg")).toHaveAttribute("aria-hidden", "true");
+  expect(document.querySelector("#project-list")).toHaveTextContent(
+    "全剧规划返修",
+  );
+  expect(screen.queryByText("plan_repair")).not.toBeInTheDocument();
+  expect(screen.queryByText("AI PRODUCTION STUDIO")).not.toBeInTheDocument();
+  expect(screen.queryByText("自主协作 · 人工掌舵")).not.toBeInTheDocument();
+  expect(screen.queryByText("创作、审核与交付记录可追溯")).not.toBeInTheDocument();
+  expect(screen.getByRole("navigation")).toHaveTextContent("待办");
+});
 it("实际导航从总览进入具体故事选择，提交绑定当前gate与revision", async () => {
   const { calls } = setup();
   await screen.findByRole("heading", { name: "制片总览" });

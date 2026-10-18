@@ -37,7 +37,7 @@
   white-space: nowrap;
 }
 .model-settings-tabs button[aria-selected="true"] {
-  color: var(--ink);
+  color: var(--accent-text);
   border-bottom-color: var(--accent);
 }
 .unsaved-dot {

@@ -1,4 +1,5 @@
-/* Neutral surfaces, semantic states, and one blue accent shared by both themes. */
+/* White and black carry the page; blue identifies actions and selection.
+   Red, amber and green are reserved for small, meaningful status treatments. */
 :root,
 :root[data-theme="light"] {
   color-scheme: light;
@@ -15,18 +16,18 @@
   --accent-text: #1d4ed8;
   --accent-soft: #eff5ff;
   --on-accent: #ffffff;
-  --primary: #252529;
-  --primary-hover: #414147;
+  --primary: #2563eb;
+  --primary-hover: #1d4ed8;
   --on-primary: #ffffff;
-  --success: var(--ink);
-  --success-soft: var(--surface);
-  --success-line: var(--line-strong);
-  --warning: var(--ink);
-  --warning-soft: var(--surface);
-  --warning-line: var(--line-strong);
-  --danger: var(--ink);
-  --danger-soft: var(--surface);
-  --danger-line: var(--line-strong);
+  --success: #17683b;
+  --success-soft: #edf8f1;
+  --success-line: #a5cfb4;
+  --warning: #855600;
+  --warning-soft: #fff7df;
+  --warning-line: #d7b967;
+  --danger: #b42332;
+  --danger-soft: #fff0f1;
+  --danger-line: #e4a9af;
   --focus: #2563eb;
   --selection: #dce9ff;
   --flow-line: #a1a1aa;
@@ -81,9 +82,19 @@
   --accent-hover: #93c5fd;
   --accent-text: #93c5fd;
   --accent-soft: #202d40;
-  --primary: #efeff1;
-  --primary-hover: #d5d5db;
-  --on-primary: #202024;
+  --primary: #60a5fa;
+  --primary-hover: #93c5fd;
+  --on-primary: #111827;
+  --on-accent: #111827;
+  --success: #86d5a3;
+  --success-soft: #1d3026;
+  --success-line: #3f7652;
+  --warning: #f1ce76;
+  --warning-soft: #352d1e;
+  --warning-line: #806735;
+  --danger: #ff9da8;
+  --danger-soft: #382327;
+  --danger-line: #8c4b55;
   --focus: #60a5fa;
   --selection: #28466d;
   --flow-line: #85858f;
