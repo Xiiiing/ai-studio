@@ -1,10 +1,10 @@
 // White/black surfaces and the selected accent carry the interface.
 // Additional colors must come from the shared semantic status tokens.
 // Provider images and generated media keep their original colors.
-// Gradients only identify the small settings swatches, never business surfaces.
+// Gradients belong to bounded, mode-aware theme features and settings swatches.
 export async function gradientSurfaces(page) {
   return page.evaluate(() => {
-    const permitted = ".appearance-swatch";
+    const permitted = ".dashboard-focus-feature,.page-color-focus,.appearance-preview-feature,.appearance-swatch";
     const visible = element => element.getClientRects().length && getComputedStyle(element).visibility !== "hidden";
     const rgb = value => {
       const values = value.match(/[\d.]+/g)?.map(Number) || [];
@@ -26,9 +26,11 @@ export async function gradientSurfaces(page) {
       const swatch = element.matches(".appearance-swatch");
       const activeSwatch = swatch && element.closest("label")?.querySelector("input")?.value === document.documentElement.dataset.accent;
       const probe = document.createElement("span"); element.append(probe);
-      const expectedStops = swatch && !activeSwatch ? null : ["accent-glow", "accent-feature", "accent-mist"].map(token => {
+      const expectedStops = swatch && !activeSwatch ? null : (swatch ? ["accent-glow", "accent-feature", "accent-mist"] : ["feature-glow", "feature-color", "feature-mist"]).map(token => {
         probe.style.color = `var(--${token})`; return rgb(getComputedStyle(probe).color);
       });
+      probe.style.color = "var(--panel)";
+      const panel = rgb(getComputedStyle(probe).color);
       probe.remove();
       // CSS sRGB interpolation can reach its lowest contrast between endpoints.
       // Check both complete stop intervals, not just the nominal feature token.
@@ -37,7 +39,7 @@ export async function gradientSurfaces(page) {
       const text = [...element.querySelectorAll("*")].filter(child => !child.closest('[aria-hidden="true"]') && [...child.childNodes].some(node => node.nodeType === Node.TEXT_NODE && node.textContent.trim()))
         .map(child => ({ label: child.textContent.trim(), contrast: minimumContrast(getComputedStyle(child).color) }));
       return { element: name(element), swatch, activeSwatch, image: style.backgroundImage, stops, expectedStops,
-        distinctStops: new Set(stops.map(stop => stop.join(","))).size, contrast: minimumContrast(style.color), text };
+        distinctStops: new Set(stops.map(stop => stop.join(","))).size, surfaceContrast: Math.max(...samples.map(sample => contrast(panel, sample))), contrast: minimumContrast(style.color), text };
     });
     return { unexpected, surfaces };
   });
@@ -75,6 +77,7 @@ export async function paletteViolations(page) {
         "accent-hover",
         "accent-text",
         "accent-soft",
+        "feature-glow", "feature-color", "feature-mist", "feature-ink", "feature-border", "feature-sheen",
         "accent-feature",
         "accent-glow",
         "accent-mist",
@@ -95,6 +98,13 @@ export async function paletteViolations(page) {
       }),
     );
     probe.remove();
+    // The hero has its own tint strength; resolve that token in the card scope.
+    for (const feature of document.querySelectorAll(".dashboard-focus-feature,.page-color-focus,.appearance-preview-feature")) {
+      feature.append(probe);
+      probe.style.color = "var(--feature-color)";
+      semanticColors.add(getComputedStyle(probe).color);
+      probe.remove();
+    }
     const properties = [
       "color",
       "backgroundColor",
@@ -154,7 +164,9 @@ export async function colorHierarchy(page) {
     };
     const probe = document.createElement("span");
     document.body.append(probe);
-    const tokens = Object.fromEntries(["panel", "surface", "surface-strong", "ink", "primary", "on-primary", "accent", "accent-feature", "on-accent-feature"].map((token) => {
+    const feature = document.querySelector(".dashboard-focus-feature, .appearance-preview-feature");
+    const tokens = Object.fromEntries(["panel", "surface", "surface-strong", "ink", "primary", "on-primary", "accent", "feature-color", "feature-ink", "accent-feature", "on-accent-feature"].map((token) => {
+      (feature || document.body).append(probe);
       probe.style.color = `var(--${token})`;
       return [token, channels(getComputedStyle(probe).color)];
     }));

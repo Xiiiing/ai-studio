@@ -134,7 +134,7 @@
   }
 }
 
-/* Business highlights share system surfaces; theme color stays on a narrow edge. */
+/* Theme features blend into the active light/dark surface with a colored middle. */
 .appearance-preview-feature {
   display: flex;
   flex-direction: column;
@@ -142,10 +142,11 @@
   padding: 20px;
   margin-bottom: 16px;
   border-radius: var(--radius);
-  background: var(--surface);
-  border: 1px solid var(--line);
-  box-shadow: inset 3px 0 var(--accent);
-  color: var(--ink);
+  background-color: var(--feature-color);
+  background-image: var(--feature-gradient);
+  border: 1px solid var(--feature-border);
+  box-shadow: inset 0 1px 0 var(--feature-sheen);
+  color: var(--feature-ink);
 }
 .appearance-preview-feature strong {
   font-size: var(--text-section);

@@ -1,8 +1,18 @@
-/* Accent roles: readable small marks and focus; gradients are only settings swatches.
+/* Accent roles: layered theme features adapt to the current surface; reading stays neutral.
    Primary actions stay neutral black/white, independent of the selected hue.
    Neutrals and semantic error / warning / success colors remain in tokens.css. */
 :root[data-accent] {
   --accent-gradient: linear-gradient(145deg, var(--accent-glow) 0%, var(--accent-feature) 48%, var(--accent-mist) 100%);
+  --feature-strength: 54%;
+  --feature-glow-strength: 18%;
+  --feature-mist-strength: 9%;
+  --feature-glow: color-mix(in srgb, var(--accent-feature) var(--feature-glow-strength), var(--panel));
+  --feature-color: color-mix(in srgb, var(--accent-feature) var(--feature-strength), var(--panel));
+  --feature-mist: color-mix(in srgb, var(--accent-feature) var(--feature-mist-strength), var(--panel));
+  --feature-gradient: linear-gradient(145deg, var(--feature-glow) 0%, var(--feature-color) 48%, var(--feature-mist) 100%);
+  --feature-ink: var(--ink);
+  --feature-border: color-mix(in srgb, var(--accent) 22%, var(--line));
+  --feature-sheen: color-mix(in srgb, var(--ink) 5%, transparent);
   --primary: var(--ink);
   --primary-hover: var(--inverse);
   --on-primary: var(--panel);
@@ -141,4 +151,19 @@
   --selection: #44392f;
   --on-accent: #14191f;
   --crop-fill: rgb(181 157 136 / 18%);
+}
+
+/* Dark features keep the chosen hue while matching the surrounding luminance. */
+:root[data-theme="dark"][data-accent] {
+  --feature-strength: 20%;
+  --feature-glow-strength: 8%;
+  --feature-mist-strength: 6%;
+}
+
+/* Recompute derived colors on the card so the hero can use a stronger tint. */
+.dashboard-focus-feature,
+.page-color-focus,
+.appearance-preview-feature {
+  --feature-color: color-mix(in srgb, var(--accent-feature) var(--feature-strength), var(--panel));
+  --feature-gradient: linear-gradient(145deg, var(--feature-glow) 0%, var(--feature-color) 48%, var(--feature-mist) 100%);
 }

@@ -79,6 +79,9 @@ for (const palette of ACCENT_PALETTES) {
 
 it("only overrides accent roles, leaving neutral surfaces and semantic statuses unchanged", () => {
   const allowed = new Set([
+    "feature-strength", "feature-glow-strength", "feature-mist-strength",
+    "feature-glow", "feature-color", "feature-mist", "feature-gradient",
+    "feature-ink", "feature-border", "feature-sheen",
     "primary",
     "primary-hover",
     "focus",

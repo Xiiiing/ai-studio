@@ -47,16 +47,15 @@ for (const width of [1440, 390]) for (const theme of ["light", "dark"]) {
       expect(hierarchy.primary.background).toEqual(hierarchy.tokens.primary);
       expect(Math.max(...hierarchy.primary.background) - Math.min(...hierarchy.primary.background)).toBeLessThanOrEqual(8);
       expect(hierarchy.primary.contrast).toBeGreaterThanOrEqual(4.5);
-      expect(hierarchy.feature.background).toEqual(hierarchy.tokens.surface);
-      expect(hierarchy.feature.color).toEqual(hierarchy.tokens.ink);
+      expect(hierarchy.feature.background).toEqual(hierarchy.tokens["feature-color"]);
+      expect(hierarchy.feature.color).toEqual(hierarchy.tokens["feature-ink"]);
       expect(hierarchy.feature.contrast).toBeGreaterThanOrEqual(4.5);
       for (const text of hierarchy.featureText) {
-        expect(text.color, text.text).toEqual(hierarchy.tokens.ink);
+        expect(text.color, text.text).toEqual(hierarchy.tokens["feature-ink"]);
         expect(text.contrast, text.text).toBeGreaterThanOrEqual(4.5);
       }
-      expect(hierarchy.feature.image).toBe("none");
-      expect(hierarchy.feature.highlight).toEqual(hierarchy.tokens.accent);
-      const gradients = await gradientSurfaces(page);
+      expect(hierarchy.feature.image).toMatch(/^linear-gradient\(145deg,/);
+          const gradients = await gradientSurfaces(page);
       expect(gradients.unexpected).toEqual([]);
       expect(gradients.surfaces.length).toBeGreaterThan(0);
       for (const surface of gradients.surfaces) {
@@ -66,6 +65,7 @@ for (const width of [1440, 390]) for (const theme of ["light", "dark"]) {
         expect(surface.distinctStops, surface.element).toBe(3);
         if (surface.expectedStops) expect(surface.stops, surface.element).toEqual(surface.expectedStops);
         if (!surface.swatch) {
+      expect(surface.surfaceContrast, surface.element).toBeLessThanOrEqual(3);
           expect(surface.contrast, surface.element).toBeGreaterThanOrEqual(4.5);
           for (const text of surface.text) expect(text.contrast, text.label).toBeGreaterThanOrEqual(4.5);
         }

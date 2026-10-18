@@ -58,7 +58,7 @@ async function inspect(page, { feature = false } = {}) {
     const neutral = value => { const c = rgb(value); return c.length < 3 || Math.max(...c) - Math.min(...c) <= 14; };
     const visible = e => e.getClientRects().length && getComputedStyle(e).visibility !== "hidden";
     const probe = document.createElement("span"); document.body.append(probe);
-    const tokens = Object.fromEntries(["surface", "ink", "accent", "primary", "on-primary"].map(t => { probe.style.color = `var(--${t})`; return [t, getComputedStyle(probe).color]; })); probe.remove();
+    const tokens = Object.fromEntries(["feature-color", "feature-ink", "accent", "primary", "on-primary"].map(t => { probe.style.color = `var(--${t})`; return [t, getComputedStyle(probe).color]; })); probe.remove();
     const lum = value => rgb(value).map(c => { const v = c / 255; return v <= .04045 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4; }).reduce((a, v, i) => a + v * [.2126, .7152, .0722][i], 0);
     const contrast = (a, b) => (Math.max(lum(a), lum(b)) + .05) / (Math.min(lum(a), lum(b)) + .05);
     const gradients = [...document.querySelectorAll("body *")].filter(visible).flatMap(e => [null, "::before", "::after"].flatMap(p => { const s = getComputedStyle(e, p); return (p && ["none", "normal"].includes(s.content)) || !/gradient\(/.test(s.backgroundImage) ? [] : [`${e.tagName}.${e.className?.baseVal ?? e.className}${p || ""}`]; }));
@@ -66,7 +66,7 @@ async function inspect(page, { feature = false } = {}) {
       .flatMap(e => { const s = getComputedStyle(e); return neutral(s.backgroundColor) ? [] : [`${e.tagName}.${e.className}:${s.backgroundColor}`]; });
     const primary = [...document.querySelectorAll("#workspace .button.primary,dialog[open] .button.primary")].filter(visible).filter(e => !e.disabled && !e.matches('[aria-pressed="true"]') && !e.closest(".page-color-focus,.project-navigation,.drama-tabs"))
       .map(e => { const s = getComputedStyle(e); return { text: e.textContent.trim(), neutral: neutral(s.backgroundColor), contrast: contrast(s.color, s.backgroundColor) }; });
-    const features = [...document.querySelectorAll(".page-color-focus")].filter(visible).map(e => { const s = getComputedStyle(e); return { background: rgb(s.backgroundColor), color: rgb(s.color), expectedBackground: rgb(tokens.surface), expectedColor: rgb(tokens.ink), contrast: contrast(s.color, s.backgroundColor), image: s.backgroundImage, highlight: s.boxShadow, expectedHighlight: tokens.accent, height: e.getBoundingClientRect().height, viewport: innerWidth, text: [...e.querySelectorAll("*")].filter(n => !n.closest(".badge,[aria-hidden=true]") && [...n.childNodes].some(t => t.nodeType === Node.TEXT_NODE && t.textContent.trim())).map(n => ({ label: n.textContent.trim(), color: rgb(getComputedStyle(n).color), contrast: contrast(getComputedStyle(n).color, s.backgroundColor) })) }; });
+    const features = [...document.querySelectorAll(".page-color-focus")].filter(visible).map(e => { const s = getComputedStyle(e); return { background: rgb(s.backgroundColor), color: rgb(s.color), expectedBackground: rgb(tokens["feature-color"]), expectedColor: rgb(tokens["feature-ink"]), contrast: contrast(s.color, s.backgroundColor), image: s.backgroundImage, highlight: s.boxShadow, expectedHighlight: tokens.accent, height: e.getBoundingClientRect().height, viewport: innerWidth, text: [...e.querySelectorAll("*")].filter(n => !n.closest(".badge,[aria-hidden=true]") && [...n.childNodes].some(t => t.nodeType === Node.TEXT_NODE && t.textContent.trim())).map(n => ({ label: n.textContent.trim(), color: rgb(getComputedStyle(n).color), contrast: contrast(getComputedStyle(n).color, s.backgroundColor) })) }; });
     const statuses = [...document.querySelectorAll("#workspace [data-status-indicator]")].filter(visible).map(e => { const tone = e.dataset.statusIndicator; probe.style.color = `var(--status-${tone})`; document.body.append(probe); const expected = getComputedStyle(probe).color; probe.remove(); return { tone, color: rgb(getComputedStyle(e).backgroundColor), expected: rgb(expected), width: parseFloat(getComputedStyle(e).width) }; });
     const badges = [...document.querySelectorAll("#workspace .badge")].filter(visible).map(e => ({ text: e.textContent.trim(), height: e.getBoundingClientRect().height }));
     return { gradients, tintedReading, primary, features, badges, statuses, overflow: document.documentElement.scrollWidth > innerWidth + 1 };
@@ -80,6 +80,7 @@ async function inspect(page, { feature = false } = {}) {
     expect(surface.distinctStops, surface.element).toBe(3);
     if (surface.expectedStops) expect(surface.stops, surface.element).toEqual(surface.expectedStops);
     if (!surface.swatch) {
+      expect(surface.surfaceContrast, surface.element).toBeLessThanOrEqual(3);
       expect(surface.contrast, surface.element).toBeGreaterThanOrEqual(4.5);
       for (const text of surface.text) expect(text.contrast, text.label).toBeGreaterThanOrEqual(4.5);
     }
@@ -89,7 +90,7 @@ async function inspect(page, { feature = false } = {}) {
   if (feature) expect(colors.features.length).toBeGreaterThan(0);
   for (const f of colors.features) {
     expect(f.background).toEqual(f.expectedBackground); expect(f.color).toEqual(f.expectedColor);
-    expect(f.image).toBe("none"); expect(f.highlight).toContain(f.expectedHighlight); expect(f.contrast).toBeGreaterThanOrEqual(4.5);
+    expect(f.image).toMatch(/^linear-gradient\(145deg,/); expect(f.contrast).toBeGreaterThanOrEqual(4.5);
     expect(f.height).toBeLessThan(f.viewport <= 700 ? 360 : 240);
     for (const text of f.text) { expect(text.color, text.label).toEqual(f.expectedColor); expect(text.contrast, text.label).toBeGreaterThanOrEqual(4.5); }
   }
