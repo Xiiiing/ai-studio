@@ -178,6 +178,9 @@ test("real Markdown attachments, retried calls and step attribution remain reada
     path: "runtime/browser-report/studio-real-document-390.png",
     fullPage: true,
   });
+  await inspector
+    .getByRole("button", { name: "执行记录", exact: true })
+    .click();
   const current = inspector
     .locator(".execution-record")
     .filter({ hasText: "当前步骤执行" });
@@ -191,6 +194,14 @@ test("real Markdown attachments, retried calls and step attribution remain reada
   await request.getByRole("button", { name: "阅读文件" }).click();
   await expect(request).toContainText("完整输入与人物约束");
   await request.getByRole("button", { name: "原文", exact: true }).click();
+  await expect(request.locator(".document-raw")).toContainText('"prompt"');
+  await inspector
+    .getByRole("button", { name: "材料与职责", exact: true })
+    .click();
+  await expect(output.getByRole("heading", { name: "站台重逢" })).toBeVisible();
+  await inspector
+    .getByRole("button", { name: "执行记录", exact: true })
+    .click();
   await expect(request.locator(".document-raw")).toContainText('"prompt"');
   expect(
     await page.evaluate(
@@ -275,7 +286,7 @@ test("real project creation, partial image recovery, full-size preview and visua
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "展开导航" }).click();
   await page.locator('[data-action="new-project"]').click();
-    await page.getByRole("button", { name: "使用原单集入口" }).click();
+  await page.getByRole("button", { name: "使用原单集入口" }).click();
   await page
     .getByLabel("项目名称 / 可选", { exact: true })
     .fill("素材准备闭环测试");

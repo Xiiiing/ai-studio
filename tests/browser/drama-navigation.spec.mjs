@@ -573,6 +573,7 @@ for (const width of [1440, 390, 320]) {
         });
       expect(intersections).toEqual([]);
       await noHorizontalOverflow(page);
+      await page.locator("#workspace h1").click();
       await page.screenshot({
         path: `runtime/browser-report/compact-flow-${theme}-${width}.png`,
         fullPage: true,
@@ -595,6 +596,11 @@ for (const width of [1440, 390, 320]) {
       await expect(
         inspector.getByRole("region", { name: "步骤执行记录" }),
       ).toBeVisible();
+      await inspector.locator(".drama-task summary").first().click();
+      await page.screenshot({
+        path: `runtime/browser-report/compact-node-${theme}-${width}.png`,
+        fullPage: true,
+      });
       await expect(
         inspector.getByRole("region", { name: "输入材料" }),
       ).toBeHidden();

@@ -106,3 +106,5 @@
 - [Arco Pro NavBar](https://github.com/arco-design/arco-design-pro/blob/main/arco-design-pro-next/src/components/NavBar/index.tsx)：紧凑图标操作及说明。
 - [shadcn 工作台](https://ui.shadcn.com/blocks)：侧栏、标题和内容区组织。
 - [ui-skills](https://github.com/ibelick/ui-skills)：信息层级、空状态和可访问操作检查。作为参考阅读，没有安装第三方技能或替换现有技术栈。
+
+项目内的四项导航、完整流程和节点材料/执行记录查看规则见[项目导航与流程查看](PROJECT_WORKFLOW_UI.md)。
