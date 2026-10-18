@@ -137,6 +137,34 @@ def test_cache_evidence_write_failure_cannot_trigger_new_model_call(tmp_path, mo
     assert len(calls) == 1
 
 
+def test_per_shot_calls_are_indexed_once_without_recursive_workspace_scan(tmp_path, monkeypatch):
+    mock_transport(monkeypatch)
+    monkeypatch.setattr(team_flow, "ROOT", tmp_path)
+    p = project()
+    folder = tmp_path / "production" / p["slug"] / "shots/S01/take_001/prompting/request-key/llm"
+    with cm.capture(p, "h3_prompt_preparation"):
+        llm.json_call(routing_config(), "storyboard_director", "rules", {"approved_shot": {"action": "拿起杯子"}}, SCHEMA, folder)
+    refs = list((tmp_path / "production" / p["slug"] / "planning/context-calls").glob("*.json"))
+    assert len(refs) == 1
+    flow = team_flow.build_flow(p, routing_config())
+    calls = next(r for r in flow["nodes"] if r["role"] == "storyboard_director")["executions"]
+    assert len(calls) == 1 and calls[0]["context_manifest"]["materials"][0]["field"] == "approved_shot"
+    assert flow["evidence"]["receipts_read"] == 1
+
+
+def test_same_output_from_different_input_does_not_prove_cache_origin(tmp_path, monkeypatch):
+    monkeypatch.setattr(schemas, "ROOT", tmp_path)
+    mock_transport(monkeypatch)
+    p = project()
+    for feedback in ("第一份输入", "不同的第二份输入"):
+        schemas.cached_json_call(p, routing_config(), "screenwriter", "test", "rules", {"producer_feedback": feedback}, SCHEMA)
+    base = schemas.planning_dir(p)
+    caches = [json.loads(f.read_text()) for f in (base / "cache").glob("*.json")]
+    cm.record_reuse(base, p, "screenwriter", "test", {**caches[0], "origin": caches[1]["origin"]})
+    row = json.loads(next((base / "context-reuse").glob("*.json")).read_text())
+    assert row["origin_state"] == "unknown"
+
+
 def test_local_http_request_and_readonly_flow_projection(tmp_path, monkeypatch):
     """Real loopback HTTP transport and file reading, no real model or GPU."""
     seen = []

@@ -10,6 +10,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 import json
 from pathlib import Path
+import re
 import time
 import uuid
 
@@ -146,10 +147,29 @@ def build(role, payload, prompt, execution=None, *, content=None):
     return result
 
 
+def _project_root(folder, pid):
+    if not isinstance(pid, str) or not re.fullmatch(r"[a-f0-9]{12}", pid):
+        return None
+    return next((p for p in Path(folder).parents
+                 if p.name == "factory-" + pid and p.parent.name == "production"), None)
+
+
 def completed(folder, receipt):
     state = _scope.get()
     if state is not None:
         state["completed_call"] = {"folder": Path(folder), "receipt": copy.deepcopy(receipt)}
+    pid = (state or {}).get("project_id") or receipt.get("execution_context", {}).get("project_id")
+    root = _project_root(folder, pid)
+    if root is not None:
+        from studio.core import write_json
+        try:
+            # Production's per-shot H3/VLM output folders are intentionally not
+            # recursively scanned by the read API. Index only actual calls.
+            write_json(root / "planning/context-calls" / (receipt["call_id"] + ".json"),
+                       {"schema": "ai-studio.context-call-ref.v1", "call_id": receipt["call_id"],
+                        "receipt": (Path(folder) / "receipt.json").relative_to(root).as_posix()})
+        except OSError:
+            pass  # The original receipt and task ledger still own the evidence.
 
 
 def cache_origin(state, base):
@@ -195,7 +215,8 @@ def record_reuse(base, project, role, stage, saved):
               "configured_model": original.get("configured_model") if original else None,
               "response_model": original.get("response_model") if original else None,
               "origin_state": "verified" if original else "unknown"}
-    folder = base / "context-reuse"
+    root = _project_root(base, project.get("id"))
+    folder = (root / "planning" if root else base) / "context-reuse"
     name = time.strftime("%Y%m%dT%H%M%S", time.gmtime()) + "-" + uuid.uuid4().hex[:12]
     write_json(folder / (name + ".json"), record)
 
