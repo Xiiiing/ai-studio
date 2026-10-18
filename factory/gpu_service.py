@@ -255,6 +255,12 @@ def validate_request(payload):
         if payload.get("output_kind") not in {"image", "video"}:
             raise ValueError("Expected image or video output")
         validate_graph(payload.get("graph"), names, payload["output_kind"])
+    elif kind == "qwen_image21":
+        from .qwen_image21 import validate_request as validate_image
+        keys = {"prompt", "negative_prompt", "seed", "steps", "width", "height", "inputs"}
+        if set(payload) - common - keys:
+            raise ValueError("Unexpected Qwen Image fields")
+        validate_image({k: v for k, v in payload.items() if k in keys})
     elif kind == "tts":
         if set(payload) - common - {"lines", "voices", "options", "project_profile"}:
             raise ValueError("Unexpected TTS job fields")
@@ -281,15 +287,24 @@ class InferenceEngine:
 
     def health(self):
         from studio.h3 import installation
+        from .qwen_image21 import installed as image_installed
         h3 = installation()
+        resident=self.production.get('resident_h3')
+        image_ready=image_installed()
+        cards=set(self.production.get('gpu_cards',list(range(8))))
+        if resident:
+            cards.update(resident['gpu_cards'])
+            h3={**h3,'gpu_cards':resident['gpu_cards'],'execution':'resident_comfy'}
+        if image_ready: cards.add(4)
         return {"ok": True, "service": "gpu_inference", "workflow_execution": False,
                 "execution_host": socket.gethostname(),
-                "gpu_cards": self.production.get("gpu_cards", list(range(8))),
+                "gpu_cards": sorted(cards), "tts_gpu_cards":self.production.get('gpu_cards',list(range(8))),
                 "models": {
                     "image": (ROOT / "models/diffusion_models/flux-2-klein-4b.safetensors").is_file(),
                     "video": (ROOT / "models/diffusion_models/wan2.2_ti2v_5B_fp16.safetensors").is_file(),
                     "audio": (ROOT / "audio/tts.py").is_file() and
                              (ROOT / "models/tts/Qwen3-TTS-12Hz-1.7B-CustomVoice").is_dir()},
+                "image_backends": {"comfyui_qwen_image21": {"model": "Qwen-Image-2.1", "installed": image_ready, "protocol": "qwen_image21", "gpu_cards":[4]}},
                 "video_backends": {"comfyui_h3": h3,
                     "comfyui_wan": {"model": "Wan2.2-TI2V-5B", "installed": (ROOT / "models/diffusion_models/wan2.2_ti2v_5B_fp16.safetensors").is_file()}},
                 "model_check": "installed_files_only_not_inference"}
@@ -390,19 +405,53 @@ class InferenceEngine:
             if h3:
                 from studio.h3 import require_installation, graph_recipe
                 require_installation(graph_recipe(payload["graph"]))
-            with scheduler.worker("inference-" + payload["request_id"][:24], **({"h3": True} if h3 else {})) as worker:
+            resident = self.production.get("resident_h3") if h3 else None
+            if resident:
+                from .external_comfy import ExternalComfy
+                if resident != {"base_url": "http://127.0.0.1:8346", "gpu_cards": [6, 7]}:
+                    raise ValueError("Resident H3 must select the owned Wkp service and GPU pair")
+                client = ExternalComfy({"base_url": resident["base_url"], "network_mode": "loopback"})
+                graph = copy.deepcopy(payload["graph"])
+                names = {}
                 for value in payload.get("inputs", []):
-                    path = within(worker.folder / "input", value["name"])
-                    path.write_bytes(base64.b64decode(value["data"], validate=True))
-                path = worker.execute(payload["graph"], folder / "output", payload["output_kind"],
-                                      timeout=budget.timeout(payload.get("timeout_seconds", 7200), 2 if h3 else 1))
+                    local = folder / "inputs" / value["name"]
+                    local.parent.mkdir(parents=True, exist_ok=True)
+                    local.write_bytes(base64.b64decode(value["data"], validate=True))
+                    names[value["name"]] = client.upload(local)
+                for node in graph.values():
+                    if node["class_type"] == "LoadImage": node["inputs"]["image"] = names[node["inputs"]["image"]]
+                with budget.gpu_operation(2):
+                    path = client.execute(graph, folder / "output", "video", timeout=budget.timeout(payload.get("timeout_seconds", 7200), 2))
                 files.append(path)
+            else:
+                with scheduler.worker("inference-" + payload["request_id"][:24], **({"h3": True} if h3 else {})) as worker:
+                    for value in payload.get("inputs", []):
+                        path = within(worker.folder / "input", value["name"])
+                        path.write_bytes(base64.b64decode(value["data"], validate=True))
+                    path = worker.execute(payload["graph"], folder / "output", payload["output_kind"],
+                                          timeout=budget.timeout(payload.get("timeout_seconds", 7200), 2 if h3 else 1))
+                    files.append(path)
             result = {"receipt": {**read_json(path.parent / "result.json"), **budget.snapshot()}}
+            if resident:
+                result['receipt'].update(accounting='resident_request_wall_seconds_times_gpu_count_including_queue_wait',gpu_count=2)
             if h3:
                 from studio.h3 import MODEL, graph_recipe
                 selected = graph_recipe(payload["graph"])
                 result["receipt"].update(provider="comfyui_h3", model=MODEL,
-                                         model_revision=selected["revision"], generation_parameters=selected)
+                                         model_revision=selected["revision"], generation_parameters=selected,
+                                         graph_sha256=fingerprint(payload["graph"]))
+        elif payload["kind"] == "qwen_image21":
+            from .qwen_image21 import render
+            budget = Budget({"max_wall_seconds": payload.get("timeout_seconds", 7200),
+                             "max_gpu_seconds": payload.get("max_gpu_seconds", 7200)})
+            self.active_budget = budget
+            keys = {"prompt", "negative_prompt", "seed", "steps", "width", "height", "inputs"}
+            with budget.gpu_operation(1):
+                path, details = render({k: v for k, v in payload.items() if k in keys}, folder / "output",
+                    timeout_seconds=budget.timeout(payload.get("timeout_seconds", 7200), 1),
+                    max_gpu_seconds=budget.timeout(payload.get("max_gpu_seconds", 7200), 1))
+            files.append(path)
+            result = {"receipt": {**details, **budget.snapshot()}}
         else:
             session, voices = self.speech(payload, folder)
             self.active_budget = session.budget

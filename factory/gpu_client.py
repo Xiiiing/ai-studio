@@ -346,10 +346,15 @@ class RemoteComfyWorker:
                     "job_id":saved["gpu_service_job_id"],"execution_host":saved.get("execution_host",self.client.execution_host),
                     "gpu_seconds":saved["gpu_seconds"]})
             return target
-        required = {node.get("inputs", {}).get("image") for node in graph.values() if node.get("class_type") == "LoadImage"}
+        typed_image = graph.get("kind") == "qwen_image21"
+        required = set(graph["references"]) if typed_image else {node.get("inputs", {}).get("image") for node in graph.values() if node.get("class_type") == "LoadImage"}
         if not required <= self.inputs.keys():
             raise ValueError("GPU graph references media that was not uploaded")
-        workload = {"kind": "comfy", "graph": graph, "inputs": [self.inputs[name] for name in sorted(required)], "output_kind": kind}
+        workload = ({k: v for k, v in graph.items() if k != "references"} | {
+            "inputs": [self.inputs[name] for name in graph["references"]]}) if typed_image else {
+            "kind": "comfy", "graph": graph, "inputs": [self.inputs[name] for name in sorted(required)], "output_kind": kind}
+        if typed_image and kind != "image":
+            raise ValueError("Qwen Image requests only produce images")
         write_json(destination / "workflow_api.json", graph)
         answer = self.client.run(workload, destination, self.budget, self.control, self.event_callback, timeout)
         return self._finish(answer, destination, signature, kind)
@@ -361,7 +366,10 @@ class RemoteComfyWorker:
             raise ProductionNeedsDecision("GPU service did not return exactly one media artifact", "remote_gpu_receipt_invalid")
         receipt = result["receipt"]
         graph_path = Path(destination) / "workflow_api.json"
-        if graph_path.is_file() and any(n.get("class_type") == "MiniMaxH3ImageToVideo" for n in read_json(graph_path).values()):
+        source = read_json(graph_path) if graph_path.is_file() else {}
+        if source.get("kind") == "qwen_image21" and (receipt.get("provider") != "comfyui_qwen_image21" or receipt.get("model") != "Qwen-Image-2.1"):
+            raise ProductionNeedsDecision("Image result does not match the submitted model", "remote_gpu_receipt_invalid")
+        if graph_path.is_file() and any(isinstance(n, dict) and n.get("class_type") == "MiniMaxH3ImageToVideo" for n in source.values()):
             from studio.h3 import MODEL, graph_recipe
             selected = graph_recipe(read_json(graph_path))
             if (receipt.get("provider") != "comfyui_h3" or receipt.get("model") != MODEL or
@@ -387,7 +395,9 @@ def resume_remote_comfy(config, destination, budget, control=None, event_callbac
     request = submission["request"]
     workload = {key: value for key, value in request.items() if key not in {"request_id", "timeout_seconds", "max_gpu_seconds"}}
     answer = worker.client.run(workload, destination, budget, control, event_callback)
-    return worker._finish(answer, destination, fingerprint(request["graph"]), request["output_kind"])
+    typed = request.get("kind") == "qwen_image21"
+    source = read_json(destination / "workflow_api.json") if typed else request["graph"]
+    return worker._finish(answer, destination, fingerprint(source), "image" if typed else request["output_kind"])
 
 
 def guard_remote_submissions(config, asset_folder, budget, control=None, event_callback=None, current_signature=None):

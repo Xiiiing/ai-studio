@@ -332,12 +332,14 @@ def _cloud_image(task, prompt, refs, folder, step):
 
 def _render_image(task, prompt, refs, folder, step, budget):
     from .scheduler import Budget, Scheduler
-    from studio.graphs import flux_image
+    from .image_generation import image_request
     data, profile = task["data"], task["data"]["image_profile"]
     folder.mkdir(parents=True, exist_ok=True)
     if profile["provider"] == "dashscope_image":
         return _cloud_image(task, prompt, refs, folder, step)
     config = {**data["config"].get("production", {}), "gpu_service": data["config"].get("gpu_service")} if data["config"].get("gpu_service") else data["config"].get("production", {})
+    if profile['provider']=='comfyui_qwen_image21' and not config.get('gpu_service'):
+        raise ValueError('Qwen-Image-2.1 需要配置 Wkp 持久任务服务')
     seed = int(task["signature"][:8], 16)
     if profile["provider"] == "comfyui_external":
         from .external_comfy import ExternalComfy
@@ -353,7 +355,7 @@ def _render_image(task, prompt, refs, folder, step, budget):
         else:
             if profile.get("reference_templates"):
                 raise ValueError("当前参考图数量没有对应工作流模板")
-            graph = flux_image(prompt, seed, 768, 1024, references=names)
+            graph = image_request(profile, prompt, seed, 768, 1024, references=names)
         for node in graph.values():
             for field, filename in profile.get("model_files", {}).items():
                 if field in node["inputs"]: node["inputs"][field] = filename
@@ -375,7 +377,7 @@ def _render_image(task, prompt, refs, folder, step, budget):
                     local = ExternalComfy({"base_url": worker.base, "network_mode": "loopback", "allowed_hosts": []})
                     path = local.execute(graph, folder, "image", loaded["output"], check=lambda: boundary(task))
                 else:
-                    graph = flux_image(prompt, seed, 768, 1024, references=names, prefix=task["id"])
+                    graph = image_request(profile, prompt, seed, 768, 1024, references=names, prefix=task["id"])
                     for node in graph.values():
                         for field, filename in profile["model_files"].items():
                             if field in node["inputs"]: node["inputs"][field] = filename
@@ -383,7 +385,7 @@ def _render_image(task, prompt, refs, folder, step, budget):
             else:
                 if profile.get("reference_templates"):
                     raise ValueError("当前参考图数量没有对应工作流模板")
-                graph = flux_image(prompt, seed, 768, 1024, references=names, prefix=task["id"])
+                graph = image_request(profile, prompt, seed, 768, 1024, references=names, prefix=task["id"])
                 path = worker.execute(graph, folder, "image", timeout=budget.timeout(1800))
     receipt = core.media_receipt(path, provider=profile["provider"], model=profile["model"], connection=identity(profile))
     if (folder / "result.json").exists(): receipt.update(core.read_json(folder / "result.json"))

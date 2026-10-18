@@ -1,5 +1,6 @@
 """Cloud video execution inside the existing shot/QA loop, without local GPU leases."""
 from __future__ import annotations
+from .image_generation import image_request
 
 import copy
 import os
@@ -71,7 +72,7 @@ class VideoProductionMixin:
                        record["repair"].get("prompt_suffix", "")) + "\n" +
                       self.style_prompt + " " + target["shot"]["prompt"] +
                       " Preserve each corresponding character identity and wardrobe.")
-            graph = flux_image(prompt, record["seed"], *self.image_size, references=names,
+            graph = image_request(self.config.get("image_connection", {}), prompt, record["seed"], *self.image_size, references=names,
                                prefix=self.slug + "/repair/" + target["key"])
             frame = worker.execute(graph, target["folder"] / record["take"] / "repair_keyframe",
                                    "image", timeout=self.budget.timeout(1800, 1))
