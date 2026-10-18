@@ -218,11 +218,18 @@ def compile_prompt(project, shot, *, config, references, style, seconds,
                 pass
         if saved is None:
             routed = task_config(config, ROLE)
-            plan = json_call(config=routed, role=ROLE, system=system, payload=payload,
-                             schema=schema, output_dir=folder / "llm", max_tokens=2400, temperature=.25)
+            from .context_manifest import capture, cache_origin
+            with capture(project, "h3_prompt_preparation") as context:
+                plan = json_call(config=routed, role=ROLE, system=system, payload=payload,
+                                 schema=schema, output_dir=folder / "llm", max_tokens=2400, temperature=.25)
             _check_plan(plan, seconds)
-            saved = {"signature": signature, "plan": plan, "prompt": _render(plan, seconds)}
+            saved = {"signature": signature, "plan": plan, "prompt": _render(plan, seconds),
+                     "origin": cache_origin(context, folder), "prompt_metadata": metadata}
             write_json(cache, saved)
+        else:
+            from .context_manifest import record_reuse
+            record_reuse(folder, project, ROLE, "h3_prompt_preparation",
+                         {**saved, "value": saved["plan"]})
         receipt = {"schema": PROTOCOL, "compiler": compiler, "source_signature": signature,
                    "prompt": metadata, "plan": copy.deepcopy(saved["plan"]),
                    "rendered_prompt_sha256": hashlib.sha256(saved["prompt"].encode()).hexdigest(),

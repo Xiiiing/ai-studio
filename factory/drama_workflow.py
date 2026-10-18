@@ -170,6 +170,8 @@ def _evidence(project):
         task.update(call_id=path.name, model=str(saved.get('response_model') or saved.get('configured_model') or saved.get('model') or '')[:200],
             started_at=saved.get('started_at'), finished_at=saved.get('finished_at'),
             execution_status=saved.get('status'))
+        from .context_manifest import public as public_context
+        task['context_manifest'] = public_context(saved.get('context_manifest'))
         request = _read(root, path / 'request-01.json', evidence)
         # In user-prefix mode this field includes system rules. Only a complete
         # JSON user message may be treated as product input; never split prompts.
@@ -185,6 +187,15 @@ def _evidence(project):
                     task['input'] = {'summary': summary, 'scope': '实际调用输入的内容摘要；省略原剧本与模型提示词'}
                     break
         if saved.get('status') == 'failed': task['issues'] = ['模型调用失败，详细诊断见运行记录']
+    for path in _files(root, ('planning', 'context-reuse'), False, evidence):
+        saved = _read(root, path, evidence)
+        if not saved or saved.get('schema') != 'ai-studio.context-reuse.v1' or saved.get('role') not in ROLE_LABELS:
+            continue
+        from .context_manifest import public as public_context
+        tasks.append(_row('reuse:' + path.stem, ROLE_LABELS[saved['role']] + '复用已完成步骤', saved['role'],
+            'succeeded', {'basis': '缓存命中，未发起新的模型调用'}, '复用已保存结果', reused=True,
+            origin_call_id=(saved.get('origin') or {}).get('call_id'), context_manifest=public_context(saved.get('context_manifest')),
+            started_at=saved.get('started_at'), stage=saved.get('stage'), evidence='cache_reuse'))
     tasks.sort(key=lambda item: str(item.get('generated_at') or item.get('finished_at') or item.get('started_at') or ''), reverse=True)
     if len(tasks) > MAX_TASKS: evidence['truncated'] = True
     return tasks[:MAX_TASKS], evidence

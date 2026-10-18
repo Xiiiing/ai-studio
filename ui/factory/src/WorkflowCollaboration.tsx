@@ -3,6 +3,7 @@ import { ArrowRight, ArrowLeft, Users, FolderOpen } from "lucide-react";
 import { rows, roleName, date, type RecordData } from "./api";
 import { Badge, Readable, Artifact } from "./ui";
 import { ExecutionRecord, MaterialCard } from "./DocumentReader";
+import { ContextManifest } from "./ContextManifest";
 import { WorkflowMap } from "./WorkflowMap";
 
 export interface CollaborationSelection {
@@ -294,6 +295,7 @@ function WorkRecord({
           {date(task.finished_at || task.generated_at || task.started_at)}
         </small>
       )}
+      {(task.call_id || task.reused) && <ContextManifest value={task.context_manifest} reused={task.reused} originCall={task.origin_call_id} />}
       <dl>
         <dt>接收的工作内容</dt>
         <dd>

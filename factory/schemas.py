@@ -409,21 +409,30 @@ def cached_json_call(project, config, role, stage, system, payload, schema,
         "schema": schema, "max_tokens": max_tokens, "temperature": temperature})
     folder = planning_dir(project)
     cache = folder / "cache" / (stage + "-" + signature[:24] + ".json")
+    hit = None
     if cache.is_file():
         try:
             saved = json.loads(cache.read_text(encoding="utf-8"))
             if saved.get("signature") == signature:
                 validate(saved["value"], schema)
-                report(checkpoint, message="复用已完成的创作步骤：" + stage)
-                return copy.deepcopy(saved["value"])
+                hit = saved
         except (OSError, ValueError, KeyError, ValidationError):
             pass
-    value = json_call(config=config, role=role, system=system, payload=payload,
-                      schema=schema, output_dir=folder / "llm",
-                      max_tokens=max_tokens, temperature=temperature)
+    if hit is not None:
+        # An evidence-write failure must never fall through to a paid new call.
+        from .context_manifest import record_reuse
+        record_reuse(folder, project, role, stage, hit)
+        report(checkpoint, message="复用已完成的创作步骤：" + stage)
+        return copy.deepcopy(hit["value"])
+    from .context_manifest import capture, cache_origin
+    with capture(project, stage) as context:
+        value = json_call(config=config, role=role, system=system, payload=payload,
+                          schema=schema, output_dir=folder / "llm",
+                          max_tokens=max_tokens, temperature=temperature)
+    origin = cache_origin(context, folder)
     validate(value, schema)
     write_json(cache, {"signature": signature, "generated_at": utc_now(),
-                       "value": value, "prompt": prompt_meta})
+                       "value": value, "prompt": prompt_meta, "origin": origin})
     return copy.deepcopy(value)
 
 

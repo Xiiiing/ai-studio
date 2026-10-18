@@ -566,3 +566,22 @@
   border-color: var(--accent);
   box-shadow: inset 3px 0 var(--accent);
 }
+.context-manifest {
+  margin-block: 10px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.context-manifest > summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.context-material {
+  margin-block: 8px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  min-width: 0;
+}
+.context-material p { white-space: pre-wrap; }
+.context-hash { font-size: var(--text-small); overflow-wrap: anywhere; }

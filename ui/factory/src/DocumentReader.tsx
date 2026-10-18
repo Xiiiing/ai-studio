@@ -5,6 +5,7 @@ import { rows, text, roleName, date, type RecordData } from "./api";
 import { documentUrl } from "./DocumentPath";
 export { documentUrl } from "./DocumentPath";
 import { Badge, Modal, Readable } from "./ui";
+import { ContextManifest } from "./ContextManifest";
 
 export const MAX_PREVIEW_BYTES = 2 * 1024 * 1024;
 class PreviewError extends Error {
@@ -375,6 +376,7 @@ export function ExecutionRecord({
             : "角色的项目历史 · 未记录步骤归属"}{" "}
         · {date(execution.started_at)}
       </p>
+      <ContextManifest value={execution.context_manifest} reused={execution.reused} originCall={execution.origin_call_id} />
       {execution.stage && onLocate && (
         <button
           className="text-link"
