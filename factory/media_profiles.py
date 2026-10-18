@@ -1,5 +1,6 @@
 """Image/speech connections, with explicit legacy interpretation and no I/O."""
 from __future__ import annotations
+from .connection_secrets import secret_value
 import copy
 from pathlib import Path
 from .providers import ENV_RE, ID_RE, _reject_secret_fields, _valid_text, validate_endpoint
@@ -141,8 +142,8 @@ def probe(profile, kind):
               'status': 'configured', 'message': '配置检查通过；实际生成尚未验证'}
     if not profile['enabled']:
         result.update(status='disabled'); return result
-    if profile.get('api_key_env') and not os.environ.get(profile['api_key_env']):
-        result.update(status='error', message='密钥环境变量尚未设置'); return result
+    if profile.get('api_key_env') and not secret_value(profile['api_key_env']):
+        result.update(status='error', message='连接缺少可用 API Key'); return result
     if profile['provider'] == 'comfyui_external':
         from .external_comfy import ExternalComfy
         info = ExternalComfy(profile).check()
@@ -178,10 +179,10 @@ def readiness(config):
         try:
             p=resolve_llm(config,role)
             if not p.get("enabled",True): missing.append(label+"连接已停用")
-            elif p.get("api_key_env") and not os.environ.get(p["api_key_env"]): missing.append(label+"缺少密钥环境变量 "+p["api_key_env"])
+            elif p.get("api_key_env") and not secret_value(p["api_key_env"]): missing.append(label+"缺少可用 API Key，凭据引用："+p["api_key_env"])
         except ValueError: missing.append(label+"尚未配置")
     for kind,label in (("image","图像"),("audio","配音")):
         p=resolve(config,kind)
         if not p["enabled"]: missing.append(label+"连接尚未启用")
-        elif p.get("api_key_env") and not os.environ.get(p["api_key_env"]): missing.append(label+"缺少密钥环境变量 "+p["api_key_env"])
+        elif p.get("api_key_env") and not secret_value(p["api_key_env"]): missing.append(label+"缺少可用 API Key，凭据引用："+p["api_key_env"])
     return {"missing":list(dict.fromkeys(missing)),"generation_verified":False,"message":"配置检查不代表生成能力验收；真人／动画路线还需要视频连接"}

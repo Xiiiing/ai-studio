@@ -46,6 +46,7 @@ FACTORY_ROUTES = (
     Route("GET", r"/api/factory/jobs/" + JID, "read", "job"),
     Route("POST", r"/api/factory/jobs/" + JID + r"/(pause|cancel)", "task_control", "job_control", 65536),
     Route("POST", r"/api/factory/models/test", "network_probe", "model_probe", 65536),
+    Route("POST", r"/api/factory/models/discover", "network_probe", "model_discovery", 65536),
     Route("POST", r"/api/factory/models", "configuration", "model_save", 65536),
     Route("POST", r"/api/factory/projects", "modify", "create_project", 65536),
     Route("GET", r"/api/factory/library", "read", "material_library"),

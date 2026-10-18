@@ -122,21 +122,18 @@ test("model and shot drafts survive navigating away while keeping their original
   page,
 }) => {
   await page.goto("/#view=models");
-  await page
-    .getByRole("button", { name: "编辑连接", exact: true })
-    .first()
-    .click();
-  await page
-    .getByLabel("模型标识", { exact: true })
-    .fill("draft-model-ui-redesign");
-  await page.getByRole("button", { name: "加入待保存修改" }).click();
+  await page.getByRole("tab", { name: "制作分工" }).click();
+  await page.getByText("按角色单独配置 · 总制片代理", { exact: true }).click();
+  await page.getByLabel("总制片代理", { exact: true }).selectOption("writer");
   await page.locator('.main-nav [data-view="dashboard"]').click();
   await page.locator('.main-nav [data-view="models"]').click();
+  await page.getByRole("tab", { name: "制作分工" }).click();
+  await page.getByText("按角色单独配置 · 总制片代理", { exact: true }).click();
+  await expect(page.getByLabel("总制片代理", { exact: true })).toHaveValue(
+    "writer",
+  );
   await expect(
-    page.getByText("draft-model-ui-redesign", { exact: true }),
-  ).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: "保存配置", exact: true }),
+    page.getByRole("button", { name: "保存分工", exact: true }),
   ).toBeEnabled();
   await page.goto("/#project=012345abcdef&tab=shots");
   await page.getByText("单镜精修", { exact: true }).click();
@@ -276,8 +273,8 @@ for (const theme of ["light", "dark"])
         ".page-heading p",
         ".button.primary:not(:disabled)",
         ".notice",
-        ".model-card p",
-        ".model-card small",
+        ".service-detail-footnote",
+        ".service-list-item small",
         ".field > label",
         ".nav-item.active",
       ].flatMap((selector) => {

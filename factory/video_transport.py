@@ -1,5 +1,6 @@
 """Bounded MiniMax API and artifact transport; API credentials never reach CDNs."""
 from __future__ import annotations
+from .connection_secrets import secret_value
 
 import http.client
 import json
@@ -130,9 +131,9 @@ def video_request(profile, route, *, payload=None, params=None, timeout=None):
     if params and any(not isinstance(value, str) or not value or len(value) > 128
                       for value in params.values()):
         raise ValueError("Invalid video task or file identifier")
-    secret = os.environ.get(profile.get("api_key_env", ""))
+    secret = secret_value(profile.get("api_key_env", ""))
     if not secret or any(char in secret for char in ("\r", "\n")):
-        raise ProviderError("missing_auth", "Video authentication environment variable is missing or invalid")
+        raise ProviderError("missing_auth", "Video API Key is missing or invalid")
     body = None if payload is None else _json_bytes(payload)
     if body and len(body) > MAX_REQUEST_BYTES:
         raise ProviderError("request_too_large", "Video request exceeds its size limit")

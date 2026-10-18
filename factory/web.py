@@ -204,6 +204,11 @@ class Handler(LocalMediaHandler):
             if route=="/api/factory/workflow-templates":
                 from .workflow_templates import import_template
                 return self.json(import_template(payload))
+            if route=="/api/factory/models/discover":
+                from .providers import discover_models
+                if set(payload)-{'profile','api_key'} or 'profile' not in payload:
+                    raise ValueError('请提供待检查连接')
+                return self.json(discover_models(payload['profile'],payload.get('api_key')))
             if route=="/api/factory/models/test":
                 from .providers import probe_profile
                 if (set(payload) not in ({"profile_id"}, {"profile_id","kind"}) or
@@ -222,7 +227,7 @@ class Handler(LocalMediaHandler):
             if route=="/api/factory/models":
                 from .providers import save_registry
                 required={"profiles","roles","expected_revision"}
-                optional={"video_profiles","video_roles","image_profiles","image_roles","audio_profiles","audio_roles"}
+                optional={"video_profiles","video_roles","image_profiles","image_roles","audio_profiles","audio_roles","secrets"}
                 if not required <= set(payload) or set(payload) - required - optional:
                     raise ValueError("保存需要完整连接、角色分配和当前配置版本")
                 video={key:payload[key] for key in optional if key in payload}
