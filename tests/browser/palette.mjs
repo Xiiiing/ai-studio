@@ -1,15 +1,15 @@
-// White/black surfaces and one blue accent carry the interface.
+// White/black surfaces and the selected accent carry the interface.
 // Additional colors must come from the shared semantic status tokens.
 // Provider images and generated media keep their original colors.
 export async function paletteViolations(page) {
   return page.evaluate(() => {
-    const neutralOrBlue = (value) => {
+    const neutral = (value) => {
       const components = value.match(/[\d.]+/g)?.map(Number);
       if (!components || components.length < 3) return true;
       const [r, g, b, alpha = 1] = components;
       if (alpha === 0 || Math.max(r, g, b) - Math.min(r, g, b) <= 14)
         return true;
-      return b > r + 10 && b >= g && g >= r && (g - r) / (b - r) <= 0.85;
+      return false;
     };
     const probe = document.createElement("span");
     document.body.append(probe);
@@ -27,6 +27,19 @@ export async function paletteViolations(page) {
         "status-review",
         "status-failed",
         "status-success",
+        "accent",
+        "accent-hover",
+        "accent-text",
+        "accent-soft",
+        "primary",
+        "primary-hover",
+        "on-primary",
+        "on-accent",
+        "focus",
+        "selection",
+        "status-running",
+        "crop-fill",
+        "crop-stroke",
       ].map((token) => {
         probe.style.color = `var(--${token})`;
         return getComputedStyle(probe).color;
@@ -50,14 +63,14 @@ export async function paletteViolations(page) {
           element.getClientRects().length &&
           style.visibility !== "hidden" &&
           style.opacity !== "0" &&
-          !element.closest("img,video,canvas")
+          !element.closest("img,video,canvas,.appearance-swatch")
         );
       })
       .flatMap((element) => {
         const style = getComputedStyle(element);
         return properties.flatMap((property) => {
           const value = style[property];
-          if (!value || neutralOrBlue(value)) return [];
+          if (!value || neutral(value)) return [];
           if (semanticColors.has(value)) return [];
           return [
             {

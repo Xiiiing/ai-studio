@@ -153,6 +153,18 @@ function setup(options: { attention?: boolean; activity?: string } = {}) {
   );
   return { calls, fetch, client };
 }
+it("外观设置通过管理导航打开，选择主题色不提交业务写请求", async () => {
+  const { calls } = setup();
+  await screen.findByRole("heading", { name: "制片总览" });
+  await userEvent.click(screen.getByRole("button", { name: "设置" }));
+  expect(location.hash).toBe("#view=settings");
+  expect(screen.getByRole("heading", { name: "设置" })).toBeVisible();
+  await userEvent.click(screen.getByRole("radio", { name: "青瓷" }));
+  expect(document.documentElement.dataset.accent).toBe("teal");
+  expect(calls.every((call) => !call.body)).toBe(true);
+  localStorage.removeItem("studio.accent");
+  delete document.documentElement.dataset.accent;
+});
 it("导航保留单一品牌和可理解的阶段，不重复显示宣传小字", async () => {
   setup({ activity: "plan_repair" });
   await screen.findByRole("heading", { name: "制片总览" });

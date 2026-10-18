@@ -5,6 +5,7 @@ import {
   FolderKanban,
   Inbox,
   Settings2,
+  Palette,
   Activity,
   Plus,
   Clapperboard,
@@ -24,6 +25,7 @@ import {
   ArrowLeft,
 } from "lucide-react";
 import { ThemeProvider } from "./Theme";
+import { AppearanceSettings } from "./AppearanceSettings";
 import { BrandMark } from "./Brand";
 import { PageHeader, PageHeaderProvider } from "./PageHeader";
 import { ProjectNavigation } from "./ProjectNavigation";
@@ -93,6 +95,7 @@ const links = [
   ["workflow", "制作流程与团队", Bot],
   ["models", "模型与连接", Settings2],
   ["activity", "运行记录", Activity],
+  ["settings", "设置", Palette],
 ] as const;
 export default function App() {
   return (
@@ -281,7 +284,7 @@ function Workbench() {
           <nav className="main-nav">
             {[
               { label: "工作室", entries: links.slice(0, 4) },
-              { label: "管理", entries: [links[5], links[4], links[6]] },
+              { label: "管理", entries: [links[5], links[4], links[6], links[7]] },
             ].map((group) => (
               <div className="nav-group" key={group.label}>
                 <div className="sidebar-label">{group.label}</div>
@@ -366,6 +369,8 @@ function Workbench() {
                   models={models.data}
                   onRemake={(project) => setCreate(project)}
                 />
+              ) : route.view === "settings" ? (
+                <AppearanceSettings />
               ) : route.view === "models" ? (
                 <Models notify={setToast} />
               ) : route.view === "library" ? (
