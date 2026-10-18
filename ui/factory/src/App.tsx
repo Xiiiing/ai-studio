@@ -455,6 +455,14 @@ function Dashboard({
   const projects = rows(o.projects),
     m = o.metrics || {},
     running = rows(o.running_tasks);
+  const focus = rows(o.attention_projects).find((p) => p.attention?.blocking)
+    || projects.find((p) => p.attention?.blocking)
+    || projects.find((p) => p.job_running)
+    || projects.find((p) => !["approved", "cancelled"].includes(p.status))
+    || projects[0];
+  const poster = focus && ownedMedia(focus.id, focus.poster);
+  const focusProgress = typeof focus?.progress === "number" && Number.isFinite(focus.progress)
+    ? Math.max(0, Math.min(100, focus.progress)) : undefined;
   const stats = [
     ["正在执行", m.running ?? o.queue?.running ?? 0, "实际执行中的任务", Play],
     [
@@ -472,18 +480,40 @@ function Dashboard({
     ["已交付作品", m.delivered ?? 0, "已确认的最终成片", CheckCircle2],
   ] as const;
   return (
-    <>
+    <div className="dashboard-view">
       <Heading
         eyebrow="PRODUCTION OVERVIEW"
         title="制片总览"
-        description="让创作自动推进，把注意力留给真正需要你的决定。"
-        action={
-          <button className="button primary" onClick={create}>
-            <Plus size={16} />
-            新建制作
-          </button>
-        }
+        description="整剧规划、逐集制作与作品交付。"
       />
+      <section className={"dashboard-focus" + (!focus ? " dashboard-focus-empty" : "")} aria-label="当前制作">
+        <div className="dashboard-focus-copy">
+          <small>{focus ? "当前制作" : "你的创作空间"}</small>
+          <h2>{focus?.title || "开始第一部作品"}</h2>
+          <p>{focus ? activityName(focus.current_activity || focus.stage || focus.status) : "从故事梗概或已有剧本开始，规划一部属于你的剧。"}</p>
+          {focus && <div className="dashboard-focus-meta">
+            <Badge status={focus.status} />
+            {focus.record_kind === "drama" && !!focus.episode_count && <span>{focus.episode_count} 集</span>}
+            {!!focus.duration_seconds && <span>{focus.record_kind === "drama" ? "每集 " : ""}{focus.duration_seconds} 秒</span>}
+            {focusProgress !== undefined && <span>制作进度 {Math.round(focusProgress)}%</span>}
+          </div>}
+          <div className="dashboard-focus-actions">
+            {focus ? <button className="button primary" onClick={() => openProject(focus.id, focus.attention?.target_tab || "overview")}>
+              打开当前项目 <ArrowUpRight size={16} aria-hidden="true" />
+            </button> : <button className="button primary" onClick={create}>
+              <Plus size={16} aria-hidden="true" />新建一部剧
+            </button>}
+          </div>
+        </div>
+        <div className="dashboard-focus-art" aria-hidden="true">
+          {[0, 1, 2].map((frame) => <div className="focus-film-frame" key={frame}>
+            <span />
+            <Clapperboard size={frame === 0 ? 48 : 36} />
+            {frame === 0 && poster && <img key={poster} src={poster} alt="" loading="lazy" onError={(event) => { event.currentTarget.hidden = true; }} />}
+            <span />
+          </div>)}
+        </div>
+      </section>
       <section className="console-metrics">
         {stats.map(([label, value, detail, Icon], i) => (
           <article className="metric-card" key={label}>
@@ -615,7 +645,7 @@ function Dashboard({
           </Panel>
         )}
       </div>
-    </>
+    </div>
   );
 }
 function FilmIcon() {

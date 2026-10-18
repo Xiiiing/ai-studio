@@ -6,7 +6,9 @@ export async function paletteViolations(page) {
     const neutral = (value) => {
       const components = value.match(/[\d.]+/g)?.map(Number);
       if (!components || components.length < 3) return true;
-      const [r, g, b, alpha = 1] = components;
+      const [r, g, b, alpha = 1] = value.startsWith("color(srgb ")
+        ? components.map((component, index) => index < 3 ? component * 255 : component)
+        : components;
       if (alpha === 0 || Math.max(r, g, b) - Math.min(r, g, b) <= 14)
         return true;
       return false;
@@ -40,6 +42,10 @@ export async function paletteViolations(page) {
         "status-running",
         "crop-fill",
         "crop-stroke",
+        "studio-edge",
+        "studio-focus-edge",
+        "studio-film-edge",
+        "studio-film-soft",
       ].map((token) => {
         probe.style.color = `var(--${token})`;
         return getComputedStyle(probe).color;
