@@ -18,12 +18,12 @@ it("lets the user choose a named palette separately from display mode", async ()
   const accents = screen.getByRole("group", { name: "主题色" });
   expect(within(accents).getAllByRole("radio")).toHaveLength(6);
   expect(within(accents).getByRole("radio", { name: "深灰蓝" })).toBeChecked();
-  await userEvent.click(within(accents).getByRole("radio", { name: "暮紫" }));
+  await userEvent.click(within(accents).getByRole("radio", { name: "雾紫" }));
   expect(localStorage.getItem(ACCENT_STORAGE_KEY)).toBe("iris");
   expect(document.documentElement.dataset.accent).toBe("iris");
   await userEvent.click(screen.getByRole("radio", { name: "深色" }));
   expect(document.documentElement.dataset.theme).toBe("dark");
-  expect(within(accents).getByRole("radio", { name: "暮紫" })).toBeChecked();
-  expect(screen.getByRole("region", { name: "主题效果预览" })).toHaveTextContent("暮紫");
+  expect(within(accents).getByRole("radio", { name: "雾紫" })).toBeChecked();
+  expect(screen.getByRole("region", { name: "主题效果预览" })).toHaveTextContent("雾紫");
   expect(screen.getByText("选择后即时生效，保存在当前浏览器。")).toBeVisible();
 });

@@ -45,7 +45,7 @@ it("persists the accent independently and preserves it across mode switches and 
       <AppearanceChoices />
     </ThemeProvider>,
   );
-  await userEvent.click(screen.getByRole("button", { name: "青瓷" }));
+  await userEvent.click(screen.getByRole("button", { name: "薄荷青" }));
   expect(localStorage.getItem(ACCENT_STORAGE_KEY)).toBe("teal");
   expect(document.documentElement.dataset.accent).toBe("teal");
   await userEvent.click(
@@ -117,7 +117,7 @@ it("retains the session accent when controls remount and browser storage fails",
       <AppearanceChoices />
     </ThemeProvider>,
   );
-  await userEvent.click(screen.getByRole("button", { name: "暖铜" }));
+  await userEvent.click(screen.getByRole("button", { name: "杏桃" }));
   view.rerender(
     <ThemeProvider>
       <span>another page</span>

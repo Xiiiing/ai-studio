@@ -1,28 +1,56 @@
 export const ACCENT_STORAGE_KEY = "studio.accent";
 
-// The swatch represents the feature surface; small marks use a readable shade
-// of the same hue. Primary actions and reading surfaces remain neutral.
+// A theme is a light-to-color-to-mist tonal range, not a flat fill. Its
+// small marks use a deeper readable shade; reading and actions stay neutral.
+// Keep these three hex stops synchronized with styles/accents.css.
 export const ACCENT_PALETTES = [
   {
     id: "slate",
     label: "深灰蓝",
-    description: "沉静的蓝灰色",
-    swatch: "#46566e",
+    description: "冷白、蓝灰与薄雾",
+    glow: "#e1e9f2",
+    swatch: "#9fb3c8",
+    mist: "#f1f5f9",
   },
   {
     id: "graphite",
-    label: "石墨",
-    description: "克制的中性灰",
-    swatch: "#b9bac1",
+    label: "雾银",
+    description: "银白、冷灰与柔白",
+    glow: "#eef2f3",
+    swatch: "#bac3c8",
+    mist: "#f7f8f8",
   },
-  { id: "teal", label: "青瓷", description: "清透的青色焦点", swatch: "#5ddbc7" },
-  { id: "jade", label: "松绿", description: "鲜明的绿色焦点", swatch: "#77ed94" },
-  { id: "iris", label: "暮紫", description: "清晰的紫色焦点", swatch: "#b8a0ed" },
+  {
+    id: "teal",
+    label: "薄荷青",
+    description: "薄荷、青绿与浅露",
+    glow: "#c8faea",
+    swatch: "#6be7cb",
+    mist: "#edfcf6",
+  },
+  {
+    id: "jade",
+    label: "青柠绿",
+    description: "嫩叶、青柠与淡白",
+    glow: "#e8fbd3",
+    swatch: "#a8ef75",
+    mist: "#f5fce9",
+  },
+  {
+    id: "iris",
+    label: "雾紫",
+    description: "浅丁香、雾紫与柔白",
+    glow: "#eee7ff",
+    swatch: "#c0aff0",
+    mist: "#f9f5ff",
+  },
   {
     id: "bronze",
-    label: "暖铜",
-    description: "温暖的铜色焦点",
-    swatch: "#e3b786",
+    label: "杏桃",
+    description: "浅杏、蜜桃与暖白",
+    glow: "#ffeadc",
+    swatch: "#f1bca0",
+    mist: "#fff7ec",
   },
 ] as const;
 

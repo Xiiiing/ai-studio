@@ -159,7 +159,7 @@ it("外观设置从页面工具打开，选择主题色不提交业务写请求"
   await userEvent.click(screen.getByRole("button", { name: "外观设置" }));
   expect(location.hash).toBe("#view=settings");
   expect(screen.getByRole("heading", { name: "设置" })).toBeVisible();
-  await userEvent.click(screen.getByRole("radio", { name: "青瓷" }));
+  await userEvent.click(screen.getByRole("radio", { name: "薄荷青" }));
   expect(document.documentElement.dataset.accent).toBe("teal");
   expect(calls.every((call) => !call.body)).toBe(true);
   localStorage.removeItem("studio.accent");

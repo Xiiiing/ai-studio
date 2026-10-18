@@ -1,14 +1,14 @@
 import { test, expect } from "@playwright/test";
 import { mkdir } from "node:fs/promises";
 import { exposePageControl } from "./header-flow.mjs";
-import { paletteViolations, colorHierarchy } from "./palette.mjs";
+import { paletteViolations, colorHierarchy, gradientSurfaces } from "./palette.mjs";
 
 // The production bundle is served with test-only API responses. These are
 // interface checks, not model performance or production-resource evidence.
 const id = "012345abcdef";
 const title = "长夜之后仍然有人守护这座城市：一部关于重逢与选择的原创剧集";
 const primary = ["dashboard", "projects", "library", "activity", "models"];
-const palettes = [["slate", "深灰蓝"], ["graphite", "石墨"], ["teal", "青瓷"], ["jade", "松绿"], ["iris", "暮紫"], ["bronze", "暖铜"]];
+const palettes = [["slate", "深灰蓝"], ["graphite", "雾银"], ["teal", "薄荷青"], ["jade", "青柠绿"], ["iris", "雾紫"], ["bronze", "杏桃"]];
 
 async function fixture(page, request, { empty = false, attention = true, poster } = {}) {
   const base = await (await request.get("/api/factory/console")).json();
@@ -73,7 +73,7 @@ async function checkOverview(page, expected = ["7", "2", "8", "11"]) {
   expect(Math.max(...hierarchy.primary.background) - Math.min(...hierarchy.primary.background)).toBeLessThanOrEqual(8);
   expect(hierarchy.primary.contrast).toBeGreaterThanOrEqual(4.5);
   expect(hierarchy.feature.background).toEqual(hierarchy.tokens["accent-feature"]);
-  expect(hierarchy.feature.image).toBe("none");
+  expect(hierarchy.feature.image).toMatch(/^linear-gradient\(145deg,/);
   expect(hierarchy.feature.color).toEqual(hierarchy.tokens["on-accent-feature"]);
   expect(hierarchy.feature.contrast).toBeGreaterThanOrEqual(4.5);
   for (const text of hierarchy.featureText) {
@@ -84,7 +84,20 @@ async function checkOverview(page, expected = ["7", "2", "8", "11"]) {
     expect(metric.background).toEqual(hierarchy.tokens.panel);
     expect(metric.image).toBe("none");
   }
-  expect(hierarchy.gradients).toEqual([]);
+  const gradients = await gradientSurfaces(page);
+  expect(gradients.unexpected).toEqual([]);
+  expect(gradients.surfaces.length).toBeGreaterThan(0);
+  for (const surface of gradients.surfaces) {
+    expect(surface.image, surface.element).toMatch(/^linear-gradient\(145deg,/);
+    expect(surface.image, surface.element).toMatch(/0%,.*48%,.*100%/);
+    expect(surface.stops, surface.element).toHaveLength(3);
+    expect(surface.distinctStops, surface.element).toBe(3);
+    if (surface.expectedStops) expect(surface.stops, surface.element).toEqual(surface.expectedStops);
+    if (!surface.swatch) {
+      expect(surface.contrast, surface.element).toBeGreaterThanOrEqual(4.5);
+      for (const text of surface.text) expect(text.contrast, text.label).toBeGreaterThanOrEqual(4.5);
+    }
+  }
   if (page.viewportSize().width <= 700) {
     const bounds = await feature.boundingBox();
     const copyBounds = await focus.locator(".dashboard-focus-copy").boundingBox();
@@ -174,7 +187,7 @@ test("existing poster stays inside the current-work thumbnail and a failed poste
 });
 
 for (const width of [1440, 390]) for (const theme of ["light", "dark"]) {
-  test(`all six accent choices preserve black-white hierarchy and a solid theme feature at ${width} ${theme}`, async ({ page, request }) => {
+  test(`all six accent choices preserve black-white hierarchy and a tonal gradient theme feature at ${width} ${theme}`, async ({ page, request }) => {
     await page.setViewportSize({ width, height: 1000 });
     await page.emulateMedia({ colorScheme: theme });
     await fixture(page, request);

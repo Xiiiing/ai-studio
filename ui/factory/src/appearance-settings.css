@@ -40,7 +40,8 @@
 .appearance-mode[data-selected="true"],
 .appearance-palette[data-selected="true"] {
   border-color: var(--accent);
-  background: var(--accent-soft);
+  background: var(--panel);
+  box-shadow: inset 2px 0 var(--accent);
 }
 .appearance-mode:has(input:focus-visible),
 .appearance-palette:has(input:focus-visible) {
@@ -59,9 +60,9 @@
 }
 .appearance-swatch {
   display: block;
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
+  width: 64px;
+  height: 44px;
+  border-radius: 10px;
   flex-shrink: 0;
 }
 .appearance-check {
@@ -120,6 +121,11 @@
     padding: 12px;
     gap: 8px;
   }
+  .appearance-swatch {
+    width: 48px;
+    height: 36px;
+    border-radius: 8px;
+  }
   .appearance-mode {
     flex-direction: column;
     gap: 6px;
@@ -128,7 +134,7 @@
   }
 }
 
-/* Feature color has its own bounded surface; actions and reading stay neutral. */
+/* Tonal gradients stay inside feature cards; actions and reading stay neutral. */
 .appearance-preview-feature {
   display: flex;
   flex-direction: column;
@@ -136,7 +142,8 @@
   padding: 20px;
   margin-bottom: 16px;
   border-radius: var(--radius);
-  background: var(--accent-feature);
+  background-color: var(--accent-feature);
+  background-image: var(--accent-gradient);
   color: var(--on-accent-feature);
 }
 .appearance-preview-feature strong {

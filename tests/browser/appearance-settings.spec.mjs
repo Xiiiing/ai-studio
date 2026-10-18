@@ -2,11 +2,11 @@ import { test, expect } from "@playwright/test";
 import { mkdir } from "node:fs/promises";
 import { exposePageControl } from "./header-flow.mjs";
 import { openWorkflow } from "./navigation.mjs";
-import { paletteViolations, colorHierarchy } from "./palette.mjs";
+import { paletteViolations, colorHierarchy, gradientSurfaces } from "./palette.mjs";
 
 const palettes = [
-  ["slate", "深灰蓝"], ["graphite", "石墨"], ["teal", "青瓷"],
-  ["jade", "松绿"], ["iris", "暮紫"], ["bronze", "暖铜"],
+  ["slate", "深灰蓝"], ["graphite", "雾银"], ["teal", "薄荷青"],
+  ["jade", "青柠绿"], ["iris", "雾紫"], ["bronze", "杏桃"],
 ];
 const group = (page) => page.getByRole("group", { name: "主题色", exact: true });
 const choose = (page, name) => group(page).getByText(name, { exact: true }).click();
@@ -54,14 +54,27 @@ for (const width of [1440, 390]) for (const theme of ["light", "dark"]) {
         expect(text.color, text.text).toEqual(hierarchy.tokens["on-accent-feature"]);
         expect(text.contrast, text.text).toBeGreaterThanOrEqual(4.5);
       }
-      expect(hierarchy.feature.image).toBe("none");
-      expect(hierarchy.gradients).toEqual([]);
+      expect(hierarchy.feature.image).toMatch(/^linear-gradient\(145deg,/);
+      const gradients = await gradientSurfaces(page);
+      expect(gradients.unexpected).toEqual([]);
+      expect(gradients.surfaces.length).toBeGreaterThan(0);
+      for (const surface of gradients.surfaces) {
+        expect(surface.image, surface.element).toMatch(/^linear-gradient\(145deg,/);
+        expect(surface.image, surface.element).toMatch(/0%,.*48%,.*100%/);
+        expect(surface.stops, surface.element).toHaveLength(3);
+        expect(surface.distinctStops, surface.element).toBe(3);
+        if (surface.expectedStops) expect(surface.stops, surface.element).toEqual(surface.expectedStops);
+        if (!surface.swatch) {
+          expect(surface.contrast, surface.element).toBeGreaterThanOrEqual(4.5);
+          for (const text of surface.text) expect(text.contrast, text.label).toBeGreaterThanOrEqual(4.5);
+        }
+      }
       expect(await paletteViolations(page)).toEqual([]);
       await overflow(page);
     }
     expect(featureColors.size).toBe(6);
     await page.reload();
-    await expect(group(page).getByRole("radio", { name: "暖铜", exact: true })).toBeChecked();
+    await expect(group(page).getByRole("radio", { name: "杏桃", exact: true })).toBeChecked();
     await page.getByRole("radio", { name: theme === "dark" ? "浅色" : "深色", exact: true }).locator("..").click();
     await expect(page.locator("html")).toHaveAttribute("data-theme", theme === "dark" ? "light" : "dark");
     await expect(page.locator("html")).toHaveAttribute("data-accent", "bronze");
@@ -85,8 +98,8 @@ test("theme color works with the keyboard at 320px and follows system mode indep
   await page.goto("/#view=settings");
   await group(page).getByRole("radio", { name: "深灰蓝", exact: true }).focus();
   await page.keyboard.press("ArrowRight");
-  await expect(group(page).getByRole("radio", { name: "石墨", exact: true })).toBeChecked();
-  const outline = await group(page).locator("label").filter({ has: page.getByRole("radio", { name: "石墨", exact: true }) }).evaluate((e) => getComputedStyle(e).outlineStyle);
+  await expect(group(page).getByRole("radio", { name: "雾银", exact: true })).toBeChecked();
+  const outline = await group(page).locator("label").filter({ has: page.getByRole("radio", { name: "雾银", exact: true }) }).evaluate((e) => getComputedStyle(e).outlineStyle);
   expect(outline).toBe("solid");
   await page.emulateMedia({ colorScheme: "dark" });
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
@@ -98,8 +111,8 @@ test("appearance synchronizes between tabs without any business save", async ({ 
   await page.goto("/#view=settings");
   const other = await context.newPage();
   await other.goto("/#view=settings");
-  await choose(page, "松绿");
-  await expect(group(other).getByRole("radio", { name: "松绿", exact: true })).toBeChecked();
+  await choose(page, "青柠绿");
+  await expect(group(other).getByRole("radio", { name: "青柠绿", exact: true })).toBeChecked();
   await page.getByRole("radio", { name: "深色", exact: true }).locator("..").click();
   await expect(other.locator("html")).toHaveAttribute("data-theme", "dark");
   await page.evaluate(() => localStorage.clear());
@@ -111,8 +124,8 @@ test("appearance synchronizes between tabs without any business save", async ({ 
 test("settings stays usable when the business API is unavailable", async ({ page }) => {
   await page.route("**/api/factory/**", (r) => r.fulfill({ status: 503, json: { error: "fixture unavailable" } }));
   await page.goto("/#view=settings");
-  await choose(page, "青瓷");
-  await expect(group(page).getByRole("radio", { name: "青瓷", exact: true })).toBeChecked();
+  await choose(page, "薄荷青");
+  await expect(group(page).getByRole("radio", { name: "薄荷青", exact: true })).toBeChecked();
   await expect(page.locator("html")).toHaveAttribute("data-accent", "teal");
 });
 
