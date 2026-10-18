@@ -47,6 +47,10 @@ async function checkOverview(page, expected = ["7", "2", "8", "11"]) {
   await expect(feature).not.toHaveAttribute("aria-hidden", "true");
   await expect(feature).toContainText("等待成片验收");
   await expect(feature).toContainText("95%");
+  const progress = focus.getByRole("progressbar", { name: "当前制作进度", exact: true });
+  await expect(progress).toHaveAttribute("aria-valuenow", "95");
+  await expect(progress).toHaveAttribute("aria-valuemax", "100");
+  await expect(focus.locator(".dashboard-focus-next").getByRole("button", { name: "打开当前项目", exact: true })).toBeVisible();
   await expect(focus.locator(".dashboard-focus-copy")).not.toContainText(/等待成片验收|95%/);
   await expect(feature.locator("button,a,input,[tabindex]")).toHaveCount(0);
   await expect(focus.locator(".focus-film-frame")).toHaveCount(0);
@@ -67,7 +71,10 @@ async function checkOverview(page, expected = ["7", "2", "8", "11"]) {
   expect(projectTitle.ellipsis).not.toBe("ellipsis");
   await page.mouse.move(0, 0);
   const hierarchy = await colorHierarchy(page);
-  expect(hierarchy.focus.background).toEqual(hierarchy.tokens.panel);
+  expect(hierarchy.focus.rawBackground).toBe("rgba(0, 0, 0, 0)");
+  expect(hierarchy.feature.mask).not.toBe("none");
+  await expect(focus.locator(".dashboard-focus-next .primary")).toBeVisible();
+  await expect(feature).toHaveCSS("background-image", "none");
   expect(hierarchy.focus.image).toBe("none");
   expect(hierarchy.primary.background).toEqual(hierarchy.tokens.primary);
   expect(Math.max(...hierarchy.primary.background) - Math.min(...hierarchy.primary.background)).toBeLessThanOrEqual(8);

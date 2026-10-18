@@ -1,10 +1,11 @@
 // White/black surfaces and the selected accent carry the interface.
 // Additional colors must come from the shared semantic status tokens.
 // Provider images and generated media keep their original colors.
-// Gradients belong to bounded, mode-aware theme features and settings swatches.
+// Mode-aware gradients locate the current work; supporting counts stay neutral.
 export async function gradientSurfaces(page) {
   return page.evaluate(() => {
-    const permitted = ".dashboard-focus-feature,.page-color-focus,.appearance-preview-feature,.appearance-swatch";
+    const permitted = ".dashboard-focus:not(.dashboard-focus-empty),.work-focus,.appearance-preview-feature,.appearance-swatch";
+    const field = element => element.matches(".dashboard-focus:not(.dashboard-focus-empty),.work-focus");
     const visible = element => element.getClientRects().length && getComputedStyle(element).visibility !== "hidden";
     const rgb = value => {
       const values = value.match(/[\d.]+/g)?.map(Number) || [];
@@ -17,10 +18,10 @@ export async function gradientSurfaces(page) {
     const unexpected = [...document.querySelectorAll("body *")].filter(visible).flatMap(element => [null, "::before", "::after"].flatMap(pseudo => {
       const style = getComputedStyle(element, pseudo);
       if (pseudo && ["none", "normal"].includes(style.content)) return [];
-      return /gradient\(/.test(style.backgroundImage) && (pseudo || !element.matches(permitted)) ? [`${name(element)}${pseudo || ""}`] : [];
+      return /gradient\(/.test(style.backgroundImage) && !(pseudo === "::before" && field(element) || !pseudo && element.matches(".appearance-preview-feature,.appearance-swatch")) ? [`${name(element)}${pseudo || ""}`] : [];
     }));
     const surfaces = [...document.querySelectorAll(permitted)].filter(visible).map(element => {
-      const style = getComputedStyle(element);
+      const style = getComputedStyle(element, field(element) ? "::before" : null);
       const stops = (style.backgroundImage.match(/(?:rgba?\([^)]*\)|color\(srgb [^)]*\))/g) || []).map(rgb);
       // The selected swatch and production feature must resolve to the same stops.
       const swatch = element.matches(".appearance-swatch");
@@ -31,12 +32,14 @@ export async function gradientSurfaces(page) {
       });
       probe.style.color = "var(--panel)";
       const panel = rgb(getComputedStyle(probe).color);
+      probe.style.color = "var(--canvas)"; const canvas = rgb(getComputedStyle(probe).color);
       probe.remove();
       // CSS sRGB interpolation can reach its lowest contrast between endpoints.
       // Check both complete stop intervals, not just the nominal feature token.
       const samples = stops.flatMap((stop, index) => index === stops.length - 1 ? [stop] : Array.from({ length: 101 }, (_, step) => stop.map((v, channel) => v + (stops[index + 1][channel] - v) * step / 100)));
+      if (field(element)) samples.push(panel, canvas);
       const minimumContrast = color => samples.length ? Math.min(...samples.map(sample => contrast(rgb(color), sample))) : 0;
-      const text = [...element.querySelectorAll("*")].filter(child => !child.closest('[aria-hidden="true"]') && [...child.childNodes].some(node => node.nodeType === Node.TEXT_NODE && node.textContent.trim()))
+      const text = [...element.querySelectorAll("*")].filter(child => !child.closest('button,a,.badge,[aria-hidden="true"]') && [...child.childNodes].some(node => node.nodeType === Node.TEXT_NODE && node.textContent.trim()))
         .map(child => ({ label: child.textContent.trim(), contrast: minimumContrast(getComputedStyle(child).color) }));
       return { element: name(element), swatch, activeSwatch, image: style.backgroundImage, stops, expectedStops,
         distinctStops: new Set(stops.map(stop => stop.join(","))).size, surfaceContrast: Math.max(...samples.map(sample => contrast(panel, sample))), contrast: minimumContrast(style.color), text };
@@ -99,7 +102,7 @@ export async function paletteViolations(page) {
     );
     probe.remove();
     // The hero has its own tint strength; resolve that token in the card scope.
-    for (const feature of document.querySelectorAll(".dashboard-focus-feature,.page-color-focus,.appearance-preview-feature")) {
+    for (const feature of document.querySelectorAll(".dashboard-focus,.work-focus,.appearance-preview-feature")) {
       feature.append(probe);
       probe.style.color = "var(--feature-color)";
       semanticColors.add(getComputedStyle(probe).color);
@@ -156,15 +159,15 @@ export async function colorHierarchy(page) {
       const value = channel / 255;
       return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
     }).reduce((sum, value, i) => sum + value * [0.2126, 0.7152, 0.0722][i], 0);
-    const inspect = (element) => {
+    const inspect = (element, pseudo = null) => {
       if (!element) return undefined;
-      const style = getComputedStyle(element), fg = luminance(style.color), bg = luminance(style.backgroundColor);
-      return { background: channels(style.backgroundColor), color: channels(style.color), image: style.backgroundImage, highlight: channels(style.boxShadow),
+      const style = getComputedStyle(element, pseudo), fg = luminance(style.color), bg = luminance(style.backgroundColor);
+      return { background: channels(style.backgroundColor), color: channels(style.color), image: style.backgroundImage, rawBackground: style.backgroundColor, mask: style.maskImage, highlight: channels(style.boxShadow),
         contrast: (Math.max(fg, bg) + 0.05) / (Math.min(fg, bg) + 0.05) };
     };
     const probe = document.createElement("span");
     document.body.append(probe);
-    const feature = document.querySelector(".dashboard-focus-feature, .appearance-preview-feature");
+    const feature = document.querySelector(".dashboard-focus, .appearance-preview-feature");
     const tokens = Object.fromEntries(["panel", "surface", "surface-strong", "ink", "primary", "on-primary", "accent", "feature-color", "feature-ink", "accent-feature", "on-accent-feature"].map((token) => {
       (feature || document.body).append(probe);
       probe.style.color = `var(--${token})`;
@@ -178,7 +181,7 @@ export async function colorHierarchy(page) {
         return /gradient\(/.test(style.backgroundImage) ? [`${element.tagName}.${element.className?.baseVal ?? element.className}${pseudo || ""}`] : [];
       })).slice(0, 20);
     const featureElement = document.querySelector(".dashboard-focus-feature, .appearance-preview-feature");
-    const featureBackground = featureElement && luminance(getComputedStyle(featureElement).backgroundColor);
+    const featureBackground = featureElement && luminance(getComputedStyle(featureElement.closest(".dashboard-focus") || featureElement, featureElement.closest(".dashboard-focus") ? "::before" : null).backgroundColor);
     const featureText = featureElement ? [...featureElement.querySelectorAll("*")]
       .filter((element) => !element.closest('[aria-hidden="true"]') && [...element.childNodes].some((node) => node.nodeType === Node.TEXT_NODE && node.textContent.trim()))
       .map((element) => {
@@ -188,9 +191,9 @@ export async function colorHierarchy(page) {
     return {
       tokens, gradients, featureText,
       primary: inspect(document.querySelector(".dashboard-focus-actions .primary, .appearance-preview-action")),
-      feature: inspect(document.querySelector(".dashboard-focus-feature, .appearance-preview-feature")),
+      feature: inspect(document.querySelector(".dashboard-focus, .appearance-preview-feature"), document.querySelector(".dashboard-focus") ? "::before" : null),
       focus: inspect(document.querySelector(".dashboard-focus")),
-      metrics: [...document.querySelectorAll(".metric-card")].map(inspect),
+      metrics: [...document.querySelectorAll(".metric-card")].map(element => inspect(element)),
     };
   });
 }

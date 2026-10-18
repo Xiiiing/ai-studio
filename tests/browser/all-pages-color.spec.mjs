@@ -58,7 +58,7 @@ async function inspect(page, { feature = false } = {}) {
     const neutral = value => { const c = rgb(value); return c.length < 3 || Math.max(...c) - Math.min(...c) <= 14; };
     const visible = e => e.getClientRects().length && getComputedStyle(e).visibility !== "hidden";
     const probe = document.createElement("span"); document.body.append(probe);
-    const tokens = Object.fromEntries(["feature-color", "feature-ink", "accent", "primary", "on-primary"].map(t => { probe.style.color = `var(--${t})`; return [t, getComputedStyle(probe).color]; })); probe.remove();
+    const tokens = Object.fromEntries(["ink", "muted", "panel", "accent", "primary", "on-primary"].map(t => { probe.style.color = `var(--${t})`; return [t, getComputedStyle(probe).color]; })); probe.remove();
     const lum = value => rgb(value).map(c => { const v = c / 255; return v <= .04045 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4; }).reduce((a, v, i) => a + v * [.2126, .7152, .0722][i], 0);
     const contrast = (a, b) => (Math.max(lum(a), lum(b)) + .05) / (Math.min(lum(a), lum(b)) + .05);
     const gradients = [...document.querySelectorAll("body *")].filter(visible).flatMap(e => [null, "::before", "::after"].flatMap(p => { const s = getComputedStyle(e, p); return (p && ["none", "normal"].includes(s.content)) || !/gradient\(/.test(s.backgroundImage) ? [] : [`${e.tagName}.${e.className?.baseVal ?? e.className}${p || ""}`]; }));
@@ -66,7 +66,7 @@ async function inspect(page, { feature = false } = {}) {
       .flatMap(e => { const s = getComputedStyle(e); return neutral(s.backgroundColor) ? [] : [`${e.tagName}.${e.className}:${s.backgroundColor}`]; });
     const primary = [...document.querySelectorAll("#workspace .button.primary,dialog[open] .button.primary")].filter(visible).filter(e => !e.disabled && !e.matches('[aria-pressed="true"]') && !e.closest(".page-color-focus,.project-navigation,.drama-tabs"))
       .map(e => { const s = getComputedStyle(e); return { text: e.textContent.trim(), neutral: neutral(s.backgroundColor), contrast: contrast(s.color, s.backgroundColor) }; });
-    const features = [...document.querySelectorAll(".page-color-focus")].filter(visible).map(e => { const s = getComputedStyle(e); return { background: rgb(s.backgroundColor), color: rgb(s.color), expectedBackground: rgb(tokens["feature-color"]), expectedColor: rgb(tokens["feature-ink"]), contrast: contrast(s.color, s.backgroundColor), image: s.backgroundImage, highlight: s.boxShadow, expectedHighlight: tokens.accent, height: e.getBoundingClientRect().height, viewport: innerWidth, text: [...e.querySelectorAll("*")].filter(n => !n.closest(".badge,[aria-hidden=true]") && [...n.childNodes].some(t => t.nodeType === Node.TEXT_NODE && t.textContent.trim())).map(n => ({ label: n.textContent.trim(), color: rgb(getComputedStyle(n).color), contrast: contrast(getComputedStyle(n).color, s.backgroundColor) })) }; });
+    const features = [...document.querySelectorAll(".page-summary-value,.project-context > article")].filter(visible).map(e => { const s = getComputedStyle(e); return { background: rgb(s.backgroundColor), color: rgb(s.color), expectedBackground: rgb(tokens.panel), expectedColor: rgb(tokens.ink), mutedColor: rgb(tokens.muted), contrast: contrast(s.color, tokens.panel), image: s.backgroundImage, highlight: s.boxShadow, expectedHighlight: tokens.accent, height: e.getBoundingClientRect().height, viewport: innerWidth, text: [...e.querySelectorAll("*")].filter(n => !n.closest(".badge,[aria-hidden=true]") && [...n.childNodes].some(t => t.nodeType === Node.TEXT_NODE && t.textContent.trim())).map(n => ({ label: n.textContent.trim(), color: rgb(getComputedStyle(n).color), contrast: contrast(getComputedStyle(n).color, tokens.panel) })) }; });
     const statuses = [...document.querySelectorAll("#workspace [data-status-indicator]")].filter(visible).map(e => { const tone = e.dataset.statusIndicator; probe.style.color = `var(--status-${tone})`; document.body.append(probe); const expected = getComputedStyle(probe).color; probe.remove(); return { tone, color: rgb(getComputedStyle(e).backgroundColor), expected: rgb(expected), width: parseFloat(getComputedStyle(e).width) }; });
     const badges = [...document.querySelectorAll("#workspace .badge")].filter(visible).map(e => ({ text: e.textContent.trim(), height: e.getBoundingClientRect().height }));
     return { gradients, tintedReading, primary, features, badges, statuses, overflow: document.documentElement.scrollWidth > innerWidth + 1 };
@@ -89,10 +89,10 @@ async function inspect(page, { feature = false } = {}) {
   expect(colors.overflow).toBe(false);
   if (feature) expect(colors.features.length).toBeGreaterThan(0);
   for (const f of colors.features) {
-    expect(f.background).toEqual(f.expectedBackground); expect(f.color).toEqual(f.expectedColor);
-    expect(f.image).toMatch(/^linear-gradient\(145deg,/); expect(f.contrast).toBeGreaterThanOrEqual(4.5);
+    expect(Math.max(...f.background) - Math.min(...f.background)).toBeLessThanOrEqual(14);
+    expect(f.image).toBe("none"); expect(f.contrast).toBeGreaterThanOrEqual(4.5);
     expect(f.height).toBeLessThan(f.viewport <= 700 ? 360 : 240);
-    for (const text of f.text) { expect(text.color, text.label).toEqual(f.expectedColor); expect(text.contrast, text.label).toBeGreaterThanOrEqual(4.5); }
+    for (const text of f.text) { expect([f.expectedColor, f.mutedColor], text.label).toContainEqual(text.color); expect(text.contrast, text.label).toBeGreaterThanOrEqual(4.5); }
   }
   for (const button of colors.primary) { expect(button.neutral, button.text).toBe(true); expect(button.contrast, button.text).toBeGreaterThanOrEqual(4.5); }
   for (const dot of colors.statuses) { expect(dot.color, dot.tone).toEqual(dot.expected); expect(dot.width, dot.tone).toBe(6); }
@@ -125,6 +125,32 @@ test.beforeEach(async ({ page, request }) => {
 
 for (const width of [1440, 390]) for (const theme of ["light", "dark"]) {
   const configure = async page => { await page.setViewportSize({ width, height: 1000 }); await page.emulateMedia({ colorScheme: theme }); await page.addInitScript(a => { if (!sessionStorage.getItem("palette-fixture-seeded")) { localStorage.setItem("studio.accent", a); sessionStorage.setItem("palette-fixture-seeded", "1"); } }, width === 390 ? "iris" : "jade"); };
+  test(`current work and its action stay together above supporting counts at ${width} ${theme}`, async ({ page, request }) => {
+    await configure(page); const { drama } = await install(page, request);
+    const writes = []; page.on("request", r => { if (r.url().includes("/api/") && !["GET", "HEAD"].includes(r.method())) writes.push(r.url()); });
+    await page.goto(`/#project=${dramaId}&tab=overview`);
+    const work = page.getByRole("region", { name: "当前工作区", exact: true });
+    const summary = page.getByRole("region", { name: "已出片剧集摘要", exact: true });
+    const current = drama.workflow.graph.nodes.find(n => n.id === drama.workflow.graph.active_node);
+    await expect(work.getByRole("heading")).toHaveText(current.label);
+    await expect(work.getByRole("button", { name: "打开制作流程", exact: true })).toBeVisible();
+    await expect(work).not.toContainText("已出片剧集");
+    await expect(summary).toContainText("1 / 3 集");
+    const progress = summary.getByRole("progressbar");
+    await expect(progress).toHaveAttribute("aria-valuenow", "1");
+    await expect(progress).toHaveAttribute("aria-valuemax", "3");
+    const a = await work.boundingBox(), b = await summary.boundingBox();
+    expect(b.y).toBeGreaterThanOrEqual(a.y + a.height);
+    await expect(summary).toHaveCSS("background-image", "none");
+    await work.getByRole("button", { name: "打开制作流程", exact: true }).click();
+    await expect(page.locator("[data-stage]")).toHaveCount(5);
+    await expect(page).toHaveURL(new RegExp(`project=${dramaId}&tab=workflow`));
+    await page.goBack(); await expect(work).toBeVisible();
+    await work.getByRole("button", { name: "查看全剧规划", exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(`project=${dramaId}&tab=plan`));
+    expect(writes).toEqual([]);
+  });
+
   test(`all global pages keep the same color roles at ${width} ${theme}`, async ({ page, request }) => {
     test.setTimeout(60000);
     await configure(page); await install(page, request);
@@ -233,7 +259,7 @@ for (const width of [1440, 390]) for (const theme of ["light", "dark"]) {
       for (const hash of ["view=models", `project=${dramaId}&tab=overview`, `project=${unitId}&tab=shots`]) {
         await page.goto(`/#${hash}`);
         await expect(page.locator("html")).toHaveAttribute("data-accent", id);
-        await expect(page.locator(hash.includes("tab=shots") ? ".shot-workbench" : ".page-color-focus").first()).toBeVisible();
+        await expect(page.locator(hash.includes("tab=shots") ? ".shot-workbench" : ".page-summary").first()).toBeVisible();
         await inspect(page, { feature: !hash.includes("tab=shots") });
       }
       observed.add(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--accent-feature").trim()));

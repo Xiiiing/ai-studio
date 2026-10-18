@@ -53,6 +53,7 @@ import {
 import {
   Heading,
   PageFocus,
+  WorkProgress,
   Panel,
   Badge,
   Empty,
@@ -498,15 +499,9 @@ function Dashboard({
             {focus.record_kind === "drama" && !!focus.episode_count && <span>{focus.episode_count} 集</span>}
             {!!focus.duration_seconds && <span>{focus.record_kind === "drama" ? "每集 " : ""}{focus.duration_seconds} 秒</span>}
           </div>}
-          <div className="dashboard-focus-actions">
-            {focus ? <button className="button primary" onClick={() => openProject(focus.id, focus.attention?.target_tab || "overview")}>
-              打开当前项目 <ArrowUpRight size={16} aria-hidden="true" />
-            </button> : <button className="button primary" onClick={create}>
-              <Plus size={16} aria-hidden="true" />新建一部剧
-            </button>}
-          </div>
+          {!focus && <div className="dashboard-focus-actions"><button className="button primary" onClick={create}><Plus size={16} aria-hidden="true" />新建一部剧</button></div>}
         </div>
-        {focus && <section className="dashboard-focus-feature" aria-label="制作进展">
+        {focus && <div className="dashboard-focus-next"><section className="dashboard-focus-feature" aria-label="制作进展">
           <div className="focus-feature-head">
             <span>当前阶段</span>
             <div className="focus-poster" aria-hidden="true">
@@ -519,7 +514,10 @@ function Dashboard({
             <span>{Math.round(focusProgress)}<small>%</small></span>
             <span>制作进度</span>
           </div>}
-        </section>}
+          {focusProgress !== undefined && <WorkProgress label="当前制作进度" completed={focusProgress} total={100} />}
+        </section><div className="dashboard-focus-actions">
+          <button className="button primary" onClick={() => openProject(focus.id, focus.attention?.target_tab || "overview")}>打开当前项目 <ArrowUpRight size={16} aria-hidden="true" /></button>
+        </div></div>}
       </section>
       <section className="console-metrics">
         {stats.map(([label, value, detail, Icon], i) => (
@@ -1262,7 +1260,7 @@ function Project({
           ) : tab === "overview" ? (
             <>
               <div className="project-context">
-                <article className="page-color-focus">
+                <article>
                   <small>当前阶段</small>
                   <strong>
                     {activityName(w.operator?.current_activity || p.status)}
@@ -1301,7 +1299,7 @@ function Project({
                 >
                   <CurrentOutput project={p} />
                 </Panel>
-                <Panel title="当前任务与下一步">
+                <Panel title="当前任务与下一步" className="work-focus project-next-action">
                   {p.review_automation?.status !== "passed" && (
                     <ReviewAutomation project={p} />
                   )}
