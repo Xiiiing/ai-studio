@@ -1173,11 +1173,11 @@ function Project({
         )}
       </>
     );
-  if (w.project.record_kind === 'drama') return <DramaDetail id={id} onBack={onBack} openEpisode={episodeId => {
-    location.hash = new URLSearchParams({project:episodeId, tab:'overview'}).toString();
+  if (w.project.record_kind === 'drama') return <DramaDetail key={id} id={id} activeTab={tab} onTab={onTab} onBack={onBack} openEpisode={(episodeId, targetTab = 'overview') => {
+    location.hash = new URLSearchParams({project:episodeId, tab:targetTab}).toString();
   }} />;
-  if (w.project.record_kind === 'episode' && w.project.duration_seconds > 90) return <LongEpisodeDetail episode={w.project} openProject={projectId => {
-    location.hash = new URLSearchParams({project:projectId, tab:'overview'}).toString();
+  if (w.project.record_kind === 'episode' && w.project.duration_seconds > 90) return <LongEpisodeDetail key={id} episode={w.project} activeTab={tab} onTab={onTab} openProject={(projectId, targetTab = 'overview') => {
+    location.hash = new URLSearchParams({project:projectId, tab:targetTab}).toString();
   }} />;
   const p = { ...w.project, operator: w.operator },
     storyboardShots = rows(p.shots),

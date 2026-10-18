@@ -236,3 +236,18 @@ def test_sixteen_characters_and_changed_shared_plan_do_not_overwrite_started_epi
     with pytest.raises(ValidationError):validate({'scenes':[scene]},long_episodes.scene_schema([f'person{i}' for i in range(16)]))
     edited['characters'].append({**edited['characters'][0],'character_id':'person16'})
     with pytest.raises(ValidationError):validate(edited,drama_planning.plan_schema(3))
+
+
+def test_confirmation_with_pending_review_requeues_without_crashing(isolated):
+    p = dramas.create(input_payload())
+    store.update(p['id'], {'draft_plan': plan(), 'plan_review': None, 'status': 'blocked'})
+    with store.connection() as db:
+        db.execute("UPDATE jobs SET status='failed'")
+    p = dramas.snapshot(p['id'])
+    result = dramas.confirm(p['id'], {'expected_revision': p['revision'], 'request_id': 'pending-review'})
+    assert result['status'] == 'queued'
+    assert result['stage'] == 'plan_review'
+    assert result['plan_version'] == 0
+    assert result['workflow']['active_job']
+    with store.connection() as db:
+        assert db.execute("SELECT count(*) FROM jobs WHERE kind='drama_plan' AND status='queued'").fetchone()[0] == 1

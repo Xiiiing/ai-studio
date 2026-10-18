@@ -2,12 +2,32 @@ import { useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft } from "lucide-react";
 import { PageHeader } from "./PageHeader";
-import { Panel, Field, Modal, ErrorNotice, Loading } from "./ui";
-import { request, rows, mediaUrl, names, type RecordData } from "./api";
+import {
+  Panel,
+  Field,
+  Modal,
+  ErrorNotice,
+  Loading,
+  Empty,
+  Readable,
+} from "./ui";
+import {
+  request,
+  rows,
+  mediaUrl,
+  names,
+  roleName,
+  date,
+  type RecordData,
+} from "./api";
 import "./dramas.css";
 
 export const dramaDefaults = { seconds: 300, maxSeconds: 900 };
 const statusNames: Record<string, string> = {
+  waiting: "等待确认",
+  pending: "等待执行",
+  completed: "已完成",
+  running: "执行中",
   draft: "未生成",
   ready: "规划已确认",
   awaiting_plan: "待确认全剧规划",
@@ -340,14 +360,156 @@ function PlanEditor({
   );
 }
 
+const dramaTabs = [
+  ["overview", "项目总览"],
+  ["episodes", "剧集"],
+  ["plan", "全剧规划"],
+  ["assets", "共享设定"],
+  ["workflow", "制作流程与团队"],
+  ["batches", "生成批次"],
+  ["results", "成果"],
+];
+
+const flowLabels: Record<string, string> = {
+  basis: "工作依据",
+  scope: "记录范围",
+  outlines: "分集大纲数",
+  characters: "人物",
+  batches: "批次数",
+  episodes: "剧集",
+  awaiting: "待验收集数",
+  approved: "已通过集数",
+  units: "制作单元数",
+  completed: "已完成单元数",
+  delivery_ready: "成片已生成",
+  continuity: "连续性检查",
+  plan_version: "规划版本",
+  episode_numbers: "集号",
+  duration_seconds: "时长（秒）",
+  outline: "剧情大纲",
+  stage: "当前阶段",
+  progress: "进度（%）",
+  members: "批次剧集",
+  storyline: "故事主线",
+  review: "审核结果",
+  scenes: "场景",
+  summary: "摘要",
+  world: "世界设定",
+  visual_rules: "画风要求",
+  relationships: "人物关系",
+  opening_state: "开场状态",
+  ending_state: "结尾状态",
+  depends_on: "依赖集号",
+  uncertainties: "待确认事项",
+  status: "状态",
+  number: "集号",
+  character_id: "角色编号",
+  entity_id: "资产编号",
+};
+function flowValue(value: any): any {
+  if (Array.isArray(value)) return value.map(flowValue);
+  if (value && typeof value === "object")
+    return Object.fromEntries(
+      Object.entries(value).map(([key, entry]) => [
+        flowLabels[key] || key,
+        ["stage", "status"].includes(key) && typeof entry === "string"
+          ? statusNames[entry] || entry
+          : flowValue(entry),
+      ]),
+    );
+  return value;
+}
+
+function ProductionFlow({
+  workflow,
+  openProject,
+}: {
+  workflow?: RecordData;
+  openProject: (id: string) => void;
+}) {
+  return (
+    <Panel title="制作流程与团队">
+      <p className="muted">
+        按实际规划、审核和制作记录查看进度。打开具体任务可查看负责角色、工作输入与结果。
+      </p>
+      {workflow?.note && <p className="muted">{workflow.note}</p>}
+      {!workflow && <p>暂无流程记录，请刷新后重试。</p>}
+      {workflow?.evidence?.truncated && (
+        <p>仅显示部分执行记录，其他记录仍保留在项目中。</p>
+      )}
+      {!!workflow?.evidence?.unreadable && (
+        <p>部分执行回执无法读取，当前仅展示可核实的记录。</p>
+      )}
+      <ol className="drama-flow-stages">
+        {rows(workflow?.stages).map((stage) => (
+          <li key={stage.id}>
+            <strong>{stage.title}</strong>
+            <span>{statusNames[stage.status] || stage.status}</span>
+            {stage.role && <span>{roleName(stage.role)}</span>}
+            {stage.output && <Readable value={flowValue(stage.output)} />}
+          </li>
+        ))}
+      </ol>
+      <h3>团队工作与结果</h3>
+      {!rows(workflow?.tasks).length && (
+        <p>暂无执行回执。任务开始后在这里显示工作记录。</p>
+      )}
+      {rows(workflow?.tasks).map((task) => (
+        <details className="drama-task" key={task.id}>
+          <summary>
+            {task.title} · {roleName(task.role || "orchestrator")} ·{" "}
+            {statusNames[task.status] || task.status}
+          </summary>
+          {task.model && <p>执行模型：{task.model}</p>}
+          {(task.finished_at || task.generated_at || task.started_at) && (
+            <p>
+              记录时间：
+              {date(task.finished_at || task.generated_at || task.started_at)}
+            </p>
+          )}
+          <dl>
+            <dt>输入</dt>
+            <dd>
+              <Readable value={flowValue(task.input || "暂无输入记录")} />
+            </dd>
+            <dt>输出</dt>
+            <dd>
+              <Readable value={flowValue(task.output || "暂无输出记录")} />
+            </dd>
+          </dl>
+          {!!task.issues?.length && (
+            <div role="note">
+              {task.issues.map((issue: string, i: number) => (
+                <p key={i}>{issue}</p>
+              ))}
+            </div>
+          )}
+          {task.project_id && (
+            <button
+              className="button"
+              onClick={() => openProject(task.project_id)}
+            >
+              打开工作台
+            </button>
+          )}
+        </details>
+      ))}
+    </Panel>
+  );
+}
+
 export function DramaDetail({
   id,
   onBack,
   openEpisode,
+  activeTab,
+  onTab,
 }: {
   id: string;
   onBack: () => void;
-  openEpisode: (id: string) => void;
+  openEpisode: (id: string, tab?: string) => void;
+  activeTab: string;
+  onTab: (tab: string) => void;
 }) {
   const client = useQueryClient();
   const query = useQuery({
@@ -356,7 +518,6 @@ export function DramaDetail({
     refetchInterval: 5000,
   });
   const [selected, setSelected] = useState<number[]>([]),
-    [tab, setTab] = useState("episodes"),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [feedback, setFeedback] = useState(""),
@@ -367,6 +528,13 @@ export function DramaDetail({
   const pending = useRef(false);
   const requestCache = useRef<Record<string, string>>({});
   const p = query.data;
+  const tab = dramaTabs.some(([key]) => key === activeTab)
+    ? activeTab
+    : "overview";
+  function setTab(value: string) {
+    setError("");
+    onTab(value);
+  }
   async function operation(path: string, body: RecordData) {
     if (!p || pending.current) return;
     pending.current = true;
@@ -420,13 +588,7 @@ export function DramaDetail({
       />
       <ErrorNotice error={error || query.error} />
       <nav className="drama-tabs" aria-label="整剧工作区">
-        {[
-          ["episodes", "剧集"],
-          ["plan", "全剧规划"],
-          ["assets", "共享设定"],
-          ["batches", "生成批次"],
-          ["results", "成果"],
-        ].map(([key, label]) => (
+        {dramaTabs.map(([key, label]) => (
           <button
             key={key}
             className={"button " + (tab === key ? "primary" : "")}
@@ -437,13 +599,98 @@ export function DramaDetail({
           </button>
         ))}
       </nav>
-      {p.error && (
-        <Panel title="需要处理">
-          <p>{p.error}</p>
-          {p.plan_review?.issues?.map((v: string, i: number) => (
-            <p key={i}>{v}</p>
-          ))}
-        </Panel>
+      {tab === "overview" && (
+        <>
+          <Panel title="项目总览">
+            <p>全剧规划 → 选集制作 → 场景与镜头 → 逐集验收</p>
+            <p>
+              规划{p.plan_version ? `已确认 v${p.plan_version}` : "尚未确认"}
+              ；已建立{rows(p.episodes).length} / {p.episode_count}集，
+              {
+                rows(p.episodes).filter((e) =>
+                  ["approved", "awaiting_final"].includes(e.status),
+                ).length
+              }
+              集已出片。
+            </p>
+            <div className="drama-actions">
+              <button
+                className="button primary"
+                onClick={() => setTab("workflow")}
+              >
+                打开制作流程
+              </button>
+              <button className="button" onClick={() => setTab("plan")}>
+                查看全剧规划
+              </button>
+              {!!p.plan_version && (
+                <button className="button" onClick={() => setTab("episodes")}>
+                  选择剧集制作
+                </button>
+              )}
+            </div>
+          </Panel>
+          {p.error && (
+            <Panel title="需要处理">
+              <p>{p.error}</p>
+              <p>
+                {p.plan_review?.issues?.length || 0}
+                项规划审核问题，草稿和已完成成果已保留。
+              </p>
+              <button className="button" onClick={() => setTab("plan")}>
+                处理规划问题
+              </button>
+            </Panel>
+          )}
+          {!!rows(p.episodes).length && (
+            <Panel title="剧集进度">
+              <div className="drama-cards">
+                {rows(p.episodes).map((e) => (
+                  <article className="drama-card" key={e.id}>
+                    <strong>{e.title}</strong>
+                    <p>
+                      {statusNames[e.status] || e.status} · {e.progress}%
+                    </p>
+                    <p>{e.error || e.outline?.synopsis}</p>
+                    <button
+                      className="button"
+                      onClick={() =>
+                        openEpisode(
+                          e.id,
+                          e.duration_seconds > 90 ? "workflow" : "team",
+                        )
+                      }
+                    >
+                      查看剧集流程
+                    </button>
+                  </article>
+                ))}
+              </div>
+            </Panel>
+          )}
+        </>
+      )}
+      {tab === "workflow" && (
+        <>
+          <ProductionFlow
+            workflow={p.workflow}
+            openProject={(projectId) => {
+              const episode = rows(p.episodes).find((e) => e.id === projectId);
+              openEpisode(
+                projectId,
+                episode?.duration_seconds > 90 ? "workflow" : "team",
+              );
+            }}
+          />
+          <div className="drama-actions">
+            <button className="button" onClick={() => setTab("plan")}>
+              查看全剧规划
+            </button>
+            <button className="button" onClick={() => setTab("episodes")}>
+              查看剧集
+            </button>
+          </div>
+        </>
       )}
       {!!p.dependency_impacts?.length && (
         <Panel title="前集版本已变化">
@@ -455,14 +702,26 @@ export function DramaDetail({
           ))}
         </Panel>
       )}
-      {(!p.plan_version || tab === "plan") && (
+      {tab === "plan" && (
         <Panel title="全剧规划">
+          {p.workflow?.active_job && (
+            <p role="status">规划任务正在执行，请等待本轮完成后再提交确认。</p>
+          )}
+          {p.error && <p role="alert">{p.error}</p>}
+          {!!p.plan_review?.issues?.length && (
+            <details open>
+              <summary>规划审核问题（{p.plan_review.issues.length}项）</summary>
+              {p.plan_review.issues.map((issue: string, i: number) => (
+                <p key={i}>{issue}</p>
+              ))}
+            </details>
+          )}
           {!p.plan_version && (
             <div className="drama-actions">
               {p.status === "paused" || p.status === "blocked" ? (
                 <button
                   className="button"
-                  disabled={busy}
+                  disabled={busy || !!p.workflow?.active_job}
                   onClick={() =>
                     void operation("actions", { action: "resume" })
                   }
@@ -499,7 +758,7 @@ export function DramaDetail({
             <PlanEditor
               key={JSON.stringify(p.draft_plan)}
               document={p.draft_plan}
-              busy={busy}
+              busy={busy || !!p.workflow?.active_job}
               confirm={(value) => void operation("confirm", { plan: value })}
             />
           ) : (
@@ -521,6 +780,16 @@ export function DramaDetail({
               集；已有剧集继续保留原引用版本。
             </p>
           )}
+        </Panel>
+      )}
+      {tab === "episodes" && !p.plan_version && (
+        <Panel title="剧集尚未建立">
+          <Empty title="先确认全剧规划">
+            审核通过并确认规划后，系统才会建立剧集并开放选集制作。
+          </Empty>
+          <button className="button primary" onClick={() => setTab("plan")}>
+            查看全剧规划
+          </button>
         </Panel>
       )}
       {tab === "episodes" && !!p.plan_version && (
@@ -629,6 +898,17 @@ export function DramaDetail({
                   <button className="button" onClick={() => openEpisode(e.id)}>
                     进入剧集
                   </button>
+                  <button
+                    className="button"
+                    onClick={() =>
+                      openEpisode(
+                        e.id,
+                        e.duration_seconds > 90 ? "workflow" : "team",
+                      )
+                    }
+                  >
+                    查看剧集流程
+                  </button>
                   {[
                     "queued",
                     "producing",
@@ -707,6 +987,14 @@ export function DramaDetail({
       {tab === "assets" && (
         <Panel title="全剧共享设定">
           <p>全剧角色使用固定身份和声线；生成素材按设定版本引用。</p>
+          {!p.plan_version && (
+            <>
+              <p>设定尚未确认。以下为规划草稿，确认后按版本供剧集引用。</p>
+              <button className="button" onClick={() => setTab("plan")}>
+                查看全剧规划
+              </button>
+            </>
+          )}
           <div className="drama-cards">
             {Object.entries(p.shared_assets || {}).flatMap(
               ([version, assets]) =>
@@ -732,23 +1020,25 @@ export function DramaDetail({
                 )),
             )}
           </div>
-          {rows(p.plans).at(-1)?.document && (
+          {(rows(p.plans).at(-1)?.document || p.draft_plan) && (
             <>
-              {rows(p.plans)
-                .at(-1)!
-                .document.characters.map((c: RecordData) => (
-                  <div className="drama-card" key={c.character_id}>
-                    <strong>{c.name}</strong>
-                    <p>{c.identity_constraints}</p>
-                    <p>
-                      {c.default_wardrobe} · 声线 {c.voice_id}
-                    </p>
-                  </div>
-                ))}
+              {rows(
+                (rows(p.plans).at(-1)?.document || p.draft_plan).characters,
+              ).map((c: RecordData) => (
+                <div className="drama-card" key={c.character_id}>
+                  <strong>{c.name}</strong>
+                  <p>{c.identity_constraints}</p>
+                  <p>
+                    {c.default_wardrobe} · 声线 {c.voice_id}
+                  </p>
+                </div>
+              ))}
               {["scenes", "props"].map((kind) => (
                 <div key={kind}>
                   <h3>{kind === "scenes" ? "场景" : "道具"}</h3>
-                  {rows(rows(p.plans).at(-1)!.document[kind]).map((v) => (
+                  {rows(
+                    (rows(p.plans).at(-1)?.document || p.draft_plan)[kind],
+                  ).map((v) => (
                     <p key={v.entity_id}>
                       {v.name}：{v.description}
                     </p>
@@ -761,6 +1051,21 @@ export function DramaDetail({
       )}
       {tab === "batches" && (
         <Panel title="生成批次">
+          {!rows(p.batches).length && (
+            <Empty
+              title="尚无生成批次"
+              action={
+                <button
+                  className="button"
+                  onClick={() => setTab(p.plan_version ? "episodes" : "plan")}
+                >
+                  {p.plan_version ? "选择剧集制作" : "查看全剧规划"}
+                </button>
+              }
+            >
+              确认规划后，在剧集页选择一集或多集启动制作。
+            </Empty>
+          )}
           {rows(p.batches).map((b) => (
             <div className="drama-card" key={b.id}>
               <strong>
@@ -815,13 +1120,30 @@ export function DramaDetail({
       )}
       {tab === "results" && (
         <Panel title="逐集成果">
-          <a
-            className="button"
-            href={`/api/factory/dramas/${id}/download`}
-            download
-          >
-            按集打包下载
-          </a>
+          {!rows(p.episodes).length && (
+            <Empty
+              title="暂无剧集成果"
+              action={
+                <button
+                  className="button"
+                  onClick={() => setTab(p.plan_version ? "episodes" : "plan")}
+                >
+                  {p.plan_version ? "选择剧集制作" : "查看全剧规划"}
+                </button>
+              }
+            >
+              剧集制作后在这里观看、验收及下载成片。
+            </Empty>
+          )}
+          {!!rows(p.episodes).length && (
+            <a
+              className="button"
+              href={`/api/factory/dramas/${id}/download`}
+              download
+            >
+              按集打包下载
+            </a>
+          )}
           {rows(p.episodes).map((e) => (
             <div className="drama-card" key={e.id}>
               <strong>{e.title}</strong>
@@ -924,9 +1246,13 @@ export function DramaDetail({
 export function LongEpisodeDetail({
   episode,
   openProject,
+  activeTab,
+  onTab,
 }: {
   episode: RecordData;
-  openProject: (id: string) => void;
+  openProject: (id: string, tab?: string) => void;
+  activeTab: string;
+  onTab: (tab: string) => void;
 }) {
   const query = useQuery({
     queryKey: ["long-episode", episode.id],
@@ -998,148 +1324,210 @@ export function LongEpisodeDetail({
         }
       />
       <ErrorNotice error={error || p.error || query.error} />
-      <Panel title="剧集进度">
-        <p>{p.outline.synopsis}</p>
-        <p>
-          {rows(p.units).filter((u) => u.status === "unit_ready").length} /{" "}
-          {rows(p.units).length} 个制作单元已完成；累计
-          {p.budget?.spent_gpu_minutes || 0}卡分钟。
-        </p>
-        {p.total_authorized_gpu_minutes && (
-          <p>
-            本集授权上限：{p.total_authorized_gpu_minutes}卡分钟；每单元最多
-            {p.budget.max_attempts}次尝试。
-          </p>
-        )}
-        <div className="drama-actions">
-          {["queued", "producing", "scripting", "waiting_remote"].includes(
-            p.status,
-          ) && (
-            <button
-              className="button"
-              disabled={busy}
-              onClick={() => void action("pause")}
-            >
-              暂停此集
-            </button>
-          )}
-          {["paused", "blocked", "failed", "waiting_dependency"].includes(
-            p.status,
-          ) && (
-            <button
-              className="button"
-              disabled={busy}
-              onClick={() => void action("resume")}
-            >
-              继续此集
-            </button>
-          )}
-          {!["draft", "cancelled", "approved", "awaiting_final"].includes(
-            p.status,
-          ) && (
-            <button
-              className="button"
-              disabled={busy}
-              onClick={() => void action("cancel")}
-            >
-              取消此集
-            </button>
-          )}
-        </div>
-      </Panel>
-      {p.delivery && (
-        <Panel title="本集成片">
-          <video
-            className="drama-video"
-            controls
-            preload="metadata"
-            src={mediaUrl(p.delivery.video_url)}
+      <nav className="drama-tabs" aria-label="剧集工作区">
+        {[
+          ["overview", "剧集总览"],
+          ["workflow", "制作流程与团队"],
+        ].map(([key, label]) => (
+          <button
+            key={key}
+            className={"button " + (activeTab === key ? "primary" : "")}
+            aria-pressed={activeTab === key}
+            onClick={() => onTab(key)}
+          >
+            {label}
+          </button>
+        ))}
+      </nav>
+      {activeTab === "workflow" ? (
+        <>
+          <ProductionFlow
+            workflow={p.workflow}
+            openProject={(id) => openProject(id, "team")}
           />
-          <div className="drama-actions">
-            {[
-              ["video_url", "下载成片"],
-              ["clean_url", "无字幕成片"],
-              ["subtitle_url", "字幕"],
-              ["manifest_url", "制作清单"],
-            ].map(
-              ([key, label]) =>
-                p.delivery[key] && (
-                  <a
-                    className="button"
-                    download
-                    key={key}
-                    href={mediaUrl(p.delivery[key]) || ""}
-                  >
-                    {label}
-                  </a>
-                ),
-            )}
-          </div>
-        </Panel>
-      )}
-      {["awaiting_final", "blocked", "failed"].includes(p.status) && (
-        <Panel title="验收与定向修改">
-          <Field label="修改范围">
-            <select value={unitId} onChange={(e) => setUnitId(e.target.value)}>
-              <option value="">根据意见定位单元</option>
-              {rows(p.units).map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.title}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="局部修改或重新剪辑意见">
-            <textarea
-              value={feedback}
-              onChange={(e) => setFeedback(e.target.value)}
-              rows={4}
-            />
-          </Field>
-          <div className="drama-actions">
-            {p.status === "awaiting_final" && (
-              <button
-                className="button primary"
-                disabled={busy}
-                onClick={() => void action("approve")}
-              >
-                通过本集
-              </button>
-            )}
-            {(p.status === "awaiting_final"
-              ? ["revise", "reedit"]
-              : ["revise"]
-            ).map((kind) => (
-              <button
-                className="button"
-                key={kind}
-                disabled={busy || feedback.trim().length < 2}
-                onClick={() => void action(kind)}
-              >
-                {kind === "revise" ? "局部修改" : "重新剪辑"}
-              </button>
-            ))}
-          </div>
-        </Panel>
-      )}
-      <Panel title="场景与制作单元">
-        <div className="drama-cards">
-          {rows(p.units).map((u) => (
-            <article className="drama-card" key={u.id}>
-              <strong>{u.title}</strong>
+          <Panel title="单元团队工作台">
+            {!rows(p.units).length && (
               <p>
-                {u.duration_seconds}秒 · {statusNames[u.status] || u.status} ·{" "}
-                {u.progress}%
+                场景规划完成后将在这里显示制作单元。可先展开上方团队任务查看规划结果。
               </p>
-              <p>{u.outline.synopsis}</p>
-              <small>镜头编号：{u.global_prefix}-S01 …</small>
-              <button className="button" onClick={() => openProject(u.id)}>
-                进入镜头工作台
-              </button>
-            </article>
-          ))}
-        </div>
-      </Panel>
+            )}
+            {rows(p.units).map((u) => (
+              <article className="drama-card" key={u.id}>
+                <strong>{u.title}</strong>
+                <p>
+                  {statusNames[u.status] || u.status} · {u.progress}%
+                </p>
+                <button
+                  className="button"
+                  onClick={() => openProject(u.id, "team")}
+                >
+                  查看单元团队
+                </button>
+              </article>
+            ))}
+          </Panel>
+        </>
+      ) : (
+        <>
+          <Panel title="剧集进度">
+            <p>{p.outline.synopsis}</p>
+            <p>
+              {rows(p.units).filter((u) => u.status === "unit_ready").length} /{" "}
+              {rows(p.units).length} 个制作单元已完成；累计
+              {p.budget?.spent_gpu_minutes || 0}卡分钟。
+            </p>
+            {p.total_authorized_gpu_minutes && (
+              <p>
+                本集授权上限：{p.total_authorized_gpu_minutes}卡分钟；每单元最多
+                {p.budget.max_attempts}次尝试。
+              </p>
+            )}
+            <div className="drama-actions">
+              {["queued", "producing", "scripting", "waiting_remote"].includes(
+                p.status,
+              ) && (
+                <button
+                  className="button"
+                  disabled={busy}
+                  onClick={() => void action("pause")}
+                >
+                  暂停此集
+                </button>
+              )}
+              {["paused", "blocked", "failed", "waiting_dependency"].includes(
+                p.status,
+              ) && (
+                <button
+                  className="button"
+                  disabled={busy}
+                  onClick={() => void action("resume")}
+                >
+                  继续此集
+                </button>
+              )}
+              {!["draft", "cancelled", "approved", "awaiting_final"].includes(
+                p.status,
+              ) && (
+                <button
+                  className="button"
+                  disabled={busy}
+                  onClick={() => void action("cancel")}
+                >
+                  取消此集
+                </button>
+              )}
+            </div>
+          </Panel>
+          {p.delivery && (
+            <Panel title="本集成片">
+              <video
+                className="drama-video"
+                controls
+                preload="metadata"
+                src={mediaUrl(p.delivery.video_url)}
+              />
+              <div className="drama-actions">
+                {[
+                  ["video_url", "下载成片"],
+                  ["clean_url", "无字幕成片"],
+                  ["subtitle_url", "字幕"],
+                  ["manifest_url", "制作清单"],
+                ].map(
+                  ([key, label]) =>
+                    p.delivery[key] && (
+                      <a
+                        className="button"
+                        download
+                        key={key}
+                        href={mediaUrl(p.delivery[key]) || ""}
+                      >
+                        {label}
+                      </a>
+                    ),
+                )}
+              </div>
+            </Panel>
+          )}
+          {["awaiting_final", "blocked", "failed"].includes(p.status) && (
+            <Panel title="验收与定向修改">
+              <Field label="修改范围">
+                <select
+                  value={unitId}
+                  onChange={(e) => setUnitId(e.target.value)}
+                >
+                  <option value="">根据意见定位单元</option>
+                  {rows(p.units).map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.title}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="局部修改或重新剪辑意见">
+                <textarea
+                  value={feedback}
+                  onChange={(e) => setFeedback(e.target.value)}
+                  rows={4}
+                />
+              </Field>
+              <div className="drama-actions">
+                {p.status === "awaiting_final" && (
+                  <button
+                    className="button primary"
+                    disabled={busy}
+                    onClick={() => void action("approve")}
+                  >
+                    通过本集
+                  </button>
+                )}
+                {(p.status === "awaiting_final"
+                  ? ["revise", "reedit"]
+                  : ["revise"]
+                ).map((kind) => (
+                  <button
+                    className="button"
+                    key={kind}
+                    disabled={busy || feedback.trim().length < 2}
+                    onClick={() => void action(kind)}
+                  >
+                    {kind === "revise" ? "局部修改" : "重新剪辑"}
+                  </button>
+                ))}
+              </div>
+            </Panel>
+          )}
+          <Panel title="场景与制作单元">
+            <button className="button" onClick={() => onTab("workflow")}>
+              打开制作流程
+            </button>
+            {!rows(p.units).length && (
+              <p>场景规划尚未完成，可打开制作流程查看编剧、审稿与执行情况。</p>
+            )}
+            <div className="drama-cards">
+              {rows(p.units).map((u) => (
+                <article className="drama-card" key={u.id}>
+                  <strong>{u.title}</strong>
+                  <p>
+                    {u.duration_seconds}秒 · {statusNames[u.status] || u.status}{" "}
+                    · {u.progress}%
+                  </p>
+                  <p>{u.outline.synopsis}</p>
+                  <small>镜头编号：{u.global_prefix}-S01 …</small>
+                  <button className="button" onClick={() => openProject(u.id)}>
+                    进入镜头工作台
+                  </button>
+                  <button
+                    className="button"
+                    onClick={() => openProject(u.id, "team")}
+                  >
+                    查看单元团队
+                  </button>
+                </article>
+              ))}
+            </div>
+          </Panel>
+        </>
+      )}
     </>
   );
 }

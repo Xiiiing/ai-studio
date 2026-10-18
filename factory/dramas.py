@@ -178,7 +178,11 @@ def snapshot(pid, *, db=None, details=True):
     result['dependency_impacts']=[{'episode_id':e['id'],'number':e['episode_number'],'dependency_number':dep['number']}
         for e in episodes for dep in e.get('dependency_context',[]) if
         (indexed.get(dep['episode_id'],{}).get('delivery') or {}).get('source_signature')!=dep['delivery_signature']]
-    if details: result['source_text'] = p['source_text']
+    if details:
+        from .drama_workflow import build
+        result['source_text'] = p['source_text']
+        result['workflow'] = build(p, episodes=episodes, batches=result['batches'],
+            active_job=db.execute("SELECT 1 FROM jobs WHERE project_id=? AND kind='drama_plan' AND status IN ('queued','running') LIMIT 1", (pid,)).fetchone() is not None)
     return result
 
 
@@ -211,7 +215,7 @@ def confirm(pid, payload):
         if db.execute("SELECT 1 FROM jobs WHERE project_id=? AND status='running'",(pid,)).fetchone():
             raise ValueError('规划正在执行，请等待本轮完成')
         plan = validate_plan(payload.get('plan', p.get('draft_plan')), p)
-        if not p.get('plan_review', {}).get('passed') or fingerprint(plan) != fingerprint(p.get('draft_plan')):
+        if not (p.get('plan_review') or {}).get('passed') or fingerprint(plan) != fingerprint(p.get('draft_plan')):
             # Edited plans go back through independent review before confirmation.
             p.update(draft_plan=plan, plan_review=None, status='queued', stage='plan_review')
             store._enqueue(db, pid, 'drama_plan')
@@ -424,4 +428,8 @@ def episode_snapshot(pid, eid):
             value.pop('planning_cache',None)
             value.pop('operation_requests',None)
             value.pop('plan',None)
-        return {**e,'units':units,'drama_revision':p['revision']}
+        from .drama_workflow import build
+        return {**e,'units':units,'drama_revision':p['revision'],
+            'workflow':build(e, units=units, active_job=db.execute(
+                "SELECT 1 FROM jobs WHERE project_id=? AND kind IN ('workflow','drama_episode') AND status IN ('queued','running') LIMIT 1",
+                (eid,)).fetchone() is not None) if e['duration_seconds'] > 90 else None}

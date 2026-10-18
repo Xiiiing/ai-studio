@@ -69,7 +69,7 @@ for (const width of [1440, 390])
       }
       return route.fulfill({ json: p });
     });
-    await page.goto("/#project=" + id);
+    await page.goto("/#project=" + id + "&tab=episodes");
     await expect(page.getByRole("heading", { name: p.title })).toBeVisible();
     await page.getByRole("checkbox", { name: "选择第1集" }).check();
     await page.getByRole("checkbox", { name: "选择第3集" }).check();
@@ -285,7 +285,7 @@ test("mobile planning confirmation preserves relationship edits and fixed voice"
     if (r.request().method() === "POST") submitted = r.request().postDataJSON();
     await r.fulfill({ json: p });
   });
-  await page.goto("/#project=" + id);
+  await page.goto("/#project=" + id + "&tab=plan");
   const relation = page.getByLabel("人物关系（每行一项）");
   await relation.fill("lead与friend是重逢的旧友。");
   await relation.press("End");
