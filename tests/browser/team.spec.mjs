@@ -1,3 +1,4 @@
+import { openDetails, closeDetails } from "./fixed-canvas.mjs";
 import { refreshPage } from "./header-flow.mjs";
 import { openWorkflow } from "./navigation.mjs";
 import { openProjectPage } from "./navigation.mjs";
@@ -29,14 +30,20 @@ test("workflow is navigable and team roles remain separate from approval", async
   await openWorkflow(page);
   await expect(page.locator("[data-stage]")).toHaveCount(5);
   await page.locator('[data-stage="script"]').click();
+  await openDetails(page);
   await page.locator('[data-flow-node="screenplay"]').click();
-  await expect(page.locator(".workflow-inspector h3")).toHaveText("剧本创作");
-  await expect(page.locator(".workflow-inspector")).toContainText("独立审稿");
+  await expect(page.locator(".workflow-detail-content h3")).toHaveText(
+    "剧本创作",
+  );
+  await expect(page.locator(".workflow-detail-content")).toContainText(
+    "独立审稿",
+  );
   await expect(page.locator(".react-flow")).toHaveCount(0);
   await page.screenshot({
     path: "runtime/browser-report/console-workflow.png",
     fullPage: true,
   });
+  await closeDetails(page);
   await openProjectPage(page, "team");
   await expect(page.locator(".department-card")).toHaveCount(4);
   await expect(page.locator('[data-team-task="screenplay"]')).toContainText(

@@ -86,7 +86,7 @@ test("mobile workflow keyboard selection preserves canvas and focus", async ({
   await expect(page.locator(".workflow-canvas-viewport")).toBeVisible();
   await expect(stage).toBeFocused();
   await expect(stage).toHaveAttribute("aria-pressed", "true");
-  await expect(page.locator(".workflow-step-heading h3")).toHaveText(
+  await expect(page.locator(".workflow-summary h3")).toHaveText(
     "故事目标落实与独立审核",
   );
 });

@@ -1,4 +1,9 @@
-import { expandRole, canvasState } from "./fixed-canvas.mjs";
+import {
+  expandRole,
+  canvasState,
+  openDetails,
+  closeDetails,
+} from "./fixed-canvas.mjs";
 import { refreshPage } from "./header-flow.mjs";
 import { openWorkflow } from "./navigation.mjs";
 import { test, expect } from "@playwright/test";
@@ -84,7 +89,9 @@ for (const width of [1440, 1024, 390]) {
       "production",
       "delivery",
     ]) {
+      await closeDetails(page);
       await page.locator(`[data-stage="${stage}"]`).click();
+      await openDetails(page);
       await expect(page.locator(`[data-stage="${stage}"]`)).toHaveAttribute(
         "aria-pressed",
         "true",
@@ -102,7 +109,9 @@ for (const width of [1440, 1024, 390]) {
         );
       }
     }
+    await closeDetails(page);
     await page.locator('[data-stage="script"]').click();
+    await openDetails(page);
     await page.locator('[data-flow-node="screenplay"]').click();
     const inputs = inspector.getByRole("region", { name: "输入材料" });
     await inputs.getByRole("button", { name: "阅读文件" }).click();
@@ -119,8 +128,11 @@ for (const width of [1440, 1024, 390]) {
       script.getByRole("heading", { name: "灯下的约定" }),
     ).toBeVisible();
     await expect(script.getByRole("table")).toContainText("我答应过你");
+    await closeDetails(page);
     await request.post("/__test/progress");
     await refreshPage(page);
+    await openDetails(page);
+    await script.getByRole("button", { name: "阅读文件" }).click();
     await expect(inspector.locator(".workflow-step-heading h3")).toHaveText(
       "剧本创作",
     );
@@ -142,17 +154,19 @@ for (const width of [1440, 1024, 390]) {
       path: `runtime/browser-report/workflow-overview-${width}.png`,
     });
     await script.getByRole("button", { name: "放大阅读" }).click();
-    await expect(page.getByRole("dialog").getByRole("table")).toContainText(
-      "S02",
-    );
-    await page.getByRole("dialog").screenshot({
+    await expect(
+      page.locator("#document-expanded").getByRole("table"),
+    ).toContainText("S02");
+    await page.locator("#document-expanded").screenshot({
       path: `runtime/browser-report/workflow-document-${width}.png`,
     });
     await page
-      .getByRole("dialog")
+      .locator("#document-expanded")
       .getByRole("button", { name: "关闭", exact: true })
       .click();
+    await closeDetails(page);
     await page.locator('[data-branch="revision"]').click();
+    await openDetails(page);
     await expect(inspector).toContainText("返修后接续");
     await inspector
       .locator(".workflow-transitions")
@@ -211,6 +225,7 @@ test("missing files retry and oversized Markdown remains downloadable", async ({
   await page.goto(`/#project=${id}&tab=overview`);
   await openWorkflow(page);
   await page.locator('[data-stage="script"]').click();
+  await openDetails(page);
   await page.locator('[data-flow-node="screenplay"]').click();
   const missing = page
     .locator(".material-card")
@@ -250,6 +265,8 @@ test("workflow and document controls work with keyboard navigation", async ({
   await openWorkflow(page);
   await page.locator('[data-stage="script"]').focus();
   await page.keyboard.press("Enter");
+  await page.getByRole("button", { name: "查看完整详情", exact: true }).focus();
+  await page.keyboard.press("Enter");
   await page.locator('[data-flow-node="screenplay"]').focus();
   await page.keyboard.press("Space");
   await expect(page.locator(".workflow-step-heading h3")).toHaveText(
@@ -263,9 +280,10 @@ test("workflow and document controls work with keyboard navigation", async ({
   ).toBeVisible();
   await inputs.getByRole("button", { name: "放大阅读" }).focus();
   await page.keyboard.press("Enter");
-  await expect(page.getByRole("dialog")).toBeVisible();
+  await expect(page.locator("#document-expanded")).toBeVisible();
   await page.keyboard.press("Escape");
-  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.locator("#document-expanded")).toHaveCount(0);
+  await closeDetails(page);
 });
 
 test("data flow does not invent a transmission without receiving-task evidence", async ({
@@ -304,11 +322,11 @@ test("narrow screens keep the canvas and reader in place", async ({ page }) => {
   await stage.scrollIntoViewIfNeeded();
   const before = await canvasState(page);
   await stage.click();
-  await expect(page.locator(".workflow-step-heading h3")).toHaveText(
+  await expect(page.locator(".workflow-summary h3")).toHaveText(
     "故事目标落实与独立审核",
   );
   expect(await canvasState(page)).toEqual(before);
-  await page.getByRole("button", { name: "关闭详情", exact: true }).click();
+  await page.getByRole("button", { name: "关闭摘要", exact: true }).click();
   expect(await canvasState(page)).toEqual(before);
   await expect(page.locator(".workflow-canvas-viewport")).toBeVisible();
 });
@@ -321,6 +339,7 @@ test("department employee opens the recorded original request in its own workflo
     page.getByRole("heading", { name: "制作工作流", exact: true }),
   ).toBeVisible();
   await (await expandRole(page, "screenwriter", "script")).click();
+  await openDetails(page);
   const employee = page.getByRole("complementary", { name: "节点详情" });
   const call = employee.locator('[data-execution="writer-current"]');
   await expect(call).toContainText("mock-writer-current");
@@ -352,6 +371,7 @@ test("department delivery opens a saved sender result inline without claiming a 
     .first();
   await edge.focus();
   await page.keyboard.press("Enter");
+  await openDetails(page);
   const panel = page.getByRole("complementary", { name: "节点详情" });
   await expect(panel).toContainText("尚未关联到接收方的实际输入");
   const call = panel.locator('[data-execution="writer-current"]');
@@ -360,6 +380,7 @@ test("department delivery opens a saved sender result inline without claiming a 
     .filter({ has: page.getByText("解析结果", { exact: true }) });
   await original.getByRole("button", { name: "阅读文件", exact: true }).click();
   await expect(original).toContainText("灯下的约定");
+  await closeDetails(page);
   await expect(diagram).toBeVisible();
   expect(page.url()).toContain(`project=${id}&tab=workflow`);
 });

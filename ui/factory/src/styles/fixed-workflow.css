@@ -432,3 +432,199 @@
     height: 420px;
   }
 }
+
+/* The secondary pane is a summary. Full readers live in one independent card. */
+.workflow-fixed-workspace {
+  overflow-anchor: none;
+}
+.workflow-fixed-workspace .workflow-fixed-layout {
+  grid-template-columns: minmax(0, 1fr) 320px;
+}
+.workflow-canvas-viewport {
+  height: 500px;
+}
+.workflow-workspace.workflow-fixed-workspace .workflow-summary {
+  height: auto;
+  max-height: none;
+  overflow: visible;
+  scrollbar-gutter: auto;
+  padding: 16px;
+}
+.workflow-summary .workflow-fixed-inspector-tools {
+  margin-bottom: 12px;
+}
+.workflow-summary-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.workflow-summary-heading h3 {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.workflow-summary-heading .badge {
+  align-self: center;
+}
+.workflow-summary-owner,
+.workflow-summary-hint {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.6;
+}
+.workflow-summary-contract {
+  margin: 16px 0;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.workflow-summary-contract > div {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  gap: 8px;
+  margin: 10px 0;
+}
+.workflow-summary-contract dt {
+  color: var(--muted);
+}
+.workflow-summary-contract dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.workflow-summary-links {
+  display: grid;
+  gap: 0;
+  margin: 16px 0;
+  border-top: 1px solid var(--line);
+}
+.workflow-summary-links button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 0;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink);
+  text-align: left;
+}
+.workflow-summary-links small {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  margin-top: 4px;
+}
+.workflow-summary-open {
+  margin-top: 12px;
+}
+.workflow-summary-roster {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 16px 0;
+}
+.workflow-summary-roster span {
+  border: 1px solid var(--line);
+  padding: 5px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+.workflow-summary-handoffs {
+  list-style: none;
+  padding: 0;
+  font-size: 13px;
+}
+.workflow-summary-handoffs li {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+.workflow-summary-handoffs small {
+  color: var(--muted);
+  white-space: nowrap;
+}
+dialog.workflow-detail-card {
+  width: min(1000px, calc(100vw - 40px));
+  max-width: 1000px;
+  overflow: hidden;
+}
+dialog.workflow-detail-card[open] {
+  display: flex;
+  flex-direction: column;
+}
+.workflow-detail-card > .dialog-head {
+  flex-shrink: 0;
+}
+.workflow-detail-card > .dialog-body {
+  overflow-y: auto;
+  min-height: 0;
+  overscroll-behavior: contain;
+}
+.workflow-workspace.workflow-fixed-workspace .workflow-detail-content {
+  display: block;
+  position: static;
+  height: auto;
+  max-height: none;
+  overflow: visible;
+  padding: 0;
+  border: 0;
+  scrollbar-gutter: auto;
+}
+.workflow-detail-card
+  :is(
+    .material-value,
+    .document-content,
+    .readable,
+    .collaboration-work-body,
+    .readable-json,
+    .readable-list
+  ) {
+  max-height: none;
+  overflow: visible;
+}
+.workflow-detail-card .workflow-step-heading {
+  padding-top: 0;
+}
+.workflow-detail-card .workflow-step-heading h3 {
+  font-size: 20px;
+}
+.workflow-detail-card .collaboration-member > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.workflow-detail-card .collaboration-member > section {
+  margin-top: 24px;
+}
+@media (max-width: 1100px) {
+  .workflow-fixed-workspace .workflow-fixed-layout {
+    grid-template-columns: minmax(0, 1fr) 290px;
+  }
+}
+@media (max-width: 760px) {
+  .workflow-fixed-workspace .workflow-fixed-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .workflow-canvas-viewport {
+    height: 400px;
+  }
+  .workflow-workspace.workflow-fixed-workspace .workflow-summary {
+    border-top: 1px solid var(--line);
+  }
+  dialog.workflow-detail-card {
+    width: calc(100vw - 16px);
+    max-height: calc(100dvh - 16px);
+  }
+}
+.workflow-summary-contract dd,
+.workflow-summary > .muted {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+}

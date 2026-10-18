@@ -243,3 +243,41 @@ it("routes a row turn outside all reserved cards and keeps its label readable", 
     ),
   ).toBe(false);
 });
+
+it("does not reserve collapsed employees and gives expanded rows only their visible height", () => {
+  const steps = Array.from({ length: 5 }, (_, i) => ({
+    id: `p${i}`,
+    label: `阶段${i}`,
+    owner: "screenwriter",
+    members: ["screenwriter", "story_critic"],
+    status: "pending",
+  }));
+  const graph = {
+    nodes: steps,
+    edges: [],
+    departments: [
+      { id: "story", label: "故事", roles: ["screenwriter", "story_critic"] },
+    ],
+  };
+  const groups = steps.map((s) => ({ ...s, node_ids: [s.id] }));
+  const model = collaborationModel(graph, {}, steps);
+  const collapsed = fixedWorkflowLayout(graph, groups, steps, model, 3);
+  const root = (layout: typeof collapsed, id: string) =>
+    layout.boxes.find((b) => b.id === id)!;
+  expect(root(collapsed, "p3").y - root(collapsed, "p0").y).toBe(212);
+  expect(collapsed.height).toBeLessThan(440);
+  const department = fixedWorkflowLayout(graph, groups, steps, model, 3, [
+    "p0",
+  ]);
+  const employees = fixedWorkflowLayout(graph, groups, steps, model, 3, [
+    "p0",
+    "p0/story",
+  ]);
+  expect(root(employees, "p3").y).toBeGreaterThan(root(department, "p3").y);
+  for (const phase of steps)
+    expect(root(employees, phase.id).x).toBe(root(collapsed, phase.id).x);
+  // The expanded column stays anchored; subsequent row starts below the final visible employee.
+  expect(root(employees, "p0")).toEqual(root(collapsed, "p0"));
+  const last = root(employees, "p0/story/story_critic");
+  expect(root(employees, "p3").y).toBe(last.y + last.height + 64);
+});

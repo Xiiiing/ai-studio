@@ -64,6 +64,8 @@ function mount(
   const result = render(view(initial));
   if (initial.nodes?.length)
     fireEvent.click(screen.getByRole("button", { name: "当前步骤" }));
+  if (initial.nodes?.length)
+    fireEvent.click(screen.getByRole("button", { name: "查看完整详情" }));
   return {
     ...result,
     onDecision,

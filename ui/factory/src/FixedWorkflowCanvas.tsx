@@ -50,17 +50,23 @@ export function fixedWorkflowLayout(
   steps: RecordData[],
   model: Model,
   columns = 3,
+  expanded: string[] = [],
 ) {
   const phases = stageFlow(graph, groups, steps);
   const boxes: Box[] = [];
-  let rowY = 48;
+  let rowY = 32;
+  const isVisible = (b: Box) =>
+    b.kind === "stage" ||
+    (expanded.includes(b.stage) &&
+      (b.kind === "department" || expanded.includes(b.parent!)));
   phases.nodes.forEach((phase, index) => {
     const row = Math.floor(index / columns),
       offset = index % columns;
     if (offset === 0 && index > 0)
-      rowY = Math.max(...boxes.map((b) => b.y + b.height)) + 40;
+      rowY =
+        Math.max(...boxes.filter(isVisible).map((b) => b.y + b.height)) + 64;
     const col = row % 2 ? columns - 1 - offset : offset;
-    const x = 48 + col * 272;
+    const x = 32 + col * 260;
     const rootY = rowY;
     boxes.push({
       id: phase.id,
@@ -77,7 +83,7 @@ export function fixedWorkflowLayout(
         .filter((s) => phase.node_ids.includes(s.id))
         .flatMap((s) => s.members || []),
     );
-    let y = rootY + 184;
+    let y = rootY + 168;
     model.departments.forEach((dept) => {
       const roles = dept.node_ids.filter((r) => members.has(r));
       if (!roles.length) return;
@@ -99,22 +105,25 @@ export function fixedWorkflowLayout(
           stage: phase.id,
           kind: "role",
           x: x + 24,
-          y: y + 96 + ri * 76,
+          y: y + 88 + ri * 72,
           width: 172,
           height: 64,
           data: model.members.find((m) => m.id === role)!,
           parent: id,
         });
       });
-      // Reserve all descendants, including collapsed ones. Expansion never repacks siblings.
-      y += 96 + roles.length * 76 + 20;
+      // Only an explicit disclosure consumes hierarchy space. Selection never affects geometry.
+      y += expanded.includes(id) ? 88 + roles.length * 72 + 16 : 88;
     });
   });
   return {
     boxes,
     phases,
-    width: Math.max(292, Math.min(columns, phases.nodes.length) * 272 + 20),
-    height: Math.max(620, ...boxes.map((b) => b.y + b.height + 56)),
+    width: Math.max(260, Math.min(columns, phases.nodes.length) * 260 + 12),
+    height: Math.max(
+      420,
+      ...boxes.filter(isVisible).map((b) => b.y + b.height + 40),
+    ),
   };
 }
 function stored(project?: string): RecordData {
@@ -123,7 +132,7 @@ function stored(project?: string): RecordData {
       sessionStorage.getItem(`studio.fixed-canvas.${project}`) || "{}",
     );
     return v && typeof v === "object"
-      ? v.layout === "compact-rows"
+      ? v.layout === "compact-disclosures"
         ? v
         : { selection: v.selection }
       : {};
@@ -194,30 +203,27 @@ export function FixedWorkflowCanvas({
     window.innerWidth <= 760 ? 1 : window.innerWidth < 1200 ? 2 : 3,
   );
   const layout = useMemo(
-    () => fixedWorkflowLayout(graph, groups, steps, model, columns),
-    [graph, groups, steps, model, columns],
+    () => fixedWorkflowLayout(graph, groups, steps, model, columns, expanded),
+    [graph, groups, steps, model, columns, expanded],
   );
-  const geometry = layout.boxes
-    .map((b) => `${b.id}:${b.x}:${b.y}:${b.width}:${b.height}`)
-    .join("|");
-  const route = useMemo(
-    () => fixedWorkflowRouter(layout.boxes, layout),
-    [geometry],
-  );
-  const marker = useId().replace(/:/g, "");
   const visible = layout.boxes.filter(
     (b) =>
       b.kind === "stage" ||
       (expanded.includes(b.stage) &&
         (b.kind === "department" || expanded.includes(b.parent!))),
   );
+  const geometry = visible
+    .map((b) => `${b.id}:${b.x}:${b.y}:${b.width}:${b.height}`)
+    .join("|");
+  const route = useMemo(() => fixedWorkflowRouter(visible, layout), [geometry]);
+  const marker = useId().replace(/:/g, "");
   const persist = () => {
     if (!graph.project_id) return;
     try {
       sessionStorage.setItem(
         key,
         JSON.stringify({
-          layout: "compact-rows",
+          layout: "compact-disclosures",
           expanded,
           zoom,
           selection,

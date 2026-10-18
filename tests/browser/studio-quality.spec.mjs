@@ -1,3 +1,4 @@
+import { openDetails, closeDetails } from "./fixed-canvas.mjs";
 import { refreshPage } from "./header-flow.mjs";
 import { test, expect } from "@playwright/test";
 import { startRealServer } from "./real-server.mjs";
@@ -145,6 +146,7 @@ test("real Markdown attachments, retried calls and step attribution remain reada
   );
   await openWorkflow(page);
   await page.locator('[data-stage="script"]').click();
+  await openDetails(page);
   await page.locator('[data-flow-node="screenplay"]').click();
   const inspector = page.getByRole("complementary", { name: "节点详情" });
   const input = inspector
@@ -168,7 +170,10 @@ test("real Markdown attachments, retried calls and step attribution remain reada
   const output = inspector.getByRole("region", { name: "交付内容" });
   await output.getByRole("button", { name: "阅读文件" }).click();
   await expect(output.getByRole("heading", { name: "站台重逢" })).toBeVisible();
+  await closeDetails(page);
   await refreshPage(page);
+  await openDetails(page);
+  await output.getByRole("button", { name: "阅读文件" }).click();
   await expect(page.locator('[data-flow-node="screenplay"]')).toHaveAttribute(
     "aria-pressed",
     "true",
@@ -208,6 +213,7 @@ test("real Markdown attachments, retried calls and step attribution remain reada
       () => document.documentElement.scrollWidth <= innerWidth,
     ),
   ).toBeTruthy();
+  await closeDetails(page);
   await openProjectPage(page, "team");
   await expect(
     page

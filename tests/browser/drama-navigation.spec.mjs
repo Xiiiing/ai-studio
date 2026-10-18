@@ -1,5 +1,7 @@
 import {
   expandRole,
+  openDetails,
+  closeDetails,
   canvasState,
   pointerEdge,
   assertUnobstructedLines,
@@ -257,6 +259,7 @@ for (const width of [1440, 390]) {
       page.getByRole("heading", { name: "制作工作流", exact: true }),
     ).toBeVisible();
     await page.locator('[data-stage="planning"]').click();
+    await openDetails(page);
     await page.getByRole("button", { name: "执行记录", exact: true }).click();
     await expect(
       page.getByRole("heading", { name: "执行记录", exact: true }),
@@ -287,7 +290,9 @@ for (const width of [1440, 390]) {
     await expect(
       writer.getByText(drama.workflow.tasks[0].output, { exact: true }),
     ).toBeVisible();
+    await closeDetails(page);
     await page.locator('[data-stage="review"]').click();
+    await openDetails(page);
     await page.getByRole("button", { name: "执行记录", exact: true }).click();
     await expect(writer).toHaveCount(0);
     await critic.locator("summary").click();
@@ -424,6 +429,7 @@ for (const width of [1440, 390]) {
     ).toHaveAttribute("aria-pressed", "true");
     await noHorizontalOverflow(page);
     await (await expandRole(page, "orchestrator")).click();
+    await openDetails(page);
     const collaboration = page.locator(".workflow-fixed-workspace");
     await collaboration.locator(".collaboration-work-record > summary").click();
     await collaboration
@@ -565,6 +571,7 @@ for (const width of [1440, 390, 320]) {
         fullPage: true,
       });
       await page.getByRole("button", { name: "当前步骤", exact: true }).click();
+      await openDetails(page);
       const inspector = page.getByRole("complementary", { name: "节点详情" });
       await expect(inspector).toBeVisible();
       await expect(
@@ -597,10 +604,8 @@ for (const width of [1440, 390, 320]) {
         inspector.getByRole("region", { name: "输入材料" }),
       ).toBeVisible();
       const beforeClose = await canvasState(page);
-      await inspector
-        .getByRole("button", { name: "关闭详情", exact: true })
-        .click();
-      await expect(inspector).toContainText("查看工作与交付");
+      await closeDetails(page);
+      await expect(inspector).toHaveCount(0);
       expect(await canvasState(page)).toEqual(beforeClose);
       await nav.locator("summary").click();
       await expect(
@@ -641,6 +646,7 @@ for (const width of [1440, 390]) {
     const before = await canvasState(page);
     await writer.click();
     expect(await canvasState(page)).toEqual(before);
+    await openDetails(page);
     const member = page.getByRole("complementary", { name: "节点详情" });
     await expect(
       member.getByRole("heading", { name: "编剧", exact: true }),
@@ -658,6 +664,7 @@ for (const width of [1440, 390]) {
       member.getByRole("region", { name: "岗位实际工作记录" }),
     ).not.toContainText(drama.workflow.tasks[1].output);
     await page.reload();
+    await openDetails(page);
     await expect(
       member.getByRole("heading", { name: "编剧", exact: true }),
     ).toBeVisible();
@@ -669,15 +676,19 @@ for (const width of [1440, 390]) {
       member.getByRole("heading", { name: "全剧设定与分集大纲", exact: true }),
     ).toBeVisible();
     expect(await canvasState(page)).toEqual(before);
+    await closeDetails(page);
     const critic = await expandRole(page, "independent_critic", "review");
     await critic.click();
+    await openDetails(page);
     await member
       .locator(".collaboration-work-record > summary")
       .first()
       .click();
     await expect(member).toContainText(drama.workflow.tasks[1].output);
+    await closeDetails(page);
     const empty = await expandRole(page, "story_critic");
     await empty.click();
+    await openDetails(page);
     await expect(member).toContainText("此岗位暂无已保存的执行记录");
     await noHorizontalOverflow(page);
     await page.locator(".workflow-fixed-workspace").screenshot({
@@ -720,6 +731,7 @@ for (const width of [1440, 390]) {
       .locator('[data-flow-edge][data-source="story"][data-target="review"]')
       .first();
     await pointerEdge(page, dept);
+    await openDetails(page);
     const detail = page.getByRole("complementary", { name: "节点详情" });
     await expect(
       detail.getByRole("heading", { name: /编剧.*独立审稿/ }),
@@ -750,7 +762,7 @@ for (const width of [1440, 390]) {
     await page.emulateMedia({ reducedMotion: "reduce" });
 
     const beforeClose = await canvasState(page);
-    await detail.getByRole("button", { name: "关闭详情", exact: true }).click();
+    await closeDetails(page);
     expect(await canvasState(page)).toEqual(beforeClose);
     await expandRole(page, "screenwriter", "planning");
     await expandRole(page, "independent_critic", "review");
@@ -760,6 +772,7 @@ for (const width of [1440, 390]) {
       )
       .first();
     await pointerEdge(page, edge);
+    await openDetails(page);
     await assertUnobstructedLines(page);
     await expect(
       received
@@ -769,6 +782,7 @@ for (const width of [1440, 390]) {
     const selected = await canvasState(page),
       url = page.url();
     await page.reload();
+    await openDetails(page);
     await expect(
       received
         .getByText(drama.workflow.tasks[0].output, { exact: true })

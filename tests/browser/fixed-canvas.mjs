@@ -105,3 +105,30 @@ export async function assertUnobstructedLines(page) {
     });
   expect(intersections).toEqual([]);
 }
+
+export async function openDetails(page, view) {
+  const card = page.locator("#workflow-detail-card");
+  if (!(await card.count())) {
+    const before = await canvasState(page);
+    await page
+      .getByRole("button", { name: "查看完整详情", exact: true })
+      .click();
+    await expect(card).toBeVisible();
+    expect(await canvasState(page)).toEqual(before);
+  }
+  if (view === "records")
+    await card.getByRole("button", { name: "执行记录", exact: true }).click();
+  return card;
+}
+export async function closeDetails(page) {
+  const card = page.locator("#workflow-detail-card");
+  if (await card.count()) {
+    const before = await canvasState(page);
+    await card
+      .locator(":scope > .dialog-head")
+      .getByRole("button", { name: "关闭", exact: true })
+      .click();
+    await expect(card).toHaveCount(0);
+    expect(await canvasState(page)).toEqual(before);
+  }
+}

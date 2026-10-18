@@ -1,4 +1,4 @@
-import { expandRole } from "./fixed-canvas.mjs";
+import { expandRole, openDetails } from "./fixed-canvas.mjs";
 import { test, expect } from "@playwright/test";
 
 for (const width of [1440, 390])
@@ -22,6 +22,7 @@ for (const width of [1440, 390])
       });
       await page.goto("/#project=012345abcdef&tab=workflow");
       await (await expandRole(page, "screenwriter", "script")).click();
+      await openDetails(page);
       const collaboration = page.locator(".workflow-fixed-workspace");
       const call = collaboration.locator('[data-execution="writer-current"]');
       await call.getByText("本次收到的材料 · 1 项", { exact: true }).click();

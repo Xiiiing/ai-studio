@@ -640,7 +640,7 @@ export function CollaborationDetails({
         {department?.responsibility ||
           "选择阶段、部门或岗位查看工作，选择连线查看交付。"}
       </p>
-      <p>部门和岗位通过卡片下方的展开按钮显示，画布位置保持不变。</p>
+      <p>部门和岗位通过卡片下方的展开按钮显示，点击卡片查看工作摘要。</p>
       {department && (
         <section aria-label="部门岗位清单">
           <h4>本阶段参与岗位</h4>
