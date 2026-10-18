@@ -10,6 +10,7 @@ import {
 import { request, keys, rows, roleName, type RecordData } from "./api";
 import {
   Heading,
+  PageFocus,
   ErrorNotice,
   FloatingErrorNotice,
   Loading,
@@ -410,6 +411,7 @@ export function Models({ notify }: { notify: (v: string) => void }) {
           <WorkflowTools notify={notify} />
         </section>
       )}
+      <PageFocus label="已配置服务" value={`${all.length} 项`} detail="集中管理文本、图像、视频与配音连接；实际连接状态以各服务的测试回执为准。" />
       {showDetails && current && tab === "services" && (
         <Modal
           id="model-service-detail-dialog"

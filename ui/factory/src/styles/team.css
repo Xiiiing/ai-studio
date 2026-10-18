@@ -143,7 +143,8 @@
 }
 .team-task-button.selected {
   border-color: var(--accent);
-  background: var(--accent-soft);
+  background: var(--panel);
+  box-shadow: inset 3px 0 var(--accent);
 }
 .team-task-button > span {
   display: flex;
@@ -329,7 +330,9 @@
   line-height: var(--leading-caption);
 }
 .team-control-notice {
-  color: var(--success);
+  color: var(--ink);
+  border-left: 3px solid var(--success);
+  padding-inline-start: 12px;
 }
 .team-enable-control:empty {
   display: none;

@@ -4,6 +4,7 @@ import { ArrowLeft } from "lucide-react";
 import { PageHeader } from "./PageHeader";
 import {
   Panel,
+  PageFocus,
   Field,
   Modal,
   ErrorNotice,
@@ -702,17 +703,7 @@ export function DramaDetail({
       {tab === "overview" && (
         <>
           <Panel title="项目总览">
-            <p>全剧规划 → 选集制作 → 场景与镜头 → 逐集验收</p>
-            <p>
-              规划{p.plan_version ? `已确认 v${p.plan_version}` : "尚未确认"}
-              ；已建立{rows(p.episodes).length} / {p.episode_count}集，
-              {
-                rows(p.episodes).filter((e) =>
-                  ["approved", "awaiting_final"].includes(e.status),
-                ).length
-              }
-              集已出片。
-            </p>
+            <PageFocus label="已出片剧集" value={`${rows(p.episodes).filter((e) => ["approved", "awaiting_final"].includes(e.status)).length} / ${p.episode_count} 集`} detail={<>规划{p.plan_version ? `已确认 v${p.plan_version}` : "尚未确认"}；已建立{rows(p.episodes).length} / {p.episode_count}集，按集进入制作与验收。</>} />
             <div className="drama-actions">
               <button
                 className="button primary"
@@ -1476,11 +1467,7 @@ export function LongEpisodeDetail({
         <>
           <Panel title="剧集进度">
             <p>{p.outline.synopsis}</p>
-            <p>
-              {rows(p.units).filter((u) => u.status === "unit_ready").length} /{" "}
-              {rows(p.units).length} 个制作单元已完成；累计
-              {p.budget?.spent_gpu_minutes || 0}卡分钟。
-            </p>
+            <PageFocus label="完成单元" value={`${rows(p.units).filter((u) => u.status === "unit_ready").length} / ${rows(p.units).length}`} detail={<>个制作单元已完成；累计{p.budget?.spent_gpu_minutes || 0}卡分钟。完成后按场景与整集合成。</>} />
             {p.total_authorized_gpu_minutes && (
               <p>
                 本集授权上限：{p.total_authorized_gpu_minutes}卡分钟；每单元最多

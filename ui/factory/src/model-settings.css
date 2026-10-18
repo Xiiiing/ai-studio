@@ -37,7 +37,7 @@
   white-space: nowrap;
 }
 .model-settings-tabs button[aria-selected="true"] {
-  color: var(--accent-text);
+  color: var(--ink);
   border-bottom-color: var(--accent);
 }
 .unsaved-dot {
@@ -365,7 +365,8 @@
   display: block;
 }
 .service-probe-result.failed {
-  color: var(--danger);
+  border-left: 3px solid var(--danger);
+  color: var(--ink);
 }
 #service-dialog,
 #media-dialog {

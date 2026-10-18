@@ -52,6 +52,7 @@ import {
 } from "./api";
 import {
   Heading,
+  PageFocus,
   Panel,
   Badge,
   Empty,
@@ -399,6 +400,7 @@ function Workbench() {
                         title="运行记录"
                         description="从项目事件定位执行、审核与异常，所有操作均保留历史。"
                       />
+                      <PageFocus label="最近运行事件" value={`${rows(overview.data.activity).length} 条`} detail="展示本次载入的项目事件，可按项目和事件类型筛选并定位执行记录。" />
                       <Panel title="最近运行事件">
                         <ActivityList
                           events={rows(overview.data.activity)}
@@ -781,6 +783,7 @@ function Projects({
           </button>
         }
       />
+      {snapshot && <PageFocus label="筛选结果" value={`${snapshot.pagination?.total ?? projects.length} 项`} detail={query || filter !== "all" ? "当前搜索与分类下的项目，保留原有剧集和制作成果。" : "整剧和已有制作集中管理，进入项目后查看规划、素材、流程与交付。"} />}
       <Panel>
         <div className="project-toolbar">
           <div className="segmented">
@@ -1239,7 +1242,7 @@ function Project({
           {tab === "overview" ? (
             <>
               <div className="project-context">
-                <article>
+                <article className="page-color-focus">
                   <small>当前阶段</small>
                   <strong>
                     {activityName(w.operator?.current_activity || p.status)}

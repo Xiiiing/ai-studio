@@ -66,10 +66,11 @@ body {
   border-radius: 10px;
 }
 .project-item.active {
-  background: var(--accent-soft);
+  background: var(--surface);
+  box-shadow: inset 3px 0 var(--accent);
 }
 .project-item.active strong {
-  color: var(--accent-text);
+  color: var(--ink);
 }
 #workspace {
   padding: 28px 30px 36px;
@@ -437,4 +438,88 @@ tbody tr:hover {
   .drama-card {
     padding: 16px;
   }
+}
+
+/* Every page uses the same bounded business focus, neutral reading and actions. */
+.page-summary {
+  display: grid;
+  grid-template-columns: minmax(160px, 220px) minmax(0, 1fr);
+  align-items: center;
+  gap: 24px;
+  padding: 18px;
+  margin-bottom: 18px;
+  border: 1px solid var(--studio-edge);
+  border-radius: var(--radius);
+  background: var(--panel);
+  min-width: 0;
+}
+.page-color-focus,
+.project-context > article.page-color-focus {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 18px 20px;
+  border-radius: 12px;
+  background: var(--accent-feature);
+  color: var(--on-accent-feature);
+  overflow-wrap: anywhere;
+}
+.page-color-focus > span,
+.page-color-focus small,
+.project-context > article.page-color-focus small {
+  color: inherit;
+  font-size: var(--text-ui);
+  line-height: var(--leading-ui);
+}
+.page-color-focus > strong,
+.project-context > article.page-color-focus strong {
+  color: inherit;
+  font-size: 28px;
+  line-height: 1.3;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.page-summary > p {
+  margin: 0;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.project-context > article.page-color-focus {
+  flex: 1 1 220px;
+}
+.project-context > article.page-color-focus strong {
+  font-size: 22px;
+}
+@media (max-width: 700px) {
+  .page-summary {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+    padding: 16px;
+  }
+  .page-color-focus {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px 18px;
+  }
+  .project-context > article.page-color-focus {
+    flex-basis: 100%;
+  }
+}
+
+.panel > .page-summary {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+}
+
+.model-settings > .page-summary {
+  margin-top: 18px;
+}
+
+.project-context > article.page-color-focus > small {
+  font-size: var(--text-caption);
+  line-height: var(--leading-caption);
 }

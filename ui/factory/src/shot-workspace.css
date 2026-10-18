@@ -110,8 +110,11 @@
   color: var(--ink);
   border-radius: 0;
 }
+.shot-version-open[aria-pressed="true"] {
+  box-shadow: inset 0 -2px var(--accent);
+}
 .shot-version-open[aria-pressed="true"] strong {
-  color: var(--accent-text);
+  color: var(--ink);
 }
 .shot-version-open strong {
   font-size: var(--text-ui);

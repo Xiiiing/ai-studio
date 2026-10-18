@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { request, rows, mediaUrl, type RecordData } from "./api";
 import {
   Heading,
+  PageFocus,
   Panel,
   Field,
   ErrorNotice,
@@ -276,6 +277,7 @@ export function MaterialLibrary({
           description="保存可跨剧复用的人物、场景、画风与同框参考。"
         />
       )}
+      {query.data && (!project || selected.data) && <PageFocus label={project ? "本剧已选" : "本页素材"} value={`${project ? rows(selected.data?.selected).length : rows(query.data.assets).length} 项`} detail={project ? "选择固定版本的人物、场景与画风，用于本剧后续镜头制作。" : "当前页的素材结果；可搜索、分类并翻页查看，版本与原始素材保持关联。"} />}
       <FloatingErrorNotice error={failure} />
       {selected.error && (
         <div>

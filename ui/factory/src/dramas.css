@@ -18,7 +18,7 @@
   margin: 0.7rem 0;
 }
 .drama-card {
-  border: 1px solid var(--border, #7775);
+  border: 1px solid var(--line);
   border-radius: 12px;
   padding: 1rem;
   min-width: 0;
@@ -39,7 +39,7 @@
   width: 100%;
   max-height: 60vh;
   margin: 1rem 0;
-  background: #111;
+  background: var(--media);
 }
 .drama-form textarea,
 .drama-form input,
@@ -55,7 +55,7 @@
   }
 }
 .drama-task {
-  border-bottom: 1px solid var(--border, #7775);
+  border-bottom: 1px solid var(--line);
   padding: 1rem 0;
   overflow-wrap: anywhere;
 }

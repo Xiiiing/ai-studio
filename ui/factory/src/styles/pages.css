@@ -750,7 +750,13 @@
   line-height: var(--leading-reading);
 }
 .document-markdown a {
-  color: var(--accent-text);
+  color: var(--ink);
+  text-decoration: underline;
+  text-decoration-color: var(--line-strong);
+  text-underline-offset: 3px;
+}
+.document-markdown a:hover {
+  text-decoration-color: var(--accent);
 }
 .material-region svg rect {
   fill: var(--crop-fill);
