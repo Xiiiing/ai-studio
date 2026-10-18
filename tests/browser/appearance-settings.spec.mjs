@@ -47,14 +47,15 @@ for (const width of [1440, 390]) for (const theme of ["light", "dark"]) {
       expect(hierarchy.primary.background).toEqual(hierarchy.tokens.primary);
       expect(Math.max(...hierarchy.primary.background) - Math.min(...hierarchy.primary.background)).toBeLessThanOrEqual(8);
       expect(hierarchy.primary.contrast).toBeGreaterThanOrEqual(4.5);
-      expect(hierarchy.feature.background).toEqual(hierarchy.tokens["accent-feature"]);
-      expect(hierarchy.feature.color).toEqual(hierarchy.tokens["on-accent-feature"]);
+      expect(hierarchy.feature.background).toEqual(hierarchy.tokens.surface);
+      expect(hierarchy.feature.color).toEqual(hierarchy.tokens.ink);
       expect(hierarchy.feature.contrast).toBeGreaterThanOrEqual(4.5);
       for (const text of hierarchy.featureText) {
-        expect(text.color, text.text).toEqual(hierarchy.tokens["on-accent-feature"]);
+        expect(text.color, text.text).toEqual(hierarchy.tokens.ink);
         expect(text.contrast, text.text).toBeGreaterThanOrEqual(4.5);
       }
-      expect(hierarchy.feature.image).toMatch(/^linear-gradient\(145deg,/);
+      expect(hierarchy.feature.image).toBe("none");
+      expect(hierarchy.feature.highlight).toEqual(hierarchy.tokens.accent);
       const gradients = await gradientSurfaces(page);
       expect(gradients.unexpected).toEqual([]);
       expect(gradients.surfaces.length).toBeGreaterThan(0);

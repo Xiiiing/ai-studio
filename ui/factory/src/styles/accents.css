@@ -1,4 +1,4 @@
-/* Accent roles: readable small marks, one tonal feature gradient, and focus.
+/* Accent roles: readable small marks and focus; gradients are only settings swatches.
    Primary actions stay neutral black/white, independent of the selected hue.
    Neutrals and semantic error / warning / success colors remain in tokens.css. */
 :root[data-accent] {

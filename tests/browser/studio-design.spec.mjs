@@ -72,12 +72,13 @@ async function checkOverview(page, expected = ["7", "2", "8", "11"]) {
   expect(hierarchy.primary.background).toEqual(hierarchy.tokens.primary);
   expect(Math.max(...hierarchy.primary.background) - Math.min(...hierarchy.primary.background)).toBeLessThanOrEqual(8);
   expect(hierarchy.primary.contrast).toBeGreaterThanOrEqual(4.5);
-  expect(hierarchy.feature.background).toEqual(hierarchy.tokens["accent-feature"]);
-  expect(hierarchy.feature.image).toMatch(/^linear-gradient\(145deg,/);
-  expect(hierarchy.feature.color).toEqual(hierarchy.tokens["on-accent-feature"]);
+  expect(hierarchy.feature.background).toEqual(hierarchy.tokens.surface);
+  expect(hierarchy.feature.image).toBe("none");
+  expect(hierarchy.feature.highlight).toEqual(hierarchy.tokens.accent);
+  expect(hierarchy.feature.color).toEqual(hierarchy.tokens.ink);
   expect(hierarchy.feature.contrast).toBeGreaterThanOrEqual(4.5);
   for (const text of hierarchy.featureText) {
-    expect(text.color, text.text).toEqual(hierarchy.tokens["on-accent-feature"]);
+    expect(text.color, text.text).toEqual(hierarchy.tokens.ink);
     expect(text.contrast, text.text).toBeGreaterThanOrEqual(4.5);
   }
   for (const metric of hierarchy.metrics) {
@@ -86,7 +87,7 @@ async function checkOverview(page, expected = ["7", "2", "8", "11"]) {
   }
   const gradients = await gradientSurfaces(page);
   expect(gradients.unexpected).toEqual([]);
-  expect(gradients.surfaces.length).toBeGreaterThan(0);
+  expect(gradients.surfaces).toEqual([]);
   for (const surface of gradients.surfaces) {
     expect(surface.image, surface.element).toMatch(/^linear-gradient\(145deg,/);
     expect(surface.image, surface.element).toMatch(/0%,.*48%,.*100%/);
@@ -187,7 +188,7 @@ test("existing poster stays inside the current-work thumbnail and a failed poste
 });
 
 for (const width of [1440, 390]) for (const theme of ["light", "dark"]) {
-  test(`all six accent choices preserve black-white hierarchy and a tonal gradient theme feature at ${width} ${theme}`, async ({ page, request }) => {
+  test(`all six accent choices preserve black-white hierarchy and subtle theme marks on neutral surfaces at ${width} ${theme}`, async ({ page, request }) => {
     await page.setViewportSize({ width, height: 1000 });
     await page.emulateMedia({ colorScheme: theme });
     await fixture(page, request);

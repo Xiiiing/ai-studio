@@ -1,10 +1,10 @@
 // White/black surfaces and the selected accent carry the interface.
 // Additional colors must come from the shared semantic status tokens.
 // Provider images and generated media keep their original colors.
-// Gradients have one role: theme feature cards and their settings swatches.
+// Gradients only identify the small settings swatches, never business surfaces.
 export async function gradientSurfaces(page) {
   return page.evaluate(() => {
-    const permitted = ".dashboard-focus-feature,.page-color-focus,.appearance-preview-feature,.appearance-swatch";
+    const permitted = ".appearance-swatch";
     const visible = element => element.getClientRects().length && getComputedStyle(element).visibility !== "hidden";
     const rgb = value => {
       const values = value.match(/[\d.]+/g)?.map(Number) || [];
@@ -149,12 +149,12 @@ export async function colorHierarchy(page) {
     const inspect = (element) => {
       if (!element) return undefined;
       const style = getComputedStyle(element), fg = luminance(style.color), bg = luminance(style.backgroundColor);
-      return { background: channels(style.backgroundColor), color: channels(style.color), image: style.backgroundImage,
+      return { background: channels(style.backgroundColor), color: channels(style.color), image: style.backgroundImage, highlight: channels(style.boxShadow),
         contrast: (Math.max(fg, bg) + 0.05) / (Math.min(fg, bg) + 0.05) };
     };
     const probe = document.createElement("span");
     document.body.append(probe);
-    const tokens = Object.fromEntries(["panel", "surface", "surface-strong", "ink", "primary", "on-primary", "accent-feature", "on-accent-feature"].map((token) => {
+    const tokens = Object.fromEntries(["panel", "surface", "surface-strong", "ink", "primary", "on-primary", "accent", "accent-feature", "on-accent-feature"].map((token) => {
       probe.style.color = `var(--${token})`;
       return [token, channels(getComputedStyle(probe).color)];
     }));

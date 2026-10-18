@@ -134,7 +134,7 @@
   }
 }
 
-/* Tonal gradients stay inside feature cards; actions and reading stay neutral. */
+/* Business highlights share system surfaces; theme color stays on a narrow edge. */
 .appearance-preview-feature {
   display: flex;
   flex-direction: column;
@@ -142,9 +142,10 @@
   padding: 20px;
   margin-bottom: 16px;
   border-radius: var(--radius);
-  background-color: var(--accent-feature);
-  background-image: var(--accent-gradient);
-  color: var(--on-accent-feature);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  box-shadow: inset 3px 0 var(--accent);
+  color: var(--ink);
 }
 .appearance-preview-feature strong {
   font-size: var(--text-section);
