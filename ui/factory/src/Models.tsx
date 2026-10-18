@@ -62,7 +62,10 @@ function servicePurpose(service: Service, draft: RecordData) {
   if (roles.includes("visual_critic")) labels.push("视觉审核");
   return labels.join(" / ") || "未分配用途";
 }
-export function Models({ notify }: { notify: (v: string) => void }) {
+export function Models({ notify, embedded = false }: {
+  notify: (v: string) => void;
+  embedded?: boolean;
+}) {
   const client = useQueryClient();
   const query = useQuery({
     queryKey: keys.models,
@@ -172,7 +175,7 @@ export function Models({ notify }: { notify: (v: string) => void }) {
   if (!inventory || !draft)
     return (
       <>
-        <Heading eyebrow="MODEL SETTINGS" title="模型配置" />
+        {!embedded && <Heading eyebrow="MODEL SETTINGS" title="模型配置" />}
         <FloatingErrorNotice error={query.error} />
         {query.error ? (
           <button className="button" onClick={() => query.refetch()}>
@@ -197,7 +200,7 @@ export function Models({ notify }: { notify: (v: string) => void }) {
   };
   return (
     <div className="model-settings">
-      <Heading eyebrow="MODEL SETTINGS" title="模型配置" />
+      {!embedded && <Heading eyebrow="MODEL SETTINGS" title="模型配置" />}
       <div
         className={
           "model-settings-toolbar" +

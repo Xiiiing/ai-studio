@@ -1,9 +1,9 @@
 import { test, expect } from "@playwright/test";
-import { exposePageControl } from "./header-flow.mjs";
+import { openSystemSettings } from "./header-flow.mjs";
 import { openWorkflow } from "./navigation.mjs";
 
 const projectId = "012345abcdef";
-const navigation = ["dashboard", "projects", "library", "activity", "models"];
+const navigation = ["dashboard", "projects", "library", "activity", "models", "settings"];
 const fit = async (page) => expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
 
 async function openNavigation(page, width) {
@@ -12,7 +12,7 @@ async function openNavigation(page, width) {
 }
 
 async function appearance(page) {
-  await (await exposePageControl(page, page.getByRole("button", { name: "外观设置", exact: true }))).click();
+  await openSystemSettings(page);
   await expect(page).toHaveURL(/view=settings$/);
 }
 
@@ -23,24 +23,24 @@ test.beforeEach(async ({ page, request }) => {
 });
 
 for (const width of [1440, 390]) {
-  test(`five flat navigation destinations and legacy links remain usable at ${width}`, async ({ page }) => {
+  test(`six flat navigation destinations and legacy links remain usable at ${width}`, async ({ page }) => {
     await page.setViewportSize({ width, height: 1000 });
     const errors = [];
     page.on("pageerror", (error) => errors.push(error.message));
     await page.goto("/");
     const nav = await openNavigation(page, width);
-    await expect(nav.locator("[data-view]")).toHaveCount(5);
+    await expect(nav.locator("[data-view]")).toHaveCount(6);
     expect(await nav.locator("[data-view]").evaluateAll((nodes) => nodes.map((node) => node.dataset.view))).toEqual(navigation);
-    expect(await nav.locator("[data-view]").evaluateAll((nodes) => nodes.map((node) => Array.from(node.childNodes).filter((child) => child.nodeType === Node.TEXT_NODE).map((child) => child.textContent).join("").trim()))).toEqual(["总览", "项目", "素材库", "运行记录", "模型配置"]);
+    expect(await nav.locator("[data-view]").evaluateAll((nodes) => nodes.map((node) => Array.from(node.childNodes).filter((child) => child.nodeType === Node.TEXT_NODE).map((child) => child.textContent).join("").trim()))).toEqual(["总览", "项目", "素材库", "运行记录", "模型配置", "系统设置"]);
     await expect(nav.locator(".nav-group, .sidebar-label")).toHaveCount(0);
     await expect(nav.getByText(/^(工作室|管理|制作流程与团队|待办|设置)$/)).toHaveCount(0);
     await page.screenshot({ path: `runtime/browser-report/flat-navigation-${width}.png` });
-    for (const [view, title] of [["dashboard", "制片总览"], ["projects", "全部项目"], ["library", "统一素材库"], ["activity", "运行记录"], ["models", "模型配置"]]) {
+    for (const [view, title] of [["dashboard", "制片总览"], ["projects", "全部项目"], ["library", "统一素材库"], ["activity", "运行记录"], ["models", "模型配置"], ["settings", "系统设置"]]) {
       // First navigation is already expanded. Selecting each item closes the mobile drawer.
       await nav.locator(`[data-view="${view}"]`).click();
       await expect(page.locator(".shared-page-header h1")).toHaveText(title);
       await fit(page);
-      if (view !== "models" && width < 1024) await openNavigation(page, width);
+      if (view !== "settings" && width < 1024) await openNavigation(page, width);
     }
     for (const [view, title, selected] of [["inbox", "制片总览", "dashboard"], ["workflow", "全部项目", "projects"]]) {
       await page.goto("/#view=" + view);
@@ -101,7 +101,7 @@ for (const width of [1440, 390]) {
     expect(offsets.filter((offset) => offset === 100).length).toBeGreaterThanOrEqual(2);
   });
 
-  test(`header appearance entry preserves palette across project workflow and model configuration at ${width}`, async ({ page, request }) => {
+  test(`sidebar settings entry preserves palette across project workflow and model configuration at ${width}`, async ({ page, request }) => {
     await page.setViewportSize({ width, height: 1000 });
     await page.goto("/");
     await appearance(page);

@@ -153,12 +153,12 @@ function setup(options: { attention?: boolean; activity?: string } = {}) {
   );
   return { calls, fetch, client };
 }
-it("外观设置从页面工具打开，选择主题色不提交业务写请求", async () => {
+it("系统设置从主导航打开，选择主题色不提交业务写请求", async () => {
   const { calls } = setup();
   await screen.findByRole("heading", { name: "制片总览" });
-  await userEvent.click(screen.getByRole("button", { name: "外观设置" }));
+  await userEvent.click(screen.getByRole("button", { name: "系统设置" }));
   expect(location.hash).toBe("#view=settings");
-  expect(screen.getByRole("heading", { name: "设置" })).toBeVisible();
+  expect(screen.getByRole("heading", { name: "系统设置" })).toBeVisible();
   await userEvent.click(screen.getByRole("radio", { name: "薄荷青" }));
   expect(document.documentElement.dataset.accent).toBe("teal");
   expect(calls.every((call) => !call.body)).toBe(true);
@@ -184,7 +184,7 @@ it("导航保留单一品牌和可理解的阶段，不重复显示宣传小字"
   expect(screen.queryByText("创作、审核与交付记录可追溯")).not.toBeInTheDocument();
   const nav = screen.getByRole("navigation", { name: "主导航" });
   expect(within(nav).getAllByRole("button").map((button) => button.textContent)).toEqual([
-    "总览", "项目", "素材库", "运行记录", "模型配置",
+    "总览", "项目", "素材库", "运行记录", "模型配置", "系统设置",
   ]);
   expect(screen.queryByText("工作室", { exact: true })).not.toBeInTheDocument();
   expect(screen.queryByText("管理", { exact: true })).not.toBeInTheDocument();

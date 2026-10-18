@@ -15,6 +15,7 @@ from studio.web import Handler as LocalMediaHandler
 from . import __version__, store
 from .capabilities import snapshot
 from .config import load_config
+from .system_info import public_system_info
 
 
 class Handler(LocalMediaHandler):
@@ -32,6 +33,8 @@ class Handler(LocalMediaHandler):
     def do_GET(self):
         path=unquote(urlsplit(self.path).path)
         try:
+            if path == "/api/factory/system":
+                return self.json(public_system_info())
             if path == '/api/factory/dramas':
                 from .dramas import list_dramas
                 return self.json(list_dramas())

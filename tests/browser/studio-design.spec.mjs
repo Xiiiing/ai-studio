@@ -1,13 +1,13 @@
 import { test, expect } from "@playwright/test";
 import { mkdir } from "node:fs/promises";
-import { exposePageControl } from "./header-flow.mjs";
+import { openSystemSettings } from "./header-flow.mjs";
 import { paletteViolations, colorHierarchy, gradientSurfaces } from "./palette.mjs";
 
 // The production bundle is served with test-only API responses. These are
 // interface checks, not model performance or production-resource evidence.
 const id = "012345abcdef";
 const title = "长夜之后仍然有人守护这座城市：一部关于重逢与选择的原创剧集";
-const primary = ["dashboard", "projects", "library", "activity", "models"];
+const primary = ["dashboard", "projects", "library", "activity", "models", "settings"];
 const palettes = [["slate", "深灰蓝"], ["graphite", "雾银"], ["teal", "薄荷青"], ["jade", "青柠绿"], ["iris", "雾紫"], ["bronze", "杏桃"]];
 
 async function fixture(page, request, { empty = false, attention = true, poster } = {}) {
@@ -222,7 +222,7 @@ for (const width of [1440, 390]) for (const theme of ["light", "dark"]) {
         if (width === 1440 && theme === "light")
           await page.locator(".dashboard-focus").screenshot({ path: "docs/images/studio-design/focus-jade-light-1440.png" });
       }
-      await (await exposePageControl(page, page.getByRole("button", { name: "外观设置", exact: true }))).click();
+      await openSystemSettings(page);
     }
     expect(accents.size).toBe(6);
   });

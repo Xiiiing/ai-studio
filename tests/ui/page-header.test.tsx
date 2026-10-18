@@ -10,8 +10,7 @@ import { ThemeProvider } from "../../ui/factory/src/Theme";
 
 it("keeps one title with real parent navigation, actions and shared tools", async () => {
   const refresh = vi.fn(),
-    navigate = vi.fn(),
-    settings = vi.fn();
+    navigate = vi.fn();
   const navigationTrigger = createRef<HTMLButtonElement>();
   render(
     <ThemeProvider>
@@ -23,7 +22,6 @@ it("keeps one title with real parent navigation, actions and shared tools", asyn
           syncError: true,
           syncing: false,
           refresh,
-          openSettings: settings,
         }}
       >
         <PageHeader
@@ -40,8 +38,7 @@ it("keeps one title with real parent navigation, actions and shared tools", asyn
   expect(navigate).toHaveBeenCalledOnce();
   await userEvent.click(screen.getByRole("button", { name: "刷新项目" }));
   expect(refresh).toHaveBeenCalledOnce();
-  await userEvent.click(screen.getByRole("button", { name: "外观设置" }));
-  expect(settings).toHaveBeenCalledOnce();
+  expect(screen.queryByRole("button", { name: "外观设置" })).not.toBeInTheDocument();
   expect(screen.getByRole("status")).toHaveTextContent("同步中断");
   expect(navigationTrigger.current).toBe(
     screen.getByRole("button", { name: "展开导航" }),

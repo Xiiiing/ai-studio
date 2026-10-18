@@ -232,6 +232,8 @@ const server = http.createServer(async (request, response) => {
     if (url.pathname === "/__test/calls") return json(response, calls);
     if (url.pathname.startsWith("/api/")) {
       calls.push({ method: request.method, path: url.pathname, body: value });
+      if (url.pathname === "/api/factory/system" && !(fail && url.pathname.endsWith(fail)))
+        return json(response, { schema: "ai-studio.system.v1", service: "drama-studio", version: "3.0.0-browser-fixture", source_commit: "c".repeat(40), started_at: "2026-10-18T10:00:00Z", environment: "test" });
       if (fail && url.pathname.endsWith(fail))
         return json(response, { error: "模拟服务暂时不可用" }, 503);
       if (

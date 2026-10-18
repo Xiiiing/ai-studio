@@ -11,12 +11,12 @@ const MaterialView = lazy(() =>
   })),
 );
 
-export function Models(props: { notify: (message: string) => void }) {
+export function Models(props: { notify: (message: string) => void; embedded?: boolean }) {
   return (
     <Suspense
       fallback={
         <>
-          <Heading eyebrow="" title="模型与连接" />
+          {!props.embedded && <Heading eyebrow="" title="模型与连接" />}
           <Loading />
         </>
       }

@@ -5,6 +5,7 @@ import {
   FolderKanban,
   Inbox,
   Settings2,
+  Settings,
   Activity,
   Plus,
   Clapperboard,
@@ -26,7 +27,7 @@ import {
 } from "lucide-react";
 import { lockPageScroll } from "./ScrollLock";
 import { ThemeProvider } from "./Theme";
-import { AppearanceSettings } from "./AppearanceSettings";
+import { SystemSettings } from "./SystemSettings";
 import { BrandMark } from "./Brand";
 import { PageHeader, PageHeaderProvider } from "./PageHeader";
 import { ProjectNavigation } from "./ProjectNavigation";
@@ -98,6 +99,7 @@ const links = [
   ["library", "素材库", FolderKanban],
   ["activity", "运行记录", Activity],
   ["models", "模型配置", Settings2],
+  ["settings", "系统设置", Settings],
 ] as const;
 export default function App() {
   return (
@@ -178,7 +180,10 @@ function Workbench() {
     if (project) {
       p.set("project", project);
       p.set("tab", tab);
-    } else if (view !== "dashboard") p.set("view", view);
+    } else if (view !== "dashboard") {
+      p.set("view", view);
+      if (view === "settings" && tab !== "overview") p.set("tab", tab);
+    }
     location.hash = p.toString();
     setRoute({ view, project, tab });
     setMobile(false);
@@ -338,7 +343,6 @@ function Workbench() {
               syncError: overview.isError,
               syncing: overview.isFetching,
               refresh,
-              openSettings: () => navigate("settings"),
             }}
           >
             <main id="workspace" tabIndex={-1}>
@@ -354,7 +358,14 @@ function Workbench() {
                   onRemake={(project) => setCreate(project)}
                 />
               ) : route.view === "settings" ? (
-                <AppearanceSettings />
+                <SystemSettings
+                  section={route.tab}
+                  onSection={(tab) => navigate("settings", "", tab)}
+                  overview={overview.data}
+                  overviewError={overview.error}
+                  retryOverview={() => { void overview.refetch(); }}
+                  notify={setToast}
+                />
               ) : route.view === "models" ? (
                 <Models notify={setToast} />
               ) : route.view === "library" ? (
