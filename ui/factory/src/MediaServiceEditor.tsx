@@ -359,7 +359,7 @@ export function MediaServiceEditor({
               启用服务
             </label>
           </fieldset>
-          <ErrorNotice error={error} />
+          <ErrorNotice error={error} reserveSpace />
           <div className="service-dialog-actions">
             <small>保存后可在制作分工中选择</small>
             <div>

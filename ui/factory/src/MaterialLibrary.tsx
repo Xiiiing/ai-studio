@@ -6,6 +6,7 @@ import {
   Panel,
   Field,
   ErrorNotice,
+  FloatingErrorNotice,
   Empty,
   Loading,
   Modal,
@@ -259,19 +260,26 @@ export function MaterialLibrary({
   }
   return (
     <div className="stack">
-      <Heading
-        eyebrow="MATERIAL LIBRARY"
-        title={project ? "本剧素材与定稿" : "统一素材库"}
-        description={
-          project
-            ? "选用人物、场景和共同画风，集中确认后用于后续镜头制作。剧内修改保留独立版本。"
-            : "保存可跨剧复用的人物、场景、画风与同框参考。"
-        }
-      />
-      <ErrorNotice error={failure} />
+      {project ? (
+        <div className="panel-head">
+          <div>
+            <h2>本剧素材与定稿</h2>
+            <p>
+              选用人物、场景和共同画风，集中确认后用于后续镜头制作。剧内修改保留独立版本。
+            </p>
+          </div>
+        </div>
+      ) : (
+        <Heading
+          eyebrow="MATERIAL LIBRARY"
+          title="统一素材库"
+          description="保存可跨剧复用的人物、场景、画风与同框参考。"
+        />
+      )}
+      <FloatingErrorNotice error={failure} />
       {selected.error && (
         <div>
-          <ErrorNotice error={selected.error} />
+          <FloatingErrorNotice error={selected.error} />
           <button className="button" onClick={() => selected.refetch()}>
             重新读取本剧选择
           </button>
@@ -496,7 +504,7 @@ export function MaterialLibrary({
       )}
       {query.error && (
         <div>
-          <ErrorNotice error={query.error} />
+          <FloatingErrorNotice error={query.error} />
           <button className="button" onClick={() => query.refetch()}>
             重新读取素材库
           </button>
@@ -546,7 +554,7 @@ export function MaterialLibrary({
       <Panel title="AI 素材任务">
         {tasks.error && (
           <div>
-            <ErrorNotice error={tasks.error} />
+            <FloatingErrorNotice error={tasks.error} />
             <button className="button" onClick={() => tasks.refetch()}>
               重新读取素材任务
             </button>

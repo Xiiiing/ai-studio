@@ -4,74 +4,7 @@
     padding: 36px 40px 48px;
   }
 }
-@media (max-width: 1649px) {
-  .project-content-layout {
-    display: block;
-  }
-  .tabbar.project-navigation {
-    display: none;
-  }
-  .project-navigation-mobile {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    position: sticky;
-    top: 60px;
-    margin-bottom: 16px;
-    padding: 8px 0;
-    background: var(--canvas);
-    z-index: 15;
-  }
-  .project-navigation-trigger {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    width: auto;
-    margin-left: auto;
-    min-width: 200px;
-    padding: 9px 12px;
-    border: 1px solid var(--line-strong);
-    border-radius: 10px;
-    background: var(--panel);
-    color: var(--ink);
-    font-size: 14px;
-    min-height: 44px;
-  }
-  .project-navigation-menu {
-    position: absolute;
-    top: calc(100% - 2px);
-    right: 0;
-    width: min(620px, 100%);
-    max-height: min(520px, calc(100dvh - 160px));
-    overflow: auto;
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    align-items: start;
-    gap: 12px;
-    margin-top: 0;
-    padding: 16px;
-    border: 1px solid var(--line);
-    border-radius: 12px;
-    background: var(--panel);
-    box-shadow: var(--shadow-md);
-  }
-  .project-navigation-menu button {
-    border: 0;
-    background: transparent;
-    padding: 10px 12px;
-    border-radius: 8px;
-    text-align: left;
-    min-height: 44px;
-    color: var(--muted);
-    font-size: 14px;
-  }
-  .project-navigation-menu button.active {
-    background: var(--accent-soft);
-    color: var(--accent-text);
-    font-weight: 600;
-  }
-}
+
 @media (max-width: 1250px) {
   .app-shell {
     grid-template-columns: 208px minmax(0, 1fr);
@@ -105,9 +38,6 @@
   }
   .metric-card {
     padding: 17px;
-  }
-  .metric-card > small {
-    font-size: 12px;
   }
 }
 @media (max-width: 1200px) {
@@ -171,9 +101,6 @@
   .asset-grid {
     grid-template-columns: 1fr;
   }
-  .project-heading {
-    align-items: flex-start;
-  }
   .heading-actions {
     max-width: 190px;
   }
@@ -189,18 +116,6 @@
   }
   .current-output-video video {
     height: 240px;
-  }
-  .topbar {
-    padding: 12px 24px;
-  }
-  .topbar-right {
-    gap: 8px;
-  }
-  .theme-control > span {
-    display: none;
-  }
-  .topbar .sync-state {
-    display: none;
   }
 }
 @media (max-width: 800px) {
@@ -236,20 +151,12 @@
   }
   .workflow-stage-number {
     flex-basis: 20px;
-    font-size: 12px;
-  }
-  .workflow-stage-copy > strong {
-    font-size: 12px;
-  }
-  .workflow-stage-copy > small {
-    font-size: 12px;
   }
   .workflow-heading {
     padding: 16px;
   }
   .workflow-stage-card > .badge {
     position: static;
-    font-size: 12px;
     grid-column: 2;
     margin: 0;
     justify-self: start;
@@ -284,58 +191,15 @@
   .mobile-navigation {
     display: inline-flex;
   }
-  .topbar {
-    height: 56px;
-    padding: 10px 12px;
-    min-height: 64px;
-    gap: 8px;
-    align-items: center;
-  }
-  .topbar-right {
-    gap: 8px;
-    flex: none;
-  }
-  .breadcrumb {
-    font-size: 12px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .sync-state {
-    font-size: 12px;
-  }
   #workspace {
     padding: 24px 16px 32px;
     min-height: calc(100dvh - 112px);
   }
   .workspace-footer {
     padding: 14px 16px;
-    font-size: 12px;
   }
   .workspace-footer span:last-child {
     display: none;
-  }
-  .page-heading {
-    align-items: flex-start;
-    flex-wrap: wrap;
-    gap: 14px;
-    margin-bottom: 22px;
-  }
-  .page-heading h1 {
-    font-size: 26px;
-  }
-  .page-heading p {
-    line-height: 1.7;
-    font-size: 14px;
-    max-width: none;
-  }
-  .page-heading > .button {
-    white-space: nowrap;
-    font-size: 14px;
-    padding: 10px 14px;
-  }
-  .eyebrow {
-    font-size: 12px;
   }
   .console-metrics {
     grid-template-columns: 1fr 1fr;
@@ -345,32 +209,16 @@
   .metric-card {
     padding: 16px 14px;
   }
-  .metric-card > .row-between {
-    font-size: 12px;
-  }
   .metric-number {
     margin: 8px 0 3px;
-    font-size: 28px;
-  }
-  .metric-card > small {
-    font-size: 12px;
   }
   .panel {
     padding: 18px 16px;
-    border-radius: 12px;
+    border-radius: var(--radius);
     margin-bottom: 18px;
   }
   .panel-head {
     margin-bottom: 17px;
-  }
-  .panel-head h2 {
-    font-size: 18px;
-  }
-  .panel-head p {
-    font-size: 14px;
-  }
-  .panel-head .text-link {
-    font-size: 14px;
   }
   .dashboard-grid {
     gap: 17px;
@@ -388,27 +236,17 @@
     width: 27px;
     height: 27px;
   }
-  .attention-row h3 {
-    font-size: 16px;
-  }
   .activity-list time {
     white-space: normal;
     text-align: right;
-    font-size: 12px;
     max-width: 80px;
   }
   .activity-list > article {
     gap: 9px;
   }
-  .activity-list p {
-    font-size: 12px;
-  }
   .resource-summary {
     gap: 17px;
     margin-top: 7px;
-  }
-  .resource-summary strong {
-    font-size: 21px;
   }
   .gpu-grid {
     gap: 13px;
@@ -421,20 +259,15 @@
     padding-right: 9px;
     padding-left: 9px;
   }
-  td .badge {
-    font-size: 12px;
-  }
   .console-project-table th:nth-child(3),
   .console-project-table td:nth-child(3) {
     display: none;
   }
   .project-table-title strong {
     max-width: 130px;
-    font-size: 12px;
   }
   .project-table-title small {
     max-width: 130px;
-    font-size: 12px;
   }
   .project-thumb {
     width: 28px;
@@ -442,9 +275,6 @@
   }
   .project-table-title {
     gap: 8px;
-  }
-  .console-project-table td:last-child .text-link {
-    font-size: 12px;
   }
   .project-toolbar {
     gap: 14px;
@@ -456,16 +286,7 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .segmented button {
-    font-size: 14px;
     padding: 8px;
-  }
-  .project-heading h1 {
-    font-size: 26px;
-    overflow-wrap: anywhere;
-  }
-  .project-heading {
-    gap: 12px;
-    display: block;
   }
   .heading-actions {
     max-width: none;
@@ -474,20 +295,7 @@
     margin-top: 16px;
   }
   .project-meta {
-    font-size: 12px;
     gap: 8px 12px;
-  }
-  .project-attention-banner {
-    padding: 13px;
-    gap: 9px;
-    flex-wrap: wrap;
-  }
-  .project-attention-banner > div {
-    flex-basis: calc(100% - 50px);
-  }
-  .project-attention-banner > .button {
-    margin-left: 40px;
-    margin-top: 2px;
   }
   /* Temporary compact navigation until the grouped project menu is mounted. */
   .tabbar:not(.project-navigation) {
@@ -499,31 +307,26 @@
     overflow: visible;
     background: var(--panel);
     border: 1px solid var(--line);
-    border-radius: 10px;
+    border-radius: var(--radius);
   }
   .tabbar:not(.project-navigation) button {
     justify-content: center;
     min-width: 0;
     padding: 8px 4px;
-    font-size: 12px;
-    line-height: 1.5;
     white-space: normal;
     text-align: center;
     border: 0;
     border-radius: 7px;
   }
   .tabbar:not(.project-navigation) button.active {
-    background: var(--accent-soft);
-    color: var(--accent-text);
+    background: var(--surface-strong);
+    color: var(--ink);
   }
   .project-context {
     gap: 12px;
   }
   .project-context > article {
     padding: 13px;
-  }
-  .project-context strong {
-    font-size: 16px;
   }
   .inspector-fields {
     margin: 18px 0;
@@ -540,12 +343,6 @@
   .task-card {
     padding: 16px;
   }
-  .decision-section > .panel-head h2 {
-    font-size: 19px;
-  }
-  .decision-section > .panel-head p {
-    font-size: 14px;
-  }
   .decision-option {
     padding: 19px;
   }
@@ -556,17 +353,8 @@
   .choice-heading {
     margin-bottom: 15px;
   }
-  .decision-option h3 {
-    font-size: 16px;
-  }
-  .decision-option > p {
-    font-size: 12px;
-  }
   .decision-issue {
     padding: 16px;
-  }
-  .decision-issue > p {
-    font-size: 12px;
   }
   .shot-workbench {
     display: block;
@@ -588,13 +376,6 @@
   }
   .shot-list-item > span:not(.badge) {
     -webkit-line-clamp: 1;
-    font-size: 12px;
-  }
-  .shot-list-item .badge {
-    font-size: 12px;
-  }
-  .shot-detail-heading h2 {
-    font-size: 17px;
   }
   .candidate-card > video,
   .candidate-card > img {
@@ -608,9 +389,6 @@
   .form-row .field {
     margin: 12px 0;
   }
-  .field {
-    font-size: 14px;
-  }
   .config-savebar {
     display: block;
     bottom: 10px;
@@ -621,21 +399,12 @@
   .config-savebar > .button-row {
     margin-top: 13px;
   }
-  .config-savebar strong {
-    font-size: 14px;
-  }
-  .config-savebar p {
-    font-size: 12px;
-  }
   .quote-summary {
     grid-template-columns: 1fr 1fr;
     gap: 18px;
   }
   .quote-summary > div:last-child {
     grid-column: 1/-1;
-  }
-  .quote-summary strong {
-    font-size: 19px;
   }
   .quote-summary p {
     margin-top: 7px;
@@ -644,23 +413,15 @@
     grid-template-columns: 65px minmax(0, 1fr);
     gap: 12px;
   }
-  .readable dd {
-    font-size: 12px;
-  }
   .readable-list > div {
     padding: 8px 10px;
   }
   .notice {
     align-items: flex-start;
     flex-wrap: wrap;
-    font-size: 14px;
     padding: 14px;
   }
-  .notice > .button {
-    font-size: 14px;
-  }
   .decision-context {
-    font-size: 12px;
     flex-wrap: wrap;
   }
   .delivery-layout > div {
@@ -673,21 +434,9 @@
     gap: 10px;
     flex-wrap: wrap;
   }
-  .running-tasks h3 {
-    font-size: 16px;
-  }
-  .running-tasks p {
-    font-size: 12px;
-  }
-  .running-tasks > .badge {
-    font-size: 12px;
-  }
   .dialog-head {
     padding: 16px;
     gap: 12px;
-  }
-  .dialog-head h2 {
-    font-size: 20px;
   }
   .dialog-body {
     padding: 18px 16px 24px;
@@ -695,13 +444,6 @@
   dialog {
     width: calc(100vw - 24px);
     max-height: calc(100dvh - 28px);
-  }
-  .toast {
-    white-space: normal;
-    width: max-content;
-    max-width: calc(100vw - 30px);
-    font-size: 14px;
-    bottom: 16px;
   }
   .current-output-video {
     gap: 18px;
@@ -711,32 +453,14 @@
     height: 240px;
     max-width: 100%;
   }
-  .current-output-video h3 {
-    font-size: 16px;
-  }
-  .current-output-video p {
-    font-size: 12px;
-  }
   .current-proposals {
     grid-template-columns: 1fr;
   }
   .current-visuals img {
     height: 170px;
   }
-  .current-task h3 {
-    font-size: 15px;
-  }
   .project-focus {
     gap: 0;
-  }
-  .current-story h3 {
-    font-size: 17px;
-  }
-  .current-story p {
-    font-size: 12px;
-  }
-  body {
-    font-size: 16px;
   }
   .navigation-close {
     display: inline-flex;
@@ -753,29 +477,9 @@
     backdrop-filter: blur(3px);
   }
   .brand {
-    font-size: 22px;
     padding: 0 4px 24px;
   }
-  .brand small {
-    font-size: 12px;
-  }
-  .topbar-context,
-  .topbar-right {
-    gap: 6px;
-  }
-  .theme-control {
-    gap: 0;
-    flex: none;
-  }
-  .theme-control select {
-    font-size: 12px;
-    min-height: 44px;
-    padding: 8px 24px 8px 9px;
-    max-width: 92px;
-  }
-  .producer-avatar {
-    display: none;
-  }
+
   .button,
   .button.small,
   .icon-button,
@@ -790,39 +494,18 @@
   }
   .button,
   .button.small {
-    font-size: 14px;
     padding: 10px 12px;
   }
   .icon-button {
     width: 44px;
     height: 44px;
   }
-  .attention-row p,
-  .activity-list p,
-  .running-tasks p {
-    font-size: 14px;
-  }
   .search-box input {
-    font-size: 16px;
     width: 100%;
-  }
-  .decision-option > p,
-  .decision-issue > p,
-  .readable dd,
-  .brief-text,
-  .current-story p,
-  .current-task p,
-  .current-output-video p,
-  .document-markdown {
-    font-size: 16px;
-  }
-  .shot-list-item strong {
-    font-size: 14px;
   }
   input,
   select,
   textarea {
-    font-size: 16px;
     min-height: 44px;
   }
   input[type="checkbox"],
@@ -833,7 +516,6 @@
   }
   .check {
     min-height: 44px;
-    font-size: 14px;
   }
   dialog,
   #document-expanded,
@@ -860,10 +542,6 @@
   .region-coordinates {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-  .topbar-context {
-    flex: 1;
-    min-width: 0;
-  }
   .material-library-toolbar {
     grid-template-columns: minmax(0, 1fr);
     gap: 14px;
@@ -874,29 +552,6 @@
   }
   .material-library-toolbar > .button {
     min-height: 44px;
-  }
-  .panel-head p,
-  .page-heading p,
-  .empty-state p,
-  .attention-row p,
-  .activity-list p,
-  .running-tasks p,
-  .candidate-body > p,
-  .shot-story-card p,
-  .model-card > p,
-  .decision-section > .panel-head p,
-  .creative-contract p,
-  .creative-create-summary p,
-  .creative-remake-note,
-  .selected-story p,
-  .delivery-layout p,
-  .final-review-layout > form > p,
-  .workflow-description {
-    font-size: 16px;
-    line-height: 1.75;
-  }
-  .document-markdown :is(td, th) {
-    font-size: 14px;
   }
 }
 @media (max-width: 700px) {
@@ -927,12 +582,6 @@
     gap: 10px;
     padding: 12px;
     min-height: 148px;
-  }
-  .workflow-map-node .workflow-stage-copy > strong {
-    font-size: 14px;
-  }
-  .workflow-map-node .workflow-stage-copy > small {
-    font-size: 12px;
   }
   .workflow-map-caption {
     padding: 12px;
@@ -975,9 +624,6 @@
     grid-row: 2 / 4;
     align-self: end;
   }
-  .console-project-table td:last-child .text-link {
-    font-size: 14px;
-  }
   .project-table-title {
     min-height: 44px;
     align-items: flex-start;
@@ -988,40 +634,9 @@
     white-space: normal;
     overflow-wrap: anywhere;
   }
-  .project-table-title strong {
-    font-size: 16px;
-  }
-  .project-table-title small {
-    font-size: 12px;
-  }
   .project-thumb {
     width: 36px;
     height: 44px;
-  }
-}
-@media (min-width: 1024px) and (max-width: 1649px) {
-  .project-quick-navigation {
-    display: flex;
-    gap: 4px;
-    padding: 4px;
-    border: 1px solid var(--line);
-    border-radius: 10px;
-    background: var(--panel);
-  }
-  .project-quick-navigation button {
-    padding: 8px 12px;
-    min-height: 38px;
-    border: 0;
-    border-radius: 7px;
-    background: transparent;
-    color: var(--muted);
-    font-size: 13px;
-    white-space: nowrap;
-  }
-  .project-quick-navigation button.active {
-    color: var(--accent-text);
-    background: var(--accent-soft);
-    font-weight: 600;
   }
 }
 @media (max-width: 1023px) {
@@ -1054,9 +669,6 @@
   .dashboard-grid .panel-head {
     margin-bottom: 12px;
   }
-  .dashboard-grid .panel-head p {
-    font-size: 14px;
-  }
   .console-metrics {
     gap: 8px;
     margin-bottom: 16px;
@@ -1065,86 +677,15 @@
     padding: 12px;
   }
   .metric-number {
-    font-size: 26px;
     margin: 3px 0 0;
-  }
-  .metric-card > small {
-    line-height: 1.5;
-  }
-  .page-heading {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 8px 12px;
-    align-items: center;
-    margin-bottom: 16px;
-  }
-  .page-heading > div {
-    display: contents;
-  }
-  .page-heading .eyebrow {
-    display: none;
-  }
-  .page-heading h1 {
-    font-size: 24px;
-    grid-column: 1;
-    grid-row: 1;
-  }
-  .page-heading p {
-    grid-column: 1 / -1;
-    grid-row: 2;
-    margin: 0;
-    line-height: 1.6;
-  }
-  .page-heading > .button {
-    grid-column: 2;
-    grid-row: 1;
-    font-size: 13px;
-    padding-inline: 10px;
   }
   #workspace {
     padding-top: 16px;
   }
-  .project-heading h1 {
-    font-size: 24px;
-  }
-  .project-heading .breadcrumb-link {
-    display: inline-flex;
-    align-items: center;
-    min-height: 44px;
-    margin-bottom: 0;
-  }
   .heading-actions {
     margin-top: 12px;
   }
-  .project-navigation-mobile {
-    top: 64px;
-    margin-bottom: 12px;
-    padding-block: 6px;
-  }
-  .project-navigation-trigger {
-    width: 100%;
-    margin-left: 0;
-    min-width: 0;
-  }
-  .project-navigation-menu {
-    grid-template-columns: 1fr;
-    width: 100%;
-    padding: 12px;
-    gap: 12px;
-  }
-  .project-navigation-menu .project-navigation-group {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 4px;
-  }
-  .project-navigation-menu .project-navigation-label {
-    grid-column: 1 / -1;
-    padding-bottom: 0;
-  }
-  .project-navigation-menu button {
-    padding: 8px 10px;
-    font-size: 14px;
-    align-self: start;
-  }
+
   .project-context {
     margin-bottom: 16px;
     gap: 8px;
@@ -1169,18 +710,12 @@
     flex-direction: column;
     gap: 2px;
   }
-  .creative-contract-summary > p {
-    font-size: 14px;
-    line-height: 1.65;
-  }
   .creative-contract-summary summary {
-    font-size: 14px;
     display: flex;
     align-items: center;
   }
   .creative-contract-summary summary::before {
     content: "+";
-    font-size: 18px;
     margin-right: 8px;
   }
   .creative-contract-summary details[open] > summary::before {
@@ -1200,24 +735,15 @@
   .quality-shot {
     padding: 12px;
   }
-  .quality-summary,
-  .quality-notes ul,
-  .script-logline {
-    font-size: 16px;
-    line-height: 1.7;
-  }
   .quality-toolbar > .segmented {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .quality-results {
     gap: 8px 12px;
   }
-  .quality-shot summary {
-    font-size: 14px;
-  }
   .workflow-inspector,
   .workflow-map-container {
-    scroll-margin-top: 126px;
+    scroll-margin-top: 114px;
   }
   .shot-editor {
     padding: 14px;
@@ -1247,8 +773,6 @@
   }
   .config-savebar.is-dirty strong {
     display: block;
-    font-size: 13px;
-    line-height: 1.5;
   }
   .config-savebar.is-dirty p {
     display: none;
@@ -1259,7 +783,6 @@
     gap: 6px;
   }
   .config-savebar.is-dirty .button {
-    font-size: 13px;
     padding-inline: 10px;
   }
 }
@@ -1267,25 +790,12 @@
   #workspace {
     padding: 20px 12px 28px;
   }
-  .topbar {
-    padding: 8px;
-    gap: 4px;
-  }
-  .breadcrumb > span {
-    margin: 0 5px;
-  }
-  .project-navigation-menu {
-    padding: 12px;
-    gap: 8px;
-  }
+
   .workflow-map-node-top {
     flex-wrap: wrap;
   }
   .workflow-map-node.workflow-stage-card {
     padding: 10px;
-  }
-  .workflow-map-node .workflow-stage-copy > strong {
-    font-size: 13px;
   }
 }
 @media (prefers-reduced-motion: reduce) {

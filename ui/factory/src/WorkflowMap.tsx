@@ -221,15 +221,27 @@ export function WorkflowMap({
         <strong>阶段与数据流向</strong>
         <div className="workflow-flow-legend">
           <span>
-            <i className="flow-legend-running" />
+            <i
+              className="flow-legend-running"
+              data-status-indicator="running"
+              aria-hidden="true"
+            />
             执行中
           </span>
           <span>
-            <i className="flow-legend-completed" />
+            <i
+              className="flow-legend-completed"
+              data-status-indicator="success"
+              aria-hidden="true"
+            />
             已完成
           </span>
           <span>
-            <i className="flow-legend-repair" />
+            <i
+              className="flow-legend-repair"
+              data-status-indicator="review"
+              aria-hidden="true"
+            />
             返修
           </span>
         </div>

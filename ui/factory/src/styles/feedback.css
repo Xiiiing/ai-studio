@@ -1,0 +1,191 @@
+/* Feedback overlays never participate in page or navigation layout. */
+html {
+  scrollbar-gutter: stable;
+}
+.feedback-region {
+  position: fixed;
+  z-index: 110;
+  inset: auto 24px 24px auto;
+  display: grid;
+  gap: 12px;
+  width: min(400px, calc(100vw - 48px));
+  max-height: calc(100dvh - 120px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  pointer-events: none;
+}
+.feedback-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px 8px 16px 16px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--ink);
+  box-shadow: var(--shadow-md);
+  pointer-events: auto;
+}
+.feedback-card > svg {
+  margin-top: 2px;
+}
+.feedback-copy {
+  flex: 1;
+  min-width: 0;
+}
+.feedback-copy strong {
+  font-size: var(--text-ui);
+  line-height: var(--leading-ui);
+  font-weight: 600;
+}
+.feedback-copy p {
+  margin: 4px 0 0;
+  max-height: 132px;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  color: var(--muted);
+  font-size: var(--text-ui);
+  line-height: var(--leading-ui);
+}
+.feedback-copy p:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.feedback-card > .icon-button {
+  margin-top: -12px;
+  flex: none;
+}
+.project-status-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+  min-height: 44px;
+  width: 144px;
+  max-width: 100%;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--control-radius);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: var(--text-ui);
+  line-height: var(--leading-ui);
+  font-weight: 500;
+  text-align: left;
+}
+.project-status-trigger:hover {
+  border-color: var(--line-strong);
+  background: var(--surface-strong);
+}
+.project-status-trigger > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+dialog.project-status-drawer {
+  position: fixed;
+  inset: 0 calc(100% - 100vw) 0 auto;
+  margin: 0;
+  width: 400px;
+  max-width: 100vw;
+  height: 100dvh;
+  max-height: 100dvh;
+  border-width: 0 0 0 1px;
+  border-radius: 0;
+}
+dialog.project-status-drawer[open] {
+  display: flex;
+  flex-direction: column;
+}
+.project-status-drawer .dialog-head {
+  flex: none;
+}
+.project-status-drawer .dialog-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.status-summary p {
+  margin: 12px 0 24px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--muted);
+}
+.status-caption {
+  display: block;
+  margin-bottom: 12px;
+  color: var(--muted);
+  font-size: var(--text-caption);
+  line-height: var(--leading-caption);
+  overflow-wrap: anywhere;
+}
+.status-facts {
+  margin: 0 0 24px;
+}
+.status-facts > div {
+  display: grid;
+  grid-template-columns: 80px minmax(0, 1fr);
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+.status-facts dt {
+  color: var(--muted);
+}
+.status-facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.status-issues {
+  display: grid;
+  gap: 16px;
+  margin: 0 0 24px;
+  padding: 0;
+  list-style: none;
+}
+.status-issues li {
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
+}
+.status-issues p {
+  margin: 8px 0 0;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.status-next-action {
+  width: 100%;
+}
+.form-feedback-slot {
+  height: 64px;
+  margin-block: 8px;
+}
+.form-feedback-slot .notice {
+  margin: 0;
+  height: 64px;
+  align-items: center;
+  padding: 8px 12px;
+}
+.form-feedback-slot .notice > div {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.form-feedback-slot .notice > .text-link {
+  flex: none;
+  min-height: 44px;
+}
+@media (max-width: 767px) {
+  .feedback-region {
+    inset: auto 12px calc(88px + env(safe-area-inset-bottom));
+    width: auto;
+    max-height: min(44dvh, 280px);
+  }
+  dialog.project-status-drawer {
+    width: 100vw;
+    max-width: 100vw;
+    border: 0;
+  }
+}

@@ -1,149 +1,197 @@
-/* Project workspaces: one global sidebar, one compact project navigation.
-   Loaded after the shared responsive rules so every width uses the same hierarchy. */
+/* One global sidebar; project sections and their subpages stay horizontal. */
 .project-content-layout {
   display: block;
 }
-.tabbar.project-navigation {
-  display: none;
-}
-.project-navigation-mobile {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: 12px;
+.project-navigation-bar {
   position: sticky;
   top: 60px;
   z-index: 15;
-  margin: 0 0 20px;
-  padding: 6px 0;
-  background: var(--canvas);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 12px;
+  margin-bottom: 20px;
   border-bottom: 1px solid var(--line);
+  background: var(--canvas);
 }
-.project-quick-navigation {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+.project-primary-navigation {
+  display: flex;
   flex: 1;
-  max-width: 520px;
-  gap: 4px;
-  border: 0;
-  border-radius: 0;
-  padding: 0;
-  background: transparent;
-}
-.project-quick-navigation button {
   min-width: 0;
+  gap: 4px;
+}
+.project-primary-navigation button,
+.project-subnavigation button {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  gap: 6px;
   min-height: 44px;
+  padding: 10px 16px;
   border: 0;
-  border-radius: 6px;
-  padding: 8px 16px;
+  border-bottom: 2px solid transparent;
   background: transparent;
   color: var(--muted);
-  font-size: 14px;
+  font-size: var(--text-ui);
   white-space: nowrap;
+  line-height: var(--leading-ui);
 }
-.project-quick-navigation button.active {
+.project-primary-navigation button:hover,
+.project-subnavigation button:hover {
+  color: var(--ink);
   background: var(--surface);
+}
+.project-primary-navigation button.active,
+.project-primary-navigation button[aria-current="page"] {
   color: var(--ink);
   font-weight: 600;
+  border-bottom-color: var(--accent);
 }
-.project-navigation-trigger {
+.project-more {
+  position: relative;
+  flex: none;
+  margin: 0;
+}
+.project-more > summary {
+  min-width: var(--target-size);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  min-width: 68px;
+  gap: 4px;
   min-height: 44px;
-  width: auto;
-  margin-left: auto;
   padding: 8px 10px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
+  border-radius: var(--control-radius);
   color: var(--muted);
-  font-size: 14px;
+  list-style: none;
 }
-.project-navigation-trigger[aria-expanded="true"] {
+.project-more > summary::-webkit-details-marker {
+  display: none;
+}
+.project-more[open] > summary {
+  margin: 0;
   background: var(--surface);
+}
+.project-more > summary:hover,
+.project-more[data-active="true"] > summary,
+.project-more:has([aria-current="page"]) > summary {
   color: var(--ink);
+  background: var(--surface);
 }
 .project-navigation-menu {
   position: absolute;
   top: calc(100% + 4px);
   right: 0;
-  width: min(620px, 100%);
-  max-height: min(520px, calc(100dvh - 150px));
-  overflow: auto;
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-  padding: 16px;
+  z-index: 20;
+  width: 200px;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100dvh - 160px);
+  overflow-y: auto;
+  padding: 6px;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius);
   background: var(--panel);
   box-shadow: var(--shadow-md);
-}
-.project-navigation-menu .project-navigation-group {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 4px;
-}
-.project-navigation-menu .project-navigation-label {
-  grid-column: 1 / -1;
-  padding: 0 10px 4px;
 }
 .project-navigation-menu button {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 6px;
+  width: 100%;
   min-height: 44px;
-  padding: 8px 10px;
+  padding: 10px 12px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--control-radius);
   background: transparent;
   color: var(--muted);
+  font-size: var(--text-ui);
   text-align: left;
-  font-size: 14px;
+  line-height: var(--leading-ui);
 }
-.project-navigation-menu button.active {
-  color: var(--ink);
+.project-navigation-menu button:hover,
+.project-navigation-menu button.active,
+.project-navigation-menu button[aria-current="page"] {
   background: var(--surface);
+  color: var(--ink);
 }
-.project-heading {
+.project-subnavigation {
   display: flex;
-  gap: 16px;
-  align-items: flex-start;
-  margin-bottom: 16px;
+  flex-basis: 100%;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0 0 16px;
 }
-.project-navigation-trigger[data-active="true"] {
+.project-navigation-bar .project-subnavigation {
+  padding-block: 8px;
+  margin-bottom: 0;
+  border-top: 1px solid var(--line);
+}
+.project-subnavigation button {
+  min-height: var(--target-size);
+  padding: 6px 12px;
+  border-radius: var(--control-radius);
+}
+.project-subnavigation button.active,
+.project-subnavigation button[aria-current="page"] {
   color: var(--ink);
-  background: var(--surface);
-  font-weight: 600;
+  background: var(--surface-strong);
+  font-weight: 500;
 }
+@media (max-width: 1023px) {
+  .project-navigation-bar {
+    top: 64px;
+  }
+}
+@media (max-width: 700px) {
+  .project-navigation-bar {
+    gap: 0 2px;
+    margin-bottom: 16px;
+  }
+  .project-primary-navigation {
+    justify-content: space-between;
+    gap: 0;
+  }
+  .project-primary-navigation button {
+    flex: 1;
+    padding-inline: 4px;
+  }
+  .project-more > summary {
+    padding-inline: 4px;
+  }
+  .project-more > summary svg {
+    width: 12px;
+    height: 12px;
+  }
+}
+
+/* Six primary actions and More retain full touch targets on the narrowest screen. */
+@media (max-width: 380px) {
+  .project-navigation-bar {
+    margin-inline: -12px;
+    padding-inline: 4px;
+  }
+  .project-more > summary svg {
+    display: none;
+  }
+}
+
+.project-primary-navigation i,
 .project-attention-dot {
   width: 5px;
   height: 5px;
   border-radius: 50%;
   background: var(--warning);
 }
-.project-heading > div:first-child {
-  min-width: 0;
-}
-.project-heading h1 {
-  overflow-wrap: anywhere;
-}
-.project-heading .breadcrumb-link {
-  min-height: 28px;
-  margin-bottom: 4px;
-}
 .project-meta {
   margin-top: 8px;
   gap: 6px 12px;
 }
+.project-meta > .project-download-reason {
+  margin-inline-start: auto;
+}
 .heading-actions {
   margin-top: 0;
-  flex-direction: column;
-  align-items: flex-end;
+  flex-direction: row;
+  align-items: flex-start;
   gap: 6px;
   flex-shrink: 0;
 }
@@ -162,17 +210,35 @@
   gap: 3px;
 }
 .project-download-pending small {
-  font-size: 11px;
+  font-size: var(--text-caption);
+  line-height: var(--leading-caption);
 }
 .project-actions-menu {
-  position: relative;
+  position: static;
+  margin: 0;
 }
 .project-actions-menu > summary {
-  min-height: 32px;
-  padding: 4px 8px;
-  cursor: pointer;
-  color: var(--muted);
-  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: var(--target-size);
+  padding: 10px 14px;
+  list-style: none;
+  white-space: nowrap;
+}
+.project-actions-menu > summary::marker {
+  content: "";
+}
+.project-actions-menu > summary::-webkit-details-marker {
+  display: none;
+}
+.project-actions-menu[open] > summary > svg {
+  transform: rotate(180deg);
+}
+
+.project-actions-menu[open] > summary {
+  margin-bottom: 0;
 }
 .project-actions-list {
   position: absolute;
@@ -212,8 +278,9 @@
 .project-context strong,
 .project-context strong small {
   display: inline;
-  font-size: 12px;
+  font-size: var(--text-caption);
   font-weight: 400;
+  line-height: var(--leading-caption);
 }
 .project-context strong {
   color: var(--ink);
@@ -249,14 +316,21 @@
   background: var(--media);
 }
 .current-output-video h3 {
-  font-size: 16px;
+  font-size: var(--text-subheading);
   margin: 6px 0;
+  line-height: var(--leading-subheading);
 }
 .current-task {
   gap: 10px;
 }
 .current-task p {
   margin-bottom: 0;
+}
+.current-task-members {
+  margin: 0;
+}
+.current-task-members > summary {
+  padding-block: 4px;
 }
 .project-output-links {
   display: grid;
@@ -302,13 +376,14 @@
   min-height: 48px;
   padding: 12px 0;
   cursor: pointer;
-  font-weight: 550;
+  font-weight: 500;
 }
 .project-process > summary span {
   margin-left: 12px;
   color: var(--muted);
   font-weight: 400;
-  font-size: 12px;
+  font-size: var(--text-ui);
+  line-height: var(--leading-ui);
 }
 .project-process[open] > summary,
 .project-background[open] > summary {
@@ -316,22 +391,6 @@
 }
 .project-background .creative-contract-summary {
   margin-top: 0;
-}
-.project-attention-banner {
-  background: var(--panel);
-  border-color: var(--line);
-  border-left: 3px solid var(--warning);
-  padding: 12px 16px;
-  margin-bottom: 16px;
-}
-.project-attention-banner strong {
-  color: var(--ink);
-}
-.project-attention-banner span:not(.attention-icon) {
-  color: var(--muted);
-}
-.project-attention-banner .attention-icon {
-  color: var(--warning);
 }
 .workflow-map-node.workflow-stage-card {
   background: var(--panel);
@@ -345,7 +404,7 @@
   background: var(--panel);
 }
 .workflow-map-node.workflow-repair-node.selected {
-  border-color: var(--warning-line);
+  border-color: var(--accent);
 }
 .workflow-stage-card .badge {
   background: var(--surface);
@@ -360,10 +419,6 @@
 .project-item.active {
   background: var(--surface);
   color: var(--ink);
-}
-.brand-mark {
-  background: var(--accent);
-  box-shadow: none;
 }
 @media (min-width: 1024px) {
   #workspace {
@@ -385,9 +440,6 @@
   }
 }
 @media (max-width: 700px) {
-  .project-heading {
-    display: block;
-  }
   .heading-actions {
     margin-top: 12px;
     flex-direction: row;
@@ -405,43 +457,7 @@
   .project-result-actions [data-project-result] > svg:last-child {
     display: none;
   }
-  .project-actions-menu > summary {
-    min-height: 44px;
-    display: flex;
-    align-items: center;
-    padding: 8px 4px;
-    white-space: nowrap;
-  }
-  .project-meta {
-    font-size: 12px;
-  }
-  .project-heading .breadcrumb-link {
-    min-height: 28px;
-  }
-  .project-navigation-mobile {
-    top: 64px;
-    gap: 4px;
-    margin-bottom: 16px;
-  }
-  .project-quick-navigation {
-    gap: 0;
-  }
-  .project-quick-navigation button {
-    padding: 8px 0;
-  }
-  .project-navigation-trigger {
-    min-width: 64px;
-    padding: 8px 6px;
-    gap: 2px;
-  }
-  .project-navigation-menu {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 12px;
-    padding: 12px;
-  }
-  .project-navigation-menu .project-navigation-group {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
+
   .project-context {
     margin-bottom: 14px;
     gap: 6px 12px;
@@ -457,6 +473,7 @@
   }
   .project-focus .panel {
     padding: 14px;
+    margin-bottom: 0;
   }
   .current-output-video {
     display: flex;
@@ -477,7 +494,6 @@
     min-width: 0;
   }
   .current-output-video h3 {
-    font-size: 14px;
     overflow-wrap: anywhere;
   }
   .current-output-video p {
@@ -489,11 +505,5 @@
   .project-process > summary span {
     display: block;
     margin: 4px 0 0;
-  }
-  .project-attention-banner {
-    flex-wrap: wrap;
-  }
-  .project-attention-banner > .button {
-    margin-left: 0;
   }
 }

@@ -1,8 +1,16 @@
-import { useEffect, useState } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  type ReactNode,
+} from "react";
 import { Monitor, Moon, Sun } from "lucide-react";
 
 export type ThemePreference = "system" | "light" | "dark";
 export const THEME_STORAGE_KEY = "studio.theme";
+const cycle: ThemePreference[] = ["system", "light", "dark"];
+const labels = { system: "跟随系统", light: "浅色", dark: "深色" };
 
 export function readTheme(): ThemePreference {
   try {
@@ -22,10 +30,10 @@ export function applyTheme(preference: ThemePreference, systemDark: boolean) {
   document.documentElement.style.colorScheme = theme;
   document
     .querySelector('meta[name="theme-color"]')
-    ?.setAttribute("content", theme === "dark" ? "#14151c" : "#f5f5f8");
+    ?.setAttribute("content", theme === "dark" ? "#171719" : "#f7f7f8");
 }
 
-export function ThemeControl() {
+function useThemeState() {
   const [preference, setPreference] = useState<ThemePreference>(readTheme);
   useEffect(() => {
     const media = window.matchMedia("(prefers-color-scheme: dark)");
@@ -42,28 +50,54 @@ export function ThemeControl() {
     window.addEventListener("storage", update);
     return () => window.removeEventListener("storage", update);
   }, []);
+  return {
+    preference,
+    choose: (next: ThemePreference) => {
+      try {
+        localStorage.setItem(THEME_STORAGE_KEY, next);
+      } catch {
+        /* Keep session choice. */
+      }
+      setPreference(next);
+    },
+  };
+}
+const ThemeContext = createContext<ReturnType<typeof useThemeState> | null>(
+  null,
+);
+export function ThemeProvider({ children }: { children: ReactNode }) {
+  const theme = useThemeState();
+  return (
+    <ThemeContext.Provider value={theme}>{children}</ThemeContext.Provider>
+  );
+}
+function StandaloneThemeControl() {
+  const theme = useThemeState();
+  return <ThemeButton theme={theme} />;
+}
+export function ThemeControl() {
+  const theme = useContext(ThemeContext);
+  return theme ? <ThemeButton theme={theme} /> : <StandaloneThemeControl />;
+}
+function ThemeButton({
+  theme: { preference, choose },
+}: {
+  theme: ReturnType<typeof useThemeState>;
+}) {
   const Icon =
     preference === "system" ? Monitor : preference === "dark" ? Moon : Sun;
+  const next = cycle[(cycle.indexOf(preference) + 1) % cycle.length];
+  const description = `外观主题：${labels[preference]}；切换为${labels[next]}`;
   return (
-    <label className="theme-control">
-      <Icon size={16} aria-hidden="true" />
-      <select
-        aria-label="外观主题"
-        value={preference}
-        onChange={(event) => {
-          const next = event.target.value as ThemePreference;
-          try {
-            localStorage.setItem(THEME_STORAGE_KEY, next);
-          } catch {
-            /* Session choice still applies. */
-          }
-          setPreference(next);
-        }}
-      >
-        <option value="system">跟随系统</option>
-        <option value="light">浅色</option>
-        <option value="dark">深色</option>
-      </select>
-    </label>
+    <button
+      type="button"
+      className="theme-control icon-button"
+      aria-label={description}
+      title={description}
+      data-tooltip={description}
+      onClick={() => choose(next)}
+    >
+      <Icon size={20} aria-hidden="true" />
+    </button>
   );
 }

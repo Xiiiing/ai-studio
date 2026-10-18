@@ -1,3 +1,4 @@
+import { setTheme } from "./theme.mjs";
 import { test, expect } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { openProjectPage, openWorkflow } from "./navigation.mjs";
@@ -20,16 +21,16 @@ for (const theme of ["light", "dark"])
     }) => {
       await page.setViewportSize({ width, height: 844 });
       await page.goto(`/#project=${id}&tab=overview`);
-      await page.getByLabel("外观主题").selectOption(theme);
+      await setTheme(page, theme);
       const view = page.locator("[data-project-result]");
       const download = page.locator("[data-project-download]");
       await expect(view).toBeInViewport({ ratio: 1 });
       await expect(download).toBeInViewport({ ratio: 1 });
       expect(await page.evaluate(() => scrollY)).toBe(0);
-      await expect(page.locator(".project-navigation")).toBeHidden();
+      await expect(page.locator(".project-navigation")).toBeVisible();
       await expect(
-        page.locator(".project-quick-navigation button"),
-      ).toHaveCount(5);
+        page.locator(".project-primary-navigation [data-tab]"),
+      ).toHaveCount(6);
       await expect(page.locator(".project-process")).not.toHaveAttribute(
         "open",
       );
@@ -54,9 +55,11 @@ for (const theme of ["light", "dark"])
           fullPage: true,
         });
       const before = await page.locator(".project-pane").boundingBox();
-      await page.getByRole("button", { name: /^项目页面：/ }).click();
-      const menu = page.getByRole("navigation", { name: "项目页面选择" });
-      await expect(menu.locator("button")).toHaveCount(10);
+      const more = page.locator(".project-more");
+      const trigger = more.locator(":scope > summary");
+      await trigger.click();
+      const menu = more.locator(".project-navigation-menu");
+      await expect(menu.locator("button")).toHaveCount(2);
       expect((await page.locator(".project-pane").boundingBox()).y).toBe(
         before.y,
       );
@@ -65,10 +68,8 @@ for (const theme of ["light", "dark"])
       expect(bounds.x + bounds.width).toBeLessThanOrEqual(width);
       expect(bounds.y + bounds.height).toBeLessThanOrEqual(844);
       await page.keyboard.press("Escape");
-      await expect(menu).toHaveCount(0);
-      await expect(
-        page.getByRole("button", { name: /^项目页面：/ }),
-      ).toBeFocused();
+      await expect(menu).toBeHidden();
+      await expect(trigger).toBeFocused();
       const filePromise = page.waitForEvent("download");
       await download.click();
       const file = await filePromise;

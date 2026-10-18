@@ -1,3 +1,4 @@
+import { refreshPage } from "./header-flow.mjs";
 import { test, expect } from "@playwright/test";
 import { openProjectPage } from "./navigation.mjs";
 const id = "012345abcdef";
@@ -132,7 +133,10 @@ test("team console desktop/mobile themes, filters, evidence and playback survive
     });
   });
   await page.goto(`/#project=${id}`);
-  await page.locator(".project-background > summary").click();
+  await page
+    .locator("summary")
+    .filter({ hasText: /^制作规格与团队概况$/ })
+    .click();
   await page.getByRole("button", { name: "打开团队指挥台" }).click();
   await expect(page.locator(".team-department")).toHaveCount(7);
   const detail = page.getByRole("complementary", { name: "制作任务详情" });
@@ -161,7 +165,7 @@ test("team console desktop/mobile themes, filters, evidence and playback survive
     .poll(() => video.evaluate((element) => element.currentTime))
     .toBeGreaterThan(0.2);
   const before = await video.evaluate((element) => element.currentTime);
-  await page.locator('.topbar [data-action="refresh"]').click();
+  await refreshPage(page);
   await expect(page.getByLabel("镜头编号", { exact: true })).toHaveValue("S01");
   await expect(
     detail.getByRole("heading", { name: "第 1 镜视频" }),
@@ -204,7 +208,10 @@ test("team console desktop/mobile themes, filters, evidence and playback survive
     page.getByRole("heading", { name: "实际调用与回执" }),
   ).toBeVisible();
   await openProjectPage(page, "overview");
-  await page.locator(".project-background > summary").click();
+  await page
+    .locator("summary")
+    .filter({ hasText: /^制作规格与团队概况$/ })
+    .click();
   await expect(
     page.getByRole("button", { name: "打开团队指挥台" }),
   ).toBeVisible();
@@ -362,7 +369,10 @@ test("task controls preserve draft, preview lock conflicts, recover baseline and
     });
   });
   await page.goto(`/#project=${id}`);
-  await page.locator(".project-background > summary").click();
+  await page
+    .locator("summary")
+    .filter({ hasText: /^制作规格与团队概况$/ })
+    .click();
   await page.getByRole("button", { name: "打开团队指挥台" }).click();
   const detail = page.getByRole("complementary", { name: "制作任务详情" });
   const video = detail.locator("video");
@@ -391,7 +401,10 @@ test("task controls preserve draft, preview lock conflicts, recover baseline and
   await dialog.getByRole("button", { name: "稍后继续编辑" }).click();
   await detail.getByRole("button", { name: "解锁成果" }).click();
   await openProjectPage(page, "overview");
-  await page.locator(".project-background > summary").click();
+  await page
+    .locator("summary")
+    .filter({ hasText: /^制作规格与团队概况$/ })
+    .click();
   await page.getByRole("button", { name: "打开团队指挥台" }).click();
   await detail.getByRole("button", { name: "介入并下达要求" }).click();
   await expect(dialog.getByLabel("新的制作要求", { exact: true })).toHaveValue(
@@ -643,7 +656,10 @@ test("leader scopes, actionable plans, disabled models and management evidence",
     });
   });
   await page.goto(`/#project=${id}`);
-  await page.locator(".project-background > summary").click();
+  await page
+    .locator("summary")
+    .filter({ hasText: /^制作规格与团队概况$/ })
+    .click();
   await page.getByRole("button", { name: "打开团队指挥台" }).click();
   const disabled = page.getByRole("button", { name: "请声音制作负责人安排" });
   await expect(disabled).toBeDisabled();

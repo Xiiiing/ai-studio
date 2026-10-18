@@ -59,32 +59,114 @@ for (const width of [320, 390, 768, 1024, 1440, 1920]) {
         })),
       ]) {
         await page.goto(server.endpoint + "/#" + route.hash);
-        await expect(page.locator("main h1").first()).toBeVisible();
+        await expect(page.locator("main h1")).toHaveCount(1);
+        await expect(page.locator("main h1")).toBeVisible();
+        await expect(page.locator(".shared-page-header")).toHaveCount(1);
+        await expect(page.locator(".shared-page-header h1")).toHaveCount(1);
+        await expect(page.locator(".topbar, .breadcrumb")).toHaveCount(0);
         await expect(page.locator("main .loading")).toHaveCount(0);
         await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
         await expect(page.getByRole("alert")).toHaveCount(0);
+        if (route.name === "models") {
+          const grid = page.locator(".service-card-grid");
+          await expect(grid).toBeVisible();
+          const geometry = await grid.evaluate((element) => ({
+            width: element.getBoundingClientRect().width,
+            columns:
+              getComputedStyle(element).gridTemplateColumns.split(/\s+/).length,
+            firstY: element
+              .querySelector(".model-service-card")
+              .getBoundingClientRect().top,
+          }));
+          expect(geometry.columns).toBe(
+            geometry.width >= 980 ? 3 : geometry.width >= 640 ? 2 : 1,
+          );
+          if (width === 1440) expect(geometry.firstY).toBeLessThanOrEqual(180);
+          if ([320, 390].includes(width))
+            expect(geometry.firstY).toBeLessThanOrEqual(220);
+        }
         if (route.tab) {
-          await expect(
-            page.locator(`.project-navigation [data-tab="${route.tab}"]`),
-          ).toHaveAttribute("aria-current", "page");
-          if (width < 1280) {
-            const trigger = page.getByRole("button", { name: /^项目页面：/ });
-            await expect(trigger).toBeVisible();
-            await trigger.click();
-            await expect(page.locator("[data-project-page]")).toHaveCount(10);
-            expect(
-              await page.locator("[data-project-page]").evaluateAll((items) =>
-                items.every((item) => {
-                  const box = item.getBoundingClientRect();
-                  return (
-                    box.left >= 0 && box.right <= innerWidth && box.height >= 44
-                  );
-                }),
-              ),
-            ).toBe(true);
-            await page.keyboard.press("Escape");
-            await expect(trigger).toBeFocused();
+          if (width >= 1280) {
+            await expect(page.locator(".heading-actions")).toHaveCSS(
+              "flex-direction",
+              "row",
+            );
+            const result = await page
+              .locator(".project-result-actions")
+              .boundingBox();
+            const operations = await page
+              .locator(".project-actions-menu > summary")
+              .boundingBox();
+            expect(Math.abs(result.y - operations.y)).toBeLessThanOrEqual(1);
+            if (route.tab === "overview") {
+              const geometry = () =>
+                page.evaluate(() =>
+                  Object.fromEntries(
+                    [".shared-page-header", ".project-navigation-bar"].map(
+                      (selector) => [
+                        selector,
+                        document.querySelector(selector).getBoundingClientRect()
+                          .top + scrollY,
+                      ],
+                    ),
+                  ),
+                );
+              const baseline = await geometry();
+              const menu = page.locator(".project-actions-menu");
+              await menu.locator(":scope > summary").click();
+              await expect(menu).toHaveAttribute("open", "");
+              const expanded = await geometry();
+              for (const selector of Object.keys(baseline))
+                expect(
+                  Math.abs(expanded[selector] - baseline[selector]),
+                  selector + " after opening project operations",
+                ).toBeLessThanOrEqual(1);
+              await page.keyboard.press("Escape");
+              await expect(menu).not.toHaveAttribute("open");
+              const closed = await geometry();
+              for (const selector of Object.keys(baseline))
+                expect(
+                  Math.abs(closed[selector] - baseline[selector]),
+                  selector + " after closing project operations",
+                ).toBeLessThanOrEqual(1);
+            }
           }
+          const group = ["materials", "series"].includes(route.tab)
+            ? "materials"
+            : ["decisions", "quality"].includes(route.tab)
+              ? "decisions"
+              : route.tab;
+          const navigation = page.locator(".project-primary-navigation");
+          await expect(navigation.locator("[data-tab]")).toHaveCount(6);
+          for (const item of await navigation.locator("[data-tab]").all()) {
+            await expect(item).toBeInViewport({ ratio: 1 });
+            const box = await item.boundingBox();
+            expect(box.height).toBeGreaterThanOrEqual(44);
+          }
+          if (!["team", "costs"].includes(route.tab))
+            await expect(
+              navigation.locator(`[data-tab="${group}"]`),
+            ).toHaveAttribute("aria-current", "page");
+          if (
+            ["materials", "series", "decisions", "quality"].includes(route.tab)
+          )
+            await expect(
+              page.locator(
+                `.project-subnavigation [data-project-page="${route.tab}"]`,
+              ),
+            ).toHaveAttribute("aria-current", "page");
+          const more = page.locator(".project-more");
+          const trigger = more.locator(":scope > summary");
+          await trigger.click();
+          await expect(more.locator("[data-project-page]")).toHaveCount(2);
+          for (const item of await more.locator("[data-project-page]").all()) {
+            await expect(item).toBeInViewport({ ratio: 1 });
+            const box = await item.boundingBox();
+            expect(box.height).toBeGreaterThanOrEqual(44);
+          }
+          await page.keyboard.press("Escape");
+          await expect(more).not.toHaveAttribute("open");
+          await expect(trigger).toBeFocused();
         }
         expect(
           await page.evaluate(
@@ -102,7 +184,7 @@ for (const width of [320, 390, 768, 1024, 1440, 1920]) {
   }
 }
 
-test("mobile project navigation reaches all ten pages and supports keyboard dismissal", async ({
+test("horizontal project navigation reaches all ten pages on mobile", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 320, height: 844 });
@@ -110,12 +192,46 @@ test("mobile project navigation reaches all ten pages and supports keyboard dism
   for (const tab of tabs) {
     await openProjectPage(page, tab);
     await expect(page).toHaveURL(new RegExp("tab=" + tab));
-    await expect(page.locator(".project-navigation-trigger")).toHaveAttribute(
-      "aria-expanded",
-      "false",
-    );
+    await expect(page.locator(".project-more")).not.toHaveAttribute("open");
     await expect(page.locator("main .loading")).toHaveCount(0);
   }
+});
+
+test("legacy project links retain child pages and browser history", async ({
+  page,
+  request,
+}) => {
+  await page.goto("/#project=012345abcdef&tab=quality");
+  await expect(
+    page.locator('.project-subnavigation [data-project-page="quality"]'),
+  ).toHaveAttribute("aria-current", "page");
+  await openProjectPage(page, "series");
+  await expect(
+    page.locator('.project-subnavigation [data-project-page="series"]'),
+  ).toHaveAttribute("aria-current", "page");
+  await openProjectPage(page, "team");
+  await expect(page).toHaveURL(/tab=team/);
+  await page.goBack();
+  await expect(page).toHaveURL(/tab=series/);
+  await expect(
+    page.locator('.project-subnavigation [data-project-page="series"]'),
+  ).toHaveAttribute("aria-current", "page");
+  await page.goBack();
+  await expect(page).toHaveURL(/tab=materials/);
+  await page.goBack();
+  await expect(page).toHaveURL(/tab=quality/);
+  await page.goForward();
+  await expect(page).toHaveURL(/tab=materials/);
+  await page.goForward();
+  await expect(page).toHaveURL(/tab=series/);
+  await openProjectPage(page, "costs");
+  await expect(page).toHaveURL(/tab=costs/);
+  const calls = await (await request.get("/__test/calls")).json();
+  expect(
+    calls.filter(
+      (call) => call.method === "POST" && call.path.startsWith("/api/"),
+    ),
+  ).toEqual([]);
 });
 
 test("model and shot drafts survive navigating away while keeping their original revisions", async ({
@@ -274,7 +390,7 @@ for (const theme of ["light", "dark"])
         ".button.primary:not(:disabled)",
         ".notice",
         ".service-detail-footnote",
-        ".service-list-item small",
+        ".service-card-address",
         ".field > label",
         ".nav-item.active",
       ].flatMap((selector) => {

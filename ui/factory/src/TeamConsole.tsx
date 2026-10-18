@@ -25,6 +25,7 @@ import {
   Badge,
   Empty,
   ErrorNotice,
+  FloatingErrorNotice,
   Field,
   Loading,
   Panel,
@@ -220,7 +221,7 @@ export function TeamConsole({
   }
   return (
     <div className="stack team-console">
-      <ErrorNotice error={teamQuery.error} />
+      <FloatingErrorNotice error={teamQuery.error} />
       {controlNotice && (
         <div className="notice team-control-notice" role="status">
           {controlNotice}
@@ -436,7 +437,7 @@ export function TeamConsole({
               />
             </Field>
           </div>
-          <ErrorNotice error={tasksQuery.error} />
+          <FloatingErrorNotice error={tasksQuery.error} />
           {tasksQuery.error && (
             <button
               className="button small"
@@ -540,7 +541,7 @@ export function TeamConsole({
               查看负责人、输入版本、交付成果和审核依据。
             </Empty>
           )}
-          <ErrorNotice error={detailQuery.error} />
+          <FloatingErrorNotice error={detailQuery.error} />
           {detailQuery.error && (
             <button
               className="button small"

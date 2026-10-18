@@ -1,0 +1,620 @@
+{
+  "bundle": "index-BTjyJPmh.js / index-1vYRynXn.css",
+  "fixture": "Default reset browser fixture; no real model calls",
+  "capturedAt": "2026-10-17T12:43:39.213Z",
+  "pairedScreenshots": {
+    "before": "runtime/ui-round3/before",
+    "after": "runtime/ui-round3/after",
+    "widths": [
+      390,
+      1440
+    ],
+    "height": 1000,
+    "theme": "light",
+    "reducedMotion": "reduce",
+    "pages": [
+      "models",
+      "project-overview",
+      "workflow"
+    ]
+  },
+  "models": [
+    {
+      "theme": "light",
+      "width": 320,
+      "containerWidth": 281,
+      "columns": 1,
+      "firstCardY": 203,
+      "h1s": 1
+    },
+    {
+      "theme": "light",
+      "width": 390,
+      "containerWidth": 343,
+      "columns": 1,
+      "firstCardY": 199,
+      "h1s": 1
+    },
+    {
+      "theme": "light",
+      "width": 768,
+      "containerWidth": 721,
+      "columns": 2,
+      "firstCardY": 135,
+      "h1s": 1
+    },
+    {
+      "theme": "light",
+      "width": 1024,
+      "containerWidth": 745,
+      "columns": 2,
+      "firstCardY": 141,
+      "h1s": 1
+    },
+    {
+      "theme": "light",
+      "width": 1440,
+      "containerWidth": 1137,
+      "columns": 3,
+      "firstCardY": 141,
+      "h1s": 1
+    },
+    {
+      "theme": "light",
+      "width": 1920,
+      "containerWidth": 1617,
+      "columns": 3,
+      "firstCardY": 141,
+      "h1s": 1
+    },
+    {
+      "theme": "dark",
+      "width": 320,
+      "containerWidth": 281,
+      "columns": 1,
+      "firstCardY": 203,
+      "h1s": 1
+    },
+    {
+      "theme": "dark",
+      "width": 390,
+      "containerWidth": 343,
+      "columns": 1,
+      "firstCardY": 199,
+      "h1s": 1
+    },
+    {
+      "theme": "dark",
+      "width": 768,
+      "containerWidth": 721,
+      "columns": 2,
+      "firstCardY": 135,
+      "h1s": 1
+    },
+    {
+      "theme": "dark",
+      "width": 1024,
+      "containerWidth": 745,
+      "columns": 2,
+      "firstCardY": 141,
+      "h1s": 1
+    },
+    {
+      "theme": "dark",
+      "width": 1440,
+      "containerWidth": 1137,
+      "columns": 3,
+      "firstCardY": 141,
+      "h1s": 1
+    },
+    {
+      "theme": "dark",
+      "width": 1920,
+      "containerWidth": 1617,
+      "columns": 3,
+      "firstCardY": 141,
+      "h1s": 1
+    }
+  ],
+  "exactContainerBoundaries": [
+    {
+      "theme": "light",
+      "width": 639,
+      "columns": 1
+    },
+    {
+      "theme": "light",
+      "width": 640,
+      "columns": 2
+    },
+    {
+      "theme": "light",
+      "width": 979,
+      "columns": 2
+    },
+    {
+      "theme": "light",
+      "width": 980,
+      "columns": 3
+    },
+    {
+      "theme": "dark",
+      "width": 639,
+      "columns": 1
+    },
+    {
+      "theme": "dark",
+      "width": 640,
+      "columns": 2
+    },
+    {
+      "theme": "dark",
+      "width": 979,
+      "columns": 2
+    },
+    {
+      "theme": "dark",
+      "width": 980,
+      "columns": 3
+    }
+  ],
+  "pairedPageGeometry": [
+    {
+      "width": 390,
+      "name": "models",
+      "title": "模型与连接",
+      "h1s": 1,
+      "theme": "light",
+      "firstCardY": 199,
+      "scrollWidth": 375,
+      "viewportWidth": 390
+    },
+    {
+      "width": 390,
+      "name": "project-overview",
+      "title": "浏览器模拟样片",
+      "h1s": 1,
+      "theme": "light",
+      "scrollWidth": 375,
+      "viewportWidth": 390
+    },
+    {
+      "width": 390,
+      "name": "workflow",
+      "title": "制作流程与团队",
+      "h1s": 1,
+      "theme": "light",
+      "scrollWidth": 375,
+      "viewportWidth": 390
+    },
+    {
+      "width": 1440,
+      "name": "models",
+      "title": "模型与连接",
+      "h1s": 1,
+      "theme": "light",
+      "firstCardY": 141,
+      "scrollWidth": 1425,
+      "viewportWidth": 1440
+    },
+    {
+      "width": 1440,
+      "name": "project-overview",
+      "title": "浏览器模拟样片",
+      "h1s": 1,
+      "theme": "light",
+      "scrollWidth": 1425,
+      "viewportWidth": 1440
+    },
+    {
+      "width": 1440,
+      "name": "workflow",
+      "title": "制作流程与团队",
+      "h1s": 1,
+      "theme": "light",
+      "scrollWidth": 1425,
+      "viewportWidth": 1440
+    }
+  ],
+  "layout": [
+    {
+      "width": 320,
+      "drawerBounds": {
+        "x": 0,
+        "y": 0,
+        "width": 320,
+        "height": 1000
+      },
+      "baseline": {
+        ".project-heading h1": {
+          "x": 108,
+          "y": 20,
+          "width": 133
+        },
+        ".project-navigation-bar": {
+          "x": 0,
+          "y": 240,
+          "width": 305
+        },
+        ".project-pane > :first-child": {
+          "x": 12,
+          "y": 301,
+          "width": 281
+        }
+      },
+      "states": {
+        "drawerOpen": {
+          ".project-heading h1": {
+            "x": 108,
+            "y": 20,
+            "width": 133
+          },
+          ".project-navigation-bar": {
+            "x": 0,
+            "y": 240,
+            "width": 305
+          },
+          ".project-pane > :first-child": {
+            "x": 12,
+            "y": 301,
+            "width": 281
+          }
+        },
+        "drawerClosed": {
+          ".project-heading h1": {
+            "x": 108,
+            "y": 20,
+            "width": 133
+          },
+          ".project-navigation-bar": {
+            "x": 0,
+            "y": 240,
+            "width": 305
+          },
+          ".project-pane > :first-child": {
+            "x": 12,
+            "y": 301,
+            "width": 281
+          }
+        },
+        "refreshError": {
+          ".project-heading h1": {
+            "x": 108,
+            "y": 20,
+            "width": 133
+          },
+          ".project-navigation-bar": {
+            "x": 0,
+            "y": 240,
+            "width": 305
+          },
+          ".project-pane > :first-child": {
+            "x": 12,
+            "y": 301,
+            "width": 281
+          }
+        }
+      },
+      "deltas": {
+        "drawerOpen": {
+          ".project-heading h1": {
+            "x": 0,
+            "y": 0,
+            "width": 0
+          },
+          ".project-navigation-bar": {
+            "x": 0,
+            "y": 0,
+            "width": 0
+          },
+          ".project-pane > :first-child": {
+            "x": 0,
+            "y": 0,
+            "width": 0
+          }
+        },
+        "drawerClosed": {
+          ".project-heading h1": {
+            "x": 0,
+            "y": 0,
+            "width": 0
+          },
+          ".project-navigation-bar": {
+            "x": 0,
+            "y": 0,
+            "width": 0
+          },
+          ".project-pane > :first-child": {
+            "x": 0,
+            "y": 0,
+            "width": 0
+          }
+        },
+        "refreshError": {
+          ".project-heading h1": {
+            "x": 0,
+            "y": 0,
+            "width": 0
+          },
+          ".project-navigation-bar": {
+            "x": 0,
+            "y": 0,
+            "width": 0
+          },
+          ".project-pane > :first-child": {
+            "x": 0,
+            "y": 0,
+            "width": 0
+          }
+        }
+      },
+      "maxDeltaPx": 0
+    },
+    {
+      "width": 390,
+      "drawerBounds": {
+        "x": 0,
+        "y": 0,
+        "width": 390,
+        "height": 1000
+      },
+      "baseline": {
+        ".project-heading h1": {
+          "x": 112,
+          "y": 20,
+          "width": 191.109375
+        },
+        ".project-navigation-bar": {
+          "x": 16,
+          "y": 184,
+          "width": 343
+        },
+        ".project-pane > :first-child": {
+          "x": 16,
+          "y": 245,
+          "width": 343
+        }
+      },
+      "states": {
+        "drawerOpen": {
+          ".project-heading h1": {
+            "x": 112,
+            "y": 20,
+            "width": 191.109375
+          },
+          ".project-navigation-bar": {
+            "x": 16,
+            "y": 184,
+            "width": 343
+          },
+          ".project-pane > :first-child": {
+            "x": 16,
+            "y": 245,
+            "width": 343
+          }
+        },
+        "drawerClosed": {
+          ".project-heading h1": {
+            "x": 112,
+            "y": 20,
+            "width": 191.109375
+          },
+          ".project-navigation-bar": {
+            "x": 16,
+            "y": 184,
+            "width": 343
+          },
+          ".project-pane > :first-child": {
+            "x": 16,
+            "y": 245,
+            "width": 343
+          }
+        },
+        "refreshError": {
+          ".project-heading h1": {
+            "x": 112,
+            "y": 20,
+            "width": 191.109375
+          },
+          ".project-navigation-bar": {
+            "x": 16,
+            "y": 184,
+            "width": 343
+          },
+          ".project-pane > :first-child": {
+            "x": 16,
+            "y": 245,
+            "width": 343
+          }
+        }
+      },
+      "deltas": {
+        "drawerOpen": {
+          ".project-heading h1": {
+            "x": 0,
+            "y": 0,
+            "width": 0
+          },
+          ".project-navigation-bar": {
+            "x": 0,
+            "y": 0,
+            "width": 0
+          },
+          ".project-pane > :first-child": {
+            "x": 0,
+            "y": 0,
+            "width": 0
+          }
+        },
+        "drawerClosed": {
+          ".project-heading h1": {
+            "x": 0,
+            "y": 0,
+            "width": 0
+          },
+          ".project-navigation-bar": {
+            "x": 0,
+            "y": 0,
+            "width": 0
+          },
+          ".project-pane > :first-child": {
+            "x": 0,
+            "y": 0,
+            "width": 0
+          }
+        },
+        "refreshError": {
+          ".project-heading h1": {
+            "x": 0,
+            "y": 0,
+            "width": 0
+          },
+          ".project-navigation-bar": {
+            "x": 0,
+            "y": 0,
+            "width": 0
+          },
+          ".project-pane > :first-child": {
+            "x": 0,
+            "y": 0,
+            "width": 0
+          }
+        }
+      },
+      "maxDeltaPx": 0
+    },
+    {
+      "width": 1440,
+      "drawerBounds": {
+        "x": 1040,
+        "y": 0,
+        "width": 400,
+        "height": 1000
+      },
+      "baseline": {
+        ".project-heading h1": {
+          "x": 312,
+          "y": 26,
+          "width": 218.40625
+        },
+        ".project-navigation-bar": {
+          "x": 260,
+          "y": 140,
+          "width": 1137
+        },
+        ".project-pane > :first-child": {
+          "x": 260,
+          "y": 205,
+          "width": 1137
+        }
+      },
+      "states": {
+        "drawerOpen": {
+          ".project-heading h1": {
+            "x": 312,
+            "y": 26,
+            "width": 218.40625
+          },
+          ".project-navigation-bar": {
+            "x": 260,
+            "y": 140,
+            "width": 1137
+          },
+          ".project-pane > :first-child": {
+            "x": 260,
+            "y": 205,
+            "width": 1137
+          }
+        },
+        "drawerClosed": {
+          ".project-heading h1": {
+            "x": 312,
+            "y": 26,
+            "width": 218.40625
+          },
+          ".project-navigation-bar": {
+            "x": 260,
+            "y": 140,
+            "width": 1137
+          },
+          ".project-pane > :first-child": {
+            "x": 260,
+            "y": 205,
+            "width": 1137
+          }
+        },
+        "refreshError": {
+          ".project-heading h1": {
+            "x": 312,
+            "y": 26,
+            "width": 218.40625
+          },
+          ".project-navigation-bar": {
+            "x": 260,
+            "y": 140,
+            "width": 1137
+          },
+          ".project-pane > :first-child": {
+            "x": 260,
+            "y": 205,
+            "width": 1137
+          }
+        }
+      },
+      "deltas": {
+        "drawerOpen": {
+          ".project-heading h1": {
+            "x": 0,
+            "y": 0,
+            "width": 0
+          },
+          ".project-navigation-bar": {
+            "x": 0,
+            "y": 0,
+            "width": 0
+          },
+          ".project-pane > :first-child": {
+            "x": 0,
+            "y": 0,
+            "width": 0
+          }
+        },
+        "drawerClosed": {
+          ".project-heading h1": {
+            "x": 0,
+            "y": 0,
+            "width": 0
+          },
+          ".project-navigation-bar": {
+            "x": 0,
+            "y": 0,
+            "width": 0
+          },
+          ".project-pane > :first-child": {
+            "x": 0,
+            "y": 0,
+            "width": 0
+          }
+        },
+        "refreshError": {
+          ".project-heading h1": {
+            "x": 0,
+            "y": 0,
+            "width": 0
+          },
+          ".project-navigation-bar": {
+            "x": 0,
+            "y": 0,
+            "width": 0
+          },
+          ".project-pane > :first-child": {
+            "x": 0,
+            "y": 0,
+            "width": 0
+          }
+        }
+      },
+      "maxDeltaPx": 0
+    }
+  ]
+}

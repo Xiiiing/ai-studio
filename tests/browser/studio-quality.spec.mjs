@@ -1,3 +1,4 @@
+import { refreshPage } from "./header-flow.mjs";
 import { test, expect } from "@playwright/test";
 import { startRealServer } from "./real-server.mjs";
 import { mkdir, readFile } from "node:fs/promises";
@@ -45,7 +46,7 @@ for (const width of [1440, 1024, 390]) {
       await expect(page.getByRole("alert")).toHaveCount(0);
       if (width === 390 && page.url().includes("project=")) {
         const tabsFit = await page
-          .locator(".tabbar button")
+          .locator(".project-primary-navigation [data-tab]")
           .evaluateAll((buttons) =>
             buttons.every((button) => {
               const box = button.getBoundingClientRect();
@@ -78,15 +79,35 @@ for (const width of [1440, 1024, 390]) {
       await expect(page.locator(".project-heading h1")).toHaveText(
         "HTTP 边界隔离测试",
       );
-      await expect(page.locator(`.tabbar [data-tab="${tab}"]`)).toHaveAttribute(
-        "aria-current",
-        "page",
-      );
+      const navigation = page.locator(".project-primary-navigation");
+      await expect(navigation.locator("[data-tab]")).toHaveCount(6);
+      const group =
+        tab === "series" ? "materials" : tab === "quality" ? "decisions" : tab;
+      if (["team", "costs"].includes(tab)) {
+        await expect(
+          page.locator(`.project-more [data-project-page="${tab}"]`),
+        ).toHaveAttribute("aria-current", "page");
+        await expect(
+          page.locator(".project-more > summary"),
+        ).toHaveAccessibleName(
+          tab === "team"
+            ? "更多项目页面：团队与回执"
+            : "更多项目页面：云任务与费用",
+        );
+      } else {
+        await expect(
+          navigation.locator(`[data-tab="${group}"]`),
+        ).toHaveAttribute("aria-current", "page");
+        if (["materials", "series", "decisions", "quality"].includes(tab))
+          await expect(
+            page.locator(`.project-subnavigation [data-project-page="${tab}"]`),
+          ).toHaveAttribute("aria-current", "page");
+      }
       await expect(page.locator("main .loading")).toHaveCount(0);
       await expect(page.getByRole("alert")).toHaveCount(0);
       if (width === 390 && page.url().includes("project=")) {
         const tabsFit = await page
-          .locator(".tabbar button")
+          .locator(".project-primary-navigation [data-tab]")
           .evaluateAll((buttons) =>
             buttons.every((button) => {
               const box = button.getBoundingClientRect();
@@ -147,7 +168,7 @@ test("real Markdown attachments, retried calls and step attribution remain reada
   const output = inspector.getByRole("region", { name: "交付内容" });
   await output.getByRole("button", { name: "阅读文件" }).click();
   await expect(output.getByRole("heading", { name: "站台重逢" })).toBeVisible();
-  await page.getByRole("button", { name: "刷新项目", exact: true }).click();
+  await refreshPage(page);
   await expect(page.locator('[data-flow-node="screenplay"]')).toHaveAttribute(
     "aria-pressed",
     "true",
@@ -265,7 +286,14 @@ test("real project creation, partial image recovery, full-size preview and visua
     .check();
   await page.getByLabel("创作规格", { exact: true }).selectOption("compact6");
   await page.getByRole("button", { name: "开始自主策划" }).click();
-  await expect(page.locator("main h1").last()).toHaveText("本剧素材与定稿");
+  await expect(page.locator("main h1")).toHaveText("素材准备闭环测试");
+  await expect(
+    page.getByRole("heading", {
+      level: 2,
+      name: "本剧素材与定稿",
+      exact: true,
+    }),
+  ).toBeVisible();
   const pid = new URLSearchParams(new URL(page.url()).hash.slice(1)).get(
     "project",
   );
@@ -316,7 +344,9 @@ test("real project creation, partial image recovery, full-size preview and visua
   await expect(
     page.getByRole("button", { name: "确认本批视觉定稿" }),
   ).toBeEnabled();
-  await page.locator("#toast").waitFor({ state: "hidden", timeout: 10000 });
+  await page
+    .locator('.feedback-region [role="status"]')
+    .waitFor({ state: "hidden", timeout: 10000 });
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({
     path: "runtime/browser-report/studio-real-materials-390.png",

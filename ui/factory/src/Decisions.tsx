@@ -343,7 +343,7 @@ export function DecisionCenter({
           <Inbox size={17} />
           <span>当前版本 {project.revision} · 所有决定都会留下记录</span>
         </div>
-        <ErrorNotice error={error} />
+        <ErrorNotice error={error} reserveSpace />
         <ReviewAutomation project={project} />
         <ReviewAdvisor
           project={project}
@@ -718,7 +718,7 @@ export function ActionForm({
       }}
     >
       <h3>{action.label}</h3>
-      <ErrorNotice error={fieldError} />
+      <ErrorNotice error={fieldError} reserveSpace />
       {action.impact && <p>{action.impact}</p>}
       {rows(action.inputs).map((input) =>
         input.name === "feedback" && input.type === "textarea" ? (

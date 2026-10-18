@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   LayoutDashboard,
@@ -7,22 +7,26 @@ import {
   Settings2,
   Activity,
   Plus,
-  RefreshCw,
   Clapperboard,
   ArrowUpRight,
   ArrowRight,
   Cpu,
   Bot,
   Search,
-  Menu,
   CheckCircle2,
   Clock3,
   Play,
   Pause,
   Hand,
   X,
+  AlertCircle,
+  ChevronRight,
+  ArrowLeft,
+  ChevronDown,
 } from "lucide-react";
-import { ThemeControl } from "./Theme";
+import { lockPageScroll } from "./ScrollLock";
+import { ThemeProvider } from "./Theme";
+import { PageHeader, PageHeaderProvider } from "./PageHeader";
 import { ProjectNavigation } from "./ProjectNavigation";
 import {
   ProjectResultActions,
@@ -52,6 +56,9 @@ import {
   Empty,
   Loading,
   ErrorNotice,
+  FloatingErrorNotice,
+  FeedbackProvider,
+  ActionNotice,
   Field,
   Modal,
   Readable,
@@ -79,15 +86,24 @@ function readRoute(): Route {
   };
 }
 const links = [
-  ["dashboard", "制片总览", LayoutDashboard],
-  ["projects", "全部项目", FolderKanban],
-  ["library", "统一素材库", FolderKanban],
-  ["inbox", "待办决策", Inbox],
+  ["dashboard", "总览", LayoutDashboard],
+  ["projects", "项目", FolderKanban],
+  ["library", "素材库", FolderKanban],
+  ["inbox", "待办", Inbox],
   ["workflow", "制作流程与团队", Bot],
   ["models", "模型与连接", Settings2],
   ["activity", "运行记录", Activity],
 ] as const;
 export default function App() {
+  return (
+    <ThemeProvider>
+      <FeedbackProvider>
+        <Workbench />
+      </FeedbackProvider>
+    </ThemeProvider>
+  );
+}
+function Workbench() {
   useUnsavedShotGuard();
   const client = useQueryClient(),
     [route, setRoute] = useState(readRoute),
@@ -110,8 +126,7 @@ export default function App() {
   }, []);
   useEffect(() => {
     if (!mobile || !narrow) return;
-    const overflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    const releaseScroll = lockPageScroll();
     let focusFrame = requestAnimationFrame(() => {
       focusFrame = requestAnimationFrame(() =>
         navigationRef.current
@@ -121,7 +136,7 @@ export default function App() {
     });
     return () => {
       cancelAnimationFrame(focusFrame);
-      document.body.style.overflow = overflow;
+      releaseScroll();
       navigationTrigger.current?.focus({ preventScroll: true });
     };
   }, [mobile, narrow]);
@@ -261,34 +276,43 @@ export default function App() {
             <Plus size={16} />
             新建制作
           </button>
-          <div className="sidebar-label">工作室</div>
           <nav className="main-nav">
-            {links.map(([view, label, Icon]) => (
-              <button
-                key={view}
-                className={
-                  "nav-item " +
-                  (!route.project && route.view === view ? "active" : "")
-                }
-                data-action={
-                  view === "models"
-                    ? "models"
-                    : view === "dashboard"
-                      ? "dashboard"
-                      : "view"
-                }
-                data-view={view}
-                aria-current={
-                  !route.project && route.view === view ? "page" : undefined
-                }
-                onClick={() => navigate(view)}
-              >
-                <Icon size={17} />
-                {label}
-                {view === "inbox" && (
-                  <span className="nav-count">{metrics.attention || 0}</span>
-                )}
-              </button>
+            {[
+              { label: "工作室", entries: links.slice(0, 4) },
+              { label: "管理", entries: [links[5], links[4], links[6]] },
+            ].map((group) => (
+              <div className="nav-group" key={group.label}>
+                <div className="sidebar-label">{group.label}</div>
+                {group.entries.map(([view, label, Icon]) => (
+                  <button
+                    key={view}
+                    className={
+                      "nav-item " +
+                      (!route.project && route.view === view ? "active" : "")
+                    }
+                    data-action={
+                      view === "models"
+                        ? "models"
+                        : view === "dashboard"
+                          ? "dashboard"
+                          : "view"
+                    }
+                    data-view={view}
+                    aria-current={
+                      !route.project && route.view === view ? "page" : undefined
+                    }
+                    onClick={() => navigate(view)}
+                  >
+                    <Icon size={17} />
+                    {label}
+                    {view === "inbox" && (
+                      <span className="nav-count">
+                        {metrics.attention || 0}
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
             ))}
           </nav>
           <div className="sidebar-label row-between">
@@ -327,192 +351,163 @@ export default function App() {
           </div>
         </aside>
         <div className="main-shell" inert={mobile && narrow ? true : undefined}>
-          <header className="topbar">
-            <div className="topbar-context">
-              <button
-                ref={navigationTrigger}
-                className="icon-button mobile-navigation"
-                data-action="toggle-navigation"
-                aria-label={mobile ? "关闭导航" : "展开导航"}
-                aria-expanded={mobile}
-                aria-controls="studio-navigation"
-                onClick={() => setMobile(!mobile)}
-              >
-                <Menu size={20} />
-              </button>
-              <span className="breadcrumb">
-                工作室 <span>/</span>{" "}
-                {route.project
-                  ? "制作项目"
-                  : links.find((l) => l[0] === route.view)?.[1]}
-              </span>
-            </div>
-            <div className="topbar-right">
-              <ThemeControl />
-              <span
-                className={
-                  "sync-state " + (overview.isError ? "error-text" : "")
-                }
-              >
-                <i />
-                {overview.isError
-                  ? "同步中断"
-                  : overview.isFetching
-                    ? "正在同步"
-                    : "已同步"}
-              </span>
-              <button
-                className="icon-button"
-                data-action="refresh"
-                aria-label="刷新项目"
-                onClick={refresh}
-              >
-                <RefreshCw size={17} />
-              </button>
-              <span className="producer-avatar">出</span>
-            </div>
-          </header>
-          <main id="workspace" tabIndex={-1}>
-            {route.project ? (
-              <Project
-                key={route.project}
-                id={route.project}
-                tab={route.tab}
-                onTab={(tab) => navigate("dashboard", route.project, tab)}
-                onBack={() => navigate("projects")}
-                notify={setToast}
-                models={models.data}
-                onRemake={(project) => setCreate(project)}
-              />
-            ) : route.view === "models" ? (
-              <Models notify={setToast} />
-            ) : route.view === "library" ? (
-              <MaterialLibrary notify={setToast} />
-            ) : (
-              <>
-                <ErrorNotice error={overview.error} />
-                {!overview.data ? (
-                  overview.error ? (
-                    <button
-                      className="button"
-                      onClick={() => overview.refetch()}
-                    >
-                      重新读取工作室
-                    </button>
-                  ) : (
-                    <Loading />
-                  )
-                ) : route.view === "dashboard" ? (
-                  <Dashboard
-                    overview={overview.data}
-                    openProject={openProject}
-                    navigate={navigate}
-                    create={() => setCreate(true)}
-                  />
-                ) : route.view === "projects" ? (
-                  <Projects
-                    overview={overview.data}
-                    openProject={openProject}
-                    create={() => setCreate(true)}
-                  />
-                ) : route.view === "inbox" ? (
-                  <InboxPage openProject={openProject} />
-                ) : route.view === "activity" ? (
-                  <>
-                    <Heading
-                      eyebrow="OPERATIONS"
-                      title="运行记录"
-                      description="从项目事件定位执行、审核与异常，所有操作均保留历史。"
-                    />
-                    <Panel title="最近运行事件">
-                      <ActivityList
-                        events={rows(overview.data.activity)}
-                        openProject={openProject}
-                        filterable
+          <PageHeaderProvider
+            value={{
+              navigationOpen: mobile,
+              navigationTrigger,
+              toggleNavigation: () => setMobile(!mobile),
+              syncError: overview.isError,
+              syncing: overview.isFetching,
+              refresh,
+            }}
+          >
+            <main id="workspace" tabIndex={-1}>
+              {route.project ? (
+                <Project
+                  key={route.project}
+                  id={route.project}
+                  tab={route.tab}
+                  onTab={(tab) => navigate("dashboard", route.project, tab)}
+                  onBack={() => navigate("projects")}
+                  notify={setToast}
+                  models={models.data}
+                  onRemake={(project) => setCreate(project)}
+                />
+              ) : route.view === "models" ? (
+                <Models notify={setToast} />
+              ) : route.view === "library" ? (
+                <MaterialLibrary notify={setToast} />
+              ) : (
+                <>
+                  <FloatingErrorNotice error={overview.error} />
+                  {!overview.data ? (
+                    <>
+                      <Heading
+                        eyebrow=""
+                        title={
+                          links.find((link) => link[0] === route.view)?.[1] ||
+                          "总览"
+                        }
                       />
-                    </Panel>
-                  </>
-                ) : (
-                  <>
-                    <Heading
-                      eyebrow="PRODUCTION WORKFLOW"
-                      title="制作流程与团队"
-                      description="查看团队如何分工、交接与独立审核，进入项目追踪实际执行。"
-                    />
-                    <Panel title="当前执行任务">
-                      <RunningTasks
-                        tasks={rows(overview.data.running_tasks)}
-                        openProject={openProject}
-                      />
-                    </Panel>
-                    <Panel
-                      title="标准制作流程"
-                      description="读取服务器工作流定义；项目中的实际运行和返修记录分别展示。"
-                    >
-                      <ErrorNotice error={spec.error} />
-                      {spec.error && (
+                      {overview.error ? (
                         <button
                           className="button"
-                          onClick={() => spec.refetch()}
+                          onClick={() => overview.refetch()}
                         >
-                          重新读取制作流程
+                          重新读取工作室
                         </button>
-                      )}
-                      {spec.isPending ? (
-                        <Loading />
                       ) : (
-                        !spec.error && (
-                          <Workflow
-                            graph={
-                              spec.data?.production_graph ||
-                              spec.data?.workflow || {
-                                nodes: rows(spec.data?.nodes),
-                                edges: rows(spec.data?.edges),
-                              }
-                            }
-                          />
-                        )
+                        <Loading />
                       )}
-                    </Panel>
-                    <Panel title="已配置的 Agent">
-                      <div className="agent-grid">
-                        {rows(models.data?.roles).map((r) => (
-                          <article className="agent-card" key={r.role}>
-                            <span className="agent-avatar">
-                              <Bot size={20} />
-                            </span>
-                            <h3>{r.label || roleName(r.role)}</h3>
-                            <p>
-                              {r.model ||
-                                models.data?.editable_profiles?.[r.profile]
-                                  ?.model ||
-                                "自动编排 / 尚未分配"}
-                            </p>
-                            <small>
-                              {r.requires_vision
-                                ? "需要图像理解"
-                                : "工作流角色"}
-                            </small>
-                          </article>
-                        ))}
-                      </div>
-                    </Panel>
-                  </>
-                )}
-              </>
-            )}
-          </main>
+                    </>
+                  ) : route.view === "dashboard" ? (
+                    <Dashboard
+                      overview={overview.data}
+                      openProject={openProject}
+                      navigate={navigate}
+                      create={() => setCreate(true)}
+                    />
+                  ) : route.view === "projects" ? (
+                    <Projects
+                      overview={overview.data}
+                      openProject={openProject}
+                      create={() => setCreate(true)}
+                    />
+                  ) : route.view === "inbox" ? (
+                    <InboxPage openProject={openProject} />
+                  ) : route.view === "activity" ? (
+                    <>
+                      <Heading
+                        eyebrow="OPERATIONS"
+                        title="运行记录"
+                        description="从项目事件定位执行、审核与异常，所有操作均保留历史。"
+                      />
+                      <Panel title="最近运行事件">
+                        <ActivityList
+                          events={rows(overview.data.activity)}
+                          openProject={openProject}
+                          filterable
+                        />
+                      </Panel>
+                    </>
+                  ) : (
+                    <>
+                      <Heading
+                        eyebrow="PRODUCTION WORKFLOW"
+                        title="制作流程与团队"
+                        description="查看团队如何分工、交接与独立审核，进入项目追踪实际执行。"
+                      />
+                      <Panel title="当前执行任务">
+                        <RunningTasks
+                          tasks={rows(overview.data.running_tasks)}
+                          openProject={openProject}
+                        />
+                      </Panel>
+                      <Panel
+                        title="标准制作流程"
+                        description="读取服务器工作流定义；项目中的实际运行和返修记录分别展示。"
+                      >
+                        <FloatingErrorNotice error={spec.error} />
+                        {spec.error && (
+                          <button
+                            className="button"
+                            onClick={() => spec.refetch()}
+                          >
+                            重新读取制作流程
+                          </button>
+                        )}
+                        {spec.isPending ? (
+                          <Loading />
+                        ) : (
+                          !spec.error && (
+                            <Workflow
+                              graph={
+                                spec.data?.production_graph ||
+                                spec.data?.workflow || {
+                                  nodes: rows(spec.data?.nodes),
+                                  edges: rows(spec.data?.edges),
+                                }
+                              }
+                            />
+                          )
+                        )}
+                      </Panel>
+                      <Panel title="已配置的 Agent">
+                        <div className="agent-grid">
+                          {rows(models.data?.roles).map((r) => (
+                            <article className="agent-card" key={r.role}>
+                              <span className="agent-avatar">
+                                <Bot size={20} />
+                              </span>
+                              <h3>{r.label || roleName(r.role)}</h3>
+                              <p>
+                                {r.model ||
+                                  models.data?.editable_profiles?.[r.profile]
+                                    ?.model ||
+                                  "自动编排 / 尚未分配"}
+                              </p>
+                              <small>
+                                {r.requires_vision
+                                  ? "需要图像理解"
+                                  : "工作流角色"}
+                              </small>
+                            </article>
+                          ))}
+                        </div>
+                      </Panel>
+                    </>
+                  )}
+                </>
+              )}
+            </main>
+          </PageHeaderProvider>
           <footer className="workspace-footer">
             <span>映序 · AI 制片工作室</span>
             <span>创作、审核与交付记录可追溯</span>
           </footer>
         </div>
       </div>
-      {toast && (
-        <div id="toast" className="toast" role="status">
-          {toast}
-        </div>
-      )}
+      <ActionNotice message={toast} />
       {create && (
         <CreateProject
           catalog={profiles.data}
@@ -919,7 +914,7 @@ function Projects({
           onOffset={setOffset}
           disabled={query !== search.trim() || page.isFetching}
         />
-        <ErrorNotice error={page.error} />
+        <FloatingErrorNotice error={page.error} />
         {page.error && (
           <button className="button" onClick={() => page.refetch()}>
             重新读取项目
@@ -1136,6 +1131,22 @@ function Project({
     enabled: !!workspace.data && !workspace.data.flow,
     refetchInterval: 5000,
   });
+  const actionsMenu = useRef<HTMLDetailsElement>(null);
+  const downloadReasonId = useId();
+  useEffect(() => {
+    if (actionsMenu.current) actionsMenu.current.open = false;
+  }, [tab]);
+  useEffect(() => {
+    const outside = (event: PointerEvent) => {
+      if (
+        actionsMenu.current &&
+        !actionsMenu.current.contains(event.target as Node)
+      )
+        actionsMenu.current.open = false;
+    };
+    document.addEventListener("pointerdown", outside);
+    return () => document.removeEventListener("pointerdown", outside);
+  }, []);
   const [selectedFlowNode, setSelectedFlowNode] = useState(""),
     [selectedExecution, setSelectedExecution] = useState(""),
     [workflowOpen, setWorkflowOpen] = useState(false),
@@ -1145,12 +1156,27 @@ function Project({
     [preview, setPreview] = useState<RecordData | null>(null),
     [control, setControl] = useState<RecordData | null>(null),
     [busy, setBusy] = useState(false),
+    [statusOpen, setStatusOpen] = useState(false),
     [error, setError] = useState("");
   const w = workspace.data;
   if (!w)
     return (
       <>
-        <ErrorNotice error={workspace.error} />
+        <PageHeader
+          className="project-heading"
+          title="制作项目"
+          parent={
+            <button
+              className="icon-button"
+              aria-label="返回项目列表"
+              title="返回项目列表"
+              onClick={onBack}
+            >
+              <ArrowLeft size={20} />
+            </button>
+          }
+        />
+        <FloatingErrorNotice error={workspace.error} />
         {workspace.error ? (
           <button className="button" onClick={() => workspace.refetch()}>
             重新读取项目
@@ -1190,14 +1216,37 @@ function Project({
   }
   return (
     <>
-      <header className="project-heading">
-        <div>
-          <button className="breadcrumb-link" onClick={onBack}>
-            全部项目 /
+      <PageHeader
+        className="project-heading"
+        title={p.title || "未命名制作"}
+        parent={
+          <button
+            className="icon-button project-back"
+            aria-label="返回项目列表"
+            title="返回项目列表"
+            onClick={onBack}
+          >
+            <ArrowLeft size={20} aria-hidden="true" />
           </button>
-          <h1>{p.title || "未命名制作"}</h1>
+        }
+        meta={
           <div className="project-meta">
-            <Badge status={p.status} />
+            <button
+              type="button"
+              className="project-status-trigger"
+              aria-label="查看项目状态"
+              aria-haspopup="dialog"
+              aria-expanded={statusOpen}
+              onClick={() => setStatusOpen(true)}
+            >
+              {attention?.blocking ? (
+                <AlertCircle size={16} />
+              ) : (
+                <Activity size={16} />
+              )}
+              <span>{names[p.status] || p.status || "未记录"}</span>
+              <ChevronRight size={14} />
+            </button>
             <span>
               {projectVisualLabel(p)} · {p.duration_seconds} 秒
             </span>
@@ -1211,77 +1260,75 @@ function Project({
                     ? "总制片协作"
                     : "人工把关"}
             </span>
+            {!ownedMedia(p.id, p.delivery?.video_url) && (
+              <span id={downloadReasonId} className="project-download-reason">
+                成片尚未生成
+              </span>
+            )}
           </div>
-        </div>
-        <div className="heading-actions">
-          <ProjectResultActions project={p} onOpen={onTab} />
-          <details
-            className="project-actions-menu"
-            onKeyDown={(event) => {
-              if (event.key === "Escape") {
-                event.currentTarget.open = false;
-                event.currentTarget.querySelector("summary")?.focus();
-              }
-            }}
-          >
-            <summary>项目操作</summary>
-            <div className="project-actions-list">
-              <button className="button small" onClick={() => onRemake(p)}>
-                按新规格重制
-              </button>
-              {active.map((a) => (
-                <button
-                  className={
-                    "button small " + (a.id === "take_control" ? "primary" : "")
-                  }
-                  key={a.id}
-                  disabled={busy || a.enabled === false}
-                  title={a.disabled_reason || a.impact}
-                  onClick={() =>
-                    rows(a.inputs).length
-                      ? setControl(a)
-                      : action({ action: a.id })
-                  }
-                >
-                  {a.id === "take_control" ? (
-                    <Hand size={14} />
-                  ) : a.id === "pause" ? (
-                    <Pause size={14} />
-                  ) : (
-                    <Bot size={14} />
-                  )}{" "}
-                  {a.label}
+        }
+        action={
+          <div className="heading-actions">
+            <ProjectResultActions
+              project={p}
+              onOpen={onTab}
+              reasonId={downloadReasonId}
+            />
+            <details
+              ref={actionsMenu}
+              className="project-actions-menu"
+              onBlur={(event) => {
+                if (!event.currentTarget.contains(event.relatedTarget as Node))
+                  event.currentTarget.open = false;
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  event.currentTarget.open = false;
+                  event.currentTarget.querySelector("summary")?.focus();
+                }
+              }}
+            >
+              <summary className="button">
+                项目操作
+                <ChevronDown size={16} aria-hidden="true" />
+              </summary>
+              <div className="project-actions-list">
+                <button className="button small" onClick={() => onRemake(p)}>
+                  按新规格重制
                 </button>
-              ))}
-            </div>
-          </details>
-        </div>
-      </header>
-      {w.operator?.delegation?.reason && (
-        <div className="delegation-note">
-          <Bot size={16} />
-          {w.operator.delegation.reason}
-        </div>
-      )}
-      <ErrorNotice error={error || workspace.error} />
-      {attention?.blocking && tab !== "decisions" && tab !== "overview" && (
-        <div className="project-attention-banner">
-          <span className="attention-icon">
-            <Inbox size={20} />
-          </span>
-          <div>
-            <strong>{attention.title}</strong>
-            <span>{attention.summary}</span>
+                {active.map((a) => (
+                  <button
+                    className={
+                      "button small " +
+                      (a.id === "take_control" ? "primary" : "")
+                    }
+                    key={a.id}
+                    disabled={busy || a.enabled === false}
+                    title={a.disabled_reason || a.impact}
+                    onClick={() =>
+                      rows(a.inputs).length
+                        ? setControl(a)
+                        : action({ action: a.id })
+                    }
+                  >
+                    {a.id === "take_control" ? (
+                      <Hand size={14} />
+                    ) : a.id === "pause" ? (
+                      <Pause size={14} />
+                    ) : (
+                      <Bot size={14} />
+                    )}{" "}
+                    {a.label}
+                  </button>
+                ))}
+              </div>
+            </details>
           </div>
-          <button
-            className="button primary small"
-            onClick={() => onTab(attention.target_tab || "decisions")}
-          >
-            {attention.action_label || "处理待办"}
-            <ArrowRight size={14} />
-          </button>
-        </div>
-      )}
+        }
+      />
+      <FloatingErrorNotice error={workspace.error || (!control ? error : "")} />
       <div className="project-content-layout">
         <ProjectNavigation
           tab={tab}
@@ -1332,9 +1379,10 @@ function Project({
                   <CurrentOutput project={p} />
                 </Panel>
                 <Panel title="当前任务与下一步">
-                  <ReviewAutomation project={p} />
+                  {p.review_automation?.status !== "passed" && (
+                    <ReviewAutomation project={p} />
+                  )}
                   <div className="current-task">
-                    <Badge status={p.status} />
                     <h3>
                       {attention?.title ||
                         activityName(w.operator?.current_activity || p.status)}
@@ -1343,15 +1391,6 @@ function Project({
                       {attention?.summary ||
                         "团队按工作流继续推进，实际产物与审核结果会持续更新。"}
                     </p>
-                    <div className="member-chips">
-                      {(
-                        rows(graph.nodes).find(
-                          (n) => n.id === graph.active_node,
-                        )?.members || []
-                      ).map((r: string) => (
-                        <span key={r}>{roleName(r)}</span>
-                      ))}
-                    </div>
                     {attention?.blocking ? (
                       <button
                         className="button primary"
@@ -1368,6 +1407,18 @@ function Project({
                         <ArrowRight size={15} />
                       </button>
                     )}
+                    <details className="current-task-members">
+                      <summary>参与角色</summary>
+                      <div className="member-chips">
+                        {(
+                          rows(graph.nodes).find(
+                            (n) => n.id === graph.active_node,
+                          )?.members || []
+                        ).map((r: string) => (
+                          <span key={r}>{roleName(r)}</span>
+                        ))}
+                      </div>
+                    </details>
                   </div>
                 </Panel>
               </div>
@@ -1434,55 +1485,61 @@ function Project({
                 <CreativeContract project={p} compact />
                 <TeamOverview projectId={id} onOpen={() => onTab("team")} />
               </details>
-              <div className="project-bottom-grid">
-                <Panel title="创作任务与当前故事">
-                  <p className="brief-text">{p.brief}</p>
-                  {p.selected_story && (
-                    <div className="selected-story">
-                      <small>
-                        已选故事 ·{" "}
-                        {p.script_review?.passed
-                          ? "当前已通过剧本"
-                          : "选题方向"}
-                      </small>
-                      <h3>
-                        {p.script?.title ||
-                          rows(p.proposals).find(
-                            (s) => s.id === p.selected_story,
-                          )?.title ||
-                          p.title}
-                      </h3>
-                      <p>
-                        {p.script?.logline ||
-                          p.script?.summary ||
-                          rows(p.proposals).find(
-                            (s) => s.id === p.selected_story,
-                          )?.logline}
-                      </p>
-                    </div>
-                  )}
-                  <details>
-                    <summary>研究资料与使用范围</summary>
-                    {rows(p.sources || p.research?.sources).map((s, i) => (
-                      <div className="source-item" key={i}>
-                        <Artifact
-                          item={{ url: s.url, label: s.title || s.url }}
-                        />
-                        <Badge label={s.rights || "仅研究"} status="pending" />
+              <details className="project-background">
+                <summary>创作背景与最近事件</summary>
+                <div className="project-bottom-grid">
+                  <Panel title="创作任务与当前故事">
+                    <p className="brief-text">{p.brief}</p>
+                    {p.selected_story && (
+                      <div className="selected-story">
+                        <small>
+                          已选故事 ·{" "}
+                          {p.script_review?.passed
+                            ? "当前已通过剧本"
+                            : "选题方向"}
+                        </small>
+                        <h3>
+                          {p.script?.title ||
+                            rows(p.proposals).find(
+                              (s) => s.id === p.selected_story,
+                            )?.title ||
+                            p.title}
+                        </h3>
+                        <p>
+                          {p.script?.logline ||
+                            p.script?.summary ||
+                            rows(p.proposals).find(
+                              (s) => s.id === p.selected_story,
+                            )?.logline}
+                        </p>
                       </div>
-                    ))}
-                  </details>
-                </Panel>
-                <Panel title="最近项目事件">
-                  <ActivityList
-                    events={rows(p.events)
-                      .slice(-5)
-                      .reverse()
-                      .map((e) => ({ ...e, project_id: id, title: p.title }))}
-                    openProject={(_, t) => onTab(t || "quality")}
-                  />
-                </Panel>
-              </div>
+                    )}
+                    <details>
+                      <summary>研究资料与使用范围</summary>
+                      {rows(p.sources || p.research?.sources).map((s, i) => (
+                        <div className="source-item" key={i}>
+                          <Artifact
+                            item={{ url: s.url, label: s.title || s.url }}
+                          />
+                          <Badge
+                            label={s.rights || "仅研究"}
+                            status="pending"
+                          />
+                        </div>
+                      ))}
+                    </details>
+                  </Panel>
+                  <Panel title="最近项目事件">
+                    <ActivityList
+                      events={rows(p.events)
+                        .slice(-5)
+                        .reverse()
+                        .map((e) => ({ ...e, project_id: id, title: p.title }))}
+                      openProject={(_, t) => onTab(t || "quality")}
+                    />
+                  </Panel>
+                </div>
+              </details>
             </>
           ) : tab === "decisions" ? (
             <DecisionCenter
@@ -1497,7 +1554,13 @@ function Project({
             />
           ) : tab === "team" ? (
             <>
-              <ErrorNotice
+              {w.operator?.delegation?.reason && (
+                <div className="delegation-note">
+                  <Bot size={16} />
+                  {w.operator.delegation.reason}
+                </div>
+              )}
+              <FloatingErrorNotice
                 error={
                   flow.error
                     ? new Error("历史回执读取失败：" + flow.error.message)
@@ -1717,6 +1780,86 @@ function Project({
           )}
         </div>
       </div>
+      {statusOpen && (
+        <Modal
+          id="project-status-dialog"
+          className="project-status-drawer"
+          title="项目状态"
+          onClose={() => setStatusOpen(false)}
+        >
+          <div className="status-summary">
+            <span className="status-caption">{p.title || "未命名制作"}</span>
+            <h3>
+              {attention?.title ||
+                activityName(w.operator?.current_activity || p.status)}
+            </h3>
+            <p>
+              {attention?.summary ||
+                "当前没有待处理的阻断问题。制作进度和产物可在项目页面查看。"}
+            </p>
+          </div>
+          <dl className="status-facts">
+            <div>
+              <dt>当前状态</dt>
+              <dd>{names[p.status] || p.status || "未记录"}</dd>
+            </div>
+            <div>
+              <dt>当前阶段</dt>
+              <dd>
+                {activityName(
+                  w.operator?.current_activity || p.stage || p.status,
+                )}
+              </dd>
+            </div>
+          </dl>
+          {rows(attention?.issues).length > 0 && (
+            <ul className="status-issues" aria-label="待处理问题">
+              {rows(attention?.issues).map((issue, index) => (
+                <li key={issue.id || index}>
+                  <strong>
+                    {issue.title || issue.description || "审核问题"}
+                  </strong>
+                  {issue.suggestion && <p>{issue.suggestion}</p>}
+                  {Array.isArray(issue.shot_ids) &&
+                    issue.shot_ids.length > 0 && (
+                      <div className="button-row">
+                        {issue.shot_ids.map((shotId: string) => (
+                          <button
+                            key={shotId}
+                            type="button"
+                            className="text-link"
+                            onClick={() => {
+                              setSelectedShot(shotId);
+                              setStatusOpen(false);
+                              onTab("shots");
+                            }}
+                          >
+                            查看 {shotId}
+                            <ArrowUpRight size={16} />
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                </li>
+              ))}
+            </ul>
+          )}
+          {workspace.error && <ErrorNotice error={workspace.error} />}
+          {attention?.blocking && (
+            <button
+              type="button"
+              className="button primary status-next-action"
+              onClick={() => {
+                setStatusOpen(false);
+                onTab(attention.target_tab || "decisions");
+              }}
+            >
+              {attention.action_label || "处理待办"}
+              <ArrowRight size={16} />
+            </button>
+          )}
+        </Modal>
+      )}
       {preview && (
         <Modal
           id="preview-dialog"
@@ -1749,7 +1892,7 @@ function Project({
             busy={busy}
             onSubmit={action}
           />
-          <ErrorNotice error={error} />
+          <ErrorNotice error={error} reserveSpace />
         </Modal>
       )}
     </>
@@ -1859,7 +2002,6 @@ export function CreateProject({
           }
         }}
       >
-        <ErrorNotice error={error} />
         <p className="form-intro">
           给团队一个明确的创作目标。AI
           将完成研究、创作与独立审核，你掌握费用授权和最终审片。
@@ -2027,6 +2169,7 @@ export function CreateProject({
             <textarea name="profile_characters" rows={4} maxLength={5000} />
           </Field>
         </details>
+        <ErrorNotice error={error} reserveSpace />
         <div className="dialog-actions">
           <button
             type="button"
@@ -2105,7 +2248,7 @@ function InboxPage({
         description="按实际阻断与人工关卡整理，较早项目的待办同样保留。"
       />
       <Panel title="需要你处理">
-        <ErrorNotice error={query.error} />
+        <FloatingErrorNotice error={query.error} />
         {query.data ? (
           <>
             <Attention
@@ -2139,7 +2282,6 @@ function CurrentOutput({ project: p }: { project: RecordData }) {
           <p>
             {p.duration_seconds} 秒 · 制作版本 {p.production_revision || 1}
           </p>
-          <Badge status={p.status} />
         </div>
       </div>
     );

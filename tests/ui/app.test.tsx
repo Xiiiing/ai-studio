@@ -1,10 +1,11 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { expect, it, vi } from "vitest";
 import App from "../../ui/factory/src/App";
+import { keys } from "../../ui/factory/src/api";
 const id = "012345abcdef";
-function setup() {
+function setup(options: { attention?: boolean } = {}) {
   let revision = 7;
   const calls: { path: string; body: any }[] = [];
   const project = {
@@ -46,7 +47,7 @@ function setup() {
     actions: [],
   };
   const operator = {
-    attention,
+    attention: options.attention === false ? undefined : attention,
     current_activity: "等待故事方向",
     actions: [
       {
@@ -155,7 +156,7 @@ it("实际导航从总览进入具体故事选择，提交绑定当前gate与rev
   const { calls } = setup();
   await screen.findByRole("heading", { name: "制片总览" });
   const nav = screen.getByRole("navigation");
-  await userEvent.click(within(nav).getByRole("button", { name: /待办决策/ }));
+  await userEvent.click(within(nav).getByRole("button", { name: /待办/ }));
   await screen.findByRole("heading", { name: "待办决策" });
   await userEvent.click(screen.getByRole("button", { name: "处理" }));
   await screen.findByRole("button", { name: "选择这个故事" });
@@ -236,4 +237,56 @@ it("创建入口默认AI代管并显式提交原创/改编与制作规格", asyn
   expect(body.creation_mode).toBe("original");
   expect(body.production_profile.preset).toBe("compact6");
   expect(body.request_id).toMatch(/^[a-f0-9-]+$/);
+});
+
+it("项目状态按需查看且不自动打开、不提交制作动作", async () => {
+  const { calls, client } = setup();
+  await screen.findByRole("heading", { name: "制片总览" });
+  await userEvent.click(document.querySelector("#project-list button")!);
+  const status = await screen.findByRole("button", { name: "查看项目状态" });
+  expect(
+    screen.queryByRole("dialog", { name: "项目状态" }),
+  ).not.toBeInTheDocument();
+  await userEvent.click(status);
+  const drawer = screen.getByRole("dialog", { name: "项目状态" });
+  expect(within(drawer).getByText("选择故事方向")).toBeVisible();
+  expect(within(drawer).getByText("候选故事已完成独立审核")).toBeVisible();
+  await userEvent.click(within(drawer).getByRole("button", { name: "关闭" }));
+  expect(
+    screen.queryByRole("dialog", { name: "项目状态" }),
+  ).not.toBeInTheDocument();
+  expect(status).toHaveFocus();
+  const current = client.getQueryData<Record<string, any>>(keys.workspace(id))!;
+  await act(async () => {
+    client.setQueryData(keys.workspace(id), {
+      ...current,
+      revision: current.revision + 1,
+      project: { ...current.project, revision: current.revision + 1 },
+      operator: {
+        ...current.operator,
+        attention: { ...current.operator.attention, summary: "新回执仍需处理" },
+      },
+    });
+  });
+  expect(
+    screen.queryByRole("dialog", { name: "项目状态" }),
+  ).not.toBeInTheDocument();
+  expect(calls.filter((call) => call.body)).toHaveLength(0);
+});
+
+it("没有长期阻断的项目也保留状态入口，切换页面无需重试项目", async () => {
+  const { calls } = setup({ attention: false });
+  await screen.findByRole("heading", { name: "制片总览" });
+  await userEvent.click(document.querySelector("#project-list button")!);
+  expect(
+    await screen.findByRole("button", { name: "查看项目状态" }),
+  ).toBeVisible();
+  await userEvent.click(screen.getByRole("button", { name: "剧本" }));
+  expect(screen.getByRole("button", { name: "查看项目状态" })).toBeVisible();
+  await userEvent.click(screen.getByRole("button", { name: "查看项目状态" }));
+  const drawer = screen.getByRole("dialog", { name: "项目状态" });
+  expect(
+    within(drawer).getByRole("heading", { name: "项目状态" }),
+  ).toBeVisible();
+  expect(calls.filter((call) => call.body)).toHaveLength(0);
 });
