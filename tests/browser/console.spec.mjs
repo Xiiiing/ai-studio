@@ -90,6 +90,10 @@ test("remake opens an editable new project without mutating existing media", asy
     .getByLabel("创作方向")
     .fill("调整为2D动漫短剧，冲突和反转在单部作品中完成。");
   await page.setViewportSize({ width: 390, height: 844 });
+  // Resize recomputes modal gutter compensation asynchronously. Settle it
+  // before comparing the locked and unlocked page anchors.
+  await page.evaluate(() => new Promise((resolve) =>
+    requestAnimationFrame(() => requestAnimationFrame(resolve))));
   // Modal scroll locking releases the root gutter so the top layer can paint
   // edge to edge. The visible workspace must retain its actual geometry.
   const lockedWorkspace = await documentAnchors(page);

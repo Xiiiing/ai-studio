@@ -1,0 +1,68 @@
+.quality-comparison {
+  min-width: 0;
+}
+.quality-comparison code {
+  display: block;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  font-size: 0.75rem;
+}
+.quality-freeze {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 20px 0;
+}
+.quality-freeze > :first-child {
+  flex: 1 1 220px;
+}
+.quality-selectors,
+.quality-pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+.quality-snapshot,
+.quality-change,
+.quality-call,
+.quality-review {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  padding: 16px 0;
+  border-top: 1px solid var(--border);
+}
+.quality-snapshot h3 {
+  margin-top: 0;
+}
+.quality-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.quality-metrics dt {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+.quality-metrics dd {
+  margin: 4px 0 0;
+  font-weight: 600;
+}
+.quality-conclusion {
+  font-weight: 600;
+}
+.quality-comparison details {
+  margin: 16px 0;
+}
+.quality-comparison summary {
+  cursor: pointer;
+}
+@media (max-width: 640px) {
+  .quality-selectors,
+  .quality-pair {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .quality-freeze > .button {
+    width: 100%;
+  }
+}
