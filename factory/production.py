@@ -296,8 +296,7 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
         from .temporal_review import POLICY as temporal_evidence_policy
         self.review_policy = fingerprint({
             "policy": explicit_policy or "local_vlm_review_v2",
-            **({"temporal_evidence_policy": temporal_evidence_policy}
-               if not explicit_policy or self.h3_automatic else {}),
+            "temporal_evidence_policy": temporal_evidence_policy,
             "model": self.config.get("semantic_model"),
             **({"temporal_sampling": self.config.get("temporal_sampling", {
                 "policy": "uniform_endpoints_and_cut_neighbors.v1", "count": 8})}

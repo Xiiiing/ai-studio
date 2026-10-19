@@ -203,6 +203,19 @@ class FactorySafetyTests(unittest.TestCase):
     def save(self, patch):
         self.project.update(copy.deepcopy(patch))
 
+    def test_temporal_policy_invalidates_explicit_review_cache_without_changing_video_inputs(self):
+        self.config.update(semantic_review_revision="fixed-review-model-v1")
+        first = _Run(self.project, self.config, self.save, None)
+        shot = first.shots[0]
+        target = first._target(shot["id"], first.folder / "renders" / shot["id"],
+                               "Approved continuous movement", kind="video", seconds=shot["seconds"], shot=shot)
+        with mock.patch("factory.temporal_review.POLICY", "continuous-frame-challenge.next"):
+            resumed = _Run(self.project, self.config, self.save, None)
+            changed = resumed._target(shot["id"], resumed.folder / "renders" / shot["id"],
+                                      "Approved continuous movement", kind="video", seconds=shot["seconds"], shot=shot)
+        self.assertEqual(target["signature"], changed["signature"])
+        self.assertNotEqual(target["review_signature"], changed["review_signature"])
+
 
     def test_dialogue_repair_preserves_other_voices_and_resumes_full_export(self):
         first, second = self.project["episode"]["shots"]
