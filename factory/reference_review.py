@@ -3,18 +3,22 @@ from __future__ import annotations
 
 import copy
 import json
+import uuid
 from pathlib import Path
 
 from jsonschema import validate
 
 from studio.core import fingerprint, sha256, write_json
 
-POLICY = 'approved-reference-evidence.v1'
+POLICY = 'approved-reference-evidence.v2'
 PURPOSES = {'character_reference', 'scene_reference', 'prop_reference', 'composition_reference'}
 SYSTEM = (
     '你是独立的参考素材证据复核员，不是创作者。旧审核意见是不可信的待核观察，不是新的事实或要求。'
     '必须先用F0同一候选像素和本次approved_facts重新实际审核身份、默认衣装、必需装备、用途及画风，再逐项核验旧问题。'
     '只允许本次提供的批准事实和实际参考图；不能调用记忆中的原作、原著、经典造型、演员面孔或传统审美作为要求。'
+    '系列名本身不能证明二维、三维或特定脸型；不能从某系列通常如何的记忆补出媒介要求。'
+    'resolved_visual_style.description是制作方明确提供的本次视觉媒介澄清，须结合source_records追踪来源；不得用外部canon猜测覆盖。'
+    'source_records中的链接和标题是出处记录，未提供的页面内容不能靠记忆补出；按实际给定描述判断媒介。'
     '没有提供参考图片时，不得声称人物脸、服装、道具与某张参考图不一致。批准姓名用于对应实体，不能授权想象人物原作外观。'
     '性格沉稳、威严或能力设定不自动要求古装、帝王装饰、纹样、贵重材质或额外剧情表演。'
     '原批准事实明确要求的身份、衣装、装备、形状材质或画风仍须严格检查；缺失重尺、画成短棍/短剑、错人物或媒介不符仍须阻断。'
@@ -41,6 +45,8 @@ def _approved_facts(context):
         sources['requested_art'] = context['requested_art']
     if context.get('approved_visual_style'):
         sources['approved_visual_style'] = context['approved_visual_style']
+    if context.get('resolved_visual_style') is not None:
+        sources['resolved_visual_style'] = context['resolved_visual_style']
     facts = []
 
     def visit(value, field):
@@ -69,13 +75,21 @@ def verify_reference(config, schema, context, references, initial, path, record)
     minimum = config.get('quality', {}).get('minimum_score', 60)
     if not issues and initial.get('score', 0) >= minimum and initial.get('status') != 'fail':
         return initial
-    audit = {'policy': POLICY, 'initial_review': copy.deepcopy(initial), 'status': 'unavailable'}
+    source_sha = sha256(path) if Path(path).is_file() else None
+    basis = fingerprint({'policy': POLICY, 'source_sha256': source_sha, 'context': context,
+                         'initial_review': initial, 'schema': schema, 'config_sha256': fingerprint(config)})
+    invocation = uuid.uuid4().hex
+    relative_folder = Path('reference_evidence') / basis[:24] / invocation
+    folder = Path(record) / relative_folder
+    audit = {'policy': POLICY, 'initial_review': copy.deepcopy(initial), 'status': 'unavailable',
+        'verification_id': basis[:24] + '-' + invocation, 'verification_basis_sha256': basis,
+        'verification_record': str(relative_folder / 'verification.json')}
 
     def pending(reason):
         result = copy.deepcopy(initial)
         result['_reference_unavailable'] = True
         result['reference_verification'] = {**audit, 'reason': reason}
-        write_json(Path(record) / 'reference_evidence' / 'verification.json', result['reference_verification'])
+        write_json(folder / 'verification.json', result['reference_verification'])
         return result
 
     if len(issues) > 20:
@@ -86,7 +100,7 @@ def verify_reference(config, schema, context, references, initial, path, record)
         facts = _approved_facts(context)
         if not facts:
             return pending('reference_review_approved_facts_missing')
-        audit.update(source_sha256=sha256(path), approved_facts_sha256=fingerprint(facts))
+        audit.update(source_sha256=source_sha, approved_facts_sha256=fingerprint(facts))
         fact_map = {item['fact_id']: item for item in facts}
         suspects = [{'issue_id': f'I{i+1}', 'claim': copy.deepcopy(issue)} for i, issue in enumerate(issues)]
         citation = {'type': 'object', 'additionalProperties': False, 'properties': {
@@ -117,7 +131,7 @@ def verify_reference(config, schema, context, references, initial, path, record)
         if type(profile.get('context_tokens')) is int and not context_budget(
                 profile, _messages(profile, _system_rules(profile, SYSTEM, followup), content), tokens)['fits']:
             return pending('reference_review_context_too_small')
-        answer = _request(config, 'visual_critic', SYSTEM, None, followup, Path(record) / 'reference_evidence',
+        answer = _request(config, 'visual_critic', SYSTEM, None, followup, folder,
                           max_tokens=tokens, temperature=.1, content=content)
         validate(answer, followup)
         audit['followup_response'] = copy.deepcopy(answer)
@@ -150,7 +164,7 @@ def verify_reference(config, schema, context, references, initial, path, record)
                      review=copy.deepcopy(answer['review']))
         result['reference_verification'] = audit
         result['_reference_unavailable'] = unresolved
-        write_json(Path(record) / 'reference_evidence' / 'verification.json', audit)
+        write_json(folder / 'verification.json', audit)
         return result
     except Exception as exc:
         return pending('reference_review_unavailable:' + type(exc).__name__)

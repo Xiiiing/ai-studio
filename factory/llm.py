@@ -340,6 +340,12 @@ def review_media(project, shot, path, references, config=None, *, output_dir=Non
         "project_id":project.get("id"),"production_revision":project.get("production_revision"),
         "production_profile":project.get("production_profile")
     }
+    if project.get("resolved_visual_style") is not None:
+        context["resolved_visual_style"] = copy.deepcopy(project["resolved_visual_style"])
+        context["visual_style_resolution_rule"] = (
+            "resolved_visual_style.description是本次制作方明确补充的视觉媒介澄清，source_records保留来源。"
+            "系列名本身不能证明二维、三维、写实或特定脸型；不得用记忆中的系列画风覆盖本次结构化媒介要求。"
+            "来源链接只记录出处，未提供的页面内容不能靠记忆补出；按给定描述及实际像素检查，真实媒介不符仍须指出。")
     if shot.get("material_constraints"):
         context["material_review_rules"] = (
             "分别检查定稿人物身份、共同画风、场景基础结构及同框人物对应和位置；明确服装/昼夜/动作变化不是身份漂移。"
