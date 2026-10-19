@@ -353,3 +353,87 @@ def test_visual_context_is_pinned_when_new_episode_and_unit_are_created(case):
     assert store.get(episode['id'], False)['resolved_visual_style'] == value
     assert store.get(unit['id'], False)['resolved_visual_style'] == value
     assert store.get(case.episode['id'], False).get('resolved_visual_style') is None
+
+
+def test_carried_prop_uses_approved_character_pixels_in_generation_and_qa_only_as_equipment(case):
+    drama_assets.prepare(case.episode['id'], {})
+    selected = store.get(case.episode['id'], False)['drama_references']
+    approved_character = selected['character:lead']['receipt']
+    compiler_inputs = case.calls[1]['requirements']
+    binding = compiler_inputs['reference_bindings'][0]
+    assert binding['character_id'] == 'lead' and binding['prop_id'] == 'heavy_ruler'
+    assert binding['sha256'] == approved_character['sha256'] and binding['path'] == approved_character['path']
+    assert binding['purpose'] == 'carried_prop_appearance_only'
+    prop_graph = case.wires[1]
+    loads = [node['inputs']['image'] for node in prop_graph.values() if node['class_type'] == 'LoadImage']
+    assert loads == [str(case.folder / approved_character['path'])]
+    assert any(node['class_type'] == 'ReferenceLatent' for node in prop_graph.values())
+    prompt = next(node['inputs']['text'] for node in prop_graph.values() if node['class_type'] == 'CLIPTextEncode')
+    assert prompt.startswith('Isolated single prop only, no people, faces, clothing or background')
+    qa = case.reviews[1]
+    assert qa['shot']['characters'] == [] and qa['shot']['reference_bindings'] == [binding]
+    assert qa['reference_evidence']['supplied_image_count'] == 1
+    artifact = core.read_json(case.folder / selected['prop:heavy_ruler']['prompt_compilation']['path'])
+    assert artifact['compiled_prompt'] == prompt and artifact['requirements']['reference_bindings'] == [binding]
+    assert artifact['prop_binding_prefix_sha256'] == core.fingerprint(drama_assets.REFERENCE_PROP_BINDING_PREFIX)
+
+
+def test_unrelated_prop_keeps_no_reference_behavior_and_does_not_borrow_character_identity(case):
+    current = copy.deepcopy(case.episode)
+    current['plan']['props'].append({'entity_id': 'key', 'name': '钥匙', 'description': '另一处使用的青铜钥匙'})
+    store.update(current['id'], {'plan': current['plan']})
+    drama_assets.prepare(current['id'], {})
+    assert len(case.wires) == 3
+    assert not any(node['class_type'] == 'LoadImage' for node in case.wires[2].values())
+    assert 'reference_bindings' not in case.calls[2]['requirements']
+    assert case.reviews[2]['shot']['reference_bindings'] == []
+    assert case.reviews[2]['reference_evidence']['supplied_image_count'] == 0
+
+
+def test_binding_requires_explicit_association_and_existing_approved_character(case):
+    current = case.episode
+    entity = current['plan']['props'][0]
+    assert drama_assets._approved_prop_bindings(current, entity, {}) == ([], [])
+    drama_assets.prepare(current['id'], {})
+    shared = store.get(case.root['id'], False)['shared_assets']['1']
+    altered = copy.deepcopy(current)
+    altered['plan']['characters'][0]['default_wardrobe'] = '蓝衣，不持道具'
+    altered['plan']['props'][0]['description'] = '与此人无关的备用重尺'
+    assert drama_assets._approved_prop_bindings(altered, altered['plan']['props'][0], shared) == ([], [])
+
+
+def test_adapter_without_required_reference_support_stops_before_prop_submit(case, monkeypatch):
+    monkeypatch.setattr('factory.generation_pipeline.capabilities', lambda *args: {
+        'enabled': True, 'reference_counts': [0], 'reference_limit': 0, 'provider': 'fixture_without_references'})
+    with pytest.raises(ProductionNeedsDecision) as error:
+        drama_assets.prepare(case.episode['id'], {})
+    assert error.value.reason == 'drama_reference_capability'
+    assert len(case.wires) == len(case.calls) == 1
+    shared = store.get(case.root['id'], False)['shared_assets']['1']
+    assert 'character:lead' in shared and 'prop:heavy_ruler' not in shared
+
+
+def test_reference_binding_hash_is_part_of_compiler_cache_and_old_artifacts_remain(case):
+    current = case.episode
+    facts = drama_assets._reference_requirements(current, 'prop', current['plan']['props'][0])
+    facts['reference_bindings'] = [{'reference_index': 1, 'sha256': 'a' * 64,
+                                  'purpose': 'carried_prop_appearance_only'}]
+    profile = case.render_config['image_connection']
+    first = drama_assets._compile_reference(current, {}, facts, profile)
+    assert drama_assets._compile_reference(current, {}, facts, profile) == first
+    altered = copy.deepcopy(facts)
+    altered['reference_bindings'][0]['sha256'] = 'b' * 64
+    second = drama_assets._compile_reference(current, {}, altered, profile)
+    assert len(case.calls) == 2 and first[1]['signature'] != second[1]['signature']
+    assert (case.folder / first[1]['path']).exists() and (case.folder / second[1]['path']).exists()
+
+
+def test_approved_prop_skip_does_not_reopen_binding_compilation_or_generation(case, monkeypatch):
+    drama_assets.prepare(case.episode['id'], {})
+    original = copy.deepcopy(store.get(case.episode['id'], False)['drama_references'])
+    def forbidden(*args, **kwargs):
+        pytest.fail('An approved shared prop must not need new bindings or images')
+    monkeypatch.setattr(drama_assets, '_approved_prop_bindings', forbidden)
+    monkeypatch.setattr(drama_assets, '_compile_reference', forbidden)
+    drama_assets.prepare(case.episode['id'], {})
+    assert store.get(case.episode['id'], False)['drama_references'] == original and len(case.wires) == 2

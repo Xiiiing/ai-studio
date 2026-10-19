@@ -244,7 +244,7 @@ def _review_expectations(shot):
               "motion_prompt", "camera_motion", "reference_group", "continuity",
               "lip_sync", "delivery_method", "characters", "character_states", "asset_references",
               "review_purpose", "visual_direction", "material_constraints", "scene_id", "composition_id",
-              "approved_reference_requirements")
+              "approved_reference_requirements", "reference_bindings")
     expected = {key: shot[key] for key in fields if key in shot}
     if isinstance(shot.get("dialogue"), list):
         expected["dialogue"] = [
