@@ -230,10 +230,11 @@ def test_changed_frame_during_visual_call_is_not_usable_evidence(production, mon
     assert not any(r['document'].get('phase')=='video' for r in g.inventory(p))
 
 
-def test_configuration_blocks_queued_and_unknown_paid_media_work(production):
+@pytest.mark.parametrize("status",["queued","waiting_remote"])
+def test_configuration_blocks_queued_and_unknown_paid_media_work(production,status):
     p,frame,config=production
     with store.connection() as db:
-        db.execute("UPDATE jobs SET status='queued' WHERE project_id=?",(p['id'],))
+        db.execute("UPDATE jobs SET status=? WHERE project_id=?",(status,p['id']))
     with pytest.raises(ValueError,match='在途'):g.configure(p['id'],body(p,False))
 
 
@@ -297,3 +298,16 @@ def test_live_compile_intent_is_running_and_crashed_intent_becomes_unknown(produ
         raise TimeoutError('worker interrupted before a terminal result')
     with pytest.raises(TimeoutError):g._once(p,'image',{'case':'live-worker'},running)
     assert next(r for r in g.inventory(p) if r.get('state'))['state']=='unknown'
+
+
+@pytest.mark.parametrize('role',['storyboard_director','visual_critic'])
+def test_unpriced_compiler_models_stop_before_any_model_or_paid_media_request(production,monkeypatch,role):
+    p,frame,config=production
+    cfg=config['generation_pipeline_config']
+    cfg['llm_profiles']['vendor']={**copy.deepcopy(cfg['llm_profiles']['qwen']), 'provider':'openai_compatible',
+        'base_url':'https://model-vendor.example/v1', 'network_mode':'remote', 'allowed_hosts':['model-vendor.example'], 'enabled':True}
+    cfg['llm_roles'][role]='vendor'
+    monkeypatch.setattr(llm,'_request',lambda *a,**k:pytest.fail('Unpriced calls cannot run'))
+    with pytest.raises(ProductionNeedsDecision) as exc:g.prepare(p,shot(),[frame],config=config,phase='video' if role=='visual_critic' else 'image')
+    assert exc.value.reason=='generation_model_budget_required'
+    assert g.inventory(p)==[]

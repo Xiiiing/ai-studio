@@ -267,6 +267,15 @@ def prepare(project, shot, references, *, config, phase, style='', cast=None, re
     llm_config = config.get('generation_pipeline_config')
     if not llm_config:
         raise ProductionNeedsDecision('请配置分镜导演和具备视觉能力的首帧观察岗位', 'generation_model_unconfigured')
+    # Project-level pricing for compiler LLM calls belongs to stage 7. Until
+    # that ledger exists, a new compilation may only use existing private
+    # inference, matching the workbench's current no-unpriced-vendor boundary.
+    from .config import resolve_llm
+    from .team_planning import task_config
+    from .prompt_workbench import _local_trial
+    for role in ([ROLE, 'visual_critic'] if phase == 'video' else [ROLE]):
+        if not _local_trial(resolve_llm(task_config(llm_config, role), role, require_vision=role == 'visual_critic')):
+            raise ProductionNeedsDecision('当前编译仅使用已配置的内网推理；供应商模型调用须先接入明确费用和项目预算', 'generation_model_budget_required')
     if checkpoint:
         checkpoint()
     evidence = _observe(project, shot, references[0], llm_config, base, identities) if phase == 'video' else None
@@ -423,7 +432,7 @@ def configure(pid, payload):
         p = project_cas(db, pid, payload['expected_revision'])
         related = [pid] + [r[0] for r in db.execute("SELECT id FROM projects WHERE json_extract(snapshot,'$.drama_id')=? OR json_extract(snapshot,'$.episode_id')=?", (pid, pid))]
         slots = ','.join('?' for _ in related)
-        if db.execute(f"SELECT 1 FROM jobs WHERE project_id IN ({slots}) AND status IN ('queued','running')", related).fetchone() or p['status'] in store.ACTIVE:
+        if db.execute(f"SELECT 1 FROM jobs WHERE project_id IN ({slots}) AND status IN ('queued','running','waiting_remote')", related).fetchone() or p['status'] in store.ACTIVE:
             raise ValueError('请先暂停项目并等待全部在途任务结束')
         if db.execute(f"SELECT 1 FROM cloud_tasks WHERE project_id IN ({slots}) AND status NOT IN ('downloaded','failed','rejected','cancelled')", related).fetchone():
             raise ValueError('请先核实未完成的云端提交')
@@ -452,7 +461,7 @@ def settle(pid, payload):
         if op[2] is not None:
             return op[2]
         p = project_cas(db, pid, payload['expected_revision'])
-        if db.execute("SELECT 1 FROM jobs WHERE project_id=? AND status IN ('queued','running')", (pid,)).fetchone():
+        if db.execute("SELECT 1 FROM jobs WHERE project_id=? AND status IN ('queued','running','waiting_remote')", (pid,)).fetchone():
             raise ValueError('请等待当前项目任务结束')
         rows = [r for r in inventory(p) if r['id'] == key and r.get('state') in {'unknown', 'closed'}]
         if not rows:

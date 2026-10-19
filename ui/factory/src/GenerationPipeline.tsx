@@ -122,7 +122,7 @@ function ProjectPipeline({ project }: { project: RecordData }) {
           </div>
         )}
         <p className="muted">
-          先暂停并等待在途任务结束后切换。实际制作仍受既有任务授权与预算控制；本页不会启动收费提交，也不能批准作品。
+          提示词编译与首帧观察暂限已有内网模型。先暂停并等待在途任务结束后切换。实际制作仍受既有任务授权与预算控制；本页不会启动收费提交，也不能批准作品。
         </p>
       </Panel>
       <Panel
