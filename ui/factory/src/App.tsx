@@ -4,7 +4,6 @@ import {
   LayoutDashboard,
   FolderKanban,
   Inbox,
-  Settings2,
   Settings,
   Activity,
   Plus,
@@ -36,7 +35,7 @@ import {
   currentResultPage,
 } from "./ProjectResultActions";
 import { useUnsavedShotGuard } from "./SessionDraft";
-import { Models, MaterialLibrary } from "./LazyViews";
+import { MaterialLibrary } from "./LazyViews";
 import { CreateDrama, DramaDetail, LongEpisodeDetail } from './Dramas';
 import {
   request,
@@ -87,10 +86,16 @@ function readRoute(): Route {
   const p = new URLSearchParams(location.hash.slice(1));
   const requested = p.get("view") || "dashboard";
   const view = requested === "inbox" ? "dashboard" : requested === "workflow" ? "projects" : requested;
+  const project = p.get("project") || "";
+  const legacyModels = requested === "models" && !project;
   return {
-    view: ["dashboard", "projects", "library", "activity", "models", "settings"].includes(view) ? view : "dashboard",
-    project: p.get("project") || "",
-    tab: p.get("tab") || "overview",
+    view: legacyModels
+      ? "settings"
+      : ["dashboard", "projects", "library", "activity", "settings"].includes(view)
+        ? view
+        : "dashboard",
+    project,
+    tab: legacyModels ? "models" : p.get("tab") || "overview",
   };
 }
 const links = [
@@ -98,7 +103,6 @@ const links = [
   ["projects", "项目", FolderKanban],
   ["library", "素材库", FolderKanban],
   ["activity", "运行记录", Activity],
-  ["models", "模型配置", Settings2],
   ["settings", "系统设置", Settings],
 ] as const;
 export default function App() {
@@ -164,9 +168,23 @@ function Workbench() {
     });
   useEffect(() => {
     const listener = () => {
-      setRoute(readRoute());
+      const next = readRoute();
+      // Keep saved model links working without a second settings page or an
+      // extra history entry when returning with the browser's Back button.
+      if (
+        !next.project &&
+        new URLSearchParams(location.hash.slice(1)).get("view") === "models"
+      ) {
+        history.replaceState(
+          history.state,
+          "",
+          location.pathname + location.search + "#view=settings&tab=models",
+        );
+      }
+      setRoute(next);
       setMobile(false);
     };
+    listener();
     window.addEventListener("hashchange", listener);
     return () => window.removeEventListener("hashchange", listener);
   }, []);
@@ -291,13 +309,7 @@ function Workbench() {
                         "nav-item " +
                         (!route.project && route.view === view ? "active" : "")
                       }
-                      data-action={
-                        view === "models"
-                          ? "models"
-                          : view === "dashboard"
-                            ? "dashboard"
-                            : "view"
-                      }
+                      data-action={view === "dashboard" ? "dashboard" : "view"}
                       data-view={view}
                       aria-current={
                         !route.project && route.view === view ? "page" : undefined
@@ -368,8 +380,6 @@ function Workbench() {
                   retryOverview={() => { void overview.refetch(); }}
                   notify={setToast}
                 />
-              ) : route.view === "models" ? (
-                <Models notify={setToast} />
               ) : route.view === "library" ? (
                 <MaterialLibrary notify={setToast} />
               ) : (

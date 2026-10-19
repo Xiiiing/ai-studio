@@ -27,8 +27,9 @@ test("project list, model settings and connection preflight use only mock APIs",
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto("/");
   await expect(page.locator("#project-list")).toContainText("浏览器模拟样片");
-  await page.locator('.main-nav [data-action="models"]').click();
-  await expect(page.locator("#workspace h1")).toHaveText("模型配置");
+  await page.locator('.main-nav [data-view="settings"]').click();
+  await page.getByRole("button", { name: "模型与服务", exact: true }).click();
+  await expect(page.locator("#workspace h1")).toHaveText("系统设置");
   await manageService(page);
   await expect(page.locator("#service-dialog")).toBeVisible();
   await page.locator("#service-dialog .model-options summary").first().click();
