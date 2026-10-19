@@ -56,7 +56,7 @@ async function filledSelection(locator) {
 
 for (const width of [1440, 390])
   for (const theme of ["light", "dark"]) {
-    test(`monochrome main navigation and secondary setting selection stay distinct in all six palettes at ${width} ${theme}`, async ({
+    test(`monochrome navigation and border-based card selection stay distinct in all six palettes at ${width} ${theme}`, async ({
       page,
       request,
     }) => {
@@ -72,19 +72,21 @@ for (const width of [1440, 390])
           '.appearance-palette[data-selected="true"]',
         );
         await expect(selected.locator("input")).toBeChecked();
-        await expect(selected.locator(".appearance-check")).toBeVisible();
+        await expect(selected.locator(".lucide-check")).toHaveCount(0);
+        await filledSelection(selected);
+        await filledSelection(
+          page.locator('.appearance-mode[data-selected="true"]'),
+        );
         const category = page.locator(
           '.settings-category[aria-current="page"]',
         );
         const card = await filledSelection(category);
         expect(new Set(card.borders).size).toBe(1);
-        await expect(
-          category.locator(".settings-category-check"),
-        ).toBeVisible();
+        await expect(category.locator(".lucide-check")).toHaveCount(0);
         const colors = await category.evaluate((el) => {
           const probe = document.createElement("span");
           el.append(probe);
-          probe.style.color = "var(--panel)";
+          probe.style.color = "var(--surface)";
           const panel = getComputedStyle(probe).color;
           probe.style.color = "var(--ink)";
           const ink = getComputedStyle(probe).color;
@@ -133,7 +135,7 @@ for (const width of [1440, 390])
         );
         expect(parseFloat(outline)).toBeGreaterThanOrEqual(2);
       }
-      // The selected marker must not change category size or position.
+      // Switching the selected card must not change category size or position.
       await page.evaluate(() => {
         document.querySelector(".main-shell").scrollTop = 0;
         scrollTo(0, 0);
@@ -151,14 +153,12 @@ for (const width of [1440, 390])
         .click();
       await expect(page.locator(".model-service-card").first()).toBeVisible();
       expect(
-        await page
-          .locator(".settings-category")
-          .evaluateAll((nodes) =>
-            nodes.map((el) => ({
-              y: el.getBoundingClientRect().y,
-              height: el.getBoundingClientRect().height,
-            })),
-          ),
+        await page.locator(".settings-category").evaluateAll((nodes) =>
+          nodes.map((el) => ({
+            y: el.getBoundingClientRect().y,
+            height: el.getBoundingClientRect().height,
+          })),
+        ),
       ).toEqual(bounds);
       await page.getByRole("button", { name: "外观显示", exact: true }).click();
       await page
@@ -178,6 +178,23 @@ for (const width of [1440, 390])
         });
         await page.keyboard.press("Escape");
       }
+      // Select a recent project through the real control, including the mobile drawer.
+      if (width < 1024) await openDrawer(page);
+      const recent = page.locator('#project-list [data-id="012345abcdef"]');
+      const before = await recent.boundingBox();
+      await recent.click();
+      await expect(recent).toHaveClass(/active/);
+      if (width < 1024) await openDrawer(page);
+      const after = await recent.boundingBox();
+      expect(after).toEqual(before);
+      await filledSelection(recent);
+      await expect(recent.locator("strong")).toHaveCSS("font-weight", "600");
+      await expect(recent.locator(".lucide-check")).toHaveCount(0);
+      await page.mouse.move(0, 0);
+      await page.screenshot({
+        path: `docs/images/navigation-selection/recent-${theme}-${width}.png`,
+      });
+      if (width < 1024) await page.keyboard.press("Escape");
       expect(
         await page.evaluate(
           () => document.documentElement.scrollWidth <= innerWidth,
