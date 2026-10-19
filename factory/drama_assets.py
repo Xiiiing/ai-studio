@@ -26,6 +26,12 @@ REFERENCE_PURPOSES = {
 }
 
 
+REFERENCE_PROP_BINDING_PREFIX = (
+    'Isolated single prop only, no people, faces, clothing or background from the references. '
+    'Use the explicitly bound carried equipment in the supplied reference images for its shape and common visual medium.\n'
+)
+
+
 REFERENCE_COMPILER_SYSTEM = (
     '将完整批准实体资料编译为图像适配器可直接使用的静态参考图提示词，输出prompt。'
     '优先使用适合FLUX等图像模型的清晰English视觉描述，中文原名须保留以固定实体对应。'
@@ -36,6 +42,8 @@ REFERENCE_COMPILER_SYSTEM = (
     '已有creative_contract和visual_rules明确二维、三维或其他画风时须遵循；其他production_format只落实已有媒介合约，不擅自改写。'
     '只描绘purpose指定的单一可见瞬间；角色参考展示本人、默认衣装、明确随身装备，取景须容纳必需装备，不能默认中景裁掉它。'
     '环境只描绘批准布局，道具只描绘批准外观；不可增加人物、剧情、动作终态或更改画风。'
+    'reference_bindings若提供角色图中的随身装备外观绑定，道具输出只能是孤立单一道具，不带人物、脸、衣装或原背景；仅从参照取对应装备外形和共同媒介。'
+    '绑定图片将由图像适配器实际读取；文本编译只说明绑定用途，不声称已观察未提供给编译器的像素。'
     'entity.name、identity_constraints、default_wardrobe、related_known_props和visual_rules均为事实来源。'
     '衣装须落实原要求可见的版型：劲装应编译为合体利落的fitted combat attire，不得泛化为宽松练功服或道服；原要求为长裙或宽袍时仍保留原版型。'
     '可将重尺等名词解释成准确可见形状，不能替换为权杖、短剑等不同物品；不得捏造未给定的身份关系或道具归属。'
@@ -62,6 +70,29 @@ def _reference_requirements(project, kind, entity):
         'source_rule': 'Approved entity facts only. Related prop descriptions clarify explicitly mentioned equipment; do not invent ownership, relationships, plot or additional people.'}
 
 
+def _approved_prop_bindings(project, entity, shared):
+    """Approved carried equipment can borrow its visible shape, never its wearer."""
+    paths, bindings = [], []
+    for character in project['plan']['characters']:
+        related = _reference_requirements(project, 'character', character)['related_known_props']
+        if not any(prop['entity_id'] == entity['entity_id'] for prop in related):
+            continue
+        record = shared.get('character:' + character['character_id'])
+        if record is None:
+            continue
+        if (record.get('kind') != 'character' or record.get('entity_id') != character['character_id']
+                or record.get('plan_version') != project['plan_version']):
+            raise ProductionNeedsDecision('随身道具参考绑定与批准角色版本不匹配', 'cache_integrity')
+        path = valid(record['receipt'])
+        paths.append(path)
+        bindings.append({'reference_index': len(paths), 'character_id': character['character_id'],
+            'prop_id': entity['entity_id'], 'plan_version': project['plan_version'],
+            'path': record['receipt']['path'], 'sha256': record['receipt']['sha256'],
+            'purpose': 'carried_prop_appearance_only',
+            'usage_rule': 'Use only this explicitly associated equipment shape and common visual medium. The person, face, wardrobe and background are not required in the output; render the isolated prop without people.'})
+    return paths, bindings
+
+
 def _compile_reference(project, config, requirements, image_profile):
     from .config import llm_identity
     from .media_profiles import identity
@@ -71,20 +102,23 @@ def _compile_reference(project, config, requirements, image_profile):
         'compiler_system_sha256': fingerprint(REFERENCE_COMPILER_SYSTEM),
         'compiler_model': llm_identity(config, 'prompt_style_compiler'),
         'prompt_snapshot_sha256': fingerprint(project.get('prompt_snapshot'))}
+    if requirements.get('reference_bindings'):
+        source['prop_binding_prefix_sha256'] = fingerprint(REFERENCE_PROP_BINDING_PREFIX)
     signature = fingerprint({'reference_compiler_version': 1, **source})
     compiled = call(project, config, 'prompt_style_compiler',
         'shared-prompt-' + requirements['kind'] + '-' + signature[:24],
         REFERENCE_COMPILER_SYSTEM,
         source, obj({'prompt': txt(1, 4000)}), 3500)
+    prompt = (REFERENCE_PROP_BINDING_PREFIX if requirements.get('reference_bindings') else '') + compiled['prompt']
     document = {'schema_version': 1, 'signature': signature, 'plan_version': project['plan_version'], **copy.deepcopy(source),
-        'requirements_sha256': fingerprint(requirements), 'compiled_prompt': compiled['prompt'],
-        'compiled_prompt_sha256': fingerprint(compiled['prompt'])}
+        'requirements_sha256': fingerprint(requirements), 'compiled_prompt': prompt,
+        'compiled_prompt_sha256': fingerprint(prompt)}
     folder = ROOT / 'production' / project['slug'] / 'planning' / 'shared_reference_prompts'
     path = folder / (signature + '.json')
     if path.is_file() and read_json(path) != document:
         raise ProductionNeedsDecision('参考图编译结果与固定版本不匹配，已保留旧结果', 'cache_integrity')
     write_json(path, document)
-    return compiled['prompt'], {'path': str(path.relative_to(ROOT)), 'sha256': sha256(path),
+    return prompt, {'path': str(path.relative_to(ROOT)), 'sha256': sha256(path),
         'signature': signature, 'plan_version': project['plan_version'],
         'requirements_sha256': document['requirements_sha256'],
         'compiler_system_sha256': source['compiler_system_sha256'],
@@ -141,13 +175,27 @@ def prepare(pid,config,control=None):
             engine=_Run(prototype,render_config,lambda patch:store.update(pid,patch),control,
                 evaluator=lambda proj,shot,path,refs:review_media(proj,shot,path,refs,config))
         requirements = _reference_requirements(p, kind, entity)
+        reference_paths, reference_bindings = _approved_prop_bindings(p, entity, shared) if kind == 'prop' else ([], [])
+        if reference_bindings:
+            from .generation_pipeline import capabilities
+            capability = capabilities(render_config, p, 'image')
+            if (not capability['enabled'] or len(reference_paths) not in capability['reference_counts']
+                    or len(reference_paths) > 4):
+                raise ProductionNeedsDecision('当前图像生成或审核能力不能保留全部已批准的道具外观参考，素材已保留',
+                    'drama_reference_capability', {'reference_count': len(reference_paths),
+                        'visual_reference_limit': 4, 'capabilities': capability})
+            requirements['reference_bindings'] = copy.deepcopy(reference_bindings)
         prompt, compilation = _compile_reference(p, config, requirements,
             render_config.get('image_connection', {'provider': 'legacy', 'model': 'FLUX.2-klein-4B'}))
+        if reference_bindings:
+            if any(sha256(path) != binding['sha256'] for path, binding in zip(reference_paths, reference_bindings)):
+                raise ProductionNeedsDecision('已批准道具外观参考在编译后改变，旧结果已保留', 'cache_integrity')
         approved_facts = store.encoded(requirements)
         target=engine._target('shared_'+kind+'_'+key,
-            ROOT/'production'/p['slug']/'assets/shared_references'/('v'+version)/kind/key,prompt,
+            ROOT/'production'/p['slug']/'assets/shared_references'/('v'+version)/kind/key,prompt,references=reference_paths,
             review=True,review_context={'id':'shared_'+key,'prompt':approved_facts,'review_purpose':kind+'_reference',
                 'approved_reference_requirements':requirements, 'reference_compilation':compilation,
+                'reference_bindings':reference_bindings,
                 'continuity':store.encoded(entity),'characters':[key] if kind=='character' else []})
         engine._render_targets([target],'shared_references')
         receipt=copy.deepcopy(target['selected'])

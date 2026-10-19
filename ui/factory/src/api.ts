@@ -213,6 +213,7 @@ export const names: Record<string, string> = {
   scene_review: "场景审核",
   scene_repair: "场景返修",
   scene_units: "制作场景镜头",
+  shared_references: "制作共享参考素材",
   assembly: "合成单集",
   final_decision: "待验收成片",
   script_creation: "编写剧本与分镜",
