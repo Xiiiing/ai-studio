@@ -12,6 +12,7 @@ body {
   background: color-mix(in srgb, var(--canvas) 62%, var(--line));
 }
 .app-shell {
+  --studio-frame-gap: 20px;
   max-width: 1680px;
   margin: 20px auto;
   width: calc(100% - 40px);
@@ -25,13 +26,19 @@ body {
 .main-shell {
   min-height: calc(100dvh - 42px);
 }
+/* The frame paints the full column; only its navigation contents stick. */
+.sidebar-rail {
+  min-width: 0;
+  border-right: 1px solid var(--studio-edge);
+  border-radius: 25px 0 0 25px;
+  background: color-mix(in srgb, var(--panel) 80%, var(--canvas));
+}
 .sidebar {
   top: 21px;
   height: calc(100dvh - 42px);
   padding: 28px 16px 20px;
-  border-radius: 25px 0 0 25px;
-  border-right-color: var(--studio-edge);
-  background: color-mix(in srgb, var(--panel) 80%, var(--canvas));
+  border-right: 0;
+  background: transparent;
 }
 .brand {
   padding: 0 9px 28px;
@@ -67,10 +74,12 @@ body {
 }
 .project-item.active {
   background: var(--surface);
-  box-shadow: inset 3px 0 var(--accent);
+  color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
 }
 .project-item.active strong {
   color: var(--ink);
+  font-weight: 600;
 }
 #workspace {
   padding: 28px 30px 36px;
@@ -316,6 +325,7 @@ tbody tr:hover {
 
 @media (max-width: 1250px) and (min-width: 1024px) {
   .app-shell {
+    --studio-frame-gap: 16px;
     grid-template-columns: 196px minmax(0, 1fr);
     margin: 16px auto;
     width: calc(100% - 32px);
@@ -337,7 +347,40 @@ tbody tr:hover {
     padding-inline: 16px;
   }
 }
+
+/* A desktop application frame stays inside the viewport. The workspace owns
+   page scrolling; sidebar and frame corners share the same fixed boundaries. */
+@media (min-width: 1024px) {
+  html {
+    scrollbar-gutter: auto;
+  }
+  .app-shell {
+    height: calc(100dvh - 2 * var(--studio-frame-gap));
+    min-height: 0;
+    overflow: hidden;
+  }
+  .sidebar-rail {
+    min-height: 0;
+  }
+  .sidebar {
+    position: static;
+    height: 100%;
+  }
+  .main-shell {
+    min-height: 0;
+    overflow: auto;
+    scrollbar-gutter: stable;
+    overscroll-behavior-y: contain;
+  }
+  #workspace {
+    min-height: 100%;
+    flex: 1 0 auto;
+  }
+}
 @media (max-width: 1023px) {
+  .sidebar-rail {
+    display: contents;
+  }
   .app-shell {
     display: block;
     margin: 12px auto;
@@ -353,6 +396,7 @@ tbody tr:hover {
     height: 100dvh;
     border-radius: 0 20px 20px 0;
     padding: 24px 16px;
+    background: color-mix(in srgb, var(--panel) 80%, var(--canvas));
   }
   #workspace {
     padding: 24px;

@@ -425,7 +425,9 @@ def cached_json_call(project, config, role, stage, system, payload, schema,
     if hit is not None:
         # An evidence-write failure must never fall through to a paid new call.
         from .context_manifest import record_reuse
-        record_reuse(folder, project, role, stage, hit)
+        reuse = record_reuse(folder, project, role, stage, hit)
+        from .role_handoffs import observe_call
+        observe_call({'call_id': ((reuse or {}).get('origin') or {}).get('call_id')}, reused=True)
         report(checkpoint, message="复用已完成的创作步骤：" + stage)
         return copy.deepcopy(hit["value"])
     from .context_manifest import capture, cache_origin

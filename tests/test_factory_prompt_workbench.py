@@ -336,3 +336,22 @@ def test_project_overrides_without_a_custom_edition_use_parameterized_builtin(pr
     selected = adapt_system(load_prompt('creator'), store.get(p['id'], False))
     assert '6镜' in selected and '15镜' not in selected
     assert '不得恢复已删除的雨伞' in selected
+
+
+def test_controlled_supplement_selects_project_edition_before_derivation(project):
+    """A storyboard return must preserve the selected writer edition and provenance.
+
+    #73 transforms the screenwriter template for scoped material supplements.
+    Applying a workbench selection only after that transform would reject it.
+    """
+    p = idle(project)
+    selected = edition('screenwriter@1.1.0', role='保留已批准的角色和镜头。')
+    apply(p, selected)
+    p = store.get(p['id'], False)
+    source = w.select(load_prompt('screenwriter', '1.1.0'), p)
+    rendered = str(source).replace('你是短剧编剧兼分镜导演', '你是短剧编剧', 1)
+    supplemented = derive_prompt(source, rendered, 'controlled_supplement')
+    assert w.select(supplemented, p) is supplemented
+    assert supplemented.assembly['edition_id'] == selected['id']
+    assert supplemented.assembly['segments'][-1]['source'] == 'renderer:controlled_supplement'
+    assert '保留已批准的角色和镜头' in supplemented

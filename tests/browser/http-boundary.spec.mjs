@@ -28,8 +28,9 @@ test("real Python boundary admits the new console and rejects the retired interf
   );
   await page.locator('#project-list [data-id="' + projectId + '"]').click();
   await expect(page.locator("#workspace h1")).toHaveText("HTTP 边界隔离测试");
-  await page.locator('.main-nav [data-action="models"]').click();
-  await expect(page.locator("#workspace h1")).toHaveText("模型配置");
+  await page.locator('.main-nav [data-view="settings"]').click();
+  await page.getByRole("button", { name: "模型与服务", exact: true }).click();
+  await expect(page.locator("#workspace h1")).toHaveText("系统设置");
   expect(errors).toEqual([]);
   expect((await page.goto(endpoint + "/legacy")).status()).toBe(410);
 });

@@ -391,6 +391,10 @@ def build(project, *, episodes=(), batches=(), units=(), active_job=False, curre
     graph, flow = _projection(project, stages, tasks, active_job)
     flow['current_job'] = current_job or {'status': 'unrecorded' if active_job else 'idle', 'started': None}
     flow['evidence'] = evidence
+    from studio.core import ROOT
+    from .team_flow import _project_root
+    from .role_handoffs import snapshot as handoff_snapshot
+    flow['controlled_handoffs'] = handoff_snapshot(_project_root(project, root=ROOT) / 'planning', project)
     return {'kind': 'drama_lifecycle' if project.get('record_kind') == 'drama' else 'episode_lifecycle',
         'graph': graph, 'flow': flow,
         'stages': stages, 'tasks': tasks, 'evidence': evidence, 'active_job': bool(active_job),

@@ -1,4 +1,4 @@
-import { Check, Monitor, Moon, Sun } from "lucide-react";
+import { Monitor, Moon, Sun } from "lucide-react";
 import { useAppearance, type ThemePreference } from "./Theme";
 import { ACCENT_PALETTES } from "./palettes";
 import { Badge, Panel } from "./ui";
@@ -51,7 +51,6 @@ export function AppearanceSettings() {
                   backgroundImage: `linear-gradient(145deg, ${palette.glow} 0%, ${palette.swatch} 48%, ${palette.mist} 100%)`,
                 }} aria-hidden="true" />
                 <span>{palette.label}</span>
-                {accent === palette.id && <Check className="appearance-check" size={18} aria-hidden="true" />}
               </label>
             ))}
           </div>

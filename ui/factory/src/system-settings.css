@@ -11,6 +11,7 @@
   top: 24px;
 }
 .settings-category {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -41,10 +42,16 @@
   color: var(--ink);
 }
 .settings-category[aria-current="page"] {
-  background: var(--panel);
+  background: var(--surface);
   color: var(--ink);
-  border-color: var(--line);
-  box-shadow: inset 3px 0 var(--accent);
+  border-color: var(--line-strong);
+}
+.settings-category > span {
+  flex: 1;
+  min-width: 0;
+}
+.settings-category[aria-current="page"] strong {
+  font-weight: 600;
 }
 .settings-content {
   min-width: 0;

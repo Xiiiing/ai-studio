@@ -3,7 +3,7 @@ import { openSystemSettings } from "./header-flow.mjs";
 import { openWorkflow } from "./navigation.mjs";
 
 const projectId = "012345abcdef";
-const navigation = ["dashboard", "projects", "library", "activity", "models", "settings"];
+const navigation = ["dashboard", "projects", "library", "activity", "settings"];
 const fit = async (page) => expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
 
 async function openNavigation(page, width) {
@@ -23,19 +23,19 @@ test.beforeEach(async ({ page, request }) => {
 });
 
 for (const width of [1440, 390]) {
-  test(`six flat navigation destinations and legacy links remain usable at ${width}`, async ({ page }) => {
+  test(`five flat navigation destinations and legacy links remain usable at ${width}`, async ({ page }) => {
     await page.setViewportSize({ width, height: 1000 });
     const errors = [];
     page.on("pageerror", (error) => errors.push(error.message));
     await page.goto("/");
     const nav = await openNavigation(page, width);
-    await expect(nav.locator("[data-view]")).toHaveCount(6);
+    await expect(nav.locator("[data-view]")).toHaveCount(5);
     expect(await nav.locator("[data-view]").evaluateAll((nodes) => nodes.map((node) => node.dataset.view))).toEqual(navigation);
-    expect(await nav.locator("[data-view]").evaluateAll((nodes) => nodes.map((node) => Array.from(node.childNodes).filter((child) => child.nodeType === Node.TEXT_NODE).map((child) => child.textContent).join("").trim()))).toEqual(["总览", "项目", "素材库", "运行记录", "模型配置", "系统设置"]);
+    expect(await nav.locator("[data-view]").evaluateAll((nodes) => nodes.map((node) => Array.from(node.childNodes).filter((child) => child.nodeType === Node.TEXT_NODE).map((child) => child.textContent).join("").trim()))).toEqual(["总览", "项目", "素材库", "运行记录", "系统设置"]);
     await expect(nav.locator(".nav-group, .sidebar-label")).toHaveCount(0);
     await expect(nav.getByText(/^(工作室|管理|制作流程与团队|待办|设置)$/)).toHaveCount(0);
     await page.screenshot({ path: `runtime/browser-report/flat-navigation-${width}.png` });
-    for (const [view, title] of [["dashboard", "制片总览"], ["projects", "全部项目"], ["library", "统一素材库"], ["activity", "运行记录"], ["models", "模型配置"], ["settings", "系统设置"]]) {
+    for (const [view, title] of [["dashboard", "制片总览"], ["projects", "全部项目"], ["library", "统一素材库"], ["activity", "运行记录"], ["settings", "系统设置"]]) {
       // First navigation is already expanded. Selecting each item closes the mobile drawer.
       await nav.locator(`[data-view="${view}"]`).click();
       await expect(page.locator(".shared-page-header h1")).toHaveText(title);
@@ -115,7 +115,7 @@ for (const width of [1440, 390]) {
     await appearance(page);
     await expect(palettes.getByRole("radio", { name: "薄荷青", exact: true })).toBeChecked();
     await page.goto("/#view=models");
-    await expect(page.locator(".shared-page-header h1")).toHaveText("模型配置");
+    await expect(page.locator(".shared-page-header h1")).toHaveText("系统设置");
     await expect(page.locator(".service-card-grid")).toBeVisible();
     await appearance(page);
     await expect(page.getByRole("radio", { name: "深色", exact: true })).toBeChecked();
@@ -124,5 +124,28 @@ for (const width of [1440, 390]) {
     await fit(page);
     const writes = (await (await request.get("/__test/calls")).json()).filter((call) => !["GET", "HEAD"].includes(call.method));
     expect(writes).toEqual([]);
+  });
+}
+
+for (const width of [1440, 390]) {
+  test(`legacy model links share settings selection, reload and history at ${width}`, async ({ page, request }) => {
+    await page.setViewportSize({ width, height: 1000 });
+    await page.goto("/#view=models");
+    await expect(page).toHaveURL(/#view=settings&tab=models$/);
+    await expect(page.locator(".model-settings")).toHaveCount(1);
+    await expect(page.locator(".main-nav [aria-current='page']")).toHaveAttribute("data-view", "settings");
+    await expect(page.locator(".main-nav [data-view='models']")).toHaveCount(0);
+    await expect(page.locator(".shared-page-header h1")).toHaveText("系统设置");
+    await page.getByRole("button", { name: "运行状态", exact: true }).click();
+    await expect(page).toHaveURL(/tab=runtime$/);
+    await page.goBack();
+    await expect(page).toHaveURL(/tab=models$/);
+    await expect(page.locator(".model-service-card").first()).toBeVisible();
+    await page.goForward();
+    await expect(page).toHaveURL(/tab=runtime$/);
+    await page.reload();
+    await expect(page.locator(".settings-category[aria-current='page']")).toHaveAccessibleName("运行状态");
+    const calls = await (await request.get("/__test/calls")).json();
+    expect(calls.filter(call => !["GET", "HEAD"].includes(call.method))).toEqual([]);
   });
 }
