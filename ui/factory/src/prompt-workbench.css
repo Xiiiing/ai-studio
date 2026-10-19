@@ -1,0 +1,64 @@
+.prompt-workbench {
+  min-width: 0;
+}
+.prompt-workbench .panel > * + * {
+  margin-top: 14px;
+}
+.prompt-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+.prompt-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.prompt-section {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px;
+}
+.prompt-workbench summary {
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.prompt-workbench textarea {
+  width: 100%;
+  resize: vertical;
+  font-family: inherit;
+}
+.prompt-workbench pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 560px;
+  overflow: auto;
+  padding: 12px;
+  font-size: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.prompt-workbench .check {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.prompt-workbench .check input {
+  width: auto;
+  margin-top: 4px;
+  flex-shrink: 0;
+}
+.prompt-trial {
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+@media (max-width: 600px) {
+  .prompt-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .prompt-actions > .button {
+    max-width: 100%;
+    white-space: normal;
+  }
+}

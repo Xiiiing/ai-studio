@@ -203,7 +203,8 @@ def compile_prompt(project, shot, *, config, references, style, seconds,
         schema = adapt_schema(PROMPT_SCHEMA, project)
         metadata = prompt_receipt(system, ROLE, payload, schema)
         signature = fingerprint({"compiler": compiler, "system": system, "payload": payload,
-                                 "schema": schema, "temperature": .25, "max_tokens": 2400})
+                                 "schema": schema, "temperature": .25, "max_tokens": 2400,
+                                 **({"prompt_workbench": metadata["assembly"]} if metadata.get("assembly") else {})})
         folder = Path(output_dir) if output_dir is not None else planning_dir(project) / "h3-prompts"
         cache = folder / ("h3-prompt-" + signature + ".json")
         saved = None

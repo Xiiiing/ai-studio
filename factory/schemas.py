@@ -377,6 +377,8 @@ def project_context(project):
         context["creative_contract"] = resolve_contract(project)
     if project.get("series_bible"):
         context["series_bible"] = copy.deepcopy(project["series_bible"])
+    if project.get("prompt_snapshot") and (project["prompt_snapshot"].get("versions") or any(project["prompt_snapshot"].get("overrides", {}).values())):
+        context["prompt_snapshot_sha256"] = fingerprint(project["prompt_snapshot"])
     if project.get("material_package"):
         from .material_library import context as material_context
         context["confirmed_materials"] = material_context(project)
@@ -394,6 +396,8 @@ def cached_json_call(project, config, role, stage, system, payload, schema,
     model_identity = llm_identity(config, role)
     from .profile_creative import adapt_schema, adapt_system
     from .team_control import requirements_payload
+    from .prompt_workbench import select
+    system = select(system, project)
     payload = requirements_payload(project, payload)
     if "producer_task_requirements" in payload:
         from .prompt_registry import derive_prompt

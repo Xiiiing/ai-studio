@@ -61,8 +61,9 @@ def _adapt_profile_system(system, project):
         "15镜60至90秒、两名成年角色": constraint,
         "不得将两位角色混合": "不得混合不同角色身份",
     }
-    for old, new in replacements.items():
-        system = system.replace(old, new)
+    if not getattr(source, "assembly", None):
+        for old, new in replacements.items():
+            system = system.replace(old, new)
     rendered = system + "\nCREATIVE_PROFILE_JSON:\n" + json.dumps(profile, ensure_ascii=False, sort_keys=True) + (
         "\n严格遵循此规格的镜头数量、逐镜秒数、稳定人物ID及声线映射。不要添加角色或扩展片长。"
         "对新规格，characters明确列出每镜可见的角色；reference_group仅为概要，不替代人物列表。"
@@ -73,6 +74,8 @@ def _adapt_profile_system(system, project):
 def adapt_system(system, project):
     """Apply optional intent while preserving byte-exact historical prompts."""
     from .creative_contract import instructions, resolve as resolve_contract
+    from .prompt_workbench import select
+    system = select(system, project)
     from .prompt_registry import derive_prompt
     if resolve_contract(project) is None:
         return _adapt_profile_system(system, project)

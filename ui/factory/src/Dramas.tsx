@@ -24,6 +24,7 @@ import {
   type RecordData,
 } from "./api";
 import { Workflow } from "./Workflow";
+import { PromptWorkbench } from "./PromptWorkbench";
 import { QualityComparison } from "./QualityComparison";
 import "./dramas.css";
 
@@ -379,6 +380,7 @@ const dramaTabs = [
   ["batches", "生成批次"],
   ["results", "成果"],
   ["comparison", "质量比较"],
+  ["prompts", "提示词工作台"],
 ];
 const dramaPrimary = [
   ["overview", "总览", "项目总览"],
@@ -405,7 +407,7 @@ function DramaNavigation({
     document.addEventListener("pointerdown", outside);
     return () => document.removeEventListener("pointerdown", outside);
   }, []);
-  const section = ["plan", "assets", "comparison"].includes(tab)
+  const section = ["plan", "assets", "comparison", "prompts"].includes(tab)
     ? "overview"
     : tab === "batches"
       ? "episodes"
@@ -448,7 +450,7 @@ function DramaNavigation({
         </summary>
         <div>
           {dramaTabs
-            .filter(([key]) => ["plan", "assets", "batches", "comparison"].includes(key))
+            .filter(([key]) => ["plan", "assets", "batches", "comparison", "prompts"].includes(key))
             .map(([key, label]) => (
               <button
                 key={key}
@@ -460,7 +462,7 @@ function DramaNavigation({
             ))}
         </div>
       </details>
-      {["plan", "assets", "batches", "comparison"].includes(tab) && (
+      {["plan", "assets", "batches", "comparison", "prompts"].includes(tab) && (
         <span className="drama-location">
           {dramaTabs.find(([key]) => key === tab)?.[1]}
         </span>
@@ -722,6 +724,7 @@ export function DramaDetail({
       />
       <ErrorNotice error={error || query.error} />
       <DramaNavigation tab={tab} onTab={setTab} />
+      {tab === "prompts" && <PromptWorkbench project={p} />}
       {tab === "comparison" && <QualityComparison project={p} />}
       {tab === "plan" &&
         p.plan_phase &&
@@ -1568,6 +1571,7 @@ export function LongEpisodeDetail({
           ["overview", "剧集总览"],
           ["workflow", "制作流程与团队"],
           ["comparison", "质量比较"],
+  ["prompts", "提示词工作台"],
         ].map(([key, label]) => (
           <button
             key={key}
@@ -1579,7 +1583,9 @@ export function LongEpisodeDetail({
           </button>
         ))}
       </nav>
-      {activeTab === "comparison" ? (
+      {activeTab === "prompts" ? (
+        <PromptWorkbench project={p} />
+      ) : activeTab === "comparison" ? (
         <QualityComparison project={p} />
       ) : activeTab === "workflow" ? (
         <>

@@ -16,6 +16,7 @@ const tabs = [
   "overview",
   "decisions",
   "team",
+  "prompts",
   "shots",
   "script",
   "quality",
@@ -143,7 +144,7 @@ for (const width of [320, 390, 768, 1024, 1440, 1920]) {
             const box = await item.boundingBox();
             expect(box.height).toBeGreaterThanOrEqual(44);
           }
-          if (!["team", "costs"].includes(route.tab))
+          if (!["team", "prompts", "costs"].includes(route.tab))
             await expect(
               navigation.locator(`[data-tab="${group}"]`),
             ).toHaveAttribute("aria-current", "page");
@@ -158,7 +159,7 @@ for (const width of [320, 390, 768, 1024, 1440, 1920]) {
           const more = page.locator(".project-more");
           const trigger = more.locator(":scope > summary");
           await trigger.click();
-          await expect(more.locator("[data-project-page]")).toHaveCount(2);
+          await expect(more.locator("[data-project-page]")).toHaveCount(3);
           for (const item of await more.locator("[data-project-page]").all()) {
             await expect(item).toBeInViewport({ ratio: 1 });
             const box = await item.boundingBox();
@@ -371,9 +372,7 @@ for (const theme of ["light", "dark"])
   }) => {
     await page.emulateMedia({ colorScheme: theme });
     await page.goto("/#view=models");
-    await expect(
-      page.getByRole("heading", { name: "模型配置" }),
-    ).toBeVisible();
+    await expect(page.getByRole("heading", { name: "模型配置" })).toBeVisible();
     const results = await page.evaluate(() => {
       const rgb = (value) =>
         (value.match(/[\d.]+/g) || []).slice(0, 3).map(Number);

@@ -60,7 +60,7 @@ for (const theme of ["light", "dark"])
       const trigger = more.locator(":scope > summary");
       await trigger.click();
       const menu = more.locator(".project-navigation-menu");
-      await expect(menu.locator("button")).toHaveCount(2);
+      await expect(menu.locator("button")).toHaveCount(3);
       expect((await page.locator(".project-pane").boundingBox()).y).toBe(
         before.y,
       );

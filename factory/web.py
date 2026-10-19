@@ -33,6 +33,12 @@ class Handler(LocalMediaHandler):
     def do_GET(self):
         path=unquote(urlsplit(self.path).path)
         try:
+            match = re.fullmatch(r"/api/factory/projects/([a-f0-9]{12})/prompts(?:/(calls)(?:/([a-f0-9]{32}))?)?", path)
+            if match:
+                from . import prompt_workbench as prompts
+                if urlsplit(self.path).query:
+                    raise ValueError("提示词查询参数无效")
+                return self.json(prompts.calls(match[1], match[3], root=ROOT) if match[2] else prompts.inventory(match[1]))
             if path == "/api/factory/system":
                 return self.json(public_system_info())
             match = re.fullmatch(r"/api/factory/projects/([a-f0-9]{12})/quality-baselines(?:/([a-f0-9]{32}|compare))?", path)
@@ -208,6 +214,17 @@ class Handler(LocalMediaHandler):
             return super().do_POST()
         try:
             payload=self.read_json_body()
+            match = re.fullmatch(r"/api/factory/projects/([a-f0-9]{12})/prompts/(save|preview|validate|activate|apply|trial|settle)", route)
+            if match:
+                from . import prompt_workbench as prompts
+                if urlsplit(self.path).query:
+                    raise HTTPError(400, "invalid_prompt_query", "提示词写入参数无效")
+                pid, operation = match.groups()
+                store.get(pid, False)
+                if operation in {"save", "activate"}:
+                    return self.json(getattr(prompts, operation)(payload))
+                function = prompts.settle_trial if operation == "settle" else getattr(prompts, operation)
+                return self.json(function(pid, payload))
             match = re.fullmatch(r"/api/factory/projects/([a-f0-9]{12})/quality-baselines", route)
             if match:
                 from .quality_baselines import create

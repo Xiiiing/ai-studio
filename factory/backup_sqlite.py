@@ -40,6 +40,10 @@ STUDIO = {
     "team_instructions": {"id", "project_id", "request_id", "request_hash", "status", "created_at", "data"},
     "team_locks": {"project_id", "task_id", "generation", "signature", "data", "created_at"},
     "team_control_requests": {"project_id", "request_id", "request_hash", "result"},
+    "prompt_editions": {"id", "prompt_key", "document", "created"},
+    "prompt_defaults": {"prompt_key", "edition_id", "revision"},
+    "prompt_operations": {"id", "signature", "result"},
+    "prompt_trials": {"id", "project_id", "state", "document", "created"},
     "sqlite_sequence": {"name", "seq"},
 }
 CHECKPOINTS = {
@@ -86,6 +90,10 @@ def schema(db, name):
         control_tables = {"team_instructions", "team_locks", "team_control_requests"}
         if not control_tables & {r["name"] for r in entries}:
             for table in control_tables:
+                expected.pop(table)
+        prompt_tables = {"prompt_editions", "prompt_defaults", "prompt_operations", "prompt_trials"}
+        if not prompt_tables & {r["name"] for r in entries}:
+            for table in prompt_tables:
                 expected.pop(table)
         for table in list(expected):
             if table.startswith("material_") and table not in {r["name"] for r in entries}:

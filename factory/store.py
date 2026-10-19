@@ -83,6 +83,8 @@ def initialize():
         initialize_team(db)
         from .team_control import initialize as initialize_team_control
         initialize_team_control(db)
+        from .prompt_workbench import initialize as initialize_prompts
+        initialize_prompts(db)
 
 
 def _read(db, pid):
@@ -220,6 +222,8 @@ def create(payload):
                 if previous["request_hash"] != request_hash:
                     raise ValueError("请求标识已被其他请求使用")
                 return _read(db, previous["project_id"])
+        from .prompt_workbench import pin_defaults
+        project["prompt_snapshot"] = pin_defaults(db)
         if project["series_key"]:
             rows = db.execute("SELECT value FROM memories WHERE key LIKE ? ORDER BY updated DESC LIMIT 5",
                               ("series:" + project["series_key"] + ":%",)).fetchall()

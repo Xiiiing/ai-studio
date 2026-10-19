@@ -113,6 +113,10 @@ def _request(config, role, system, payload, schema, output_dir, max_tokens=4096,
     manifest["delivery"] = "not_submitted"
     receipt["context_manifest"] = manifest
     save("receipt.json", receipt)
+    save("assembly.json", {"schema": "ai-studio.prompt-assembly.v1", "role": role,
+        "system": str(system), "wire_system": rules, "input": payload, "output_schema": schema,
+        "prompt": prompt_meta, "parameters": parameters,
+        "model": {key: llm.get(key) for key in ("model", "profile", "provider", "system_prompt_mode", "response_format")}})
     started = time.monotonic()
     try:
         if content is None and len(user_content) > 100000:
