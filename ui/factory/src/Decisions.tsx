@@ -1,3 +1,4 @@
+import { StudioSelect } from "./StudioSelect";
 import { CloudAuthorization } from "./Assets";
 import { useEffect, useRef, useState } from "react";
 import { ArrowRight, Check, AlertTriangle, Inbox } from "lucide-react";
@@ -763,7 +764,7 @@ export function ActionForm({
                 )}
               </>
             ) : input.type === "select" ? (
-              <select
+              <StudioSelect
                 name={input.name}
                 required={input.required}
                 value={values[input.name] ?? input.value ?? ""}
@@ -775,7 +776,7 @@ export function ActionForm({
                     {o.label}
                   </option>
                 ))}
-              </select>
+              </StudioSelect>
             ) : input.type === "multiselect" ? (
               <div className="shot-options">
                 {rows(input.options).map((o) => (

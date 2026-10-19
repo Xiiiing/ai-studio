@@ -1,3 +1,4 @@
+import { selectOption, nativeControl } from "./select-control.mjs";
 import { openDetails, closeDetails } from "./fixed-canvas.mjs";
 import { refreshPage } from "./header-flow.mjs";
 import { openWorkflow } from "./navigation.mjs";
@@ -34,9 +35,11 @@ for (const [style, format, motion] of [
     await page.locator('[data-action="new-project"]').first().click();
     await page.getByRole("button", { name: "使用原单集入口" }).click();
     const dialog = page.getByRole("dialog");
-    await expect(dialog.getByLabel("画面与运动方式")).toHaveValue("anime_2d");
-    await dialog.getByLabel("画面与运动方式").selectOption(style);
-    await dialog.getByLabel("团队协作方式").selectOption("guided");
+    await expect(
+      nativeControl(dialog.getByLabel("画面与运动方式")),
+    ).toHaveValue("anime_2d");
+    await selectOption(dialog.getByLabel("画面与运动方式"), style);
+    await selectOption(dialog.getByLabel("团队协作方式"), "guided");
     await dialog
       .getByLabel("创作方向")
       .fill("成年修表师查清真相，主动行动并完成和解，故事在本片结束。");
@@ -77,14 +80,16 @@ test("remake opens an editable new project without mutating existing media", asy
   await expect(page.locator(".creative-contract")).toContainText(
     "实际制作：静帧图片加程序运镜",
   );
-  await page.locator(".project-actions-menu > summary").click();
-  await page.getByRole("button", { name: "按新规格重制" }).click();
+  await page.getByRole("button", { name: "项目操作", exact: true }).click();
+  await page.getByRole("menuitem", { name: "按新规格重制" }).click();
   const dialog = page.getByRole("dialog");
   await expect(dialog.getByLabel("创作方向")).toHaveValue(before.brief);
   await expect(dialog.getByLabel("项目名称 / 可选")).toHaveValue(
     before.title + " · 重制",
   );
-  await expect(dialog.getByLabel("画面与运动方式")).toHaveValue("anime_2d");
+  await expect(nativeControl(dialog.getByLabel("画面与运动方式"))).toHaveValue(
+    "anime_2d",
+  );
   await expect(dialog).toContainText("原项目的成片、素材与历史记录继续保留");
   await dialog
     .getByLabel("创作方向")
@@ -92,8 +97,12 @@ test("remake opens an editable new project without mutating existing media", asy
   await page.setViewportSize({ width: 390, height: 844 });
   // Resize recomputes modal gutter compensation asynchronously. Settle it
   // before comparing the locked and unlocked page anchors.
-  await page.evaluate(() => new Promise((resolve) =>
-    requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  await page.evaluate(
+    () =>
+      new Promise((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(resolve)),
+      ),
+  );
   // Modal scroll locking releases the root gutter so the top layer can paint
   // edge to edge. The visible workspace must retain its actual geometry.
   const lockedWorkspace = await documentAnchors(page);

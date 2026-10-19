@@ -1,3 +1,4 @@
+import { SelectionGroup } from "./SelectionGroup";
 import { useQuery } from "@tanstack/react-query";
 import { Activity, Info, Palette, Plug } from "lucide-react";
 import { AppearanceSettings } from "./AppearanceSettings";
@@ -76,7 +77,12 @@ export function SystemSettings({
         description="管理界面外观、制作服务，查看当前系统状态与版本。"
       />
       <div className="settings-layout">
-        <nav className="settings-navigation" aria-label="系统设置分类">
+        <SelectionGroup
+          as="nav"
+          className="settings-navigation"
+          aria-label="系统设置分类"
+          value={selected.id}
+        >
           {categories.map(({ id, label, description, Icon }) => (
             <button
               key={id}
@@ -94,7 +100,7 @@ export function SystemSettings({
               </span>
             </button>
           ))}
-        </nav>
+        </SelectionGroup>
         <section
           id="settings-content"
           className="settings-content"

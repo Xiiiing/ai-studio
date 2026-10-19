@@ -1,3 +1,5 @@
+import { SelectionGroup } from "./SelectionGroup";
+import { StudioSelect } from "./StudioSelect";
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -62,7 +64,10 @@ function servicePurpose(service: Service, draft: RecordData) {
   if (roles.includes("visual_critic")) labels.push("视觉审核");
   return labels.join(" / ") || "未分配用途";
 }
-export function Models({ notify, embedded = false }: {
+export function Models({
+  notify,
+  embedded = false,
+}: {
   notify: (v: string) => void;
   embedded?: boolean;
 }) {
@@ -207,10 +212,12 @@ export function Models({ notify, embedded = false }: {
           (tab === "services" ? " has-service-search" : "")
         }
       >
-        <div
+        <SelectionGroup
           className="model-settings-tabs"
           role="tablist"
           aria-label="模型设置"
+          variant="underline"
+          value={tab}
         >
           {[
             ["services", "服务连接"],
@@ -229,7 +236,7 @@ export function Models({ notify, embedded = false }: {
               {id === "roles" && dirty && <span className="unsaved-dot" />}
             </button>
           ))}
-        </div>
+        </SelectionGroup>
         {tab === "services" && (
           <>
             <Field label="搜索服务">
@@ -414,7 +421,11 @@ export function Models({ notify, embedded = false }: {
           <WorkflowTools notify={notify} />
         </section>
       )}
-      <PageFocus label="已配置服务" value={`${all.length} 项`} detail="集中管理文本、图像、视频与配音连接；实际连接状态以各服务的测试回执为准。" />
+      <PageFocus
+        label="已配置服务"
+        value={`${all.length} 项`}
+        detail="集中管理文本、图像、视频与配音连接；实际连接状态以各服务的测试回执为准。"
+      />
       {showDetails && current && tab === "services" && (
         <Modal
           id="model-service-detail-dialog"
@@ -701,7 +712,7 @@ function Assignments({
                   <p>{group.description}</p>
                 </div>
                 <Field label={group.title + "模型"}>
-                  <select
+                  <StudioSelect
                     value={selected.length === 1 ? selected[0] : "__mixed__"}
                     disabled={disabled}
                     onChange={(e) => {
@@ -724,7 +735,7 @@ function Assignments({
                       已按角色分别配置
                     </option>
                     {options("llm", group.id === "vision")}
-                  </select>
+                  </StudioSelect>
                 </Field>
               </div>
             );
@@ -734,7 +745,7 @@ function Assignments({
           <div className="assignment-role-grid">
             {roles.map((meta) => (
               <Field label={meta.label || roleName(meta.role)} key={meta.role}>
-                <select
+                <StudioSelect
                   id={"role-" + meta.role}
                   value={draft.roles[meta.role] || ""}
                   disabled={disabled}
@@ -754,7 +765,7 @@ function Assignments({
                     </option>
                   )}
                   {options("llm", meta.requires_vision)}
-                </select>
+                </StudioSelect>
               </Field>
             ))}
           </div>
@@ -779,7 +790,7 @@ function Assignments({
                 </p>
               </div>
               <Field label={kindLabels[kind] + "制作模型"}>
-                <select
+                <StudioSelect
                   id={"role-" + kind + "-" + mediaRoles[kind]}
                   value={draft[kind + "_roles"]?.[mediaRoles[kind]] || ""}
                   disabled={disabled}
@@ -798,7 +809,7 @@ function Assignments({
                     选择模型
                   </option>
                   {options(kind)}
-                </select>
+                </StudioSelect>
               </Field>
             </div>
           ))}

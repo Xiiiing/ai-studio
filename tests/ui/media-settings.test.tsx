@@ -1,3 +1,4 @@
+import { selectControl, nativeControl } from "./select-control";
 import {
   render,
   screen,
@@ -52,9 +53,7 @@ it("saves the selected H3 production recipe once and preserves stable assignment
   fireEvent.change(screen.getByLabelText("视频采样偏移"), {
     target: { value: "10.5" },
   });
-  fireEvent.change(screen.getByLabelText("采样器"), {
-    target: { value: "heun" },
-  });
+  await selectControl(screen.getByLabelText("采样器"), "heun");
   fireEvent.click(screen.getByRole("button", { name: "保存连接" }));
   await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
   expect(onSave.mock.calls[0][0].video_profiles.h3).toMatchObject({
@@ -83,9 +82,7 @@ it("switches H3 to the fixed preview recipe without inventing an API key", async
       onClose={vi.fn()}
     />,
   );
-  fireEvent.change(screen.getByLabelText("H3 质量档"), {
-    target: { value: "preview" },
-  });
+  await selectControl(screen.getByLabelText("H3 质量档"), "preview");
   expect(screen.queryByLabelText("采样步数")).not.toBeInTheDocument();
   expect(screen.queryByLabelText("API Key")).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "保存连接" }));
@@ -210,7 +207,9 @@ it("preserves an untouched legacy H3 preview cache identity", async () => {
       onClose={vi.fn()}
     />,
   );
-  expect(screen.getByLabelText("H3 质量档")).toHaveValue("preview");
+  expect(nativeControl(screen.getByLabelText("H3 质量档"))).toHaveValue(
+    "preview",
+  );
   fireEvent.click(screen.getByRole("button", { name: "保存连接" }));
   await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
   expect(onSave.mock.calls[0][0].video_profiles.h3).toEqual(legacy);

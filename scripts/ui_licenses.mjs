@@ -25,11 +25,16 @@ for (const [location, entry] of Object.entries(lock.packages)) {
   const names = files
     .filter((name) => /^(licen[cs]e|copying)(\.|-|$)/i.test(name))
     .sort();
-  if (!names.length)
+  const supplemental =
+    manifest.name === "react-remove-scroll-bar" && manifest.version === "2.3.8"
+      ? path.join(root, "third_party/react-remove-scroll-bar.LICENSE")
+      : null;
+  if (!names.length && !supplemental)
     throw new Error(
       `Runtime dependency lacks a packaged license notice: ${manifest.name}`,
     );
-  const notices = [];
+  const notices =
+    supplemental && !names.length ? [await readFile(supplemental, "utf8")] : [];
   for (const name of names)
     notices.push(await readFile(path.join(directory, name), "utf8"));
   sections.push(

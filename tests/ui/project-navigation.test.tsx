@@ -33,11 +33,11 @@ it("reaches team and costs and closes the more menu without losing keyboard focu
   render(<ProjectNavigation tab="overview" onTab={onTab} />);
   const trigger = screen.getByText("更多");
   await userEvent.click(trigger);
-  await userEvent.click(screen.getByRole("button", { name: "云任务与费用" }));
+  await userEvent.click(screen.getByRole("menuitem", { name: "云任务与费用" }));
   expect(onTab).toHaveBeenCalledWith("costs");
   expect(trigger).toHaveFocus();
   await userEvent.click(trigger);
   await userEvent.keyboard("{Escape}");
-  expect(trigger.closest("details")).not.toHaveAttribute("open");
+  expect(screen.queryByRole("menu")).not.toBeInTheDocument();
   expect(trigger).toHaveFocus();
 });

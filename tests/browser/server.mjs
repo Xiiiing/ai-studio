@@ -17,6 +17,10 @@ const root = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "../..",
 );
+// Freeze a build for a browser run while another development stage builds.
+const uiDist = await realpath(
+  path.resolve(process.env.TEST_UI_DIST || path.join(root, "ui/factory/dist")),
+);
 const catalog = JSON.parse(
   await readFile(
     path.join(root, "runtime/browser-fixtures/model-catalog.json"),
@@ -232,8 +236,18 @@ const server = http.createServer(async (request, response) => {
     if (url.pathname === "/__test/calls") return json(response, calls);
     if (url.pathname.startsWith("/api/")) {
       calls.push({ method: request.method, path: url.pathname, body: value });
-      if (url.pathname === "/api/factory/system" && !(fail && url.pathname.endsWith(fail)))
-        return json(response, { schema: "ai-studio.system.v1", service: "drama-studio", version: "3.0.0-browser-fixture", source_commit: "c".repeat(40), started_at: "2026-10-18T10:00:00Z", environment: "test" });
+      if (
+        url.pathname === "/api/factory/system" &&
+        !(fail && url.pathname.endsWith(fail))
+      )
+        return json(response, {
+          schema: "ai-studio.system.v1",
+          service: "drama-studio",
+          version: "3.0.0-browser-fixture",
+          source_commit: "c".repeat(40),
+          started_at: "2026-10-18T10:00:00Z",
+          environment: "test",
+        });
       if (fail && url.pathname.endsWith(fail))
         return json(response, { error: "模拟服务暂时不可用" }, 503);
       if (
@@ -510,12 +524,10 @@ const server = http.createServer(async (request, response) => {
       return response.end(document.body);
     }
     let file;
-    if (url.pathname === "/")
-      file = path.join(root, "ui/factory/dist/index.html");
+    if (url.pathname === "/") file = path.join(uiDist, "index.html");
     else if (url.pathname.startsWith("/factory/static/"))
       file = path.join(
-        root,
-        "ui/factory/dist",
+        uiDist,
         decodeURIComponent(url.pathname.slice("/factory/static/".length)),
       );
     else if (
@@ -537,10 +549,9 @@ const server = http.createServer(async (request, response) => {
     else return json(response, { error: "Not found" }, 404);
     file = await realpath(file);
     if (
-      ![
-        path.join(root, "ui/factory/"),
-        path.join(root, "runtime/browser-fixtures/"),
-      ].some((base) => file.startsWith(base))
+      ![uiDist + path.sep, path.join(root, "runtime/browser-fixtures/")].some(
+        (base) => file.startsWith(base),
+      )
     )
       return json(response, { error: "Path rejected" }, 403);
     const mime = {

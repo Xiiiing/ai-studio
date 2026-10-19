@@ -1,3 +1,4 @@
+import { SelectionGroup } from "./SelectionGroup";
 import { Monitor, Moon, Sun } from "lucide-react";
 import { useAppearance, type ThemePreference } from "./Theme";
 import { ACCENT_PALETTES } from "./palettes";
@@ -18,9 +19,13 @@ export function AppearanceSettings() {
       <Panel title="外观">
         <fieldset className="appearance-fieldset">
           <legend>显示模式</legend>
-          <div className="appearance-modes">
+          <SelectionGroup className="appearance-modes" value={preference}>
             {modes.map(({ id, label, Icon }) => (
-              <label className="appearance-mode" data-selected={preference === id} key={id}>
+              <label
+                className="appearance-mode"
+                data-selected={preference === id}
+                key={id}
+              >
                 <input
                   type="radio"
                   name="appearance-mode"
@@ -32,13 +37,17 @@ export function AppearanceSettings() {
                 <span>{label}</span>
               </label>
             ))}
-          </div>
+          </SelectionGroup>
         </fieldset>
         <fieldset className="appearance-fieldset">
           <legend>主题色</legend>
-          <div className="appearance-palettes">
+          <SelectionGroup className="appearance-palettes" value={accent}>
             {ACCENT_PALETTES.map((palette) => (
-              <label className="appearance-palette" data-selected={accent === palette.id} key={palette.id}>
+              <label
+                className="appearance-palette"
+                data-selected={accent === palette.id}
+                key={palette.id}
+              >
                 <input
                   type="radio"
                   name="appearance-accent"
@@ -46,14 +55,18 @@ export function AppearanceSettings() {
                   checked={accent === palette.id}
                   onChange={() => chooseAccent(palette.id)}
                 />
-                <span className="appearance-swatch" style={{
-                  backgroundColor: palette.swatch,
-                  backgroundImage: `linear-gradient(145deg, ${palette.glow} 0%, ${palette.swatch} 48%, ${palette.mist} 100%)`,
-                }} aria-hidden="true" />
+                <span
+                  className="appearance-swatch"
+                  style={{
+                    backgroundColor: palette.swatch,
+                    backgroundImage: `linear-gradient(145deg, ${palette.glow} 0%, ${palette.swatch} 48%, ${palette.mist} 100%)`,
+                  }}
+                  aria-hidden="true"
+                />
                 <span>{palette.label}</span>
               </label>
             ))}
-          </div>
+          </SelectionGroup>
         </fieldset>
         <p className="appearance-storage">选择后即时生效，保存在当前浏览器。</p>
         <section className="appearance-preview" aria-label="主题效果预览">

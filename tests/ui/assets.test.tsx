@@ -1,3 +1,4 @@
+import { nativeControl, selectControl } from "./select-control";
 import {
   act,
   cleanup,
@@ -162,9 +163,10 @@ describe("series drafts bind the actual Bible and asset versions", () => {
     const view = render(<SeriesOperation {...props} />, {
       wrapper: queryWrapper().wrapper,
     });
-    await user.selectOptions(
+    await selectControl(
       screen.getByLabelText("当前项目已登记图片"),
       "shot:S01",
+      user,
     );
     view.rerender(
       <SeriesOperation
@@ -172,7 +174,9 @@ describe("series drafts bind the actual Bible and asset versions", () => {
         base={{ ...props.base, expected_asset_revision: 6 }}
       />,
     );
-    expect(screen.getByLabelText("当前项目已登记图片")).toHaveValue("shot:S01");
+    expect(
+      nativeControl(screen.getByLabelText("当前项目已登记图片")),
+    ).toHaveValue("shot:S01");
     expect(screen.getByRole("button", { name: "登记图片" })).toBeDisabled();
     expect(posts).toHaveLength(0);
     await user.click(screen.getByRole("button", { name: "已核对当前版本" }));
@@ -246,20 +250,22 @@ describe("supplier cost confirmation binds the immutable intent", () => {
       <FeeConfirmation tasks={tasks} busy={false} onSubmit={submit} />,
     );
     await user.click(screen.getByText("按供应商账单确认实际费用"));
-    await user.selectOptions(screen.getByLabelText("任务"), "intent-A");
+    await selectControl(screen.getByLabelText("任务"), "intent-A", user);
     await user.type(screen.getByLabelText("实际金额"), "12.50");
     await user.type(screen.getByLabelText("核对依据"), "Task A invoice");
     expect(screen.getByLabelText("币种")).toHaveValue("USD");
     view.rerender(
       <FeeConfirmation tasks={[tasks[1]]} busy={false} onSubmit={submit} />,
     );
-    expect(screen.getByLabelText("任务")).toHaveValue("intent-A");
+    expect(nativeControl(screen.getByLabelText("任务"))).toHaveValue(
+      "intent-A",
+    );
     expect(screen.getByLabelText("实际金额")).toHaveValue("12.50");
     expect(screen.getByLabelText("核对依据")).toHaveValue("Task A invoice");
     expect(screen.getByRole("button", { name: "确认实际费用" })).toBeDisabled();
     await user.click(screen.getByRole("button", { name: "确认实际费用" }));
     expect(submit).not.toHaveBeenCalled();
-    await user.selectOptions(screen.getByLabelText("任务"), "intent-B");
+    await selectControl(screen.getByLabelText("任务"), "intent-B", user);
     expect(screen.getByLabelText("实际金额")).toHaveValue("");
     expect(screen.getByLabelText("核对依据")).toHaveValue("");
     expect(screen.getByLabelText("币种")).toHaveValue("CNY");
@@ -281,7 +287,7 @@ describe("supplier cost confirmation binds the immutable intent", () => {
       <FeeConfirmation tasks={tasks} busy={false} onSubmit={submit} />,
     );
     await user.click(screen.getByText("按供应商账单确认实际费用"));
-    await user.selectOptions(screen.getByLabelText("任务"), "intent-A");
+    await selectControl(screen.getByLabelText("任务"), "intent-A", user);
     await user.type(screen.getByLabelText("实际金额"), "4");
     await user.type(screen.getByLabelText("核对依据"), "invoice for A");
     view.rerender(
@@ -345,7 +351,7 @@ describe("cost page feedback stays outside the ledger layout", () => {
       wrapper: queryWrapper().wrapper,
     });
     await user.click(await screen.findByText("按供应商账单确认实际费用"));
-    await user.selectOptions(screen.getByLabelText("任务"), "intent-A");
+    await selectControl(screen.getByLabelText("任务"), "intent-A", user);
     await user.type(screen.getByLabelText("实际金额"), "12.50");
     await user.type(screen.getByLabelText("核对依据"), "Task A invoice");
     await user.click(screen.getByRole("button", { name: "确认实际费用" }));
@@ -356,7 +362,9 @@ describe("cost page feedback stays outside the ledger layout", () => {
     expect(container.querySelector(".stack")!.firstElementChild).toHaveClass(
       "panel",
     );
-    expect(screen.getByLabelText("任务")).toHaveValue("intent-A");
+    expect(nativeControl(screen.getByLabelText("任务"))).toHaveValue(
+      "intent-A",
+    );
     expect(screen.getByLabelText("实际金额")).toHaveValue("12.50");
     expect(screen.getByLabelText("核对依据")).toHaveValue("Task A invoice");
     expect(screen.getByRole("button", { name: "确认实际费用" })).toBeEnabled();
@@ -656,7 +664,7 @@ describe("the actual shot workbench submits the Python mutation contract", () =>
     fireEvent.change(screen.getByLabelText("视频提示词"), {
       target: { value: "A gentler camera movement" },
     });
-    await user.selectOptions(screen.getByLabelText("重制范围"), "video");
+    await selectControl(screen.getByLabelText("重制范围"), "video", user);
     await user.click(
       screen.getByRole("checkbox", { name: /明确创建新的生成版本/ }),
     );

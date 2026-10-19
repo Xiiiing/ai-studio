@@ -1,3 +1,4 @@
+import { selectControl, nativeControl } from "./select-control";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   fireEvent,
@@ -221,10 +222,11 @@ describe("team command console", () => {
     await userEvent.click(
       screen.getByRole("button", { name: /第 1 镜视频.*执行中/ }),
     );
-    await userEvent.selectOptions(screen.getByLabelText("部门"), "visual");
-    await userEvent.selectOptions(
+    await selectControl(screen.getByLabelText("部门"), "visual", userEvent);
+    await selectControl(
       screen.getByLabelText("执行状态"),
       "completed",
+      userEvent,
     );
     await userEvent.type(screen.getByLabelText("镜头编号"), "S01");
     await waitFor(() =>
@@ -479,7 +481,7 @@ describe("task control and intervention", () => {
     await userEvent.click(
       await form.findByRole("checkbox", { name: /第 1 镜配音/ }),
     );
-    await userEvent.selectOptions(form.getByLabelText("完成后的安排"), "wait");
+    await selectControl(form.getByLabelText("完成后的安排"), "wait", userEvent);
     await userEvent.click(form.getByRole("button", { name: "查看影响" }));
     expect(await form.findByLabelText("返工影响预览")).toHaveTextContent(
       "edit:project",
@@ -604,7 +606,7 @@ describe("task control and intervention", () => {
       ),
     );
     await userEvent.type(dialog.getByLabelText("新的制作要求"), "按原要求重做");
-    await userEvent.selectOptions(dialog.getByLabelText("处理方式"), "retry");
+    await selectControl(dialog.getByLabelText("处理方式"), "retry", userEvent);
     await userEvent.click(
       dialog.getByRole("button", { name: "登记指令并执行" }),
     );
@@ -818,7 +820,9 @@ describe("leader scheduling", () => {
     );
     const dialog = within(screen.getByRole("dialog"));
     const scope = within(dialog.getByRole("group", { name: "修改范围" }));
-    expect(dialog.getByLabelText("处理方式")).toHaveValue("replan");
+    expect(nativeControl(dialog.getByLabelText("处理方式"))).toHaveValue(
+      "replan",
+    );
     expect(
       dialog.getByRole("button", { name: "登记指令并执行" }),
     ).toBeDisabled();
@@ -863,7 +867,7 @@ describe("leader scheduling", () => {
         { name: /配音/ },
       ),
     ).not.toBeInTheDocument();
-    await userEvent.selectOptions(dialog.getByLabelText("处理方式"), "revise");
+    await selectControl(dialog.getByLabelText("处理方式"), "revise", userEvent);
     await userEvent.type(
       dialog.getByLabelText("新的制作要求"),
       "重新安排人物动作",

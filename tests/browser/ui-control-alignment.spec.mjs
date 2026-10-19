@@ -66,7 +66,10 @@ for (const width of [320, 390, 1440])
           expect(renderedTitle.height).toBeLessThanOrEqual(
             renderedTitle.lineHeight * 2 + 1,
           );
-          const summary = page.locator(".project-actions-menu > summary");
+          const summary = page.getByRole("button", {
+            name: "项目操作",
+            exact: true,
+          });
           const summaryGeometry = await controlGeometry(summary);
           await test.info().attach("summary-content-geometry", {
             body: JSON.stringify(summaryGeometry, null, 2),
@@ -79,11 +82,10 @@ for (const width of [320, 390, 1440])
           expect(
             await summary.evaluate(
               (element) =>
-                element.tagName === "SUMMARY" &&
-                element.parentElement.tagName === "DETAILS",
+                element.tagName === "BUTTON" &&
+                element.getAttribute("aria-haspopup") === "menu",
             ),
           ).toBe(true);
-          await expect(summary).toHaveCSS("list-style-type", "none");
           await expect(summary.locator("svg")).toHaveCount(1);
           await expect(summary.locator("svg")).toHaveAttribute(
             "aria-hidden",
@@ -200,13 +202,11 @@ for (const width of [320, 390, 1440])
           });
 
           const baseline = await documentAnchors(page),
-            menu = page.locator(".project-actions-menu");
+            menu = page.getByRole("menu");
           await summary.focus();
           await page.keyboard.press("Enter");
-          await expect(menu).toHaveAttribute("open", "");
-          for (const action of await menu
-            .locator(".project-actions-list button")
-            .all()) {
+          await expect(menu).toBeVisible();
+          for (const action of await menu.getByRole("menuitem").all()) {
             const box = await action.boundingBox();
             expect(box.x).toBeGreaterThanOrEqual(0);
             expect(box.x + box.width).toBeLessThanOrEqual(width);
@@ -226,24 +226,28 @@ for (const width of [320, 390, 1440])
             ).toBe(true);
           }
           await expectAnchorsUnchanged(page, baseline);
-          await page.keyboard.press("Tab");
+          const enabledActions = menu.getByRole("menuitem", {
+            disabled: false,
+          });
+          await expect(enabledActions.first()).toBeFocused();
+          await page.keyboard.press("ArrowDown");
           await expect(
-            menu.locator(".project-actions-list button").first(),
+            enabledActions.nth((await enabledActions.count()) > 1 ? 1 : 0),
           ).toBeFocused();
           await page.keyboard.press("Escape");
-          await expect(menu).not.toHaveAttribute("open");
+          await expect(menu).toBeHidden();
           await expect(summary).toBeFocused();
           await expectAnchorsUnchanged(page, baseline);
           await page.keyboard.press("Space");
-          await expect(menu).toHaveAttribute("open", "");
+          await expect(menu).toBeVisible();
           await page.locator(".project-heading h1").click();
-          await expect(menu).not.toHaveAttribute("open");
+          await expect(menu).toBeHidden();
           await expectAnchorsUnchanged(page, baseline);
           await summary.click();
           await page
             .getByRole("button", { name: "查看项目状态", exact: true })
             .focus();
-          await expect(menu).not.toHaveAttribute("open");
+          await expect(menu).toBeHidden();
           await expectAnchorsUnchanged(page, baseline);
           const calls = await (await request.get("/__test/calls")).json();
           expect(

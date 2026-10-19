@@ -1,3 +1,6 @@
+import { StudioMenu } from "./StudioMenu";
+import { StudioSelect } from "./StudioSelect";
+import { SelectionGroup } from "./SelectionGroup";
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, ChevronDown } from "lucide-react";
@@ -114,10 +117,10 @@ export function CreateDrama({
           <input name="title" required maxLength={100} />
         </Field>
         <Field label="创作起点">
-          <select value={mode} onChange={(e) => setMode(e.target.value)}>
+          <StudioSelect value={mode} onChange={(e) => setMode(e.target.value)}>
             <option value="brief">从梗概创作</option>
             <option value="script">已有剧本</option>
-          </select>
+          </StudioSelect>
         </Field>
         <Field label="创作方向">
           <textarea
@@ -175,11 +178,11 @@ export function CreateDrama({
             <input name="genre" maxLength={100} defaultValue="剧情" />
           </Field>
           <Field label="制作路线">
-            <select name="format">
+            <StudioSelect name="format">
               <option value="animation">H3 视频剧</option>
               <option value="motion_comic">动态漫</option>
               <option value="live_action">H3 真人风格</option>
-            </select>
+            </StudioSelect>
           </Field>
         </div>
         <Field label="全剧画风">
@@ -299,7 +302,7 @@ function PlanEditor({
               </Field>
             ))}
             <Field label={`${c.name}声线`}>
-              <select
+              <StudioSelect
                 value={c.voice_id}
                 onChange={(e) =>
                   update(
@@ -313,7 +316,7 @@ function PlanEditor({
                 <option value="female">女声</option>
                 <option value="male">男声</option>
                 <option value="narrator">旁白</option>
-              </select>
+              </StudioSelect>
             </Field>
           </div>
         ))}
@@ -399,18 +402,6 @@ function DramaNavigation({
   tab: string;
   onTab: (tab: string) => void;
 }) {
-  const more = useRef<HTMLDetailsElement>(null);
-  useEffect(() => {
-    if (more.current) more.current.open = false;
-  }, [tab]);
-  useEffect(() => {
-    const outside = (event: PointerEvent) => {
-      if (more.current && !more.current.contains(event.target as Node))
-        more.current.open = false;
-    };
-    document.addEventListener("pointerdown", outside);
-    return () => document.removeEventListener("pointerdown", outside);
-  }, []);
   const section = [
     "plan",
     "assets",
@@ -424,12 +415,15 @@ function DramaNavigation({
       ? "episodes"
       : tab;
   function go(value: string) {
-    if (more.current) more.current.open = false;
     onTab(value);
   }
   return (
     <nav className="drama-navigation" aria-label="整剧工作区">
-      <div className="drama-primary-tabs">
+      <SelectionGroup
+        className="drama-primary-tabs"
+        variant="underline"
+        value={section}
+      >
         {dramaPrimary.map(([key, label, accessible]) => (
           <button
             key={key}
@@ -441,26 +435,12 @@ function DramaNavigation({
             {label}
           </button>
         ))}
-      </div>
-      <details
-        className="drama-more"
-        ref={more}
-        onBlur={(event) => {
-          if (!event.currentTarget.contains(event.relatedTarget as Node))
-            event.currentTarget.open = false;
-        }}
-        onKeyDown={(event) => {
-          if (event.key === "Escape") {
-            event.currentTarget.open = false;
-            event.currentTarget.querySelector("summary")?.focus();
-          }
-        }}
-      >
-        <summary>
-          项目资料 <ChevronDown size={14} />
-        </summary>
-        <div>
-          {dramaTabs
+      </SelectionGroup>
+      <div className="drama-more">
+        <StudioMenu
+          label="项目资料"
+          triggerClassName="drama-menu-trigger"
+          items={dramaTabs
             .filter(([key]) =>
               [
                 "plan",
@@ -472,17 +452,14 @@ function DramaNavigation({
                 "agent",
               ].includes(key),
             )
-            .map(([key, label]) => (
-              <button
-                key={key}
-                aria-pressed={tab === key}
-                onClick={() => go(key)}
-              >
-                {label}
-              </button>
-            ))}
-        </div>
-      </details>
+            .map(([key, label]) => ({
+              key,
+              label,
+              selected: tab === key,
+              onSelect: () => go(key),
+            }))}
+        />
+      </div>
       {[
         "plan",
         "assets",
@@ -1603,7 +1580,12 @@ export function LongEpisodeDetail({
         }
       />
       <ErrorNotice error={error || p.error || query.error} />
-      <nav className="drama-tabs" aria-label="剧集工作区">
+      <SelectionGroup
+        as="nav"
+        className="drama-tabs"
+        aria-label="剧集工作区"
+        value={activeTab}
+      >
         {[
           ["overview", "剧集总览"],
           ["workflow", "制作流程与团队"],
@@ -1621,7 +1603,7 @@ export function LongEpisodeDetail({
             {label}
           </button>
         ))}
-      </nav>
+      </SelectionGroup>
       {activeTab === "agent" ? (
         <AgentLoop project={p} />
       ) : activeTab === "generation" ? (
@@ -1772,7 +1754,7 @@ export function LongEpisodeDetail({
           {["awaiting_final", "blocked", "failed"].includes(p.status) && (
             <Panel title="验收与定向修改">
               <Field label="修改范围">
-                <select
+                <StudioSelect
                   value={unitId}
                   onChange={(e) => setUnitId(e.target.value)}
                 >
@@ -1782,7 +1764,7 @@ export function LongEpisodeDetail({
                       {u.title}
                     </option>
                   ))}
-                </select>
+                </StudioSelect>
               </Field>
               <Field label="局部修改或重新剪辑意见">
                 <textarea

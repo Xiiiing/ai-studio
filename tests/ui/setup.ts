@@ -56,3 +56,16 @@ Object.defineProperty(globalThis, "DOMMatrixReadOnly", {
   writable: true,
   configurable: true,
 });
+
+// JSDOM omits pointer capture, used by Radix's real pointer interactions.
+for (const name of [
+  "hasPointerCapture",
+  "setPointerCapture",
+  "releasePointerCapture",
+]) {
+  if (!(name in HTMLElement.prototype))
+    Object.defineProperty(HTMLElement.prototype, name, {
+      configurable: true,
+      value: () => false,
+    });
+}

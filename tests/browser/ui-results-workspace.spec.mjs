@@ -57,10 +57,10 @@ for (const theme of ["light", "dark"])
         });
       const before = await page.locator(".project-pane").boundingBox();
       const more = page.locator(".project-more");
-      const trigger = more.locator(":scope > summary");
+      const trigger = more.getByRole("button");
       await trigger.click();
-      const menu = more.locator(".project-navigation-menu");
-      await expect(menu.locator("button")).toHaveCount(5);
+      const menu = page.getByRole("menu");
+      await expect(menu.getByRole("menuitem")).toHaveCount(5);
       expect((await page.locator(".project-pane").boundingBox()).y).toBe(
         before.y,
       );
@@ -149,16 +149,14 @@ test("a team receipt opens its exact workflow step while project actions remain 
     "mock-writer-current",
   );
   await closeDetails(page);
-  const summary = page.locator(".project-actions-menu > summary");
+  const summary = page.getByRole("button", { name: "项目操作", exact: true });
   await summary.click();
   await expect(
-    page.getByRole("button", { name: "按新规格重制" }),
+    page.getByRole("menuitem", { name: "按新规格重制" }),
   ).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(summary).toBeFocused();
-  await expect(page.locator(".project-actions-menu")).not.toHaveAttribute(
-    "open",
-  );
+  await expect(page.getByRole("menu")).toBeHidden();
   const calls = await (await request.get("/__test/calls")).json();
   expect(
     calls.filter(
