@@ -35,6 +35,18 @@ class Handler(LocalMediaHandler):
         try:
             if path == "/api/factory/system":
                 return self.json(public_system_info())
+            match = re.fullmatch(r"/api/factory/projects/([a-f0-9]{12})/quality-baselines(?:/([a-f0-9]{32}|compare))?", path)
+            if match:
+                from . import quality_baselines
+                pid, operation = match.groups()
+                query = parse_qs(urlsplit(self.path).query, keep_blank_values=True)
+                if operation == "compare":
+                    if set(query) != {"baseline", "candidate"} or any(len(v) != 1 for v in query.values()):
+                        raise ValueError("请选择基线版本和候选版本")
+                    return self.json(quality_baselines.compare(pid, query["baseline"][0], query["candidate"][0]))
+                if query:
+                    raise ValueError("基线查询参数无效")
+                return self.json(quality_baselines.detail(pid, operation) if operation else quality_baselines.inventory(pid))
             if path == '/api/factory/dramas':
                 from .dramas import list_dramas
                 return self.json(list_dramas())
@@ -196,6 +208,12 @@ class Handler(LocalMediaHandler):
             return super().do_POST()
         try:
             payload=self.read_json_body()
+            match = re.fullmatch(r"/api/factory/projects/([a-f0-9]{12})/quality-baselines", route)
+            if match:
+                from .quality_baselines import create
+                if urlsplit(self.path).query:
+                    raise ValueError("基线写入参数无效")
+                return self.json(create(match[1], payload, root=ROOT), 201)
             if route == '/api/factory/dramas':
                 from .dramas import create as create_drama
                 return self.json(create_drama(payload), 201)

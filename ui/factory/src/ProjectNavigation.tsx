@@ -8,6 +8,7 @@ export const projectPages = [
   ["shots", "镜头制作台"],
   ["script", "剧本与分镜"],
   ["quality", "制作与质检"],
+  ["comparison", "质量比较"],
   ["delivery", "成片交付"],
   ["series", "系列资产"],
   ["materials", "素材与定稿"],
@@ -43,7 +44,7 @@ export function ProjectNavigation({
     return () => document.removeEventListener("pointerdown", outside);
   }, []);
   const section =
-    tab === "series" ? "materials" : tab === "quality" ? "decisions" : tab;
+    tab === "series" ? "materials" : ["quality", "comparison"].includes(tab) ? "decisions" : tab;
   const children =
     section === "materials"
       ? [
@@ -54,6 +55,7 @@ export function ProjectNavigation({
         ? [
             ["decisions", "待办决策"],
             ["quality", "质检记录"],
+            ["comparison", "质量比较"],
           ]
         : [];
   return (

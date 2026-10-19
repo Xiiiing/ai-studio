@@ -76,6 +76,7 @@ import { DecisionCenter, ActionForm } from "./Decisions";
 import { ReviewAutomation } from "./ReviewAssistance";
 import { Shots, Series, Costs } from "./Assets";
 import { ShotQuality } from "./ShotQuality";
+import { QualityComparison } from "./QualityComparison";
 import {
   CreativeContract,
   creativeChoice,
@@ -1662,6 +1663,8 @@ function Project({
                 )}
               </Panel>
             </div>
+          ) : tab === "comparison" ? (
+            <QualityComparison project={p} />
           ) : tab === "quality" ? (
             <div className="stack">
               <ShotQuality
