@@ -84,9 +84,10 @@ for (const width of [320, 390, 768, 1024, 1440, 1920]) {
           expect(geometry.columns).toBe(
             geometry.width >= 980 ? 3 : geometry.width >= 640 ? 2 : 1,
           );
-          if (width === 1440) expect(geometry.firstY).toBeLessThanOrEqual(180);
-          if ([320, 390].includes(width))
-            expect(geometry.firstY).toBeLessThanOrEqual(220);
+          // Models now live below the settings categories and section heading.
+          // The first usable card must still be reachable in the initial viewport.
+          expect(geometry.firstY).toBeLessThanOrEqual(page.viewportSize().height - 44);
+          await expect(page.locator('.settings-category[aria-current="page"]')).toHaveAccessibleName("模型与服务");
         }
         if (route.tab) {
           if (width >= 1280) {
@@ -245,7 +246,8 @@ test("model and shot drafts survive navigating away while keeping their original
   await page.getByText("按角色单独配置 · 总制片代理", { exact: true }).click();
   await page.getByLabel("总制片代理", { exact: true }).selectOption("writer");
   await page.locator('.main-nav [data-view="dashboard"]').click();
-  await page.locator('.main-nav [data-view="models"]').click();
+  await page.locator('.main-nav [data-view="settings"]').click();
+  await page.getByRole("button", { name: "模型与服务", exact: true }).click();
   await page.getByRole("tab", { name: "制作分工" }).click();
   await page.getByText("按角色单独配置 · 总制片代理", { exact: true }).click();
   await expect(page.getByLabel("总制片代理", { exact: true })).toHaveValue(
@@ -374,7 +376,9 @@ for (const theme of ["light", "dark"])
   }) => {
     await page.emulateMedia({ colorScheme: theme });
     await page.goto("/#view=models");
-    await expect(page.getByRole("heading", { name: "模型配置" })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "系统设置" }),
+    ).toBeVisible();
     const results = await page.evaluate(() => {
       const rgb = (value) =>
         (value.match(/[\d.]+/g) || []).slice(0, 3).map(Number);

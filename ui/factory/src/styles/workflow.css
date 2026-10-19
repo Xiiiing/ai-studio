@@ -64,9 +64,9 @@
   border-color: var(--line-strong);
 }
 .workflow-stage-card.selected {
-  border-color: var(--accent);
-  background: var(--panel);
-  box-shadow: inset 3px 0 var(--accent);
+  border-color: var(--line-strong);
+  background: var(--surface);
+  box-shadow: none;
 }
 .workflow-stage-card:hover {
   border-color: var(--accent);
@@ -372,8 +372,9 @@
   box-shadow: none;
 }
 .workflow-map-node.selected {
-  background: var(--panel);
-  box-shadow: inset 3px 0 var(--accent);
+  background: var(--surface);
+  border-color: var(--line-strong);
+  box-shadow: none;
 }
 .workflow-map-node-top {
   display: flex;
@@ -416,9 +417,9 @@
   border-color: var(--warning-line);
 }
 .workflow-repair-node.selected {
-  background: var(--panel);
-  border-color: var(--accent);
-  box-shadow: inset 3px 0 var(--accent);
+  background: var(--surface);
+  border-color: var(--line-strong);
+  box-shadow: none;
 }
 .workflow-map-node.status-running {
   border-color: var(--status-running);
@@ -562,9 +563,9 @@
 }
 .workflow-stage-card.selected,
 .workflow-map-node.selected {
-  background: var(--panel);
-  border-color: var(--accent);
-  box-shadow: inset 3px 0 var(--accent);
+  background: var(--surface);
+  border-color: var(--line-strong);
+  box-shadow: none;
 }
 .context-manifest {
   margin-block: 10px;

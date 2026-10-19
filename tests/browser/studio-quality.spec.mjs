@@ -38,7 +38,7 @@ for (const width of [1440, 1024, 390]) {
       ["library", "统一素材库"],
       ["inbox", "制片总览"],
       ["workflow", "全部项目"],
-      ["models", "模型配置"],
+      ["models", "系统设置"],
       ["activity", "运行记录"],
     ]) {
       await page.goto(server.endpoint + "/#view=" + view);
@@ -365,7 +365,10 @@ test("real project creation, partial image recovery, full-size preview and visua
   await page
     .locator('.feedback-region [role="status"]')
     .waitFor({ state: "hidden", timeout: 10000 });
-  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.evaluate(() => {
+    document.querySelector(".main-shell").scrollTop = 0;
+    window.scrollTo(0, 0);
+  });
   await page.screenshot({
     path: "runtime/browser-report/studio-real-materials-390.png",
     fullPage: true,

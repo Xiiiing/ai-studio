@@ -761,7 +761,7 @@ def _make_script(project, config, checkpoint, feedback=None):
             request['locked_shot_ids'] = [s['id'] for s in previous_attempt['shots'] if s['id'] not in repair_scope]
         current_writer_system = writer_system
         if pending_supplement:
-            supplement_system = load_prompt('screenwriter', '1.1.0')
+            supplement_system = select(load_prompt('screenwriter', '1.1.0'), project)
             rendered = str(supplement_system)
             if separate_storyboard:
                 rendered = rendered.replace('你是短剧编剧兼分镜导演', '你是短剧编剧', 1)
