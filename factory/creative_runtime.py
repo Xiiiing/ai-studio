@@ -7,6 +7,7 @@ uses the same content-addressed LLM receipts and quality gates as that creator.
 from __future__ import annotations
 
 import copy
+from contextlib import ExitStack
 
 from studio.core import write_json
 from studio.planning import export_storyboard
@@ -43,6 +44,17 @@ def round_limit_patch(project, config):
 
 
 def _revision_scope(project):
+    pending = project.get("storyboard_supplement_request")
+    from .role_handoffs import version
+    if pending and pending.get('version') != version(project):
+        pending = None
+    if pending and project.get("screenplay_draft"):
+        previous = project["screenplay_draft"]
+        old_shots = {shot["id"]: shot for shot in previous.get("shots", [])}
+        scope = pending.get("scope")
+        if not scope or not set(scope).issubset(old_shots):
+            raise c.CreativeReviewError("上游补料范围失效，已保留原稿")
+        return previous, old_shots, list(scope)
     previous = project.get("episode") or project.get("script") or {}
     old_shots = {shot["id"]: shot for shot in previous.get("shots", [])}
     affected = c.revision_shot_ids(project.get("script_feedback"), old_shots)
@@ -111,6 +123,7 @@ def resolve_target(project, config, checkpoint):
         "story_resolution_skipped": value is None or bool(affected),
         "script_review_complete_round": None,
         "script_review_route": None,
+        "storyboard_supplement_request": None,
         "review_automation": automation(config, "script", 1, project["script_generation"],
                                         "writing", "准备编写剧本"),
     }
@@ -153,23 +166,39 @@ def write_screenplay(project, config, checkpoint):
             request["rewrite_instruction"] = (
                 "保留requirements和删除项，在已选主题内重构AI工作方案；用实际setup/choice/payoff解决评审证据，不恢复旧提案或已删除支线。"
             )
-    system = c.SCRIPT_SYSTEM.replace("你是短剧编剧兼分镜导演", "你是短剧编剧", 1) + (
+    from .prompt_workbench import select
+    writer_base = select(c.SCRIPT_SYSTEM, project)
+    system = writer_base.replace("你是短剧编剧兼分镜导演", "你是短剧编剧", 1) + (
         "\n独立分镜导演将在你之后编排prompt/motion_prompt/camera_motion/reference_group。"
         "你完成剧情、action、对白与连续性，并提供制作字段初稿；导演不能替你改剧情。"
     )
-    system = c.derive_prompt(c.SCRIPT_SYSTEM, system, "separate_storyboard")
-    raw = c.cached_json_call(
-        project,
-        config,
-        "screenwriter",
-        "screenplay-%d" % index,
-        system,
-        request,
-        c.episode_schema(len(plan), project),
-        checkpoint,
-        max_tokens=11500,
-        temperature=0.65,
-    )
+    system = c.derive_prompt(writer_base, system, "separate_storyboard")
+    pending = project.get("storyboard_supplement_request")
+    if pending:
+        from .prompt_registry import load_prompt
+        from .role_handoffs import version
+        if pending.get('version') != version(project):raise c.CreativeReviewError('补料版本已变化，请重新落实故事目标')
+        supplement = select(load_prompt('screenwriter', '1.1.0'),project)
+        system = c.derive_prompt(supplement, str(supplement).replace('你是短剧编剧兼分镜导演','你是短剧编剧',1), 'controlled_supplement')
+        request['supplement_request'] = {k:copy.deepcopy(pending[k]) for k in ('id','source','target','scope','issues')}
+        request['locked_shot_ids'] = [sid for sid in old_shots if sid not in affected]
+    from . import role_handoffs as handoffs
+    with ExitStack() as bindings:
+        for source, stage, material in (
+            ('independent_critic','script_review',request.get('independent_feedback')),
+            ('storyboard_director','storyboard',request.get('supplement_request')),
+        ):
+            if not material:continue
+            transfer=handoffs.submit(c.planning_dir(project),project,source=source,target='screenwriter',
+                source_stage=stage,target_stage='screenplay',contract='review_feedback',value=material,scope=affected)
+            received=handoffs.receive(c.planning_dir(project),project,transfer['id'],role='screenwriter',stage='screenplay',value=material)
+            if not received['accepted']:raise c.CreativeReviewError('返修依据未被接收',received['request']['issues'])
+            bindings.enter_context(handoffs.bind(c.planning_dir(project),transfer))
+        raw = c.cached_json_call(
+            project, config, "screenwriter", "screenplay-%d" % index,
+            system, request, c.episode_schema(len(plan), project), checkpoint,
+            max_tokens=11500, temperature=0.65,
+        )
     episode = c._canonical_episode(raw, project)
     if affected and previous:
         for i, shot in enumerate(episode["shots"]):
@@ -185,6 +214,11 @@ def write_screenplay(project, config, checkpoint):
             previous.get("character_names", episode.get("character_names", {}))
         )
         episode["visual_style"] = previous["visual_style"]
+        if pending:
+            # Adopt only requested shots, preserving all other approved facts.
+            changed={s['id']:s for s in episode['shots'] if s['id'] in affected}
+            episode=copy.deepcopy(previous)
+            episode['shots']=[copy.deepcopy(changed.get(s['id'],s)) for s in previous['shots']]
     path = c.planning_dir(project) / (
         "screenplay-draft-v%s-r%d-%s.json"
         % (project["script_generation"], index, c.fingerprint(episode)[:12])
@@ -222,10 +256,12 @@ def direct_screenplay(project, config, checkpoint):
         producer_feedback=c._producer_feedback(project),
         repair_issues=(project.get("draft_review") or {}).get("issues", []),
         previous_attempt=project.get("previous_screenplay_draft"),
+        supplement_request_id=(project.get("storyboard_supplement_request") or {}).get('id'),
     )
     return {
         "screenplay_draft": value["episode"],
         "storyboard_issues": value["issues"],
+        "storyboard_supplement_request": value.get("supplement_request"),
         "storyboard_receipt": value["receipt"],
         "storyboard_complete_round": [project["script_generation"], index],
         "planning_artifacts": {
@@ -273,7 +309,7 @@ def review_screenplay(project, config, checkpoint):
         temperature=0.25,
     )
     review["issues"] = structural + review["issues"]
-    review["passed"] = c.review_passes(review)
+    review["passed"] = c.review_passes(review) and not project.get("storyboard_supplement_request")
     history = copy.deepcopy(project.get("creative_review_rounds", []))
     history = [row for row in history if row["round"] != index]
     history.append(

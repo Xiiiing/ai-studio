@@ -411,6 +411,10 @@ def cached_json_call(project, config, role, stage, system, payload, schema,
         "context": project_context(project), "model": model_identity,
         "role": role, "stage": stage, "system": system, "payload": payload,
         "schema": schema, "max_tokens": max_tokens, "temperature": temperature})
+    from . import agent_loop
+    use_agent = agent_loop.enabled(project)
+    if use_agent:
+        signature = fingerprint({"original_call":signature, "agent_loop":agent_loop.identity(project,config,role,stage)})
     folder = planning_dir(project)
     cache = folder / "cache" / (stage + "-" + signature[:24] + ".json")
     hit = None
@@ -423,6 +427,11 @@ def cached_json_call(project, config, role, stage, system, payload, schema,
         except (OSError, ValueError, KeyError, ValidationError):
             pass
     if hit is not None:
+        if use_agent:
+            # Recheck live leases, input versions and observed pixel bytes even
+            # when the controller artifact is cached. No model request is made.
+            agent_loop.run(project,config,role,stage,system,payload,schema,signature,
+                           max_tokens=max_tokens,temperature=temperature)
         # An evidence-write failure must never fall through to a paid new call.
         from .context_manifest import record_reuse
         reuse = record_reuse(folder, project, role, stage, hit)
@@ -432,13 +441,19 @@ def cached_json_call(project, config, role, stage, system, payload, schema,
         return copy.deepcopy(hit["value"])
     from .context_manifest import capture, cache_origin
     with capture(project, stage) as context:
-        value = json_call(config=config, role=role, system=system, payload=payload,
-                          schema=schema, output_dir=folder / "llm",
-                          max_tokens=max_tokens, temperature=temperature)
-    origin = cache_origin(context, folder)
+        if use_agent:
+            value = agent_loop.run(project,config,role,stage,system,payload,schema,signature,
+                                   max_tokens=max_tokens,temperature=temperature)
+        else:
+            value = json_call(config=config, role=role, system=system, payload=payload,
+                              schema=schema, output_dir=folder / "llm",
+                              max_tokens=max_tokens, temperature=temperature)
+    origin = cache_origin(context, folder) if not use_agent else None
+    agent_origin = {"run_id":signature,"result":(agent_loop.root(project)/signature/'result.json').relative_to(folder).as_posix(),
+                    "sha256":fingerprint(value)} if use_agent else None
     validate(value, schema)
     write_json(cache, {"signature": signature, "generated_at": utc_now(),
-                       "value": value, "prompt": prompt_meta, "origin": origin})
+                       "value": value, "prompt": prompt_meta, "origin": origin, **({"agent_origin":agent_origin} if use_agent else {})})
     return copy.deepcopy(value)
 
 

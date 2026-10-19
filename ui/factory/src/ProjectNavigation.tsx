@@ -7,6 +7,7 @@ export const projectPages = [
   ["team", "团队与回执"],
   ["prompts", "提示词工作台"],
   ["generation", "生成提示词流水线"],
+  ["agent", "Agent 执行循环"],
   ["shots", "镜头制作台"],
   ["script", "剧本与分镜"],
   ["quality", "制作与质检"],
@@ -104,7 +105,7 @@ export function ProjectNavigation({
         <summary
           aria-label={
             "更多项目页面" +
-            (["team", "prompts", "generation", "costs"].includes(tab)
+            (["team", "prompts", "generation", "agent", "costs"].includes(tab)
               ? "：" + projectPages.find(([id]) => id === tab)?.[1]
               : "")
           }
@@ -113,7 +114,7 @@ export function ProjectNavigation({
           <ChevronDown size={14} aria-hidden="true" />
         </summary>
         <nav className="project-navigation-menu" aria-label="更多项目页面">
-          {["team", "prompts", "generation", "costs"].map((value) => (
+          {["team", "prompts", "generation", "agent", "costs"].map((value) => (
             <button
               key={value}
               data-project-page={value}

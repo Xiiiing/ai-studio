@@ -19,6 +19,7 @@ from .config import DATA
 from .workflows import ProjectPaused, ReviewBlocked, advance
 from .schemas import CreativeReviewError
 from .remote_tasks import ProductionDeferred, defer_job, owns_job
+from .scheduler import ProductionNeedsDecision
 
 _stop=threading.Event()
 _current=None
@@ -33,6 +34,15 @@ def heartbeat():
 
 
 def handle(job):
+    from .execution_context import current_job
+    token = current_job.set(dict(job))
+    try:
+        return _handle(job)
+    finally:
+        current_job.reset(token)
+
+
+def _handle(job):
     if not owns_job(job):
         return  # A completed/recovered claim is not permission to execute again.
     pid=job["project_id"]
@@ -66,9 +76,11 @@ def handle(job):
         from .team_control import process_pending
         process_pending(pid)
     except ProjectPaused as exc:
+        if not owns_job(job):return
         store.update(pid,{"status":"cancelled" if store.get(pid,False)['status']=='cancelled' else "paused","error":None,"message":str(exc)})
         store.finish_job(job["id"], lease=job["lease"])
     except Exception as exc:
+        if not owns_job(job):return  # Late workers retain private receipts only.
         from .team_control import TeamInterventionPending, process_pending
         if isinstance(exc, TeamInterventionPending):
             store.update(pid, {"status": "paused", "team_wait": "boundary", "error": None, "message": str(exc)})
@@ -84,7 +96,7 @@ def handle(job):
             store.finish_job(job["id"], lease=job["lease"])
             return
         is_budget=name=="ProductionBudgetExceeded"
-        needs={"type":"budget" if is_budget else "production" if name=="ProductionNeedsDecision" else "review",
+        needs={"type":"budget" if is_budget else "production" if isinstance(exc,ProductionNeedsDecision) else "review",
                "message":str(exc),"details":details,"code":getattr(exc,"code",getattr(exc,"reason",None))}
         if is_budget:
             state=details if isinstance(details,dict) else {}
@@ -96,11 +108,11 @@ def handle(job):
             needs.update(kind="script_review" if project.get("selected_story") else "creative_review",
                          issues=exc.issues,
                          type="edit_feedback" if project.get("revision_request") else "review")
-        if not isinstance(exc,(ReviewBlocked,CreativeReviewError)) and name not in {"ProductionNeedsDecision","ProductionBudgetExceeded"}:
+        if not isinstance(exc,(ReviewBlocked,CreativeReviewError,ProductionNeedsDecision)) and name!="ProductionBudgetExceeded":
             needs["type"]="runtime"
         store.update(pid,{"status":"blocked","error":str(exc)[:2500],"needs_decision":needs,
                           "message":"制片已保留进度并暂停："+str(exc)[:1500]})
-        expected = isinstance(exc, (ReviewBlocked, CreativeReviewError)) or name in {"ProductionNeedsDecision", "ProductionBudgetExceeded"}
+        expected = isinstance(exc, (ReviewBlocked, CreativeReviewError, ProductionNeedsDecision)) or name=="ProductionBudgetExceeded"
         store.event(pid,"请在待办决策中查看问题并选择处理方式。" if expected else "异常详情已写入本地运行日志。",
                     "review_blocked" if expected else "error",{"exception_type":name,"stage":store.get(pid,False).get("stage")})
         if isinstance(exc, (ReviewBlocked, CreativeReviewError)):
@@ -117,6 +129,9 @@ def handle(job):
         else:
             traceback.print_exc()
     finally:
+        with store.connection() as db:
+            owner=db.execute('SELECT lease FROM jobs WHERE id=?',(job['id'],)).fetchone()
+        if not owner or owner[0]!=job.get('lease'):return
         if job.get('kind') in {'drama_episode','workflow'} and store.get(pid,False).get('record_kind') == 'episode':
             from .dramas import after_episode
             after_episode(pid)

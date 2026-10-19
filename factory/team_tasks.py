@@ -96,6 +96,9 @@ def _signature(project, stage):
         "revision": ["script_generation", "production_revision", "revision_request"],
     }[stage]
     inputs = {key: project.get(key) for key in keys}
+    if project.get("agent_loop"):
+        inputs["agent_loop"] = project["agent_loop"]
+        inputs["prompt_snapshot"] = project.get("prompt_snapshot")
     package = project.get("material_package") or {}
     if package.get("references"):
         # Confirmed materials enter the actual model context. Pending selections
@@ -178,11 +181,17 @@ def tracked_node(stage, function):
         try:
             result = function(state)
         except BaseException as exc:
+            from .execution_context import current_job
+            from .remote_tasks import owns_job
+            from .scheduler import ProductionNeedsDecision
+            job=current_job.get()
+            if job and not owns_job(job):raise
             status = {"ReviewBlocked": "blocked", "CreativeReviewError": "blocked", "TeamInterventionPending": "paused",
                       "ProjectPaused": "paused", "ProductionPaused": "paused",
                       "ProductionDeferred": "waiting", "ProductionNeedsDecision": "blocked",
                       "ProductionBudgetExceeded": "blocked"}.get(type(exc).__name__,
                           "failed" if isinstance(exc, Exception) else "interrupted")
+            if isinstance(exc,ProductionNeedsDecision):status="blocked"
             try:
                 finish(state["project_id"], stage, token["run_id"], status, error_type=type(exc).__name__)
                 finish_unit(ledger_token, status=status if status in {"blocked", "paused", "waiting", "failed"} else "failed", details={"error_type": type(exc).__name__})

@@ -24,6 +24,7 @@ import {
   type RecordData,
 } from "./api";
 import { Workflow } from "./Workflow";
+import { AgentLoop } from "./AgentLoop";
 import { GenerationPipeline } from "./GenerationPipeline";
 import { PromptWorkbench } from "./PromptWorkbench";
 import { QualityComparison } from "./QualityComparison";
@@ -383,6 +384,7 @@ const dramaTabs = [
   ["comparison", "质量比较"],
   ["prompts", "提示词工作台"],
   ["generation", "生成提示词流水线"],
+  ["agent", "Agent 执行循环"],
 ];
 const dramaPrimary = [
   ["overview", "总览", "项目总览"],
@@ -415,6 +417,7 @@ function DramaNavigation({
     "comparison",
     "prompts",
     "generation",
+    "agent",
   ].includes(tab)
     ? "overview"
     : tab === "batches"
@@ -466,6 +469,7 @@ function DramaNavigation({
                 "comparison",
                 "prompts",
                 "generation",
+                "agent",
               ].includes(key),
             )
             .map(([key, label]) => (
@@ -486,6 +490,7 @@ function DramaNavigation({
         "comparison",
         "prompts",
         "generation",
+        "agent",
       ].includes(tab) && (
         <span className="drama-location">
           {dramaTabs.find(([key]) => key === tab)?.[1]}
@@ -748,6 +753,7 @@ export function DramaDetail({
       />
       <ErrorNotice error={error || query.error} />
       <DramaNavigation tab={tab} onTab={setTab} />
+      {tab === "agent" && <AgentLoop project={p} />}
       {tab === "generation" && <GenerationPipeline project={p} />}
       {tab === "prompts" && <PromptWorkbench project={p} />}
       {tab === "comparison" && <QualityComparison project={p} />}
@@ -1604,6 +1610,7 @@ export function LongEpisodeDetail({
           ["comparison", "质量比较"],
           ["prompts", "提示词工作台"],
           ["generation", "生成提示词流水线"],
+          ["agent", "Agent 执行循环"],
         ].map(([key, label]) => (
           <button
             key={key}
@@ -1615,7 +1622,9 @@ export function LongEpisodeDetail({
           </button>
         ))}
       </nav>
-      {activeTab === "generation" ? (
+      {activeTab === "agent" ? (
+        <AgentLoop project={p} />
+      ) : activeTab === "generation" ? (
         <GenerationPipeline project={p} />
       ) : activeTab === "prompts" ? (
         <PromptWorkbench project={p} />

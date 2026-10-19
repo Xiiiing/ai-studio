@@ -76,6 +76,7 @@ import { DecisionCenter, ActionForm } from "./Decisions";
 import { ReviewAutomation } from "./ReviewAssistance";
 import { Shots, Series, Costs } from "./Assets";
 import { ShotQuality } from "./ShotQuality";
+import { AgentLoop } from "./AgentLoop";
 import { GenerationPipeline } from "./GenerationPipeline";
 import { PromptWorkbench } from "./PromptWorkbench";
 import { QualityComparison } from "./QualityComparison";
@@ -1665,6 +1666,8 @@ function Project({
                 )}
               </Panel>
             </div>
+          ) : tab === "agent" ? (
+            <AgentLoop project={p} />
           ) : tab === "generation" ? (
             <GenerationPipeline project={p} />
           ) : tab === "prompts" ? (

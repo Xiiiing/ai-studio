@@ -494,7 +494,7 @@ def calls(pid, call_id=None, *, root=None):
             if call_id:
                 # Only allowlisted fields from bounded owned evidence; credentials
                 # and private provider addresses are not part of the assembly.
-                return {k: data.get(k) for k in ('schema', 'role', 'system', 'wire_system', 'input', 'output_schema', 'prompt', 'parameters', 'model')}
+                return {k: data.get(k) for k in ('schema', 'role', 'system', 'wire_system', 'input', 'output_schema', 'prompt', 'parameters', 'model', 'tool_contracts', 'history_sha256')}
             records.append({'id': ident, 'role': data.get('role'), 'call_id': receipt.get('call_id'),
                 'status': receipt.get('status'), 'prompt': data.get('prompt'), 'model': data.get('model')})
     if call_id:

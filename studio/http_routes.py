@@ -47,6 +47,8 @@ FACTORY_ROUTES = (
     Route("GET", PROJECT + r"/tasks/[a-z_]+:[A-Za-z0-9_.-]{1,120}", "read", "team_task"),
     Route("GET", PROJECT + r"/handoffs(?:/[a-f0-9]{32})?", "read", "controlled_handoffs"),
     Route("GET", PROJECT + r"/interventions", "read", "team_instructions"),
+    Route("GET", PROJECT + r"/agent-loop(?:/[a-f0-9]{64})?", "read", "agent_loop"),
+    Route("POST", PROJECT + r"/agent-loop(?:/settle)?", "configuration", "agent_loop_configure", 4096),
     Route("GET", PROJECT + r"/generation-pipeline", "read", "generation_plan"),
     Route("POST", PROJECT + r"/generation-pipeline(?:/settle)?", "configuration", "generation_plan_configure", 4096),
     Route("GET", PROJECT + r"/prompts(?:/calls(?:/[a-f0-9]{32})?)?", "read", "prompt_workbench"),

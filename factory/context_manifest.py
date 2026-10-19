@@ -210,6 +210,23 @@ def record_reuse(base, project, role, stage, saved):
                     original = candidate
             except (ValueError, OSError):
                 pass
+    agent_origin = saved.get("agent_origin")
+    verified_agent = None
+    if isinstance(agent_origin, dict) and isinstance(agent_origin.get("result"), str):
+        relative = Path(agent_origin["result"])
+        expected = Path("agent-runs") / saved["signature"] / "result.json"
+        if relative == expected:
+            try:
+                candidate = read_json(base / relative, maximum=2*1024*1024)
+                if (candidate.get("kind") == "agent_task_result"
+                        and candidate.get("project_id") == project.get("id")
+                        and candidate.get("role") == role
+                        and candidate.get("signature") == agent_origin.get("run_id") == saved["signature"]
+                        and candidate.get("sha256") == agent_origin.get("sha256") == digest(saved["value"])
+                        and digest(candidate.get("artifact")) == digest(saved["value"])):
+                    verified_agent = agent_origin
+            except (ValueError, OSError):
+                pass
     record = {"schema": "ai-studio.context-reuse.v1", "role": role, "status": "reused",
               "stage": stage, "started_at": time.time(), "model_call_started": False,
               "execution_context": copy.deepcopy(current_execution.get() or {"project_id": project.get("id"), "stage": stage}),
@@ -218,7 +235,8 @@ def record_reuse(base, project, role, stage, saved):
               "context_manifest": original.get("context_manifest") if original else None,
               "configured_model": original.get("configured_model") if original else None,
               "response_model": original.get("response_model") if original else None,
-              "origin_state": "verified" if original else "unknown"}
+              "origin_state": "verified" if original else "verified_agent_artifact" if verified_agent else "unknown",
+              **({"agent_origin":verified_agent} if verified_agent else {})}
     root = _project_root(base, project.get("id"))
     folder = (root / "planning" if root else base) / "context-reuse"
     name = time.strftime("%Y%m%dT%H%M%S", time.gmtime()) + "-" + uuid.uuid4().hex[:12]
