@@ -19,7 +19,10 @@ async function longNavigation(page, request) {
     id: `recent-${index}`,
     title: `最近制作 ${index + 1}`,
   }));
-  overview.metrics = { ...overview.metrics, projects: overview.projects.length };
+  overview.metrics = {
+    ...overview.metrics,
+    projects: overview.projects.length,
+  };
   await page.route("**/api/factory/console**", (route) =>
     route.fulfill({ json: overview }),
   );
@@ -102,6 +105,17 @@ for (const width of [1024, 1440, 1920])
         .toBeLessThanOrEqual(1);
       await inViewport();
       await expect(page.locator(".model-service-card").last()).toBeInViewport();
+      const bottomSpacing = await page.locator("#workspace").evaluate((el) => ({
+        bottom: el.getBoundingClientRect().bottom,
+        padding: parseFloat(getComputedStyle(el).paddingBottom),
+        contentBottom: el.lastElementChild.getBoundingClientRect().bottom,
+      }));
+      expect(
+        Math.abs(bottomSpacing.bottom - (pane.y + pane.height)),
+      ).toBeLessThanOrEqual(1);
+      expect(
+        bottomSpacing.bottom - bottomSpacing.contentBottom,
+      ).toBeGreaterThanOrEqual(bottomSpacing.padding - 1);
       await page.screenshot({
         path: `runtime/browser-report/frame-bottom-${width}-${theme}.png`,
       });
