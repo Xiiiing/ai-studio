@@ -43,7 +43,7 @@ def test_http_inventory_preview_and_immutable_save(project, http_client, model):
     url = f"/api/factory/projects/{project['id']}/prompts"
     before = store.get(project['id'])
     status, inventory = http_client('GET', url)
-    assert status == 200 and len(inventory['catalog']) == 16
+    assert status == 200 and len(inventory['catalog']) == 17  # #73 added screenwriter@1.1.0
     payload = {'key': 'creator@1.0.0', 'sections': w.template('creator@1.0.0')['sections'], 'input': {}}
     status, rendered = http_client('POST', url + '/preview', payload)
     assert status == 200 and '恰好' not in rendered['system']
