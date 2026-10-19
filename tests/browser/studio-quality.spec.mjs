@@ -38,7 +38,7 @@ for (const width of [1440, 1024, 390]) {
       ["library", "统一素材库"],
       ["inbox", "制片总览"],
       ["workflow", "全部项目"],
-      ["models", "模型配置"],
+      ["models", "系统设置"],
       ["activity", "运行记录"],
     ]) {
       await page.goto(server.endpoint + "/#view=" + view);
