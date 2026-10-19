@@ -77,3 +77,23 @@ it("compensates a stable layout gutter when Chromium clientWidth includes it", (
     else root.setAttribute("style", originalStyle);
   }
 });
+
+
+it("locks the desktop workspace through nested dialogs and restores its scroll position", () => {
+  const workspace = document.createElement("div");
+  workspace.className = "main-shell";
+  workspace.style.overflow = "auto";
+  workspace.scrollTop = 123;
+  document.body.append(workspace);
+  const first = lockPageScroll(), second = lockPageScroll();
+  try {
+    expect(workspace.style.overflow).toBe("hidden");
+    first();
+    expect(workspace.style.overflow).toBe("hidden");
+    second();
+    expect(workspace.style.overflow).toBe("auto");
+    expect(workspace.scrollTop).toBe(123);
+  } finally {
+    first();second();workspace.remove();
+  }
+});

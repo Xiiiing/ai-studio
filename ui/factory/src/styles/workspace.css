@@ -4,7 +4,7 @@
 }
 .project-navigation-bar {
   position: sticky;
-  top: 60px;
+  top: 0;
   z-index: 15;
   display: flex;
   flex-wrap: wrap;
@@ -398,9 +398,9 @@
   border-color: var(--line);
 }
 .workflow-map-node.workflow-stage-card.selected {
-  background: var(--panel);
-  border-color: var(--accent);
-  box-shadow: inset 3px 0 var(--accent);
+  background: var(--surface);
+  border-color: var(--line-strong);
+  box-shadow: none;
 }
 .workflow-map-node.workflow-repair-node {
   background: var(--panel);

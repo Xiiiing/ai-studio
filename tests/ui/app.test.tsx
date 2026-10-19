@@ -184,7 +184,7 @@ it("导航保留单一品牌和可理解的阶段，不重复显示宣传小字"
   expect(screen.queryByText("创作、审核与交付记录可追溯")).not.toBeInTheDocument();
   const nav = screen.getByRole("navigation", { name: "主导航" });
   expect(within(nav).getAllByRole("button").map((button) => button.textContent)).toEqual([
-    "总览", "项目", "素材库", "运行记录", "模型配置", "系统设置",
+    "总览", "项目", "素材库", "运行记录", "系统设置",
   ]);
   expect(screen.queryByText("工作室", { exact: true })).not.toBeInTheDocument();
   expect(screen.queryByText("管理", { exact: true })).not.toBeInTheDocument();
@@ -336,4 +336,20 @@ it("没有长期阻断的项目也保留状态入口，切换页面无需重试�
     within(drawer).getByRole("heading", { name: "项目状态" }),
   ).toBeVisible();
   expect(calls.filter((call) => call.body)).toHaveLength(0);
+});
+
+it("旧模型链接统一进入系统设置，且不会增加浏览器历史记录", async () => {
+  history.replaceState({}, "", "/#view=models");
+  const length = history.length;
+  const { calls } = setup();
+  await screen.findByRole("heading", { name: "系统设置" });
+  await screen.findByRole("heading", { name: "模型与服务" });
+  expect(location.hash).toBe("#view=settings&tab=models");
+  expect(history.length).toBe(length);
+  const nav = screen.getByRole("navigation", { name: "主导航" });
+  expect(within(nav).queryByRole("button", { name: "模型配置" })).not.toBeInTheDocument();
+  expect(within(nav).getByRole("button", { name: "系统设置" })).toHaveAttribute("aria-current", "page");
+  await screen.findByRole("tab", { name: "服务连接" });
+  expect(document.querySelectorAll(".model-settings")).toHaveLength(1);
+  expect(calls.every(call => !call.body)).toBe(true);
 });
