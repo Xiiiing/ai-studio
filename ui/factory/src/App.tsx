@@ -4,7 +4,6 @@ import {
   LayoutDashboard,
   FolderKanban,
   Inbox,
-  Settings2,
   Settings,
   Activity,
   Plus,
@@ -36,7 +35,7 @@ import {
   currentResultPage,
 } from "./ProjectResultActions";
 import { useUnsavedShotGuard } from "./SessionDraft";
-import { Models, MaterialLibrary } from "./LazyViews";
+import { MaterialLibrary } from "./LazyViews";
 import { CreateDrama, DramaDetail, LongEpisodeDetail } from './Dramas';
 import {
   request,
@@ -90,10 +89,16 @@ function readRoute(): Route {
   const p = new URLSearchParams(location.hash.slice(1));
   const requested = p.get("view") || "dashboard";
   const view = requested === "inbox" ? "dashboard" : requested === "workflow" ? "projects" : requested;
+  const project = p.get("project") || "";
+  const legacyModels = requested === "models" && !project;
   return {
-    view: ["dashboard", "projects", "library", "activity", "models", "settings"].includes(view) ? view : "dashboard",
-    project: p.get("project") || "",
-    tab: p.get("tab") || "overview",
+    view: legacyModels
+      ? "settings"
+      : ["dashboard", "projects", "library", "activity", "settings"].includes(view)
+        ? view
+        : "dashboard",
+    project,
+    tab: legacyModels ? "models" : p.get("tab") || "overview",
   };
 }
 const links = [
@@ -101,7 +106,6 @@ const links = [
   ["projects", "项目", FolderKanban],
   ["library", "素材库", FolderKanban],
   ["activity", "运行记录", Activity],
-  ["models", "模型配置", Settings2],
   ["settings", "系统设置", Settings],
 ] as const;
 export default function App() {
@@ -167,9 +171,25 @@ function Workbench() {
     });
   useEffect(() => {
     const listener = () => {
-      setRoute(readRoute());
+      const next = readRoute();
+      // Keep saved model links working without a second settings page or an
+      // extra history entry when returning with the browser's Back button.
+      if (
+        !next.project &&
+        new URLSearchParams(location.hash.slice(1)).get("view") === "models"
+      ) {
+        history.replaceState(
+          history.state,
+          "",
+          location.pathname + location.search + "#view=settings&tab=models",
+        );
+      }
+      setRoute(next);
       setMobile(false);
+      const workspace = document.querySelector<HTMLElement>(".main-shell");
+      if (workspace) workspace.scrollTop = 0;
     };
+    listener();
     window.addEventListener("hashchange", listener);
     return () => window.removeEventListener("hashchange", listener);
   }, []);
@@ -190,6 +210,8 @@ function Workbench() {
     location.hash = p.toString();
     setRoute({ view, project, tab });
     setMobile(false);
+    const workspace = document.querySelector<HTMLElement>(".main-shell");
+    if (workspace) workspace.scrollTop = 0;
     window.scrollTo({ top: 0, behavior: "instant" });
   }
   async function refresh() {
@@ -223,120 +245,116 @@ function Workbench() {
             tabIndex={-1}
           />
         )}
-        <aside
-          ref={navigationRef}
-          id="studio-navigation"
-          className="sidebar"
-          aria-label="工作室导航"
-          inert={narrow && !mobile ? true : undefined}
-          aria-hidden={narrow && !mobile ? true : undefined}
-          onKeyDown={(event) => {
-            if (!mobile || !narrow) return;
-            if (event.key === "Escape") {
-              event.preventDefault();
-              setMobile(false);
-            }
-            if (event.key === "Tab") {
-              const items = Array.from(
-                navigationRef.current?.querySelectorAll<HTMLElement>(
-                  "a[href],button:not(:disabled),select",
-                ) || [],
-              ).filter((el) => el.getClientRects().length > 0);
-              const first = items[0],
-                last = items[items.length - 1];
-              if (event.shiftKey && document.activeElement === first) {
+        <div className="sidebar-rail">
+          <aside
+            ref={navigationRef}
+            id="studio-navigation"
+            className="sidebar"
+            aria-label="工作室导航"
+            inert={narrow && !mobile ? true : undefined}
+            aria-hidden={narrow && !mobile ? true : undefined}
+            onKeyDown={(event) => {
+              if (!mobile || !narrow) return;
+              if (event.key === "Escape") {
                 event.preventDefault();
-                last?.focus();
+                setMobile(false);
               }
-              if (!event.shiftKey && document.activeElement === last) {
-                event.preventDefault();
-                first?.focus();
+              if (event.key === "Tab") {
+                const items = Array.from(
+                  navigationRef.current?.querySelectorAll<HTMLElement>(
+                    "a[href],button:not(:disabled),select",
+                  ) || [],
+                ).filter((el) => el.getClientRects().length > 0);
+                const first = items[0],
+                  last = items[items.length - 1];
+                if (event.shiftKey && document.activeElement === first) {
+                  event.preventDefault();
+                  last?.focus();
+                }
+                if (!event.shiftKey && document.activeElement === last) {
+                  event.preventDefault();
+                  first?.focus();
+                }
               }
-            }
-          }}
-        >
-          <div className="sidebar-header">
-            <a
-              className="brand"
-              href="#"
-              aria-label="映序首页"
-              onClick={() => navigate("dashboard")}
-            >
-              <BrandMark />
-              <span className="brand-name">映序</span>
-            </a>
-            <button
-              type="button"
-              className="icon-button navigation-close"
-              aria-label="关闭导航"
-              onClick={() => setMobile(false)}
-            >
-              <X size={20} />
-            </button>
-          </div>
-          <button
-            className="button primary new-project"
-            data-action="new-project"
-            onClick={() => {
-              setMobile(false);
-              setCreate(true);
             }}
           >
-            <Plus size={16} />
-            新建制作
-          </button>
-          <nav className="main-nav" aria-label="主导航">
-                {links.map(([view, label, Icon]) => (
-                  <button
-                    key={view}
-                    className={
-                      "nav-item " +
-                      (!route.project && route.view === view ? "active" : "")
-                    }
-                    data-action={
-                      view === "models"
-                        ? "models"
-                        : view === "dashboard"
-                          ? "dashboard"
-                          : "view"
-                    }
-                    data-view={view}
-                    aria-current={
-                      !route.project && route.view === view ? "page" : undefined
-                    }
-                    onClick={() => navigate(view)}
-                  >
-                    <Icon size={17} />
-                    {label}
-                  </button>
-                ))}
-          </nav>
-          <div className="sidebar-label row-between">
-            <span>最近制作</span>
-            <span>{metrics.projects ?? projects.length}</span>
-          </div>
-          <div id="project-list" className="project-list">
-            {projects.slice(0, 10).map((p) => (
-              <button
-                key={p.id}
-                data-id={p.id}
-                className={
-                  "project-item " + (route.project === p.id ? "active" : "")
-                }
-                onClick={() => openProject(p.id)}
+            <div className="sidebar-header">
+              <a
+                className="brand"
+                href="#"
+                aria-label="映序首页"
+                onClick={() => navigate("dashboard")}
               >
-                <span className="project-dot" />
-                <span>
-                  <strong>{p.title || "未命名制作"}</strong>
-                  <small>{activityName(p.current_activity || p.status)}</small>
-                </span>
+                <BrandMark />
+                <span className="brand-name">映序</span>
+              </a>
+              <button
+                type="button"
+                className="icon-button navigation-close"
+                aria-label="关闭导航"
+                onClick={() => setMobile(false)}
+              >
+                <X size={20} />
               </button>
-            ))}
-            {!projects.length && !overview.isPending && (
-              <p className="sidebar-empty">从一段故事需求开始。</p>
-            )}
-          </div>
-        </aside>
+            </div>
+            <button
+              className="button primary new-project"
+              data-action="new-project"
+              onClick={() => {
+                setMobile(false);
+                setCreate(true);
+              }}
+            >
+              <Plus size={16} />
+              新建制作
+            </button>
+            <nav className="main-nav" aria-label="主导航">
+                  {links.map(([view, label, Icon]) => (
+                    <button
+                      key={view}
+                      className={
+                        "nav-item " +
+                        (!route.project && route.view === view ? "active" : "")
+                      }
+                      data-action={view === "dashboard" ? "dashboard" : "view"}
+                      data-view={view}
+                      aria-current={
+                        !route.project && route.view === view ? "page" : undefined
+                      }
+                      onClick={() => navigate(view)}
+                    >
+                      <Icon size={17} />
+                      {label}
+                    </button>
+                  ))}
+            </nav>
+            <div className="sidebar-label row-between">
+              <span>最近制作</span>
+              <span>{metrics.projects ?? projects.length}</span>
+            </div>
+            <div id="project-list" className="project-list">
+              {projects.slice(0, 10).map((p) => (
+                <button
+                  key={p.id}
+                  data-id={p.id}
+                  className={
+                    "project-item " + (route.project === p.id ? "active" : "")
+                  }
+                  onClick={() => openProject(p.id)}
+                >
+                  <span className="project-dot" />
+                  <span>
+                    <strong>{p.title || "未命名制作"}</strong>
+                    <small>{activityName(p.current_activity || p.status)}</small>
+                  </span>
+                </button>
+              ))}
+              {!projects.length && !overview.isPending && (
+                <p className="sidebar-empty">从一段故事需求开始。</p>
+              )}
+            </div>
+          </aside>
+        </div>
         <div className="main-shell" inert={mobile && narrow ? true : undefined}>
           <PageHeaderProvider
             value={{
@@ -369,8 +387,6 @@ function Workbench() {
                   retryOverview={() => { void overview.refetch(); }}
                   notify={setToast}
                 />
-              ) : route.view === "models" ? (
-                <Models notify={setToast} />
               ) : route.view === "library" ? (
                 <MaterialLibrary notify={setToast} />
               ) : (

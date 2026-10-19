@@ -7,7 +7,7 @@ import { paletteViolations, colorHierarchy, gradientSurfaces } from "./palette.m
 // interface checks, not model performance or production-resource evidence.
 const id = "012345abcdef";
 const title = "长夜之后仍然有人守护这座城市：一部关于重逢与选择的原创剧集";
-const primary = ["dashboard", "projects", "library", "activity", "models", "settings"];
+const primary = ["dashboard", "projects", "library", "activity", "settings"];
 const palettes = [["slate", "深灰蓝"], ["graphite", "雾银"], ["teal", "薄荷青"], ["jade", "青柠绿"], ["iris", "雾紫"], ["bronze", "杏桃"]];
 
 async function fixture(page, request, { empty = false, attention = true, poster } = {}) {

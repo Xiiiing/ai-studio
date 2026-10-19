@@ -105,7 +105,10 @@ async function capture(page, group, label, width, theme) {
   // Modal dismissal restores keyboard focus and may leave the page scrolled.
   // Return to an ordinary reading position without changing product focus styles.
   await page.locator("#workspace h1").click();
-  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.evaluate(() => {
+    document.querySelector(".main-shell").scrollTop = 0;
+    window.scrollTo(0, 0);
+  });
   await page.mouse.move(0, 0);
   await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   expect(await page.evaluate(() => window.scrollY)).toBe(0);
