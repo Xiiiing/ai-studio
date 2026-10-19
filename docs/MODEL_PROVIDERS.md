@@ -365,6 +365,12 @@ MiniMax 支持范围是上述 `/v1/video_generation` 生命周期及它支持的
 外部任务的提交编号和输出选择会持久化。已接受任务恢复时查询原编号；提交响应丢失时要求核对，不自动创建新的生成任务。
 
 
+### Qwen-Image-2.1 基础版采样预设
+
+新建连接模板和公开 Wkp 示例使用基础版 **25 步、Euler/simple、CFG 1**。[Comfy 官方模板](https://github.com/Comfy-Org/workflow_templates/blob/main/templates/image_qwen_image_2_1_t2i.json)采用这组设置；8 步 Turbo 使用单独权重及固定 ManualSigmas 配置，不能把基础版的低步数试图直接当作 Turbo。基础版局部编辑可以单独验证低步数效果，完整生图及复杂重绘需按实际产物检查。[官方说明](https://github.com/Comfy-Org/docs/blob/main/tutorials/image/qwen/qwen-image-2-1.mdx)
+
+已有显式8步和历史协议缺省值保持兼容，不随模板更新自动改写运行项目、已有请求或已批准素材。当前项目需要调整参数时，先在暂停边界记录新旧配置及授权，再明确应用新快照；提交结果未知时先对账。预设与模型匹配只说明协议选择正确，实际质量仍需真实生成和独立审核，不能由参数值推断通过。
+
 ### 服务与多个模型
 
 工作台在「服务连接」中按实际端点、协议及鉴权身份组织模型；执行接口仍使用既有 profile ID，角色引用不随界面分组迁移。一次连接保存可以创建多个模型，或同时轮换它们的 Key：同一 `secrets` 写入请求中相同的 Key 共用一个新随机引用，不会根据旧密钥库合并历史连接。原有引用保留供运行快照读取。模型目录是只读发现，和生成／视觉能力验证分别表达。界面与验证依据见 [MODEL_CONNECTION_DESIGN.md](MODEL_CONNECTION_DESIGN.md)。

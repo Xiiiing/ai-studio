@@ -145,7 +145,7 @@
       "provider": "comfyui_qwen_image21",
       "model": "Qwen-Image-2.1",
       "enabled": true,
-      "steps": 8
+      "steps": 25
     }
   },
   "image_roles": {

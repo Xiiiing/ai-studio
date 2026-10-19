@@ -121,7 +121,7 @@ def inventory(config):
                   'comfyui_external': {'provider': 'comfyui_external', 'model': 'Wan2.2-TI2V-5B', 'enabled': True, 'base_url': 'http://127.0.0.1:8188', 'network_mode': 'loopback', 'allowed_hosts': []}}}}
     result['media_presets']['image']['dashscope_image'] = {'provider':'dashscope_image','model':'qwen-image-2.1-pro','enabled':True,'network_mode':'remote','allowed_hosts':['dashscope.aliyuncs.com'],'base_url':'https://dashscope.aliyuncs.com/compatible-mode/v1','api_key_env':'DASHSCOPE_API_KEY'}
     result['media_presets']['audio']['dashscope_tts'] = {'provider':'dashscope_tts','model':'qwen3-tts-flash','enabled':True,'network_mode':'remote','allowed_hosts':['dashscope.aliyuncs.com'],'base_url':'https://dashscope.aliyuncs.com/api/v1','api_key_env':'DASHSCOPE_API_KEY','default_voice':'Cherry','language':'Chinese','voices':{'female':'Cherry','male':'Ethan','narrator':'Cherry'}}
-    result['media_presets']['image']['comfyui_qwen_image21'] = {'provider': 'comfyui_qwen_image21', 'model': 'Qwen-Image-2.1', 'enabled': True, 'steps': 8}
+    result['media_presets']['image']['comfyui_qwen_image21'] = {'provider': 'comfyui_qwen_image21', 'model': 'Qwen-Image-2.1', 'enabled': True, 'steps': 25}
     for kind in KINDS:
         profiles, roles = registry(config, kind)
         result.update({kind + '_profiles': profiles, kind + '_roles': roles})
