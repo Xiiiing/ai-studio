@@ -25,13 +25,19 @@ body {
 .main-shell {
   min-height: calc(100dvh - 42px);
 }
+/* The frame paints the full column; only its navigation contents stick. */
+.sidebar-rail {
+  min-width: 0;
+  border-right: 1px solid var(--studio-edge);
+  border-radius: 25px 0 0 25px;
+  background: color-mix(in srgb, var(--panel) 80%, var(--canvas));
+}
 .sidebar {
   top: 21px;
   height: calc(100dvh - 42px);
   padding: 28px 16px 20px;
-  border-radius: 25px 0 0 25px;
-  border-right-color: var(--studio-edge);
-  background: color-mix(in srgb, var(--panel) 80%, var(--canvas));
+  border-right: 0;
+  background: transparent;
 }
 .brand {
   padding: 0 9px 28px;
@@ -338,6 +344,9 @@ tbody tr:hover {
   }
 }
 @media (max-width: 1023px) {
+  .sidebar-rail {
+    display: contents;
+  }
   .app-shell {
     display: block;
     margin: 12px auto;
@@ -353,6 +362,7 @@ tbody tr:hover {
     height: 100dvh;
     border-radius: 0 20px 20px 0;
     padding: 24px 16px;
+    background: color-mix(in srgb, var(--panel) 80%, var(--canvas));
   }
   #workspace {
     padding: 24px;
