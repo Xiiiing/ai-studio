@@ -204,17 +204,20 @@ class FactorySafetyTests(unittest.TestCase):
         self.project.update(copy.deepcopy(patch))
 
     def test_temporal_policy_invalidates_explicit_review_cache_without_changing_video_inputs(self):
-        self.config.update(semantic_review_revision="fixed-review-model-v1")
+        self.config.update(semantic_enabled=True, semantic_review_revision="fixed-review-model-v1")
         first = _Run(self.project, self.config, self.save, None)
         shot = first.shots[0]
         target = first._target(shot["id"], first.folder / "renders" / shot["id"],
-                               "Approved continuous movement", kind="video", seconds=shot["seconds"], shot=shot)
+                               "Approved continuous movement", kind="video", seconds=shot["seconds"], shot=shot, review=True)
+        receipt = {"qa": {"semantic": {"status": "pass"}}, "review_signature": target["review_signature"]}
+        self.assertTrue(first._review_current(target, receipt))
         with mock.patch("factory.temporal_review.POLICY", "continuous-frame-challenge.next"):
             resumed = _Run(self.project, self.config, self.save, None)
             changed = resumed._target(shot["id"], resumed.folder / "renders" / shot["id"],
-                                      "Approved continuous movement", kind="video", seconds=shot["seconds"], shot=shot)
+                                      "Approved continuous movement", kind="video", seconds=shot["seconds"], shot=shot, review=True)
         self.assertEqual(target["signature"], changed["signature"])
         self.assertNotEqual(target["review_signature"], changed["review_signature"])
+        self.assertFalse(resumed._review_current(changed, receipt))
 
 
     def test_dialogue_repair_preserves_other_voices_and_resumes_full_export(self):

@@ -294,9 +294,11 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
             raise ValueError("semantic_max_attempts must be between one and three")
         explicit_policy = self.config.get("semantic_review_revision")
         from .temporal_review import POLICY as temporal_evidence_policy
+        self.temporal_evidence_policy = temporal_evidence_policy
         self.review_policy = fingerprint({
             "policy": explicit_policy or "local_vlm_review_v2",
-            "temporal_evidence_policy": temporal_evidence_policy,
+            **({"temporal_evidence_policy": temporal_evidence_policy}
+               if not explicit_policy or self.h3_automatic else {}),
             "model": self.config.get("semantic_model"),
             **({"temporal_sampling": self.config.get("temporal_sampling", {
                 "policy": "uniform_endpoints_and_cut_neighbors.v1", "count": 8})}
@@ -762,6 +764,8 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
             signature = fingerprint({"source_signature": signature, "character_revision": self.project["team_character_revisions"][extra["character"]]})
         review_key = ("video_review:" if kind == "video" else "image_review:") + str(extra.get("character") or key)
         review_signature = fingerprint({"source_signature": signature, "policy": self.review_policy,
+                                        **({"temporal_evidence_policy": self.temporal_evidence_policy}
+                                           if kind == "video" else {}),
                                         "expected": expected, "cast": self.cast, "format": self.mode})
         if self.project.get("team_review_revisions", {}).get(review_key):
             review_signature = fingerprint({"review": review_signature, "producer_review_revision": self.project["team_review_revisions"][review_key]})
