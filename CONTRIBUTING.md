@@ -61,6 +61,10 @@ Linux 缺少浏览器系统依赖时，可按 CI 使用 `npx playwright install 
 
 On Linux, use the CI command `npx playwright install --with-deps chromium` if browser system dependencies are missing. Browser fixtures bind to loopback. Routine screenshots and reports stay in the ignored `runtime/browser-report/` directory.
 
+CI 在 `main`、`codex/**` 分支推送和 PR 时运行，开发分支无需提前发布 PR 即可验证。`python-contracts` 运行完整 Python 契约；`cpu-and-ui` 运行 UI 单测、类型检查、构建和完整浏览器回归。两个任务独立执行，各有 15 分钟上限，验收时须同时通过。浏览器 fixture 共享可重置状态，继续使用一个 worker、零自动重试；入口调整时更新实际操作路径，保留原有行为和几何断言。
+
+CI runs on pushes to `main` and `codex/**`, and on pull requests, so development branches can be checked before publishing a PR. The independent `python-contracts` and `cpu-and-ui` jobs each have a 15-minute limit; both must pass. The browser suite keeps one worker and zero retries because its resettable fixture state is shared. Adapt changed entry paths while retaining behavioral and geometry assertions.
+
 通过这些检查证明的是软件行为，不是供应商在线可用性或生成艺术质量；真实模型联调需明确授权和对应证据。纯文档修改核对事实、链接、命令、示例、引用和渲染即可；展示截图需要与所说明的源码一致。
 
 These checks validate software behavior, not provider availability or artistic quality. Real-model validation needs authorization and separate evidence. Documentation-only changes need factual, link, command, example, citation and rendering checks; screenshot provenance must match its source build.

@@ -92,14 +92,20 @@ for (const width of widths) {
     request,
   }) => {
     await page.setViewportSize({ width, height: 844 });
-    await page.goto("/");
-    await expect(page.locator("#workspace h1")).toBeVisible();
+    await page.goto("/#view=projects");
+    await expect(page.locator("#workspace h1")).toHaveText("全部项目");
     const styles = await lockStyles(page);
     const anchors = await pageGeometry(page);
     await page
       .locator("#workspace")
       .getByRole("button", { name: "新建制作", exact: true })
       .click();
+    // Creation now starts with a whole drama. Keep testing the legacy JSON
+    // validation and nested error dialog through its actual user-facing entry.
+    const drama = page.getByRole("dialog", { name: "新建一部剧", exact: true });
+    await expect(drama).toBeVisible();
+    await drama.getByRole("button", { name: "使用原单集入口", exact: true }).click();
+    await expect(drama).toHaveCount(0);
     const dialog = page.locator("#project-dialog");
     await dialog
       .getByLabel("创作方向", { exact: true })
