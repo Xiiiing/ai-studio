@@ -75,6 +75,7 @@ import { DecisionCenter, ActionForm } from "./Decisions";
 import { ReviewAutomation } from "./ReviewAssistance";
 import { Shots, Series, Costs } from "./Assets";
 import { ShotQuality } from "./ShotQuality";
+import { PromptWorkbench } from "./PromptWorkbench";
 import { QualityComparison } from "./QualityComparison";
 import {
   CreativeContract,
@@ -1679,6 +1680,8 @@ function Project({
                 )}
               </Panel>
             </div>
+          ) : tab === "prompts" ? (
+            <PromptWorkbench project={p} />
           ) : tab === "comparison" ? (
             <QualityComparison project={p} />
           ) : tab === "quality" ? (

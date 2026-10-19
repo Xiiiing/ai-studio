@@ -62,6 +62,10 @@ def record(kind, title, brief, **values):
 
 
 def insert(db, project):
+    from .prompt_workbench import pin_defaults
+    parent_id = project.get("episode_id") or project.get("drama_id")
+    parent = store._read(db, parent_id) if parent_id else None
+    project.setdefault("prompt_snapshot", copy.deepcopy(parent.get("prompt_snapshot")) if parent else pin_defaults(db))
     db.execute("INSERT INTO projects(id,updated,revision,snapshot) VALUES(?,?,?,?)",
                (project['id'], time.time(), project['revision'], store.encoded(project)))
     store._event(db, project['id'], '已建立' + {'drama': '整剧项目', 'episode': '剧集', 'scene_unit': '制作单元'}.get(project['record_kind'], '记录'), 'created')

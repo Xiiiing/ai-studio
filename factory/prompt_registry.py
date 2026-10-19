@@ -34,17 +34,23 @@ class PromptSpec:
 
 class PromptText(str):
     """String-compatible text plus immutable, explicitly selected provenance."""
-    def __new__(cls, text, spec, transforms=()):
+    def __new__(cls, text, spec, transforms=(), assembly=None):
         instance = str.__new__(cls, text)
         object.__setattr__(instance, "spec", spec)
         object.__setattr__(instance, "transforms", tuple(transforms))
+        if assembly is not None:
+            object.__setattr__(instance, "assembly_json", json.dumps(assembly, ensure_ascii=False, sort_keys=True))
         return instance
+
+    @property
+    def assembly(self):
+        return json.loads(self.assembly_json) if hasattr(self, "assembly_json") else None
 
     def __setattr__(self, name, value):
         raise AttributeError("Prompt identity is immutable; derive a new prompt")
 
     def __reduce_ex__(self, protocol):
-        return type(self), (str(self), self.spec, self.transforms)
+        return type(self), (str(self), self.spec, self.transforms, getattr(self, "assembly", None))
 
 
 def derive_prompt(source, rendered, transformation):
@@ -53,8 +59,12 @@ def derive_prompt(source, rendered, transformation):
         return rendered
     if not isinstance(transformation, str) or not _ROLE.fullmatch(transformation):
         raise ValueError("Invalid prompt transformation")
+    assembly = source.assembly
+    if assembly:
+        assembly["segments"].append({"section": transformation, "source": "renderer:" + transformation,
+                                      "sha256": hashlib.sha256(rendered.encode()).hexdigest()})
     return PromptText(rendered, source.spec,
-                      tuple(dict.fromkeys((*source.transforms, transformation))))
+                      tuple(dict.fromkeys((*source.transforms, transformation))), assembly)
 
 
 def load_prompt(role, version=None, *, root=None):
@@ -140,4 +150,6 @@ def prompt_receipt(system, role, payload, schema, *, wire_system=None):
         value.update(status="registered", version=spec.version,
                      template_sha256=spec.template_sha256, contract_sha256=spec.contract_sha256,
                      transforms=list(system.transforms))
+        if getattr(system, "assembly", None):
+            value["assembly"] = system.assembly
     return value

@@ -5,6 +5,7 @@ export const projectPages = [
   ["overview", "制作概览"],
   ["decisions", "待办决策"],
   ["team", "团队与回执"],
+  ["prompts", "提示词工作台"],
   ["shots", "镜头制作台"],
   ["script", "剧本与分镜"],
   ["quality", "制作与质检"],
@@ -44,7 +45,11 @@ export function ProjectNavigation({
     return () => document.removeEventListener("pointerdown", outside);
   }, []);
   const section =
-    tab === "series" ? "materials" : ["quality", "comparison"].includes(tab) ? "decisions" : tab;
+    tab === "series"
+      ? "materials"
+      : ["quality", "comparison"].includes(tab)
+        ? "decisions"
+        : tab;
   const children =
     section === "materials"
       ? [
@@ -98,7 +103,7 @@ export function ProjectNavigation({
         <summary
           aria-label={
             "更多项目页面" +
-            (["team", "costs"].includes(tab)
+            (["team", "prompts", "costs"].includes(tab)
               ? "：" + projectPages.find(([id]) => id === tab)?.[1]
               : "")
           }
@@ -107,7 +112,7 @@ export function ProjectNavigation({
           <ChevronDown size={14} aria-hidden="true" />
         </summary>
         <nav className="project-navigation-menu" aria-label="更多项目页面">
-          {["team", "costs"].map((value) => (
+          {["team", "prompts", "costs"].map((value) => (
             <button
               key={value}
               data-project-page={value}

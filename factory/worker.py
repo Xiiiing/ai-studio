@@ -143,6 +143,8 @@ def main():
     recovered=store.recover_jobs()
     from . import material_tasks
     material_tasks.recover()
+    from .prompt_workbench import recover_trials, run_next_trial
+    recover_trials()
     print(json.dumps({"event":"worker_ready","recovered_jobs":recovered,"pid":os.getpid()}),flush=True)
     signal.signal(signal.SIGTERM,lambda *_:_stop.set())
     signal.signal(signal.SIGINT,lambda *_:_stop.set())
@@ -160,6 +162,8 @@ def main():
             job=store.claim_job()
             if not job:
                 material_turn = True
+                if run_next_trial():
+                    continue
                 _stop.wait(1)
                 continue
             _current=job["project_id"]

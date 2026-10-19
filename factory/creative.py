@@ -730,12 +730,14 @@ def _make_script(project, config, checkpoint, feedback=None):
     separate_storyboard = config.get("creative", {}).get("separate_storyboard", False)
     if not isinstance(separate_storyboard, bool):
         raise ValueError("creative.separate_storyboard must be a boolean")
-    writer_system = SCRIPT_SYSTEM
+    from .prompt_workbench import select
+    writer_base = select(SCRIPT_SYSTEM, project)
+    writer_system = writer_base
     if separate_storyboard:
-        writer_system = SCRIPT_SYSTEM.replace("你是短剧编剧兼分镜导演", "你是短剧编剧", 1) + (
+        writer_system = writer_base.replace("你是短剧编剧兼分镜导演", "你是短剧编剧", 1) + (
             "\n独立分镜导演将在你之后编排prompt/motion_prompt/camera_motion/reference_group。"
             "你先完成剧情、action、对白与连续性，并提供这些制作字段的初稿；导演不能替你改剧情。")
-        writer_system = derive_prompt(SCRIPT_SYSTEM, writer_system, "separate_storyboard")
+        writer_system = derive_prompt(writer_base, writer_system, "separate_storyboard")
     history, episode, final_review, direction = [], None, None, None
     pending_supplement, repair_scope = None, None
     for index in range(1, maximum_rounds + 1):
@@ -759,7 +761,7 @@ def _make_script(project, config, checkpoint, feedback=None):
             request['locked_shot_ids'] = [s['id'] for s in previous_attempt['shots'] if s['id'] not in repair_scope]
         current_writer_system = writer_system
         if pending_supplement:
-            supplement_system = load_prompt('screenwriter', '1.1.0')
+            supplement_system = select(load_prompt('screenwriter', '1.1.0'), project)
             rendered = str(supplement_system)
             if separate_storyboard:
                 rendered = rendered.replace('你是短剧编剧兼分镜导演', '你是短剧编剧', 1)
