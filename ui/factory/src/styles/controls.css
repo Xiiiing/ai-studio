@@ -1,0 +1,167 @@
+/* Shared form and action popovers inherit all six themes and color modes. */
+.studio-select-trigger,
+.studio-menu-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  box-sizing: border-box;
+  min-height: var(--target-size, 44px);
+  min-width: 0;
+  padding: 10px 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--control-radius);
+  background: var(--panel);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 400;
+  text-align: start;
+  cursor: pointer;
+  transition:
+    background-color 120ms,
+    border-color 120ms;
+}
+.studio-select-trigger {
+  width: 100%;
+}
+.studio-select-trigger > svg,
+.studio-menu-trigger > svg,
+.studio-select-trigger > [aria-hidden] {
+  flex: none;
+}
+.studio-select-value,
+.studio-option-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.studio-select-trigger:hover,
+.studio-menu-trigger:hover {
+  background: var(--surface);
+}
+.studio-select-trigger:focus-visible,
+.studio-menu-trigger:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 3px;
+}
+.studio-select-trigger[aria-invalid="true"] {
+  border-color: var(--danger);
+}
+.studio-select-trigger:disabled,
+.studio-menu-trigger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.studio-select-content,
+.studio-menu-content {
+  z-index: 1100;
+  box-sizing: border-box;
+  width: max-content;
+  min-width: var(
+    --radix-select-trigger-width,
+    var(--radix-dropdown-menu-trigger-width)
+  );
+  max-width: min(480px, calc(100vw - 24px));
+  max-height: min(
+    360px,
+    var(
+      --radix-select-content-available-height,
+      var(--radix-dropdown-menu-content-available-height, 60vh)
+    )
+  );
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 5px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--ink);
+  box-shadow: var(--shadow-md);
+  transform-origin: var(
+    --radix-select-content-transform-origin,
+    var(--radix-dropdown-menu-content-transform-origin)
+  );
+  animation: studio-popover-in 140ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.studio-select-item,
+.studio-menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 44px;
+  box-sizing: border-box;
+  padding: 9px 11px;
+  border-radius: 6px;
+  font-size: var(--text-ui, 14px);
+  line-height: 22px;
+  cursor: pointer;
+  outline: none;
+  user-select: none;
+}
+.studio-select-item > [id] {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.studio-select-item[data-highlighted],
+.studio-menu-item[data-highlighted] {
+  background: var(--surface-strong);
+}
+.studio-select-item[data-state="checked"],
+.studio-menu-item[data-selected],
+.studio-menu-item[data-state="checked"] {
+  background: var(--surface);
+}
+.studio-select-item[data-disabled],
+.studio-menu-item[data-disabled] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.studio-option-group {
+  padding: 9px 11px 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.studio-select-scroll {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 24px;
+}
+/* Keep the real form control measurable for validation, but never paint a
+   browser-native dropdown or add a second focus stop. */
+.studio-select-native {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  margin: -1px !important;
+  clip-path: inset(50%) !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  pointer-events: none !important;
+}
+@keyframes studio-popover-in {
+  from {
+    opacity: 0;
+    transform: translateY(-3px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .studio-select-content,
+  .studio-menu-content {
+    animation: none;
+  }
+  .studio-select-trigger,
+  .studio-menu-trigger {
+    transition: none;
+  }
+}

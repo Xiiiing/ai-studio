@@ -1,3 +1,4 @@
+import { StudioSelect } from "./StudioSelect";
 import { ServiceCategories } from "./ServiceCategories";
 import { useRef, useState } from "react";
 import { Check, Plus, Search, ArrowLeft, Trash2 } from "lucide-react";
@@ -398,7 +399,7 @@ export function ServiceEditor({
                 )}
                 <div className="form-row">
                   <Field label="连接范围">
-                    <select
+                    <StudioSelect
                       name="network_mode"
                       defaultValue={
                         service ? defaults.network_mode || "auto" : "auto"
@@ -408,7 +409,7 @@ export function ServiceEditor({
                       <option value="loopback">服务器本机</option>
                       <option value="lan">局域网</option>
                       <option value="remote">远程 HTTPS</option>
-                    </select>
+                    </StudioSelect>
                   </Field>
                   <Field label="请求超时 / 秒">
                     <input
@@ -667,7 +668,7 @@ function ModelOptions({
           />
         </Field>
         <Field label="结构化输出">
-          <select
+          <StudioSelect
             value={p.response_format || "json_object"}
             onChange={(e) => set("response_format", e.target.value)}
           >
@@ -679,12 +680,12 @@ function ModelOptions({
             ].map((v) => (
               <option key={v}>{v}</option>
             ))}
-          </select>
+          </StudioSelect>
         </Field>
       </div>
       <div className="form-row">
         <Field label="模型目录检查">
-          <select
+          <StudioSelect
             value={p.model_discovery || "required"}
             onChange={(e) => set("model_discovery", e.target.value)}
           >
@@ -695,10 +696,10 @@ function ModelOptions({
             >
               跳过（连接未验证）
             </option>
-          </select>
+          </StudioSelect>
         </Field>
         <Field label="上下文验证">
-          <select
+          <StudioSelect
             value={p.context_validation || "conservative_estimate"}
             onChange={(e) => set("context_validation", e.target.value)}
           >
@@ -709,7 +710,7 @@ function ModelOptions({
             >
               llama.cpp tokenize
             </option>
-          </select>
+          </StudioSelect>
         </Field>
       </div>
       <div className="form-row">
@@ -730,7 +731,7 @@ function ModelOptions({
         </Field>
         {["dashscope", "ollama_native"].includes(p.provider) && (
           <Field label="Thinking">
-            <select
+            <StudioSelect
               value={p.thinking === undefined ? "" : String(p.thinking)}
               onChange={(e) => {
                 const next = { ...p };
@@ -742,7 +743,7 @@ function ModelOptions({
               <option value="">服务默认</option>
               <option value="true">启用</option>
               <option value="false">关闭</option>
-            </select>
+            </StudioSelect>
           </Field>
         )}
       </div>

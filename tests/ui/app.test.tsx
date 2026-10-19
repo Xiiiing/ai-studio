@@ -1,3 +1,4 @@
+import { nativeControl } from "./select-control";
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -181,14 +182,20 @@ it("导航保留单一品牌和可理解的阶段，不重复显示宣传小字"
   expect(screen.queryByText("plan_repair")).not.toBeInTheDocument();
   expect(screen.queryByText("AI PRODUCTION STUDIO")).not.toBeInTheDocument();
   expect(screen.queryByText("自主协作 · 人工掌舵")).not.toBeInTheDocument();
-  expect(screen.queryByText("创作、审核与交付记录可追溯")).not.toBeInTheDocument();
+  expect(
+    screen.queryByText("创作、审核与交付记录可追溯"),
+  ).not.toBeInTheDocument();
   const nav = screen.getByRole("navigation", { name: "主导航" });
-  expect(within(nav).getAllByRole("button").map((button) => button.textContent)).toEqual([
-    "总览", "项目", "素材库", "运行记录", "系统设置",
-  ]);
+  expect(
+    within(nav)
+      .getAllByRole("button")
+      .map((button) => button.textContent),
+  ).toEqual(["总览", "项目", "素材库", "运行记录", "系统设置"]);
   expect(screen.queryByText("工作室", { exact: true })).not.toBeInTheDocument();
   expect(screen.queryByText("管理", { exact: true })).not.toBeInTheDocument();
-  expect(calls.some((call) => call.path === "/api/factory/workflow")).toBe(false);
+  expect(calls.some((call) => call.path === "/api/factory/workflow")).toBe(
+    false,
+  );
 });
 it.each([
   ["inbox", "制片总览", "dashboard"],
@@ -198,7 +205,9 @@ it.each([
   setup();
   await screen.findByRole("heading", { name: heading });
   expect(location.hash).toBe("#view=" + view);
-  expect(document.querySelector(`.main-nav [data-view="${selected}"]`)).toHaveAttribute("aria-current", "page");
+  expect(
+    document.querySelector(`.main-nav [data-view="${selected}"]`),
+  ).toHaveAttribute("aria-current", "page");
 });
 it("实际导航从总览进入具体故事选择，提交绑定当前gate与revision", async () => {
   const { calls } = setup();
@@ -243,8 +252,8 @@ it("人工介入按钮由真实动作契约提供并提交安全接管动作", a
   await userEvent.click(document.querySelector("#project-list button")!);
   await screen.findByText("项目操作");
   await userEvent.click(screen.getByText("项目操作"));
-  await screen.findByRole("button", { name: "人工介入" });
-  await userEvent.click(screen.getByRole("button", { name: "人工介入" }));
+  await screen.findByRole("menuitem", { name: "人工介入" });
+  await userEvent.click(screen.getByRole("menuitem", { name: "人工介入" }));
   await waitFor(() =>
     expect(calls.some((c) => c.path.endsWith("/action"))).toBe(true),
   );
@@ -262,9 +271,9 @@ it("原单集入口默认AI代管并显式提交原创/改编与制作规格", a
   await userEvent.click(screen.getAllByRole("button", { name: "新建制作" })[0]);
   await userEvent.click(screen.getByRole("button", { name: "使用原单集入口" }));
   const dialog = screen.getByRole("dialog");
-  expect(within(dialog).getByLabelText(/团队协作方式/)).toHaveValue(
-    "delegated",
-  );
+  expect(
+    nativeControl(within(dialog).getByLabelText(/团队协作方式/)),
+  ).toHaveValue("delegated");
   await userEvent.type(
     within(dialog).getByLabelText("创作方向"),
     "成年修表师与邻居解开谜题，最终和解。",
@@ -347,9 +356,14 @@ it("旧模型链接统一进入系统设置，且不会增加浏览器历史记�
   expect(location.hash).toBe("#view=settings&tab=models");
   expect(history.length).toBe(length);
   const nav = screen.getByRole("navigation", { name: "主导航" });
-  expect(within(nav).queryByRole("button", { name: "模型配置" })).not.toBeInTheDocument();
-  expect(within(nav).getByRole("button", { name: "系统设置" })).toHaveAttribute("aria-current", "page");
+  expect(
+    within(nav).queryByRole("button", { name: "模型配置" }),
+  ).not.toBeInTheDocument();
+  expect(within(nav).getByRole("button", { name: "系统设置" })).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
   await screen.findByRole("tab", { name: "服务连接" });
   expect(document.querySelectorAll(".model-settings")).toHaveLength(1);
-  expect(calls.every(call => !call.body)).toBe(true);
+  expect(calls.every((call) => !call.body)).toBe(true);
 });

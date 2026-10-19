@@ -1,3 +1,5 @@
+import { SelectionGroup } from "./SelectionGroup";
+import { StudioSelect } from "./StudioSelect";
 import { useRef, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -271,7 +273,7 @@ export function TeamConsole({
             />
           </div>
         )}
-        <div className="team-departments">
+        <SelectionGroup className="team-departments" value={department}>
           {rows(team.departments).map((item, index) => {
             const Icon = icons[index % icons.length] || Users;
             const departmentMembers = members.filter(
@@ -393,7 +395,7 @@ export function TeamConsole({
               </article>
             );
           })}
-        </div>
+        </SelectionGroup>
       </Panel>
       <div className="team-workspace">
         <Panel
@@ -403,7 +405,7 @@ export function TeamConsole({
         >
           <div className="team-filters">
             <Field label="部门">
-              <select
+              <StudioSelect
                 value={department}
                 onChange={(event) => filter(setDepartment, event.target.value)}
               >
@@ -413,10 +415,10 @@ export function TeamConsole({
                     {item.label}
                   </option>
                 ))}
-              </select>
+              </StudioSelect>
             </Field>
             <Field label="执行状态">
-              <select
+              <StudioSelect
                 value={status}
                 onChange={(event) => filter(setStatus, event.target.value)}
               >
@@ -426,7 +428,7 @@ export function TeamConsole({
                     {label}
                   </option>
                 ))}
-              </select>
+              </StudioSelect>
             </Field>
             <Field label="镜头编号">
               <input
@@ -449,7 +451,7 @@ export function TeamConsole({
           {tasksQuery.isPending ? (
             <Loading />
           ) : tasks.length ? (
-            <ul className="team-tasks">
+            <SelectionGroup as="ul" className="team-tasks" value={selected}>
               {tasks.map((task) => (
                 <li key={task.id}>
                   <button
@@ -473,7 +475,7 @@ export function TeamConsole({
                   </button>
                 </li>
               ))}
-            </ul>
+            </SelectionGroup>
           ) : (
             !tasksQuery.error && (
               <Empty title="没有匹配任务">

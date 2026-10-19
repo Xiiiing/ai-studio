@@ -1,3 +1,4 @@
+import { StudioSelect } from "./StudioSelect";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { date, request, roleName, rows, type RecordData } from "./api";
@@ -153,7 +154,7 @@ function ProjectComparison({ project }: { project: RecordData }) {
                 ] as const
               ).map(([name, current, set]) => (
                 <Field key={name} label={name}>
-                  <select value={current} onChange={(e) => set(e.target.value)}>
+                  <StudioSelect value={current} onChange={(e) => set(e.target.value)}>
                     <option value="">请选择版本</option>
                     {snapshots.map((row) => (
                       <option key={row.id} value={row.id}>
@@ -161,7 +162,7 @@ function ProjectComparison({ project }: { project: RecordData }) {
                         {row.project_revision}
                       </option>
                     ))}
-                  </select>
+                  </StudioSelect>
                 </Field>
               ))}
             </div>

@@ -1,0 +1,90 @@
+.selection-group {
+  position: relative;
+  isolation: isolate;
+}
+.selection-marker {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 0;
+  pointer-events: none;
+  box-sizing: border-box;
+  border: 1.5px solid var(--selection-stroke, var(--line-strong));
+  border-radius: var(--selection-radius, var(--control-radius));
+  background: var(--selection-fill, transparent);
+}
+.selection-group > :not(.selection-marker) {
+  position: relative;
+  z-index: 1;
+}
+.selection-group[data-selection-variant="underline"] > .selection-marker {
+  border: 0;
+  border-radius: 999px;
+  background: var(--selection-stroke, var(--ink));
+}
+.selection-group[data-selection-variant="underline"] > button,
+.selection-group[data-selection-variant="underline"]
+  > button[aria-pressed="true"],
+.selection-group[data-selection-variant="underline"]
+  > button[aria-selected="true"],
+.selection-group[data-selection-variant="underline"] > button.active {
+  border-bottom-color: transparent !important;
+}
+.main-nav.selection-group {
+  --selection-fill: var(--ink);
+  --selection-stroke: var(--ink);
+}
+.main-nav.selection-group .nav-item.active {
+  background: transparent;
+}
+.segmented.selection-group {
+  --selection-fill: var(--panel);
+  --selection-stroke: var(--line);
+}
+.segmented.selection-group > button.selected {
+  background: transparent;
+  box-shadow: none;
+}
+.selection-group > button {
+  transition:
+    color 160ms ease,
+    background-color 160ms ease;
+}
+/* Selected controls reserve the same border and typography as their siblings. */
+.selection-group .settings-category strong,
+.selection-group .project-item strong {
+  font-weight: 600;
+}
+@media (prefers-reduced-motion: reduce) {
+  .selection-group > button {
+    transition: none;
+  }
+}
+
+.drama-more {
+  margin-block: 0;
+}
+.drama-more .drama-menu-trigger {
+  min-height: 44px;
+}
+.project-primary-navigation.selection-group button {
+  font-weight: 600;
+}
+.selection-group .appearance-mode[data-selected="true"],
+.selection-group .appearance-palette[data-selected="true"],
+.selection-group .settings-category[aria-current="page"] {
+  border-color: transparent;
+}
+
+.studio-role-input {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+}
+.studio-role-input input {
+  min-width: 0;
+  flex: 1;
+}
+.studio-role-input .studio-menu-trigger {
+  flex: none;
+}

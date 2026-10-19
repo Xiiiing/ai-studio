@@ -16,6 +16,19 @@ const blocked = {
   episodes: [],
 };
 
+it("defers authorized continuous production to its workspace without manual confirmation instructions", () => {
+  render(
+    <DramaNextStep
+      project={{ ...blocked, automation: { enabled: true } }}
+      tab="overview"
+      busy={false}
+      onTab={vi.fn()}
+      repair={vi.fn()}
+    />,
+  );
+  expect(screen.queryByRole("region", { name: "制作下一步" })).not.toBeInTheDocument();
+});
+
 it("explains why waiting cannot produce a video and directs the workflow to planning", async () => {
   const onTab = vi.fn(),
     repair = vi.fn();

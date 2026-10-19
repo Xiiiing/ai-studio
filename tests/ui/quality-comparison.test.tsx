@@ -1,3 +1,4 @@
+import { selectControl } from "./select-control";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -106,8 +107,8 @@ it("keeps unknown costs and quality unknown while showing input mismatch", async
   saved = [second, first];
   mount();
   await screen.findByLabelText("基线版本");
-  await userEvent.selectOptions(screen.getByLabelText("基线版本"), first.id);
-  await userEvent.selectOptions(screen.getByLabelText("候选版本"), second.id);
+  await selectControl(screen.getByLabelText("基线版本"), first.id, userEvent);
+  await selectControl(screen.getByLabelText("候选版本"), second.id, userEvent);
   await screen.findByText("尚未建立真实效果改善结论");
   expect(
     screen.getByText("需求发生变化，不能作为同输入效果实验"),
@@ -124,8 +125,8 @@ it("does not claim an improvement when the same snapshot is selected twice", asy
   saved = [first];
   mount();
   await screen.findByLabelText("基线版本");
-  await userEvent.selectOptions(screen.getByLabelText("基线版本"), first.id);
-  await userEvent.selectOptions(screen.getByLabelText("候选版本"), first.id);
+  await selectControl(screen.getByLabelText("基线版本"), first.id, userEvent);
+  await selectControl(screen.getByLabelText("候选版本"), first.id, userEvent);
   expect(screen.getByText("请选择两份不同的基线。")).toBeVisible();
   expect(mock.mock.calls.some(([url]) => url.includes("/compare?"))).toBe(
     false,

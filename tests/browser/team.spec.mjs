@@ -1,3 +1,4 @@
+import { selectOption } from "./select-control.mjs";
 import { openDetails, closeDetails } from "./fixed-canvas.mjs";
 import { refreshPage } from "./header-flow.mjs";
 import { openWorkflow } from "./navigation.mjs";
@@ -98,7 +99,7 @@ test("saved optional producer binding enables delegated creation but not final a
   await page.getByRole("button", { name: "模型与服务", exact: true }).click();
   await page.getByRole("tab", { name: "制作分工" }).click();
   await page.getByText("按角色单独配置 · 总制片代理", { exact: true }).click();
-  await page.locator("#role-executive_producer").selectOption("writer");
+  await selectOption(page.locator("#role-executive_producer"), "writer");
   await page.locator('[data-model-action="save-roles"]').click();
   await expect(page.locator('[data-model-action="save-roles"]')).toBeDisabled();
   await page.locator('[data-action="new-project"]').first().click();
@@ -106,9 +107,10 @@ test("saved optional producer binding enables delegated creation but not final a
   await expect(
     page.locator('#project-dialog option[value="delegated"]'),
   ).toBeEnabled();
-  await page
-    .locator('#project-dialog [name="team_mode"]')
-    .selectOption("delegated");
+  await selectOption(
+    page.getByRole("combobox", { name: "团队协作方式", exact: true }),
+    "delegated",
+  );
   await page
     .locator('#project-dialog [name="brief"]')
     .fill("成年修表师与邻居合作解开旧时钟的谜题，结局温暖。");
@@ -140,8 +142,8 @@ test("a running AI project can be taken over only through its explicit safe-boun
 }) => {
   await request.post("/__test/scenario", { data: { kind: "automatic" } });
   await page.goto("/#project=" + id);
-  await page.locator(".project-actions-menu > summary").click();
-  await page.getByRole("button", { name: "人工介入" }).click();
+  await page.getByRole("button", { name: "项目操作", exact: true }).click();
+  await page.getByRole("menuitem", { name: "人工介入" }).click();
   await expect(page.locator(".project-meta")).toContainText("已暂停");
   const calls = await (await request.get("/__test/calls")).json();
   const actions = calls.filter(

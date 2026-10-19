@@ -1,3 +1,4 @@
+import { selectOption } from "./select-control.mjs";
 import { test, expect } from "@playwright/test";
 const pid = "012345abcdef";
 const base = `/api/factory/projects/${pid}/quality-baselines`;
@@ -99,10 +100,14 @@ for (const width of [1440, 390, 320])
       await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
       await page.locator('[data-project-page="comparison"]').click();
       await expect(page.locator("[data-quality-comparison]")).toBeVisible();
-      await page.getByLabel("基线版本", { exact: true }).selectOption(first.id);
-      await page
-        .getByLabel("候选版本", { exact: true })
-        .selectOption(second.id);
+      await selectOption(
+        page.getByLabel("基线版本", { exact: true }),
+        first.id,
+      );
+      await selectOption(
+        page.getByLabel("候选版本", { exact: true }),
+        second.id,
+      );
       await expect(page.getByText("尚未建立真实效果改善结论")).toBeVisible();
       await expect(
         page.getByText("固定反馈不同，不能作为同输入效果实验"),
@@ -195,9 +200,9 @@ for (const kind of ["drama", "episode"])
       await page.setViewportSize({ width, height: 1000 });
       await page.goto(`/#project=${pid}&tab=overview`);
       if (kind === "drama") {
-        await page.locator(".drama-more > summary").click();
+        await page.locator(".drama-more").getByRole("button").click();
         await page
-          .getByRole("button", { name: "质量比较", exact: true })
+          .getByRole("menuitem", { name: "质量比较", exact: true })
           .click();
       } else
         await page

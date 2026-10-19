@@ -147,10 +147,10 @@ test("project navigation does not push content away or stretch its grouped butto
   await page.goto("/#project=012345abcdef&tab=quality");
   const before = await page.locator(".quality-panel").boundingBox();
   const more = page.locator(".project-more");
-  const trigger = more.locator(":scope > summary");
+  const trigger = more.getByRole("button");
   await trigger.click();
-  const menu = more.locator(".project-navigation-menu");
-  await expect(menu.locator("button")).toHaveCount(5);
+  const menu = page.getByRole("menu");
+  await expect(menu.getByRole("menuitem")).toHaveCount(5);
   expect(
     await menu
       .locator("button")

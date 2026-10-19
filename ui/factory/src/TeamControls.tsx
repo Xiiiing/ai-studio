@@ -1,3 +1,4 @@
+import { StudioSelect } from "./StudioSelect";
 import {
   useEffect,
   useRef,
@@ -671,7 +672,7 @@ export function InterventionComposer({
           </p>
         )}
         <Field label="处理方式">
-          <select
+          <StudioSelect
             value={draft.operation}
             disabled={busy}
             onChange={(event) =>
@@ -683,7 +684,7 @@ export function InterventionComposer({
             )}
             <option value="revise">按新要求修改</option>
             <option value="retry">重新执行</option>
-          </select>
+          </StudioSelect>
         </Field>
         <Field label="新的制作要求">
           <textarea
@@ -721,7 +722,7 @@ export function InterventionComposer({
           </fieldset>
         )}
         <Field label="完成后的安排">
-          <select
+          <StudioSelect
             value={draft.after}
             disabled={busy}
             onChange={(event) =>
@@ -730,7 +731,7 @@ export function InterventionComposer({
           >
             <option value="auto">自动继续后续任务</option>
             <option value="wait">本次任务完成后等我确认</option>
-          </select>
+          </StudioSelect>
         </Field>
         <p className="muted">
           草稿在本次应用会话中保留。关闭窗口或退出应用前，请提交或另行保存要求。

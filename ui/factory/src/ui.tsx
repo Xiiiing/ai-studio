@@ -1,3 +1,4 @@
+import { StudioSelect } from "./StudioSelect";
 import {
   useEffect,
   useRef,
@@ -414,8 +415,9 @@ export function Field({
       if (element.type === Fragment)
         return cloneElement(element, {}, connect(element.props.children));
       if (
-        typeof element.type === "string" &&
-        ["input", "textarea", "select"].includes(element.type)
+        element.type === StudioSelect ||
+        (typeof element.type === "string" &&
+          ["input", "textarea", "select"].includes(element.type))
       ) {
         controlId = element.props.id || generated;
         return cloneElement(element, {

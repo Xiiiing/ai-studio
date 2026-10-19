@@ -1,3 +1,4 @@
+import { StudioSelect } from "./StudioSelect";
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { date, request, roleName, rows, type RecordData } from "./api";
@@ -237,7 +238,7 @@ function Workbench({ project }: { project: RecordData }) {
         )}
         <div className="prompt-grid">
           <Field label="岗位与任务合约">
-            <select
+            <StudioSelect
               value={key}
               disabled={disabled}
               onChange={(e) => choose(e.target.value)}
@@ -247,10 +248,10 @@ function Workbench({ project }: { project: RecordData }) {
                   {roleName(r.role)} · 合约 {r.base_version}
                 </option>
               ))}
-            </select>
+            </StudioSelect>
           </Field>
           <Field label="编辑版本">
-            <select
+            <StudioSelect
               value={editionId}
               disabled={disabled}
               onChange={(e) => choose(key, e.target.value)}
@@ -261,11 +262,11 @@ function Workbench({ project }: { project: RecordData }) {
                   {r.label} · {date(r.created_at)}
                 </option>
               ))}
-            </select>
+            </StudioSelect>
           </Field>
         </div>
         <Field label="版本比较基线">
-          <select
+          <StudioSelect
             value={baselineId}
             disabled={disabled}
             onChange={(e) => {
@@ -279,7 +280,7 @@ function Workbench({ project }: { project: RecordData }) {
                 {r.label}
               </option>
             ))}
-          </select>
+          </StudioSelect>
         </Field>
         <p>{current?.responsibility}</p>
         <p className="muted">
@@ -335,7 +336,7 @@ function Workbench({ project }: { project: RecordData }) {
             />
           </Field>
           <Field label="输出合约序号">
-            <select
+            <StudioSelect
               value={schemaIndex}
               disabled={disabled}
               onChange={(e) => {
@@ -347,7 +348,7 @@ function Workbench({ project }: { project: RecordData }) {
               {key === "independent_critic@1.0.0" && (
                 <option value={1}>剧本审核合约</option>
               )}
-            </select>
+            </StudioSelect>
           </Field>
         </div>
         <div className="prompt-actions">
@@ -667,7 +668,7 @@ function Workbench({ project }: { project: RecordData }) {
           </Empty>
         )}
         <Field label="选择实际调用">
-          <select
+          <StudioSelect
             defaultValue=""
             onChange={async (e) => {
               setError("");
@@ -688,7 +689,7 @@ function Workbench({ project }: { project: RecordData }) {
                 {roleName(r.role)} · {r.call_id} · {r.status}
               </option>
             ))}
-          </select>
+          </StudioSelect>
         </Field>
         {historical && (
           <>

@@ -1,3 +1,4 @@
+import { selectOption } from "./select-control.mjs";
 import { addService, openServiceDetails } from "./model-flow.mjs";
 import { test, expect } from "@playwright/test";
 
@@ -158,12 +159,14 @@ for (const viewport of [
     await dialog.getByRole("button", { name: "保存连接" }).click();
     await expect(dialog).toHaveCount(0);
     await page.getByRole("tab", { name: "制作分工" }).click();
-    await page
-      .getByLabel("文本创作模型", { exact: true })
-      .selectOption(custom[0][0]);
-    await page
-      .getByLabel("视觉审核模型", { exact: true })
-      .selectOption(custom.find(([, p]) => p.vision)[0]);
+    await selectOption(
+      page.getByLabel("文本创作模型", { exact: true }),
+      custom[0][0],
+    );
+    await selectOption(
+      page.getByLabel("视觉审核模型", { exact: true }),
+      custom.find(([, p]) => p.vision)[0],
+    );
     await expect(
       page.getByRole("button", { name: "保存分工" }),
     ).toBeInViewport();
@@ -211,16 +214,18 @@ for (const viewport of [
       "MiniMax-H3",
     );
     await expect(dialog.getByLabel("API Key", { exact: true })).toHaveCount(0);
-    await dialog
-      .getByLabel("H3 质量档", { exact: true })
-      .selectOption("preview");
+    await selectOption(
+      dialog.getByLabel("H3 质量档", { exact: true }),
+      "preview",
+    );
     await expect(dialog.getByLabel("采样步数", { exact: true })).toHaveCount(0);
-    await dialog
-      .getByLabel("H3 质量档", { exact: true })
-      .selectOption("production");
+    await selectOption(
+      dialog.getByLabel("H3 质量档", { exact: true }),
+      "production",
+    );
     await dialog.getByLabel("采样步数", { exact: true }).fill("28");
     await dialog.getByText("采样参数", { exact: true }).click();
-    await dialog.getByLabel("采样器", { exact: true }).selectOption("heun");
+    await selectOption(dialog.getByLabel("采样器", { exact: true }), "heun");
     await dialog.getByLabel("视频采样偏移", { exact: true }).fill("10.5");
     await noOverflow(page);
     await expect(
@@ -244,7 +249,7 @@ for (const viewport of [
       revision: "wkp-dualgpu-base-v1",
     });
     await page.getByRole("tab", { name: "制作分工" }).click();
-    await page.getByLabel("视频制作模型", { exact: true }).selectOption(id);
+    await selectOption(page.getByLabel("视频制作模型", { exact: true }), id);
     await page.getByRole("button", { name: "保存分工" }).click();
     await expect(page.getByRole("button", { name: "保存分工" })).toBeDisabled();
     expect(

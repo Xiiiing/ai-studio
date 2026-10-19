@@ -1,3 +1,6 @@
+import { StudioMenu } from "./StudioMenu";
+import { StudioSelect } from "./StudioSelect";
+import { SelectionGroup } from "./SelectionGroup";
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, ChevronDown } from "lucide-react";
@@ -29,6 +32,12 @@ import { GenerationPipeline } from "./GenerationPipeline";
 import { PromptWorkbench } from "./PromptWorkbench";
 import { QualityComparison } from "./QualityComparison";
 import { DramaNextStep } from "./DramaNextStep";
+import {
+  ProductionWorkspace,
+  AutomationSettings,
+  defaultAutomationBudget,
+  type AutomationConfig,
+} from "./ProductionWorkspace";
 import "./dramas.css";
 
 export const dramaDefaults = { seconds: 300, maxSeconds: 900 };
@@ -61,7 +70,13 @@ export function CreateDrama({
     [error, setError] = useState(""),
     [source, setSource] = useState(""),
     [sourceName, setSourceName] = useState(""),
-    [mode, setMode] = useState("brief");
+    [mode, setMode] = useState("brief"),
+    [count, setCount] = useState(6);
+  const [automation, setAutomation] = useState<AutomationConfig>({
+    enabled: true,
+    episode_numbers: [1, 2, 3, 4, 5, 6],
+    budget: { ...defaultAutomationBudget },
+  });
   const requestId = useRef(crypto.randomUUID());
   async function importText(file?: File) {
     if (!file) return;
@@ -87,20 +102,39 @@ export function CreateDrama({
         onSubmit={async (event) => {
           event.preventDefault();
           if (busy) return;
+          if (automation.enabled && !automation.episode_numbers.length) {
+            setError("请至少选择一集作为本次制作范围。");
+            return;
+          }
           setBusy(true);
           setError("");
           const data = new FormData(event.currentTarget);
+          const brief = String(data.get("brief") || "").trim();
+          const title =
+            String(data.get("title") || "").trim() ||
+            (brief || source).split(/[。！？\n]/)[0].slice(0, 24) ||
+            "新建剧集";
           try {
             const p = await request("/dramas", {
-              title: data.get("title"),
-              brief: data.get("brief"),
+              title,
+              brief,
               genre: data.get("genre"),
               visual_style: data.get("style"),
-              episode_count: Number(data.get("count")),
+              episode_count: count,
               duration_seconds: Number(data.get("seconds")),
               format: data.get("format"),
               source_text: mode === "script" ? source : "",
               source_name: mode === "script" ? sourceName : "",
+              ...(automation.enabled
+                ? {
+                    automation: {
+                      ...automation,
+                      episode_numbers: automation.episode_numbers.filter(
+                        (n) => n <= count,
+                      ),
+                    },
+                  }
+                : {}),
               request_id: requestId.current,
             });
             onCreated(p);
@@ -111,14 +145,18 @@ export function CreateDrama({
           }
         }}
       >
-        <Field label="剧名">
-          <input name="title" required maxLength={100} />
-        </Field>
+        <p className="muted">
+          输入主题或导入剧本，AI
+          连续完成规划、剧本、素材、制作和质检。你可以随时暂停介入，成片由你验收。
+        </p>
         <Field label="创作起点">
-          <select value={mode} onChange={(e) => setMode(e.target.value)}>
-            <option value="brief">从梗概创作</option>
-            <option value="script">已有剧本</option>
-          </select>
+          <StudioSelect
+            value={mode}
+            onChange={(event) => setMode(event.target.value)}
+          >
+            <option value="brief">输入主题与要求</option>
+            <option value="script">导入已有剧本</option>
+          </StudioSelect>
         </Field>
         <Field label="创作方向">
           <textarea
@@ -127,7 +165,11 @@ export function CreateDrama({
             minLength={5}
             maxLength={6000}
             rows={4}
-            placeholder="故事梗概、人物关系和希望表达的主题"
+            placeholder={
+              mode === "script"
+                ? "可选：说明希望保留或调整的内容"
+                : "想讲什么故事？主题、人物关系和希望表达的情感"
+            }
           />
         </Field>
         {mode === "script" && (
@@ -136,7 +178,7 @@ export function CreateDrama({
               <input
                 type="file"
                 accept=".txt,.md,.markdown,text/plain,text/markdown"
-                onChange={(e) => void importText(e.target.files?.[0])}
+                onChange={(event) => void importText(event.target.files?.[0])}
               />
             </Field>
             <Field label="剧本正文">
@@ -146,11 +188,14 @@ export function CreateDrama({
                 minLength={5}
                 maxLength={60000}
                 rows={8}
-                onChange={(e) => setSource(e.target.value)}
+                onChange={(event) => setSource(event.target.value)}
               />
             </Field>
           </>
         )}
+        <Field label="剧名" hint="可选，留空时按创作方向或剧本自动命名。">
+          <input name="title" maxLength={100} />
+        </Field>
         <div className="drama-fields">
           <Field label="总集数">
             <input
@@ -159,7 +204,17 @@ export function CreateDrama({
               required
               min={1}
               max={100}
-              defaultValue={6}
+              value={count}
+              onChange={(event) => {
+                const next = Number(event.target.value);
+                setCount(next);
+                setAutomation((value) => ({
+                  ...value,
+                  episode_numbers: value.episode_numbers.filter(
+                    (n) => n <= next,
+                  ),
+                }));
+              }}
             />
           </Field>
           <Field label="每集时长（秒）">
@@ -172,32 +227,66 @@ export function CreateDrama({
               defaultValue={dramaDefaults.seconds}
             />
           </Field>
-          <Field label="题材">
-            <input name="genre" maxLength={100} defaultValue="剧情" />
-          </Field>
           <Field label="制作路线">
-            <select name="format">
+            <StudioSelect name="format">
               <option value="animation">H3 视频剧</option>
               <option value="motion_comic">动态漫</option>
               <option value="live_action">H3 真人风格</option>
-            </select>
+            </StudioSelect>
           </Field>
         </div>
-        <Field label="全剧画风">
-          <textarea
-            name="style"
-            maxLength={2000}
-            defaultValue="统一人物造型、色彩与场景画风"
-            rows={2}
+        <SelectionGroup
+          className="automation-scope"
+          aria-label="制作方式"
+          value={automation.enabled}
+        >
+          <button
+            type="button"
+            aria-pressed={automation.enabled}
+            onClick={() => setAutomation({ ...automation, enabled: true })}
+          >
+            AI 连续制作
+          </button>
+          <button
+            type="button"
+            aria-pressed={!automation.enabled}
+            onClick={() => setAutomation({ ...automation, enabled: false })}
+          >
+            手动分步
+          </button>
+        </SelectionGroup>
+        {automation.enabled ? (
+          <AutomationSettings
+            count={Math.min(100, Math.max(0, count))}
+            value={automation}
+            onChange={setAutomation}
+            disabled={busy}
           />
-        </Field>
-        <p className="muted">
-          先生成并确认全剧设定与分集大纲，再选择集数自动制作，成片由你验收。
-        </p>
+        ) : (
+          <p className="muted">先由你确认全剧规划，再手动选择剧集制作。</p>
+        )}
+        <details className="production-create-details">
+          <summary>题材与画风</summary>
+          <Field label="题材">
+            <input name="genre" maxLength={100} defaultValue="剧情" />
+          </Field>
+          <Field label="全剧画风">
+            <textarea
+              name="style"
+              maxLength={2000}
+              defaultValue="统一人物造型、色彩与场景画风"
+              rows={2}
+            />
+          </Field>
+        </details>
         <ErrorNotice error={error} />
         <div className="drama-actions">
           <button type="submit" className="button primary" disabled={busy}>
-            {busy ? "正在建立…" : "建立整剧项目"}
+            {busy
+              ? "正在建立…"
+              : automation.enabled
+                ? "创建并开始制作"
+                : "建立整剧项目"}
           </button>
           <button
             type="button"
@@ -307,7 +396,7 @@ function PlanEditor({
               </Field>
             ))}
             <Field label={`${c.name}声线`}>
-              <select
+              <StudioSelect
                 value={c.voice_id}
                 onChange={(e) =>
                   update(
@@ -321,7 +410,7 @@ function PlanEditor({
                 <option value="female">女声</option>
                 <option value="male">男声</option>
                 <option value="narrator">旁白</option>
-              </select>
+              </StudioSelect>
             </Field>
           </div>
         ))}
@@ -376,12 +465,13 @@ function PlanEditor({
       <button className="button primary" disabled={busy} type="submit">
         {reviewPassed ? "确认全剧规划" : "提交修改并重新审核"}
       </button>
-      <p>审核未通过会自动退回策划与编剧返修，通过后再由你确认。</p>
+      <p>修改会提交独立审核；已有成果保留，审核通过后才更新后续制作依据。</p>
     </form>
   );
 }
 
 const dramaTabs = [
+  ["production", "制作"],
   ["overview", "项目总览"],
   ["episodes", "剧集"],
   ["plan", "全剧规划"],
@@ -395,9 +485,9 @@ const dramaTabs = [
   ["agent", "Agent 执行循环"],
 ];
 const dramaPrimary = [
-  ["overview", "总览", "项目总览"],
+  ["production", "制作", "制作"],
   ["episodes", "剧集", "剧集"],
-  ["workflow", "制作", "制作流程与团队"],
+  ["assets", "素材", "素材"],
   ["results", "成果", "成果"],
 ];
 function DramaNavigation({
@@ -407,37 +497,24 @@ function DramaNavigation({
   tab: string;
   onTab: (tab: string) => void;
 }) {
-  const more = useRef<HTMLDetailsElement>(null);
-  useEffect(() => {
-    if (more.current) more.current.open = false;
-  }, [tab]);
-  useEffect(() => {
-    const outside = (event: PointerEvent) => {
-      if (more.current && !more.current.contains(event.target as Node))
-        more.current.open = false;
-    };
-    document.addEventListener("pointerdown", outside);
-    return () => document.removeEventListener("pointerdown", outside);
-  }, []);
-  const section = [
-    "plan",
-    "assets",
-    "comparison",
-    "prompts",
-    "generation",
-    "agent",
-  ].includes(tab)
-    ? "overview"
-    : tab === "batches"
-      ? "episodes"
-      : tab;
+  const section =
+    tab === "assets"
+      ? "assets"
+      : tab === "batches"
+        ? "episodes"
+        : ["episodes", "results"].includes(tab)
+          ? tab
+          : "production";
   function go(value: string) {
-    if (more.current) more.current.open = false;
     onTab(value);
   }
   return (
     <nav className="drama-navigation" aria-label="整剧工作区">
-      <div className="drama-primary-tabs">
+      <SelectionGroup
+        className="drama-primary-tabs"
+        variant="underline"
+        value={section}
+      >
         {dramaPrimary.map(([key, label, accessible]) => (
           <button
             key={key}
@@ -449,26 +526,12 @@ function DramaNavigation({
             {label}
           </button>
         ))}
-      </div>
-      <details
-        className="drama-more"
-        ref={more}
-        onBlur={(event) => {
-          if (!event.currentTarget.contains(event.relatedTarget as Node))
-            event.currentTarget.open = false;
-        }}
-        onKeyDown={(event) => {
-          if (event.key === "Escape") {
-            event.currentTarget.open = false;
-            event.currentTarget.querySelector("summary")?.focus();
-          }
-        }}
-      >
-        <summary>
-          项目资料 <ChevronDown size={14} />
-        </summary>
-        <div>
-          {dramaTabs
+      </SelectionGroup>
+      <div className="drama-more">
+        <StudioMenu
+          label="项目资料"
+          triggerClassName="drama-menu-trigger"
+          items={dramaTabs
             .filter(([key]) =>
               [
                 "plan",
@@ -480,17 +543,14 @@ function DramaNavigation({
                 "agent",
               ].includes(key),
             )
-            .map(([key, label]) => (
-              <button
-                key={key}
-                aria-pressed={tab === key}
-                onClick={() => go(key)}
-              >
-                {label}
-              </button>
-            ))}
-        </div>
-      </details>
+            .map(([key, label]) => ({
+              key,
+              label,
+              selected: tab === key,
+              onSelect: () => go(key),
+            }))}
+        />
+      </div>
       {[
         "plan",
         "assets",
@@ -703,7 +763,7 @@ export function DramaDetail({
   const p = query.data;
   const tab = dramaTabs.some(([key]) => key === activeTab)
     ? activeTab
-    : "overview";
+    : "production";
   function setTab(value: string) {
     setError("");
     onTab(value);
@@ -848,145 +908,46 @@ export function DramaDetail({
             )}
           </Panel>
         )}
-      {tab === "overview" && (
-        <>
-          <WorkFocus
-            eyebrow="项目总览"
-            title={
-              rows(p.workflow?.graph?.nodes).find(
-                (n) => n.id === p.workflow?.graph?.active_node,
-              )?.label || (p.plan_version ? "按集推进制作" : "完成全剧规划")
-            }
-            context={
-              <>
-                {(p.plan_phase || p.status === "awaiting_plan") && (
-                  <div className="drama-next-action">
-                    <Badge status={p.status} />
-                    <span>
-                      {p.plan_phase === "exhausted"
-                        ? "规划审核需要处理，草稿与意见已保留"
-                        : p.status === "awaiting_plan"
-                          ? "规划已通过审核，等待你的确认"
-                          : p.workflow?.active_job
-                            ? "规划与审核正在执行"
-                            : p.plan_version
-                              ? "全剧规划已确认，可按集继续制作"
-                              : "先完成全剧规划，再选择剧集制作"}
-                    </span>
-                    <button
-                      className="text-link"
-                      onClick={() => setTab("plan")}
-                    >
-                      查看规划与审核
-                    </button>
-                  </div>
-                )}
-              </>
-            }
-          >
-            <div className="drama-actions">
-              <button
-                className="button primary"
-                onClick={() => setTab("workflow")}
-              >
-                打开制作流程
-              </button>
-              <button className="button" onClick={() => setTab("plan")}>
-                查看全剧规划
-              </button>
-              <button className="text-link" onClick={() => setTab("assets")}>
-                共享设定
-              </button>
-              {!!p.plan_version && (
-                <button className="button" onClick={() => setTab("episodes")}>
-                  选择剧集制作
-                </button>
-              )}
-            </div>
-          </WorkFocus>
-          <PageFocus
-            label="已出片剧集"
-            progress={{
-              completed: rows(p.episodes).filter((e) =>
-                ["approved", "awaiting_final"].includes(e.status),
-              ).length,
-              total: p.episode_count,
-            }}
-            value={`${rows(p.episodes).filter((e) => ["approved", "awaiting_final"].includes(e.status)).length} / ${p.episode_count} 集`}
-            detail={
-              <>
-                规划
-                {p.plan_version ? `已确认 v${p.plan_version}` : "尚未确认"}
-                ；已建立{rows(p.episodes).length} / {p.episode_count}
-                集，按集进入制作与验收。
-              </>
-            }
-          />
-
-          {p.error && (
-            <details className="drama-overview-issues">
-              <summary>
-                {p.plan_review?.issues?.length
-                  ? `${p.plan_review.issues.length} 项规划审核问题`
-                  : "规划需要处理"}{" "}
-                · 查看说明
-              </summary>
-              <p>{p.error}</p>
-              <button className="text-link" onClick={() => setTab("plan")}>
-                处理规划问题
-              </button>
-            </details>
-          )}
-          {!!rows(p.episodes).length && (
-            <Panel title="剧集进度">
-              <div className="drama-cards">
-                {rows(p.episodes).map((e) => (
-                  <article className="drama-card" key={e.id}>
-                    <strong>{e.title}</strong>
-                    <p>
-                      {statusNames[e.status] || e.status} · {e.progress}%
-                    </p>
-                    <p>{e.error || e.outline?.synopsis}</p>
-                    <button
-                      className="button"
-                      onClick={() =>
-                        openEpisode(
-                          e.id,
-                          e.duration_seconds > 90 ? "workflow" : "team",
-                        )
-                      }
-                    >
-                      查看剧集流程
-                    </button>
-                  </article>
-                ))}
-              </div>
-            </Panel>
-          )}
-        </>
-      )}
-      {tab === "workflow" && (
-        <>
-          <ProductionFlow
-            workflow={p.workflow}
-            openProject={(projectId, targetTab) => {
-              const episode = rows(p.episodes).find((e) => e.id === projectId);
-              openEpisode(
-                projectId,
-                targetTab ||
-                  (episode?.duration_seconds > 90 ? "workflow" : "team"),
-              );
-            }}
-          />
-          <div className="drama-actions">
-            <button className="button" onClick={() => setTab("plan")}>
-              查看全剧规划
-            </button>
-            <button className="button" onClick={() => setTab("episodes")}>
-              查看剧集
-            </button>
-          </div>
-        </>
+      {["production", "overview", "workflow"].includes(tab) && (
+        <ProductionWorkspace
+          project={p}
+          busy={busy}
+          onOperation={async (path, body) => {
+            await operation(path, body);
+          }}
+          onReview={(episode) => {
+            setReviewing(episode);
+            setFeedback("");
+          }}
+          onTab={setTab}
+          planEditor={
+            p.draft_plan ? (
+              <PlanEditor
+                key={JSON.stringify(p.draft_plan)}
+                document={p.draft_plan}
+                onDirty={setPlanDirty}
+                busy={
+                  busy ||
+                  !!p.workflow?.active_job ||
+                  (!!p.plan_version &&
+                    !p.pause_requested &&
+                    p.status !== "paused" &&
+                    p.status !== "awaiting_plan")
+                }
+                reviewPassed={!!p.plan_review?.passed}
+                confirm={(value) => void operation("confirm", { plan: value })}
+              />
+            ) : undefined
+          }
+          workflow={
+            <ProductionFlow
+              workflow={p.workflow}
+              openProject={(projectId, targetTab) =>
+                openEpisode(projectId, targetTab || "workflow")
+              }
+            />
+          }
+        />
       )}
       {!!p.dependency_impacts?.length && (
         <Panel title="前集版本已变化">
@@ -1626,7 +1587,12 @@ export function LongEpisodeDetail({
         }
       />
       <ErrorNotice error={error || p.error || query.error} />
-      <nav className="drama-tabs" aria-label="剧集工作区">
+      <SelectionGroup
+        as="nav"
+        className="drama-tabs"
+        aria-label="剧集工作区"
+        value={activeTab}
+      >
         {[
           ["overview", "剧集总览"],
           ["workflow", "制作流程与团队"],
@@ -1644,7 +1610,7 @@ export function LongEpisodeDetail({
             {label}
           </button>
         ))}
-      </nav>
+      </SelectionGroup>
       {activeTab === "agent" ? (
         <AgentLoop project={p} />
       ) : activeTab === "generation" ? (
@@ -1795,7 +1761,7 @@ export function LongEpisodeDetail({
           {["awaiting_final", "blocked", "failed"].includes(p.status) && (
             <Panel title="验收与定向修改">
               <Field label="修改范围">
-                <select
+                <StudioSelect
                   value={unitId}
                   onChange={(e) => setUnitId(e.target.value)}
                 >
@@ -1805,7 +1771,7 @@ export function LongEpisodeDetail({
                       {u.title}
                     </option>
                   ))}
-                </select>
+                </StudioSelect>
               </Field>
               <Field label="局部修改或重新剪辑意见">
                 <textarea

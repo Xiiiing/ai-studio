@@ -282,6 +282,10 @@ def _projection(project, stages, tasks, active_job):
     for stage in stages:
         ident = stage['id']
         input_label, output_label, description, members = _CONTRACTS[ident]
+        automated_confirmation = ident == 'confirmation' and project.get('automation', {}).get('enabled')
+        if automated_confirmation:
+            description = 'AI 按出品人授权固化独立审核通过的规划，后续剧集固定引用该版本；成片仍由出品人验收。'
+            members = ['orchestrator']
         status = stage['status']
         if status == 'returned':
             status = 'running' if active_job and ident == active else 'blocked'
@@ -289,7 +293,7 @@ def _projection(project, stages, tasks, active_job):
             status = _state(project)
         # Waiting is a human decision only where that decision is actually due.
         if status == 'waiting' and ident in {'confirmation', 'acceptance'}:
-            status = 'human'
+            status = 'pending' if automated_confirmation else 'human'
         node = {'id': ident, 'label': stage['title'], 'status': status,
             'owner': stage['role'], 'members': members, 'description': description,
             'input': input_label, 'output': output_label, 'evidence': 'current_project_state'}
@@ -339,6 +343,7 @@ def build(project, *, episodes=(), batches=(), units=(), active_job=False, curre
         plan = project.get('draft_plan') or {}
         review = project.get('plan_review') or {}
         confirmed = _current_plan_confirmed(project)
+        automated = project.get('automation', {}).get('enabled', False)
         has_plan = bool(plan)
         repairing = active_job and project.get('plan_phase') in {'writing','returned'}
         stages = [
@@ -348,8 +353,9 @@ def build(project, *, episodes=(), batches=(), units=(), active_job=False, curre
                 {'storyline': plan.get('storyline'), 'characters': len(plan.get('characters', [])), 'outlines': len(plan.get('episodes', []))}),
             _row('review', '全剧规划独立审核', 'story_critic', 'succeeded' if review.get('passed') else 'returned' if repairing and review else 'running' if active_job and project.get('plan_phase') == 'reviewing' else 'blocked' if review else current if has_plan else 'pending',
                 '全剧主线、人物设定与相邻分集大纲', _summary(review) if review else '尚无已保存的独立审核结果', issues=_summary(review.get('issues', []))),
-            _row('confirmation', '出品人确认全剧规划', 'producer', 'succeeded' if confirmed else 'waiting' if review.get('passed') else 'pending',
+            _row('confirmation', '固化审核通过的规划' if automated else '出品人确认全剧规划', 'orchestrator' if automated else 'producer', 'succeeded' if confirmed else 'waiting' if review.get('passed') else 'pending',
                 '经独立审稿的全剧规划', {'plan_version': project.get('plan_version', 0) if confirmed else 0,
+                    **({'authorization': project['automation'].get('authorization')} if automated else {}),
                     **({'previous_plan_version': project['plan_version']} if not confirmed and project.get('plan_version') else {})}),
             _row('production', '按集制作与团队协作', 'orchestrator',
                 'running' if any(e.get('status') in _ACTIVE for e in episodes) else 'blocked' if any(e.get('status') in {'blocked', 'failed', 'waiting_dependency'} for e in episodes)

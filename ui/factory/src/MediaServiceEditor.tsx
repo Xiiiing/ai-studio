@@ -1,3 +1,4 @@
+import { StudioSelect } from "./StudioSelect";
 import { ServiceCategories } from "./ServiceCategories";
 import { useRef, useState } from "react";
 import { Plus } from "lucide-react";
@@ -244,14 +245,14 @@ export function MediaServiceEditor({
             {h3 && (
               <>
                 <Field label="H3 质量档">
-                  <select
+                  <StudioSelect
                     name="quality"
                     value={quality}
                     onChange={(e) => setQuality(e.target.value)}
                   >
                     <option value="production">正式质量 · 基础模型</option>
                     <option value="preview">快速预览 · 4 步 Turbo LoRA</option>
-                  </select>
+                  </StudioSelect>
                 </Field>
                 <p>
                   {quality === "preview"
@@ -295,7 +296,7 @@ export function MediaServiceEditor({
                         })}
                       </div>
                       <Field label="采样器">
-                        <select
+                        <StudioSelect
                           name="sampler"
                           defaultValue={
                             current.quality === "production"
@@ -305,7 +306,7 @@ export function MediaServiceEditor({
                         >
                           <option value="euler">Euler</option>
                           <option value="heun">Heun</option>
-                        </select>
+                        </StudioSelect>
                       </Field>
                     </details>
                   </div>

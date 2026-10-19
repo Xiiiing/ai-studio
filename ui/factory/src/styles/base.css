@@ -2165,7 +2165,7 @@ summary {
   padding-block: 6px;
   min-height: var(--target-size);
 }
-details[open] > summary {
+details[open]:not(.drama-more):not(.project-more):not(.project-actions-menu):not(.secondary-actions) > summary {
   margin-bottom: 16px;
 }
 dialog {

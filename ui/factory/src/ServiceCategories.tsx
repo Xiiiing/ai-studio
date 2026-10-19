@@ -1,3 +1,4 @@
+import { SelectionGroup } from "./SelectionGroup";
 import { kindLabels, type ModelKind } from "./ModelConfig";
 export function ServiceCategories({
   kind,
@@ -7,7 +8,12 @@ export function ServiceCategories({
   onChange: (kind: ModelKind) => void;
 }) {
   return (
-    <div className="service-categories" role="group" aria-label="服务用途">
+    <SelectionGroup
+      className="service-categories"
+      role="group"
+      aria-label="服务用途"
+      value={kind}
+    >
       {(["llm", "image", "video", "audio"] as ModelKind[]).map((value) => (
         <button
           type="button"
@@ -18,6 +24,6 @@ export function ServiceCategories({
           {kindLabels[value]}
         </button>
       ))}
-    </div>
+    </SelectionGroup>
   );
 }

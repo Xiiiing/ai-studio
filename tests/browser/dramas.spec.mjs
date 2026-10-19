@@ -1,3 +1,4 @@
+import { selectOption } from "./select-control.mjs";
 import { test, expect } from "@playwright/test";
 import fs from "node:fs/promises";
 
@@ -79,9 +80,9 @@ for (const width of [1440, 390])
     expect(calls[0].expected_revision).toBe(4);
     await page
       .getByRole("navigation", { name: "整剧工作区" })
-      .locator("summary")
+      .getByRole("button", { name: "项目资料", exact: true })
       .click();
-    await page.getByRole("button", { name: "生成批次", exact: true }).click();
+    await page.getByRole("menuitem", { name: "生成批次", exact: true }).click();
     await expect(page.getByText("第1、3集 · 设定v1")).toBeVisible();
     await page.getByRole("button", { name: "暂停批次", exact: true }).click();
     await expect.poll(() => calls.length).toBe(2);
@@ -118,7 +119,7 @@ test("new project imports a UTF-8 script before planning", async ({ page }) => {
   await expect(form.getByLabel("每集时长（秒）")).toHaveValue("300");
   await expect(form.getByLabel("每集时长（秒）")).toHaveAttribute("max", "900");
   await form.getByLabel("剧名", { exact: true }).fill("导入剧本演示");
-  await form.getByLabel("创作起点").selectOption("script");
+  await selectOption(form.getByLabel("创作起点"), "script");
   await form.getByLabel("导入剧本").setInputFiles({
     name: "剧本.md",
     mimeType: "text/markdown",
@@ -128,7 +129,7 @@ test("new project imports a UTF-8 script before planning", async ({ page }) => {
     ),
   });
   await expect(form.getByLabel("剧本正文")).toContainText("第一集");
-  await form.getByRole("button", { name: "建立整剧项目" }).click();
+  await form.getByRole("button", { name: "创建并开始制作" }).click();
   await expect.poll(() => submitted?.source_name).toBe("剧本.md");
   expect(submitted.source_text).toContain("车站重逢");
 });
@@ -212,7 +213,7 @@ for (const width of [1440, 390])
     await expect
       .poll(() => video.evaluate((v) => v.currentTime))
       .toBeGreaterThan(0);
-    await page.getByLabel("修改范围").selectOption(uid);
+    await selectOption(page.getByLabel("修改范围"), uid);
     await page
       .getByLabel("局部修改或重新剪辑意见")
       .fill("只修改第一单元的第一镜，保留其他单元。");
@@ -296,7 +297,7 @@ test("mobile planning confirmation preserves relationship edits and fixed voice"
   await relation.press("Enter");
   await expect(relation).toHaveValue("lead与friend是重逢的旧友。\n");
   await relation.pressSequentially("friend保留着另一封信。");
-  await page.getByLabel("林声线").selectOption("male");
+  await selectOption(page.getByLabel("林声线"), "male");
   await page.getByRole("button", { name: "确认全剧规划", exact: true }).click();
   await expect.poll(() => submitted?.plan?.relationships.length).toBe(2);
   expect(submitted.plan.characters[0].voice_id).toBe("male");

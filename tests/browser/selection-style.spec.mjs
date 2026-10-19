@@ -116,12 +116,27 @@ for (const width of [1440, 390])
           return {
             background,
             color,
-            actualBackground: getComputedStyle(el).backgroundColor,
+            actualBackground: getComputedStyle(
+              el
+                .closest("[data-selection-group]")
+                .querySelector(".selection-marker"),
+            ).backgroundColor,
             actualColor: getComputedStyle(el).color,
+            markerCoversSelection: (() => {
+              const marker = el
+                .closest("[data-selection-group]")
+                .querySelector(".selection-marker")
+                .getBoundingClientRect();
+              const active = el.getBoundingClientRect();
+              return ["x", "y", "width", "height"].every(
+                (key) => Math.abs(marker[key] - active[key]) <= 1,
+              );
+            })(),
           };
         });
         expect(main.actualBackground).toBe(main.background);
         expect(main.actualColor).toBe(main.color);
+        expect(main.markerCoversSelection).toBe(true);
         await expect(nav).toHaveCSS("box-shadow", "none");
         await nav.hover();
         await expect(nav).toHaveCSS("box-shadow", "none");

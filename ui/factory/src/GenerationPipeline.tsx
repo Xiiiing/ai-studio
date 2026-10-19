@@ -1,3 +1,4 @@
+import { StudioSelect } from "./StudioSelect";
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { request, rows, type RecordData } from "./api";
@@ -132,7 +133,7 @@ function ProjectPipeline({ project }: { project: RecordData }) {
         {shots.length ? (
           <>
             <Field label="选择镜头">
-              <select
+              <StudioSelect
                 value={selected}
                 onChange={(e) => setShot(e.target.value)}
               >
@@ -141,7 +142,7 @@ function ProjectPipeline({ project }: { project: RecordData }) {
                     {s.shot_id}
                   </option>
                 ))}
-              </select>
+              </StudioSelect>
             </Field>
             {spec?.error && <p role="alert">{spec.error}</p>}
             {spec?.source && (

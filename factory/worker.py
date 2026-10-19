@@ -143,8 +143,11 @@ def _handle(job):
             traceback.print_exc()
     finally:
         with store.connection() as db:
-            owner=db.execute('SELECT lease FROM jobs WHERE id=?',(job['id'],)).fetchone()
+            owner=db.execute('SELECT lease,status FROM jobs WHERE id=?',(job['id'],)).fetchone()
         if not owner or owner[0]!=job.get('lease'):return
+        if job.get('kind') == 'drama_plan' and owner['status'] == 'completed':
+            from .drama_automation import reconcile_project
+            reconcile_project(pid)
         if job.get('kind') in {'drama_episode','workflow'} and store.get(pid,False).get('record_kind') == 'episode':
             from .dramas import after_episode
             after_episode(pid)
@@ -169,6 +172,8 @@ def main():
         raise RuntimeError("已有制片执行器正在运行")
     store.initialize()
     recovered=store.recover_jobs()
+    from .drama_automation import recover as recover_automation
+    recover_automation()
     from . import material_tasks
     material_tasks.recover()
     from .prompt_workbench import recover_trials, run_next_trial

@@ -1,3 +1,4 @@
+import { selectOption, nativeControl } from "./select-control.mjs";
 import { refreshPage } from "./header-flow.mjs";
 import { test, expect } from "@playwright/test";
 import { openProjectPage } from "./navigation.mjs";
@@ -145,7 +146,7 @@ test("team console desktop/mobile themes, filters, evidence and playback survive
   ).toBeVisible();
   await expect(detail).toContainText("审核通过");
   await expect(detail).toContainText("已采用");
-  await page.getByLabel("部门", { exact: true }).selectOption("visual");
+  await selectOption(page.getByLabel("部门", { exact: true }), "visual");
   await page.getByLabel("镜头编号", { exact: true }).fill("S01");
   await expect
     .poll(() =>
@@ -414,7 +415,10 @@ test("task controls preserve draft, preview lock conflicts, recover baseline and
     .getByRole("group", { name: "保留现有成果" })
     .getByRole("checkbox", { name: /第 1 镜首帧/ })
     .check();
-  await dialog.getByLabel("完成后的安排", { exact: true }).selectOption("wait");
+  await selectOption(
+    dialog.getByLabel("完成后的安排", { exact: true }),
+    "wait",
+  );
   await dialog.getByRole("button", { name: "查看影响", exact: true }).click();
   await expect(dialog.getByLabel("返工影响预览")).toContainText("后期交付");
   await page.screenshot({
@@ -669,9 +673,9 @@ test("leader scopes, actionable plans, disabled models and management evidence",
   );
   await page.getByRole("button", { name: "向总制片下达要求" }).click();
   const dialog = page.getByRole("dialog");
-  await expect(dialog.getByLabel("处理方式", { exact: true })).toHaveValue(
-    "replan",
-  );
+  await expect(
+    nativeControl(dialog.getByLabel("处理方式", { exact: true })),
+  ).toHaveValue("replan");
   await dialog
     .getByRole("group", { name: "修改范围" })
     .getByRole("checkbox", { name: /第 1 镜视频/ })

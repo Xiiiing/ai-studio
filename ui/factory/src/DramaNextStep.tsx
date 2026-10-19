@@ -33,7 +33,8 @@ export function DramaNextStep({
       "batches",
       "results",
     ].includes(tab) ||
-    p.status === "cancelled"
+    p.status === "cancelled" ||
+    p.automation?.enabled
   )
     return null;
   const planning =

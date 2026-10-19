@@ -1,3 +1,4 @@
+import { SelectionGroup } from "./SelectionGroup";
 import { useState } from "react";
 import { rows, type RecordData } from "./api";
 import { Badge, Empty, Panel, Readable } from "./ui";
@@ -46,7 +47,11 @@ export function ShotQuality({
         <p>
           {shots.length} 镜记录 · {shots.filter(needsAttention).length} 镜需关注
         </p>
-        <div className="segmented" aria-label="质检筛选">
+        <SelectionGroup
+          className="segmented"
+          aria-label="质检筛选"
+          value={filter}
+        >
           <button
             aria-pressed={filter === "all"}
             className={filter === "all" ? "selected" : ""}
@@ -67,7 +72,7 @@ export function ShotQuality({
           >
             需关注
           </button>
-        </div>
+        </SelectionGroup>
       </div>
       <div className="quality-cards">
         {filtered.slice(current * 6, current * 6 + 6).map((shot) => {
