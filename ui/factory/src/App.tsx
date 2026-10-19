@@ -183,6 +183,8 @@ function Workbench() {
       }
       setRoute(next);
       setMobile(false);
+      const workspace = document.querySelector<HTMLElement>(".main-shell");
+      if (workspace) workspace.scrollTop = 0;
     };
     listener();
     window.addEventListener("hashchange", listener);
@@ -205,6 +207,8 @@ function Workbench() {
     location.hash = p.toString();
     setRoute({ view, project, tab });
     setMobile(false);
+    const workspace = document.querySelector<HTMLElement>(".main-shell");
+    if (workspace) workspace.scrollTop = 0;
     window.scrollTo({ top: 0, behavior: "instant" });
   }
   async function refresh() {

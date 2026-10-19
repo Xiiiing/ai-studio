@@ -10,4 +10,13 @@
 | 手机系统设置 | [截图](settings-light-390.png) | [截图](settings-dark-390.png) |
 | 手机导航 | [截图](navigation-light-390.png) | [截图](navigation-dark-390.png) |
 
+桌面外框保持固定，只滚动右侧内容：
+
+| 位置 | 浅色 | 深色 |
+| --- | --- | --- |
+| 顶部 | [截图](frame-top-light.png) | [截图](frame-top-dark.png) |
+| 内容底部 | [截图](frame-bottom-light.png) | [截图](frame-bottom-dark.png) |
+
+`sidebar-scroll.spec.mjs`覆盖外框、侧栏位置与视口底部边距、长列表独立滚动、弹窗滚动锁定/恢复、路由复位以及窗口高度变化。
+
 复现：`npm run build` 后运行 `npm run test:browser -- tests/browser/selection-style.spec.mjs`。旧模型链接、刷新与浏览器前进后退由 `flat-navigation.spec.mjs` 覆盖；模型保存行为继续由系统设置与模型浏览器测试验证。

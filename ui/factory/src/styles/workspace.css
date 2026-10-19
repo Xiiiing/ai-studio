@@ -4,7 +4,7 @@
 }
 .project-navigation-bar {
   position: sticky;
-  top: 60px;
+  top: 0;
   z-index: 15;
   display: flex;
   flex-wrap: wrap;

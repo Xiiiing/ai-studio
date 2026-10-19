@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { mkdir } from "node:fs/promises";
 
 // Use the production bundle and isolated API fixtures; never contact model services.
 test.beforeEach(async ({ page, request }) => {
@@ -18,6 +19,7 @@ async function longNavigation(page, request) {
     id: `recent-${index}`,
     title: `最近制作 ${index + 1}`,
   }));
+  overview.metrics = { ...overview.metrics, projects: overview.projects.length };
   await page.route("**/api/factory/console**", (route) =>
     route.fulfill({ json: overview }),
   );
@@ -40,7 +42,7 @@ async function longNavigation(page, request) {
 
 for (const width of [1024, 1440, 1920])
   for (const theme of ["light", "dark"]) {
-    test(`sidebar background stays joined to the frame while navigation sticks at ${width} ${theme}`, async ({
+    test(`desktop frame and navigation keep both edges while workspace scrolls at ${width} ${theme}`, async ({
       page,
       request,
     }) => {
@@ -49,85 +51,99 @@ for (const width of [1024, 1440, 1920])
       await longNavigation(page, request);
       await page.goto("/#view=settings&tab=models");
       await expect(page.locator(".model-service-card").first()).toBeVisible();
-      const sidebar = page.locator("#studio-navigation");
-      const initial = await sidebar.boundingBox();
-      const rail = page.locator(".sidebar-rail");
-      const initialRail = await rail.boundingBox();
-      expect(Math.abs(initialRail.y - initial.y)).toBeLessThanOrEqual(1);
-
-      await page.mouse.move(width - 80, 400);
+      const shell = page.locator(".app-shell"),
+        sidebar = page.locator("#studio-navigation"),
+        workspace = page.locator(".main-shell");
+      const initialFrame = await shell.boundingBox(),
+        initialNav = await sidebar.boundingBox();
+      if (width === 1440) {
+        await mkdir("docs/images/navigation-selection", { recursive: true });
+        await page.screenshot({
+          path: `docs/images/navigation-selection/frame-top-${theme}.png`,
+        });
+      }
+      const pane = await workspace.boundingBox();
+      const scrollX = pane.x + pane.width - 30;
+      expect(initialFrame.y).toBeGreaterThan(0);
+      expect(initialFrame.y + initialFrame.height).toBeLessThan(700);
+      expect(
+        Math.abs(initialFrame.y - (700 - initialFrame.y - initialFrame.height)),
+      ).toBeLessThanOrEqual(1);
+      const inViewport = async () => {
+        expect(await shell.boundingBox()).toEqual(initialFrame);
+        expect(await sidebar.boundingBox()).toEqual(initialNav);
+        expect(await page.evaluate(() => scrollY)).toBe(0);
+        expect(
+          await page.evaluate(() => document.documentElement.scrollHeight),
+        ).toBeLessThanOrEqual(700);
+      };
+      await page.mouse.move(scrollX, 400);
       await page.mouse.wheel(0, 250);
       await expect
-        .poll(() => page.evaluate(() => scrollY))
+        .poll(() => workspace.evaluate((el) => el.scrollTop))
         .toBeGreaterThan(150);
-      const sticky = await sidebar.boundingBox();
-      expect(Math.abs(sticky.y - initial.y)).toBeLessThanOrEqual(1);
-      // Both gaps around the sticky navigation must belong to the same opaque
-      // sidebar surface. A background on the sticky box leaves these gaps exposed.
-      const continuity = await rail.evaluate((element) => {
-        const r = element.getBoundingClientRect();
-        const sidebar = element.querySelector("aside");
-        const s = sidebar.getBoundingClientRect();
-        return {
-          extendsAbove: r.top < 0,
-          extendsBelow: r.bottom > innerHeight,
-          covered: [4, innerHeight - 4].map(
-            (y) => document.elementFromPoint(r.left + 8, y) === element,
-          ),
-          background: getComputedStyle(element).backgroundColor,
-          bottomGap: innerHeight - s.bottom,
-        };
-      });
-      expect(continuity.extendsAbove).toBe(true);
-      expect(continuity.extendsBelow).toBe(true);
-      expect(continuity.covered).toEqual([true, true]);
-      expect(continuity.background).not.toBe("rgba(0, 0, 0, 0)");
-      expect(continuity.bottomGap).toBeGreaterThan(0);
-
+      await inViewport();
+      const mainPosition = await workspace.evaluate((el) => el.scrollTop);
       const list = await sidebar.locator(".project-list").boundingBox();
       await page.mouse.move(list.x + list.width / 2, list.y + list.height / 2);
       await page.mouse.wheel(0, 900);
       await expect(
         sidebar.getByRole("button", { name: /最近制作 10/ }),
       ).toBeInViewport();
-      const documentScroll = await page.evaluate(() => scrollY);
-      expect(documentScroll).toBeGreaterThan(150);
-      await page.mouse.move(width - 80, 400);
-      await page.mouse.wheel(0, 5000);
+      expect(await workspace.evaluate((el) => el.scrollTop)).toBe(mainPosition);
+      await page.mouse.move(scrollX, 400);
+      await page.mouse.wheel(0, 10000);
       await expect
         .poll(() =>
-          page.evaluate(() =>
-            Math.abs(
-              document.documentElement.scrollHeight - innerHeight - scrollY,
-            ),
+          workspace.evaluate((el) =>
+            Math.abs(el.scrollHeight - el.clientHeight - el.scrollTop),
           ),
         )
         .toBeLessThanOrEqual(1);
-      const bottomRail = await rail.boundingBox();
-      const bottomSidebar = await sidebar.boundingBox();
+      await inViewport();
+      await expect(page.locator(".model-service-card").last()).toBeInViewport();
+      await page.screenshot({
+        path: `runtime/browser-report/frame-bottom-${width}-${theme}.png`,
+      });
+      if (width === 1440)
+        await page.screenshot({
+          path: `docs/images/navigation-selection/frame-bottom-${theme}.png`,
+        });
+      // An overlay must lock the actual desktop scroller and preserve its position.
+      const bottom = await workspace.evaluate((el) => el.scrollTop);
+      await sidebar
+        .getByRole("button", { name: "新建制作", exact: true })
+        .click();
+      const dialog = page.getByRole("dialog", {
+        name: "新建一部剧",
+        exact: true,
+      });
+      await expect(dialog).toBeVisible();
+      await expect(workspace).toHaveCSS("overflow-y", "hidden");
+      await page.mouse.move(width - 30, 500);
+      await page.mouse.wheel(0, -500);
+      expect(await workspace.evaluate((el) => el.scrollTop)).toBe(bottom);
+      await dialog.getByRole("button", { name: "关闭", exact: true }).click();
+      await expect(dialog).toHaveCount(0);
+      await expect(workspace).toHaveCSS("overflow-y", "auto");
+      expect(await workspace.evaluate((el) => el.scrollTop)).toBe(bottom);
+      await sidebar.getByRole("button", { name: "总览", exact: true }).click();
+      await expect(page.locator(".dashboard-view")).toBeVisible();
+      expect(await workspace.evaluate((el) => el.scrollTop)).toBe(0);
+      await inViewport();
+      await page.setViewportSize({ width, height: 540 });
+      const resized = await shell.boundingBox();
       expect(
-        Math.abs(
-          bottomRail.y +
-            bottomRail.height -
-            bottomSidebar.y -
-            bottomSidebar.height,
-        ),
+        Math.abs(resized.y - (540 - resized.y - resized.height)),
       ).toBeLessThanOrEqual(1);
+      expect(
+        await page.evaluate(() => document.documentElement.scrollHeight),
+      ).toBeLessThanOrEqual(540);
       expect(
         await page.evaluate(
           () => document.documentElement.scrollWidth <= innerWidth,
         ),
       ).toBe(true);
-      await page.screenshot({
-        path: `runtime/browser-report/sidebar-bottom-${width}-${theme}.png`,
-      });
-
-      // Return the independently scrolling navigation to its first controls.
-      await sidebar.evaluate((element) => {
-        element.scrollTop = 0;
-      });
-      await sidebar.getByRole("button", { name: "总览", exact: true }).click();
-      await expect(page.locator(".dashboard-view")).toBeVisible();
     });
   }
 

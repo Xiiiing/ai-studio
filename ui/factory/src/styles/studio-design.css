@@ -12,6 +12,7 @@ body {
   background: color-mix(in srgb, var(--canvas) 62%, var(--line));
 }
 .app-shell {
+  --studio-frame-gap: 20px;
   max-width: 1680px;
   margin: 20px auto;
   width: calc(100% - 40px);
@@ -322,6 +323,7 @@ tbody tr:hover {
 
 @media (max-width: 1250px) and (min-width: 1024px) {
   .app-shell {
+    --studio-frame-gap: 16px;
     grid-template-columns: 196px minmax(0, 1fr);
     margin: 16px auto;
     width: calc(100% - 32px);
@@ -341,6 +343,35 @@ tbody tr:hover {
   }
   .dashboard-view .metric-card {
     padding-inline: 16px;
+  }
+}
+
+/* A desktop application frame stays inside the viewport. The workspace owns
+   page scrolling; sidebar and frame corners share the same fixed boundaries. */
+@media (min-width: 1024px) {
+  html {
+    scrollbar-gutter: auto;
+  }
+  .app-shell {
+    height: calc(100dvh - 2 * var(--studio-frame-gap));
+    min-height: 0;
+    overflow: hidden;
+  }
+  .sidebar-rail {
+    min-height: 0;
+  }
+  .sidebar {
+    position: static;
+    height: 100%;
+  }
+  .main-shell {
+    min-height: 0;
+    overflow: auto;
+    scrollbar-gutter: stable;
+    overscroll-behavior-y: contain;
+  }
+  #workspace {
+    min-height: 100%;
   }
 }
 @media (max-width: 1023px) {
