@@ -233,3 +233,66 @@ def test_prop_association_needs_explicit_equipment_or_ownership_not_single_chara
     assert drama_assets._reference_requirements(current, 'character', entity)['related_known_props'] == []
     current['plan']['props'][0]['description'] = '林青随身携带的木棍'
     assert drama_assets._reference_requirements(current, 'character', entity)['related_known_props'] == current['plan']['props']
+
+
+def test_animation_medium_fact_reaches_compiler_actual_wire_and_qa_without_imposing_2d_or_3d(case, monkeypatch):
+    store.update(case.episode['id'], {'format': 'animation'})
+    case.state['compiled'] = 'CG animated identity reference of 林青, wearing blue coat and carrying 青铜重尺, thick broad rectangular ruler. Not a live-action photograph.'
+    original_transport = llm._request
+    def transport(cfg, role, system, payload, schema, output_dir, *args, **kwargs):
+        if role == 'prompt_style_compiler':
+            assert payload['requirements']['production_format'] == 'animation'
+            assert 'animation本身不强制二维或三维' in system
+            assert '不能生成真人实拍照片' in system
+        return original_transport(cfg, role, system, payload, schema, output_dir, *args, **kwargs)
+    monkeypatch.setattr(llm, '_request', transport)
+    drama_assets.prepare(case.episode['id'], {})
+    assert len(case.wires) == 2
+    assert all('CG animated' in json.dumps(wire, ensure_ascii=False) for wire in case.wires)
+    assert all(review['shot']['approved_reference_requirements']['production_format'] == 'animation' for review in case.reviews)
+    from factory.reference_review import _approved_facts
+    assert any(item['field'] == 'production_format' and item['text'] == 'animation'
+               for item in _approved_facts(case.reviews[0]))
+
+
+def test_medium_change_invalidates_unapproved_reference_compiler_cache(case):
+    current = case.episode
+    entity = current['plan']['characters'][0]
+    requirements = drama_assets._reference_requirements(current, 'character', entity)
+    profile = case.render_config['image_connection']
+    first = drama_assets._compile_reference(current, {}, requirements, profile)
+    assert drama_assets._compile_reference(current, {}, requirements, profile) == first
+    changed_project = {**current, 'format': 'animation'}
+    changed = drama_assets._reference_requirements(changed_project, 'character', entity)
+    second = drama_assets._compile_reference(changed_project, {}, changed, profile)
+    assert len(case.calls) == 2 and first[1]['signature'] != second[1]['signature']
+    assert first[1]['requirements_sha256'] != second[1]['requirements_sha256']
+    assert (case.folder / first[1]['path']).exists() and (case.folder / second[1]['path']).exists()
+    assert changed['production_format'] == 'animation'
+
+
+def test_existing_approved_shared_reference_is_not_regenerated_by_medium_fact_support(case, monkeypatch):
+    drama_assets.prepare(case.episode['id'], {})
+    original = copy.deepcopy(store.get(case.episode['id'], False)['drama_references'])
+    store.update(case.episode['id'], {'format': 'animation'})
+    def forbidden(*args, **kwargs):
+        pytest.fail('An existing approved shared reference must not be recreated')
+    monkeypatch.setattr(drama_assets, '_compile_reference', forbidden)
+    monkeypatch.setattr(config, 'production_config', forbidden)
+    drama_assets.prepare(case.episode['id'], {})
+    assert store.get(case.episode['id'], False)['drama_references'] == original
+    assert len(case.wires) == 2
+
+
+@pytest.mark.parametrize('production_format', ['motion_comic', 'live_action'])
+def test_other_medium_preserves_supplied_creative_contract_without_inferring_new_style(case, production_format):
+    current = copy.deepcopy(case.episode)
+    contract = {'schema_version': 1, 'visual_style': 'existing_approved_style', 'motion': 'existing_approved_motion'}
+    current.update(format=production_format, creative_contract=contract)
+    facts = drama_assets._reference_requirements(current, 'character', current['plan']['characters'][0])
+    assert facts['production_format'] == production_format and facts['creative_contract'] == contract
+    facts['creative_contract']['visual_style'] = 'not-an-edit-to-project'
+    assert current['creative_contract'] == contract
+    from factory.reference_review import _approved_facts
+    assert any(item['field'] == 'creative_contract.motion' and item['text'] == contract['motion']
+               for item in _approved_facts({'shot': {'approved_reference_requirements': facts}}))

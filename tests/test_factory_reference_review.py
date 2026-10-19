@@ -72,9 +72,9 @@ def test_invented_canon_requires_actual_independent_same_pixel_review(tmp_path, 
     assert payload['approved_facts'] and all('fact_id' in item for item in payload['approved_facts'])
     assert [item['image_url']['url'] for item in calls[0]['content'] if item['type'] == 'image_url'] == [
         item['image_url']['url'] for item in calls[1]['content'] if item['type'] == 'image_url']
-    assert read_json(tmp_path / 'qa/reference_evidence/verification.json') == audit
+    assert read_json(tmp_path / 'qa' / audit['verification_record']) == audit
     assert '原著' in calls[1]['system'] and '短棍/短剑' in calls[1]['system']
-    assert calls[1]['folder'].endswith('reference_evidence')
+    assert 'reference_evidence' in Path(calls[1]['folder']).parts
 
 
 def test_supported_wrong_weapon_stays_blocking_even_if_followup_omits_it(tmp_path, monkeypatch):
@@ -224,3 +224,91 @@ def test_changed_candidate_during_verification_cannot_be_approved(tmp_path, monk
     assert result['_reference_unavailable'] is True
     assert result['reference_verification']['reason'] == 'reference_review_source_changed'
     assert CANON in result['issues']
+
+
+def test_explicit_3d_clarification_and_source_records_reach_independent_reference_check(tmp_path, monkeypatch):
+    path = tmp_path / 'candidate.png'
+    Image.new('RGB', (288, 512), 'navy').save(path)
+    resolved = {'description': '本次制作方明确采用三维3D动画角色及场景，保留批准蓝衣和宽厚重尺，不增加剧情。',
+                'source_records': [{'title': '批准的动画媒介来源记录', 'url': 'https://example.com/approved-animation',
+                                    'excerpt': '本次媒介为三维动画', 'scope': 'medium_only'}]}
+    original = copy.deepcopy(resolved)
+    false_2d = {'code': 'off_prompt', 'severity': 'blocking',
+                'detail': '该系列通常是2D或半写实，所以当前三维角色不符合原作'}
+    calls = []
+    def transport(config, role, system, payload, schema, output_dir, **kwargs):
+        context = json.loads(kwargs['content'][0]['text'])
+        calls.append(context)
+        assert context['resolved_visual_style'] == resolved
+        assert '系列名本身不能证明二维' in context['visual_style_resolution_rule']
+        if len(calls) == 1:
+            return verdict([false_2d], 35)
+        assert '不能从某系列通常如何的记忆补出媒介要求' in system
+        style_facts = [item for item in context['approved_facts'] if item['field'] == 'resolved_visual_style.description']
+        assert style_facts == [{'fact_id': style_facts[0]['fact_id'],
+                                'field': 'resolved_visual_style.description', 'text': resolved['description']}]
+        assert any(item['field'] == 'resolved_visual_style.source_records[0].url'
+                   and item['text'] == resolved['source_records'][0]['url'] for item in context['approved_facts'])
+        check = finding(status='refuted', basis='supported_requirement', citations=[
+            {'fact_id': style_facts[0]['fact_id'], 'quote': '三维3D动画角色及场景'}])
+        check['detail'] = 'F0候选采用三维动画表现，符合本次制作方明确澄清的3D媒介；旧意见从系列名猜二维没有给定依据'
+        return {'review': verdict(), 'findings': [check]}
+    monkeypatch.setattr(llm, '_request', transport)
+    monkeypatch.setattr(llm, 'resolve_llm', lambda *args, **kwargs: {'model': 'fixture', 'profile': 'fixture'})
+    monkeypatch.setattr('factory.config.resolve_llm', lambda *args, **kwargs: {'model': 'fixture', 'profile': 'fixture'})
+    result = llm.review_media({'id': 'fixture', 'slug': 'factory-reference', 'format': 'motion_comic',
+            'resolved_visual_style': resolved},
+        {'id': 'reference', 'review_purpose': 'character_reference',
+         'approved_reference_requirements': {'visual_rules': '保持某系列视觉一致性',
+             'entity': {'name': '林青', 'default_wardrobe': '蓝衣与宽厚重尺'}}},
+        path, [], {'quality': {'minimum_score': 60}}, output_dir=tmp_path / 'qa')
+    assert result['status'] == 'pass' and len(calls) == 2
+    assert result['reference_verification']['initial_review']['issues'] == [false_2d]
+    assert result['reference_verification']['policy'] == 'approved-reference-evidence.v2'
+    assert resolved == original
+
+
+def test_missing_visual_clarification_keeps_legacy_context_compatible(tmp_path, monkeypatch):
+    result, calls, _ = review(tmp_path, monkeypatch)
+    assert result['status'] == 'pass'
+    assert all('resolved_visual_style' not in item['context'] for item in calls)
+    assert not any(item['field'].startswith('resolved_visual_style') for item in calls[1]['context']['approved_facts'])
+
+
+def test_visual_clarification_changes_reference_qa_identity_without_changing_image_or_other_targets(engine):
+    from test_factory_reference_repairs import reference_target, CASES
+    run = engine
+    first = reference_target(run, 'character_reference', CASES[0][1])
+    plain1 = run._target('plain', run.folder / 'plain', 'Ordinary prompt')
+    run.project['resolved_visual_style'] = {'description': '本次采用三维3D动画',
+        'source_records': [{'title': '制作方媒介澄清', 'scope': 'medium_only'}]}
+    second = reference_target(run, 'character_reference', CASES[0][1])
+    plain2 = run._target('plain', run.folder / 'plain', 'Ordinary prompt')
+    assert first['signature'] == second['signature']
+    assert first['review_signature'] != second['review_signature']
+    assert plain1['signature'] == plain2['signature'] and plain1['review_signature'] == plain2['review_signature']
+
+
+def test_candidate_and_repeat_verification_records_do_not_overwrite_each_other(tmp_path, monkeypatch):
+    from factory.reference_review import verify_reference
+    path = tmp_path / 'candidate.png'
+    Image.new('RGB', (288, 512), 'navy').save(path)
+    folders = []
+    def transport(*args, **kwargs):
+        folders.append(Path(args[5]))
+        return {'review': verdict(), 'findings': [finding()]}
+    monkeypatch.setattr(llm, '_request', transport)
+    monkeypatch.setattr('factory.config.resolve_llm', lambda *args, **kwargs: {'model': 'fixture'})
+    context = {'shot': {'review_purpose': 'character_reference', 'prompt': 'Adult woman in blue coat.'}}
+    first = verify_reference({}, llm.REVIEW_SCHEMA, context, [], verdict([CANON]), path, tmp_path / 'qa')
+    second = verify_reference({}, llm.REVIEW_SCHEMA, context, [], verdict([CANON]), path, tmp_path / 'qa')
+    Image.new('RGB', (288, 512), 'red').save(path)
+    third = verify_reference({}, llm.REVIEW_SCHEMA, context, [], verdict([CANON]), path, tmp_path / 'qa')
+    audits = [item['reference_verification'] for item in (first, second, third)]
+    assert len({item['verification_id'] for item in audits}) == 3
+    assert audits[0]['verification_basis_sha256'] == audits[1]['verification_basis_sha256']
+    assert audits[0]['verification_basis_sha256'] != audits[2]['verification_basis_sha256']
+    assert len(set(folders)) == 3
+    for audit in audits:
+        saved = read_json(tmp_path / 'qa' / audit['verification_record'])
+        assert saved == audit and saved['initial_review']['issues'] == [CANON]
