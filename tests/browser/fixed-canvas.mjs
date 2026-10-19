@@ -4,9 +4,12 @@ import { expect } from "@playwright/test";
 // invariance is measured only after the target is onscreen, as with a real pointer.
 export async function expandRole(page, role, phase) {
   const canvas = page.locator(".workflow-fixed-canvas");
+  await expect(canvas).toBeVisible();
   const stages = phase
     ? canvas.locator(`[data-stage="${phase}"]`)
     : canvas.locator("[data-stage]");
+  // Locator.all() takes an immediate snapshot. Wait for the server-backed graph
+  // before enumerating it, or a slow response silently skips every disclosure.
   await expect(stages.first()).toBeAttached();
   for (const stage of await stages.all()) {
     const root = stage.locator("..");

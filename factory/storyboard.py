@@ -153,10 +153,17 @@ def direct_storyboard(project, config, episode, checkpoint=None, *,
     schema = storyboard_schema(selected, project)
     system = adapt_system(DIRECTOR_SYSTEM, project)
     if received['accepted']:
-        with handoffs.bind(folder, transfer):
-            raw = cached_json_call(project, config, "storyboard_director", stage,
+        from .agent_loop import SupplementRequested
+        try:
+            with handoffs.bind(folder, transfer):
+                raw = cached_json_call(project, config, "storyboard_director", stage,
                                    system, payload, schema, checkpoint,
-                                   max_tokens=6500, temperature=0.35)
+                                       max_tokens=6500, temperature=0.35)
+        except SupplementRequested as exc:
+            if not exc.request or not exc.scope:
+                raise  # External material needs a producer, not a fictional repair.
+            received = {**received, 'accepted': False, 'request': exc.request}
+            raw = {'agent_requested_supplement': True, 'validation_issues': exc.request['issues']}
     else:
         raw = {'not_submitted': True, 'validation_issues': received['request']['issues']}
     directed = copy.deepcopy(episode)
@@ -208,7 +215,7 @@ def direct_storyboard(project, config, episode, checkpoint=None, *,
         "issues": copy.deepcopy(issues),
         "status": "needs_supplement" if not received['accepted'] else "feasibility_blocked" if issues else "directed_pending_review",
         "controlled_handoff_id": transfer['id'],
-        "submission": "result_obtained_or_cached" if received['accepted'] else "not_submitted",
+        "submission": "result_obtained_or_cached" if received['accepted'] else "agent_handoff_recorded" if raw.get("agent_requested_supplement") else "not_submitted",
         **({'supplement_request_id': request['id']} if request else {}),
     }
     snapshot_key = fingerprint({"receipt": receipt, "output": raw})[:16]
