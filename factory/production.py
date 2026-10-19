@@ -764,6 +764,11 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                                         "expected": expected, "cast": self.cast, "format": self.mode})
         if self.project.get("team_review_revisions", {}).get(review_key):
             review_signature = fingerprint({"review": review_signature, "producer_review_revision": self.project["team_review_revisions"][review_key]})
+        from .reference_review import POLICY as reference_review_policy, PURPOSES as reference_purposes
+        if kind == "image" and shot.get("review_purpose") in reference_purposes:
+            review_signature = fingerprint({"review": review_signature, "reference_evidence_policy": reference_review_policy,
+                "reference_purpose": shot["review_purpose"],
+                "approved_reference_requirements": shot.get("approved_reference_requirements")})
         target = {"key": key, "folder": folder, "prompt": prompt, "references": refs,
                 "kind": kind, "signature": signature, "review_signature": review_signature,
                 "compatible_source_signatures": compatible_sources, **extra}

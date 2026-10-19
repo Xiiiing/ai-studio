@@ -473,6 +473,9 @@ def review_media(project, shot, path, references, config=None, *, output_dir=Non
     errors = list(Draft202012Validator(schema).iter_errors(result))
     if errors:
         raise ValueError("VLM result does not match the visual review contract")
+    if reference_purpose and not is_video:
+        from .reference_review import verify_reference
+        result = verify_reference(config, schema, context, reference_content, result, path, record)
     if is_video:
         from .temporal_review import verify_temporal
         result = verify_temporal(config, schema, context, reference_content,
@@ -480,6 +483,7 @@ def review_media(project, shot, path, references, config=None, *, output_dir=Non
     elif contract and contract["motion"] == "generated_video" and not reference_purpose and shot.get("review_purpose") != "visual_direction_preview":
         from .spatial_review import verify_spatial
         result = verify_spatial(config, schema, context, reference_content, result, path, record)
+    reference_pending = result.pop("_reference_unavailable", False)
     temporal_pending = result.pop("_temporal_unavailable", False)
     spatial_pending = result.pop("_spatial_unavailable", False)
     blocking=[issue for issue in result["issues"] if issue["severity"]=="blocking"]
@@ -517,6 +521,18 @@ def review_media(project, shot, path, references, config=None, *, output_dir=Non
         if not (confirmed or other_blocking or mismatch):
             result["status"] = "unavailable"
             result["detail"] = "接触位置或能量连接的证据仍不清楚；保留首帧待补审，不据此自动返修。"
+    if reference_pending:
+        audit = result.get("reference_verification", {})
+        original = audit.get("initial_review", {}).get("issues", [])
+        dispositions = {item.get("issue_id"): item.get("status") for item in audit.get("findings", [])}
+        confirmed = any(issue.get("severity") == "blocking" and dispositions.get(f'I{index+1}') == "confirmed"
+                        for index, issue in enumerate(original))
+        new_blocking = any(issue["severity"] == "blocking" and issue not in original for issue in result["issues"])
+        mismatch = (result.get("style_alignment", {}).get("status") == "mismatch"
+                    or "mismatch" in result.get("material_alignment", {}).values())
+        if audit.get("status") == "unavailable" or not (confirmed or new_blocking or mismatch):
+            result["status"] = "unavailable"
+            result["detail"] = "参考图问题尚无充分的批准事实与同像素复核依据；原图和两次审核已保留，需补审，不据此自动重绘。"
     selected_model = resolve_llm(config, "visual_critic", require_vision=True)
     result.update(evaluator="vlm_sampled_frames",model=selected_model["model"],
                   profile=selected_model["profile"],endpoint=selected_model.get("base_url"),
