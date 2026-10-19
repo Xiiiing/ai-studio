@@ -37,6 +37,15 @@ def handle(job):
     from .execution_context import current_job
     token = current_job.set(dict(job))
     try:
+        # A scene unit can be queued independently by team instructions or a
+        # recovery action. Its roles and media must use the same frozen batch
+        # configuration as when it runs inside its parent episode.
+        project = store.get(job['project_id'], False) if owns_job(job) else {}
+        configuration = project.get('execution_config')
+        if project.get('record_kind') == 'scene_unit' and isinstance(configuration, dict):
+            from .config import config_snapshot
+            with config_snapshot(configuration):
+                return _handle(job)
         return _handle(job)
     finally:
         current_job.reset(token)

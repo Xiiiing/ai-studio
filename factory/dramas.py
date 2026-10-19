@@ -479,7 +479,10 @@ def control(pid, payload):
                     if unit['status']=='unit_ready': continue
                     unit['pause_requested']=action in {'pause','cancel'}
                     if action=='cancel': unit['status']='cancelled'
-                    elif action in {'resume','retry'} and unit['status'] in {'paused','blocked','failed'}: unit['status']='queued'
+                    elif action in {'resume','retry'} and unit['status'] in {'paused','blocked','failed'}:
+                        unit['status']='queued'
+                        if not db.execute("SELECT 1 FROM jobs WHERE project_id=? AND status='running'", (uid,)).fetchone():
+                            unit.update(error=None, needs_decision=None)
                     store._write(db,unit)
             store._write(db, e)
         if not payload.get('episode_id') and not payload.get('batch_id'):
