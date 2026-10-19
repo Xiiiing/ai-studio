@@ -174,15 +174,24 @@ for (const width of [1440, 390]) {
       ["results", "成果", "暂无剧集成果"],
     ]) {
       if (["plan", "assets", "batches"].includes(tab))
-        await nav.locator("summary").click();
-      await nav.getByRole("button", { name: label, exact: true }).click();
+        await nav
+          .getByRole("button", { name: "项目资料", exact: true })
+          .click();
+      await (
+        ["plan", "assets", "batches"].includes(tab)
+          ? page.getByRole("menuitem", { name: label, exact: true })
+          : nav.getByRole("button", { name: label, exact: true })
+      ).click();
       await expect(page).toHaveURL(new RegExp("tab=" + tab));
       await expect(
         page.getByRole("heading", { name: heading, exact: true }),
       ).toBeVisible();
-      await expect(
-        nav.locator("button").filter({ hasText: label }),
-      ).toHaveAttribute("aria-pressed", "true");
+      if (["plan", "assets", "batches"].includes(tab))
+        await expect(page.locator(".drama-location")).toHaveText(label);
+      else
+        await expect(
+          nav.getByRole("button", { name: label, exact: true }),
+        ).toHaveAttribute("aria-pressed", "true");
       if (tab === "plan") {
         await expect(page.getByLabel("全剧主线", { exact: true })).toHaveValue(
           drama.draft_plan.storyline,
@@ -211,8 +220,9 @@ for (const width of [1440, 390]) {
     await expect(page.getByLabel("全剧主线", { exact: true })).toHaveCount(0);
     await page.goBack();
     await expect(page).toHaveURL(new RegExp("tab=batches"));
+    await expect(page.locator(".drama-location")).toHaveText("生成批次");
     await expect(
-      nav.locator("button").filter({ hasText: "生成批次" }),
+      nav.getByRole("button", { name: "剧集", exact: true }),
     ).toHaveAttribute("aria-pressed", "true");
     await nav.getByRole("button", { name: "项目总览", exact: true }).click();
     await page
@@ -481,12 +491,9 @@ for (const width of [1440, 390]) {
     });
     await page
       .getByRole("navigation", { name: "整剧工作区" })
-      .locator("summary")
+      .getByRole("button", { name: "项目资料", exact: true })
       .click();
-    await page
-      .getByRole("navigation", { name: "整剧工作区" })
-      .getByRole("button", { name: "生成批次", exact: true })
-      .click();
+    await page.getByRole("menuitem", { name: "生成批次", exact: true }).click();
     await expect(
       page.getByText("第1、3集 · 设定v1", { exact: true }),
     ).toBeVisible();
@@ -557,7 +564,12 @@ for (const width of [1440, 390, 320]) {
     for (const theme of ["light", "dark"]) {
       await page.emulateMedia({ colorScheme: theme, reducedMotion: "reduce" });
       const nav = page.getByRole("navigation", { name: "整剧工作区" });
-      await expect(nav.getByRole("button")).toHaveCount(4);
+      await expect(
+        nav.locator(".drama-primary-tabs").getByRole("button"),
+      ).toHaveCount(4);
+      await expect(
+        nav.getByRole("button", { name: "项目资料", exact: true }),
+      ).toBeVisible();
       await expect(page.locator(".workflow-inspector")).toBeVisible();
       await expect(
         page.getByRole("heading", { name: "审核与自动返修" }),
@@ -607,13 +619,13 @@ for (const width of [1440, 390, 320]) {
       await closeDetails(page);
       await expect(inspector).toHaveCount(0);
       expect(await canvasState(page)).toEqual(beforeClose);
-      await nav.locator("summary").click();
+      await nav.getByRole("button", { name: "项目资料", exact: true }).click();
       await expect(
-        nav.getByRole("button", { name: "全剧规划", exact: true }),
+        page.getByRole("menuitem", { name: "全剧规划", exact: true }),
       ).toBeVisible();
       await page.keyboard.press("Escape");
       await expect(
-        nav.getByRole("button", { name: "全剧规划", exact: true }),
+        page.getByRole("menuitem", { name: "全剧规划", exact: true }),
       ).toBeHidden();
     }
     expect(writes).toEqual([]);

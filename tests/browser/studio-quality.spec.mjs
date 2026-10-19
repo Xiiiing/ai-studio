@@ -1,3 +1,4 @@
+import { selectOption } from "./select-control.mjs";
 import { openDetails, closeDetails } from "./fixed-canvas.mjs";
 import { refreshPage } from "./header-flow.mjs";
 import { test, expect } from "@playwright/test";
@@ -85,11 +86,16 @@ for (const width of [1440, 1024, 390]) {
       const group =
         tab === "series" ? "materials" : tab === "quality" ? "decisions" : tab;
       if (["team", "costs"].includes(tab)) {
+        await page.locator(".project-more").getByRole("button").click();
         await expect(
-          page.locator(`.project-more [data-project-page="${tab}"]`),
-        ).toHaveAttribute("aria-current", "page");
+          page.getByRole("menuitem", {
+            name: tab === "team" ? "团队与回执" : "云任务与费用",
+            exact: true,
+          }),
+        ).toHaveAttribute("data-selected", "true");
+        await page.keyboard.press("Escape");
         await expect(
-          page.locator(".project-more > summary"),
+          page.locator(".project-more").getByRole("button"),
         ).toHaveAccessibleName(
           tab === "team"
             ? "更多项目页面：团队与回执"
@@ -302,7 +308,7 @@ test("real project creation, partial image recovery, full-size preview and visua
   await page
     .getByRole("checkbox", { name: "先准备人物、场景与画风，再开始制作" })
     .check();
-  await page.getByLabel("创作规格", { exact: true }).selectOption("compact6");
+  await selectOption(page.getByLabel("创作规格", { exact: true }), "compact6");
   await page.getByRole("button", { name: "开始自主策划" }).click();
   await expect(page.locator("main h1")).toHaveText("素材准备闭环测试");
   await expect(
@@ -315,7 +321,7 @@ test("real project creation, partial image recovery, full-size preview and visua
   const pid = new URLSearchParams(new URL(page.url()).hash.slice(1)).get(
     "project",
   );
-  await page.getByLabel("林夏完整参考对应角色").selectOption("char_partner");
+  await selectOption(page.getByLabel("林夏完整参考对应角色"), "char_partner");
   await page.getByRole("button", { name: "选入本剧", exact: true }).click();
   await expect(page.locator("main")).toContainText(
     "林夏完整参考 · v3 · char_partner",

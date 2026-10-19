@@ -1,3 +1,4 @@
+import { selectOption, nativeControl } from "./select-control.mjs";
 import { test, expect } from "@playwright/test";
 import { mkdir } from "node:fs/promises";
 import { startRealServer } from "./real-server.mjs";
@@ -86,8 +87,12 @@ for (const width of [320, 390, 768, 1024, 1440, 1920]) {
           );
           // Models now live below the settings categories and section heading.
           // The first usable card must still be reachable in the initial viewport.
-          expect(geometry.firstY).toBeLessThanOrEqual(page.viewportSize().height - 44);
-          await expect(page.locator('.settings-category[aria-current="page"]')).toHaveAccessibleName("模型与服务");
+          expect(geometry.firstY).toBeLessThanOrEqual(
+            page.viewportSize().height - 44,
+          );
+          await expect(
+            page.locator('.settings-category[aria-current="page"]'),
+          ).toHaveAccessibleName("模型与服务");
         }
         if (route.tab) {
           if (width >= 1280) {
@@ -99,7 +104,7 @@ for (const width of [320, 390, 768, 1024, 1440, 1920]) {
               .locator(".project-result-actions")
               .boundingBox();
             const operations = await page
-              .locator(".project-actions-menu > summary")
+              .getByRole("button", { name: "项目操作", exact: true })
               .boundingBox();
             expect(Math.abs(result.y - operations.y)).toBeLessThanOrEqual(1);
             if (route.tab === "overview") {
@@ -116,9 +121,11 @@ for (const width of [320, 390, 768, 1024, 1440, 1920]) {
                   ),
                 );
               const baseline = await geometry();
-              const menu = page.locator(".project-actions-menu");
-              await menu.locator(":scope > summary").click();
-              await expect(menu).toHaveAttribute("open", "");
+              const menu = page.getByRole("menu");
+              await page
+                .getByRole("button", { name: "项目操作", exact: true })
+                .click();
+              await expect(menu).toBeVisible();
               const expanded = await geometry();
               for (const selector of Object.keys(baseline))
                 expect(
@@ -126,7 +133,7 @@ for (const width of [320, 390, 768, 1024, 1440, 1920]) {
                   selector + " after opening project operations",
                 ).toBeLessThanOrEqual(1);
               await page.keyboard.press("Escape");
-              await expect(menu).not.toHaveAttribute("open");
+              await expect(menu).toBeHidden();
               const closed = await geometry();
               for (const selector of Object.keys(baseline))
                 expect(
@@ -147,7 +154,11 @@ for (const width of [320, 390, 768, 1024, 1440, 1920]) {
             const box = await item.boundingBox();
             expect(box.height).toBeGreaterThanOrEqual(44);
           }
-          if (!["team", "prompts", "generation", "agent", "costs"].includes(route.tab))
+          if (
+            !["team", "prompts", "generation", "agent", "costs"].includes(
+              route.tab,
+            )
+          )
             await expect(
               navigation.locator(`[data-tab="${group}"]`),
             ).toHaveAttribute("aria-current", "page");
@@ -160,16 +171,16 @@ for (const width of [320, 390, 768, 1024, 1440, 1920]) {
               ),
             ).toHaveAttribute("aria-current", "page");
           const more = page.locator(".project-more");
-          const trigger = more.locator(":scope > summary");
+          const trigger = more.getByRole("button");
           await trigger.click();
-          await expect(more.locator("[data-project-page]")).toHaveCount(5);
-          for (const item of await more.locator("[data-project-page]").all()) {
+          await expect(page.getByRole("menuitem")).toHaveCount(5);
+          for (const item of await page.getByRole("menuitem").all()) {
             await expect(item).toBeInViewport({ ratio: 1 });
             const box = await item.boundingBox();
             expect(box.height).toBeGreaterThanOrEqual(44);
           }
           await page.keyboard.press("Escape");
-          await expect(more).not.toHaveAttribute("open");
+          await expect(trigger).toHaveAttribute("aria-expanded", "false");
           await expect(trigger).toBeFocused();
         }
         expect(
@@ -196,7 +207,9 @@ test("horizontal project navigation reaches all ten pages on mobile", async ({
   for (const tab of tabs) {
     await openProjectPage(page, tab);
     await expect(page).toHaveURL(new RegExp("tab=" + tab));
-    await expect(page.locator(".project-more")).not.toHaveAttribute("open");
+    await expect(
+      page.locator(".project-more").getByRole("button"),
+    ).toHaveAttribute("aria-expanded", "false");
     await expect(page.locator("main .loading")).toHaveCount(0);
   }
 });
@@ -244,15 +257,15 @@ test("model and shot drafts survive navigating away while keeping their original
   await page.goto("/#view=models");
   await page.getByRole("tab", { name: "制作分工" }).click();
   await page.getByText("按角色单独配置 · 总制片代理", { exact: true }).click();
-  await page.getByLabel("总制片代理", { exact: true }).selectOption("writer");
+  await selectOption(page.getByLabel("总制片代理", { exact: true }), "writer");
   await page.locator('.main-nav [data-view="dashboard"]').click();
   await page.locator('.main-nav [data-view="settings"]').click();
   await page.getByRole("button", { name: "模型与服务", exact: true }).click();
   await page.getByRole("tab", { name: "制作分工" }).click();
   await page.getByText("按角色单独配置 · 总制片代理", { exact: true }).click();
-  await expect(page.getByLabel("总制片代理", { exact: true })).toHaveValue(
-    "writer",
-  );
+  await expect(
+    nativeControl(page.getByLabel("总制片代理", { exact: true })),
+  ).toHaveValue("writer");
   await expect(
     page.getByRole("button", { name: "保存分工", exact: true }),
   ).toBeEnabled();
@@ -376,9 +389,7 @@ for (const theme of ["light", "dark"])
   }) => {
     await page.emulateMedia({ colorScheme: theme });
     await page.goto("/#view=models");
-    await expect(
-      page.getByRole("heading", { name: "系统设置" }),
-    ).toBeVisible();
+    await expect(page.getByRole("heading", { name: "系统设置" })).toBeVisible();
     const results = await page.evaluate(() => {
       const rgb = (value) =>
         (value.match(/[\d.]+/g) || []).slice(0, 3).map(Number);

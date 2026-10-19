@@ -209,9 +209,11 @@ for (const width of [1440, 390]) for (const theme of ["light", "dark"]) {
       await expect(page.locator("#workspace h1")).toHaveText(drama.title);
       await expect(page.locator("#workspace")).toContainText(content);
       const nav = page.getByRole("navigation", { name: "整剧工作区", exact: true });
-      if (["plan", "assets", "batches"].includes(tab)) await nav.locator("summary").click();
-      await expect(nav.getByRole("button", { name: label, exact: true })).toHaveAttribute("aria-pressed", "true");
-      if (["plan", "assets", "batches"].includes(tab)) await nav.locator("summary").click();
+      if (["plan", "assets", "batches"].includes(tab)) {
+        await nav.getByRole("button", { name: "项目资料", exact: true }).click();
+        await expect(page.getByRole("menuitem", { name: label, exact: true })).toHaveAttribute("data-selected", "true");
+        await page.keyboard.press("Escape");
+      } else await expect(nav.getByRole("button", { name: label, exact: true })).toHaveAttribute("aria-pressed", "true");
       if (tab === "plan") await expect(page.getByLabel("全剧主线", { exact: true })).toHaveValue(drama.draft_plan.storyline);
       if (tab === "workflow") { await expect(page.locator("[data-stage]")).toHaveCount(5); await expect(page.locator("[data-flow-edge]")).not.toHaveCount(0); }
       if (tab === "episodes") { await page.getByRole("checkbox", { name: "选择第3集", exact: true }).check(); await expect(page.getByRole("button", { name: "生成所选 1 集", exact: true })).toBeEnabled(); }
