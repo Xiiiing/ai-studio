@@ -110,7 +110,7 @@ def replay(project, payload):
 
 
 def create(payload):
-    allowed = {'title', 'brief', 'source_text', 'source_name', 'episode_count', 'duration_seconds', 'format', 'genre', 'visual_style', 'request_id'}
+    allowed = {'title', 'brief', 'source_text', 'source_name', 'episode_count', 'duration_seconds', 'format', 'genre', 'visual_style', 'request_id', 'automation'}
     if set(payload) - allowed: raise ValueError('整剧输入包含未知字段')
     source = payload.get('source_text', '')
     if source:
@@ -125,6 +125,8 @@ def create(payload):
     duration = integer(payload.get('duration_seconds', 300), '每集秒数', 15, MAX_EPISODE_SECONDS)
     fmt = payload.get('format', 'motion_comic')
     if not isinstance(fmt,str) or fmt not in {'motion_comic', 'animation', 'live_action'}: raise ValueError('请选择动态漫或H3视频路线')
+    from .drama_automation import normalize, authorize
+    automation = normalize(payload.get('automation'), count)
     key = 'drama:' + text(payload.get('request_id'), '请求标识', 1, 80)
     signature = fingerprint(payload)
     with store.connection() as db:
@@ -138,6 +140,7 @@ def create(payload):
             genre=text(payload.get('genre') or '剧情', '题材', 1, 100),
             visual_style=text(payload.get('visual_style') or '统一人物与场景画风', '画风', 1, 2000),
             plan_version=0, plans=[], episodes=[], batches=[], series_key='')
+        p['automation'] = authorize(automation, payload['request_id'])
         p['series_key'] = 'drama_' + p['id']
         insert(db, p)
         db.execute('INSERT INTO idempotency VALUES(?,?,?)', (key, p['id'], signature))
@@ -166,6 +169,9 @@ def snapshot(pid, *, db=None, details=True):
         if episode.get('delivery'):
             episode['delivery']={k:v for k,v in episode['delivery'].items() if k not in {'sources','artifacts','scenes'}}
     result = {k: copy.deepcopy(v) for k, v in p.items() if k not in {'operation_requests', 'source_text', 'planning_cache', 'plan_repair_basis', 'plan_history'}}
+    from .drama_automation import state
+    result['automation'] = copy.deepcopy(p.get('automation', {'enabled': False}))
+    result['automation_state'] = state(p, episodes, db=db)
     result['episodes'] = episodes
     result['batches'] = [{**b, 'members': [{'id': e['id'], 'number': e['episode_number'], 'status': e['status'],
         'progress': e['progress'], 'error': e.get('error')} for e in episodes if e['id'] in b['episode_ids']]}
@@ -214,6 +220,28 @@ def validate_plan(plan, project):
     return copy.deepcopy(plan)
 
 
+def _confirm_reviewed(db, p, plan, *, actor='producer', authorization=None):
+    pid = p['id']
+    p['plan_version'] += 1
+    p['plans'].append({'version': p['plan_version'], 'document': plan, 'sha256': fingerprint(plan), 'confirmed_at': store.now(), 'actor': actor, **({'authorization': copy.deepcopy(authorization)} if authorization else {})})
+    bible={k:copy.deepcopy(plan[k]) for k in ('world','visual_rules','scenes','props')}
+    bible.update(schema_version=1,characters=[{k:v for k,v in c.items() if k!='voice_id'} for c in plan['characters']])
+    from .series_bible import validate_document
+    validate_document(bible)
+    db.execute('INSERT INTO series_bibles VALUES(?,?,?,?,?)',
+        (p['series_key'],p['plan_version'],store.encoded(bible),fingerprint(bible),time.time()))
+    p.update(status='ready', stage='episodes', progress=100)
+    if not p['episodes']:
+        for outline in sorted(plan['episodes'], key=lambda e: e['number']):
+            e = record('episode', f"第{outline['number']}集 · {outline['title']}", outline['synopsis'],
+                drama_id=pid, parent_id=pid, series_key=p['series_key'], episode_number=outline['number'],
+                duration_seconds=p['duration_seconds'], format=p['format'], plan_version=p['plan_version'],
+                outline=outline, plan=plan, status='draft', unit_ids=[], batch_id=None,
+                source_excerpt=source_excerpt(p['source_text'],outline['number'],p['episode_count']))
+            insert(db, e)
+            p['episodes'].append(e['id'])
+
+
 def confirm(pid, payload):
     if set(payload) - {'expected_revision', 'request_id', 'plan'}: raise ValueError('规划确认包含未知字段')
     with store.connection() as db:
@@ -222,43 +250,60 @@ def confirm(pid, payload):
         key, signature, saved = replay(p, payload)
         if saved: return snapshot(pid, db=db)
         cas(p, payload)
-        if p.get('pause_requested'): raise ValueError('请先继续规划，再确认全剧设定')
         if db.execute("SELECT 1 FROM jobs WHERE project_id=? AND status='running'",(pid,)).fetchone():
             raise ValueError('规划正在执行，请等待本轮完成')
         plan = validate_plan(payload.get('plan', p.get('draft_plan')), p)
+        edited = fingerprint(plan) != fingerprint(p.get('draft_plan'))
+        automated_edit = (edited and p.get('automation', {}).get('enabled')
+            and (bool(p['episodes']) or p.get('pause_requested') or p['automation'].get('suspended')))
+        if automated_edit:
+            if not p['automation'].get('suspended'):
+                raise ValueError('请先暂停连续制作，再修改全剧规划')
+            members = [store._read(db, eid) for eid in p['episodes']]
+            ids = [pid, *p['episodes'], *(uid for e in members for uid in e.get('unit_ids', []))]
+            if any(db.execute("SELECT 1 FROM jobs WHERE project_id=? AND status='running'", (ident,)).fetchone() for ident in ids):
+                raise ValueError('请等待当前制作任务到达安全边界，再修改全剧规划')
+            # Review is allowed while episode production remains suspended.
+            p['pause_requested'] = False
+        elif p.get('pause_requested'):
+            raise ValueError('请先继续规划，再确认全剧设定')
         if not (p.get('plan_review') or {}).get('passed') or fingerprint(plan) != fingerprint(p.get('draft_plan')):
             # Edited plans go back through independent review before confirmation.
             from .drama_planning import start_cycle
             start_cycle(p, edited=True)
-            p.update(draft_plan=plan, plan_review=None, status='queued', stage='plan_review')
+            p.update(draft_plan=plan, plan_review=None, plan_review_sha256=None, status='queued', stage='plan_review')
             store._enqueue(db, pid, 'drama_plan')
         else:
             if p['plans'] and fingerprint(p['plans'][-1]['document'])==fingerprint(plan):
                 p['operation_requests'][key]={'signature':signature}
                 store._write(db,p)
                 return snapshot(pid,db=db)
-            p['plan_version'] += 1
-            p['plans'].append({'version': p['plan_version'], 'document': plan, 'sha256': fingerprint(plan), 'confirmed_at': store.now(), 'actor': 'producer'})
-            bible={k:copy.deepcopy(plan[k]) for k in ('world','visual_rules','scenes','props')}
-            bible.update(schema_version=1,characters=[{k:v for k,v in c.items() if k!='voice_id'} for c in plan['characters']])
-            from .series_bible import validate_document
-            validate_document(bible)
-            db.execute('INSERT INTO series_bibles VALUES(?,?,?,?,?)',
-                (p['series_key'],p['plan_version'],store.encoded(bible),fingerprint(bible),time.time()))
-            p.update(status='ready', stage='episodes', progress=100)
-            if not p['episodes']:
-                for outline in sorted(plan['episodes'], key=lambda e: e['number']):
-                    e = record('episode', f"第{outline['number']}集 · {outline['title']}", outline['synopsis'],
-                        drama_id=pid, parent_id=pid, series_key=p['series_key'], episode_number=outline['number'],
-                        duration_seconds=p['duration_seconds'], format=p['format'], plan_version=p['plan_version'],
-                        outline=outline, plan=plan, status='draft', unit_ids=[], batch_id=None,
-                        source_excerpt=source_excerpt(p['source_text'],outline['number'],p['episode_count']))
-                    insert(db, e)
-                    p['episodes'].append(e['id'])
+            _confirm_reviewed(db, p, plan)
         p['operation_requests'][key] = {'signature': signature}
         store._write(db, p)
         store._event(db, pid, '全剧规划已确认' if p['status'] == 'ready' else '修改后的规划等待独立审核', 'drama_plan')
+        from .drama_automation import reconcile
+        reconcile(db, p)
         return snapshot(pid, db=db)
+
+
+def _generate_batch(db, p, numbers, budget, config):
+    config=copy.deepcopy(config)
+    config.setdefault('creative',{})['max_review_rounds']=budget['max_attempts']
+    chosen = [store._read(db, eid) for eid in p['episodes'] if store._read(db, eid)['episode_number'] in numbers]
+    if any(e['status'] != 'draft' for e in chosen): raise ValueError('已开始的剧集请使用继续、返修或失败重试')
+    batch = {'id': uuid.uuid4().hex[:12], 'episode_ids': [e['id'] for e in chosen], 'episode_numbers': sorted(numbers),
+        'plan_version': p['plan_version'], 'budget': copy.deepcopy(budget), 'created_at': store.now(), 'status': 'queued',
+        'config_signature': fingerprint(config)}
+    # Private configuration remains a backend-only snapshot; never returned by the API.
+    for e in chosen:
+        outline = next(o for o in p['plans'][-1]['document']['episodes'] if o['number'] == e['episode_number'])
+        e.update(outline=outline, plan=p['plans'][-1]['document'], plan_version=p['plan_version'],
+            status='queued', stage='queued', budget=copy.deepcopy(budget), batch_id=batch['id'],
+            execution_config=copy.deepcopy(config), pause_requested=False)
+        store._write(db, e)
+    p['batches'].append(batch)
+    return batch
 
 
 def generate(pid, payload):
@@ -272,30 +317,10 @@ def generate(pid, payload):
         if saved: return snapshot(pid, db=db)
         cas(p, payload)
         if not p['plan_version']: raise ValueError('请先确认全剧规划')
-        numbers = payload.get('episode_numbers')
-        if not isinstance(numbers, list) or not numbers:
-            raise ValueError('请选择不重复的剧集')
-        for number in numbers: integer(number, '集号', 1, p['episode_count'])
-        if len(numbers)!=len(set(numbers)): raise ValueError('请选择不重复的剧集')
-        budget = payload.get('budget', {'gpu_minutes': 120, 'wall_minutes': 180, 'max_attempts': 3})
-        if not isinstance(budget, dict) or set(budget) - {'gpu_minutes', 'wall_minutes', 'max_attempts'}: raise ValueError('预算字段无效')
-        for field, low, high in [('gpu_minutes', 5, 1440), ('wall_minutes', 10, 1440), ('max_attempts', 1, 5)]:
-            integer(budget.get(field), field, low, high)
-        config=copy.deepcopy(config)
-        config.setdefault('creative',{})['max_review_rounds']=budget['max_attempts']
-        chosen = [store._read(db, eid) for eid in p['episodes'] if store._read(db, eid)['episode_number'] in numbers]
-        if any(e['status'] != 'draft' for e in chosen): raise ValueError('已开始的剧集请使用继续、返修或失败重试')
-        batch = {'id': uuid.uuid4().hex[:12], 'episode_ids': [e['id'] for e in chosen], 'episode_numbers': sorted(numbers),
-            'plan_version': p['plan_version'], 'budget': copy.deepcopy(budget), 'created_at': store.now(), 'status': 'queued',
-            'config_signature': fingerprint(config)}
-        # Private configuration remains a backend-only snapshot; never returned by the API.
-        for e in chosen:
-            outline = next(o for o in p['plans'][-1]['document']['episodes'] if o['number'] == e['episode_number'])
-            e.update(outline=outline, plan=p['plans'][-1]['document'], plan_version=p['plan_version'],
-                status='queued', stage='queued', budget=copy.deepcopy(budget), batch_id=batch['id'],
-                execution_config=copy.deepcopy(config), pause_requested=False)
-            store._write(db, e)
-        p['batches'].append(batch)
+        from .drama_automation import validate_numbers, validate_budget
+        numbers = validate_numbers(payload.get('episode_numbers'), p['episode_count'])
+        budget = validate_budget(payload.get('budget', {'gpu_minutes': 120, 'wall_minutes': 180, 'max_attempts': 3}))
+        batch = _generate_batch(db, p, numbers, budget, config)
         p['operation_requests'][key] = {'signature': signature, 'batch_id': batch['id']}
         p.update(status='producing', pause_requested=False, progress=0)
         store._write(db, p)
@@ -306,6 +331,9 @@ def generate(pid, payload):
 def dispatch(db, drama):
     """Publish one eligible episode to the existing queue, in episode order."""
     if drama.get('pause_requested') or drama['status'] == 'cancelled': return
+    if drama.get('automation', {}).get('enabled'):
+        from .drama_automation import _plan_changed
+        if drama['automation'].get('suspended') or _plan_changed(drama): return
     episodes = [store._read(db, eid) for eid in drama['episodes']]
     if any(db.execute("SELECT 1 FROM jobs WHERE project_id=? AND status IN ('queued','running')", (e['id'],)).fetchone() for e in episodes): return
     by_number = {e['episode_number']: e for e in episodes}
@@ -345,7 +373,7 @@ def aggregate(db,drama):
 
 
 def control(pid, payload):
-    allowed = {'expected_revision', 'expected_episode_revision', 'request_id', 'action', 'episode_id', 'batch_id', 'feedback', 'unit_id', 'shot_ids'}
+    allowed = {'expected_revision', 'expected_episode_revision', 'request_id', 'action', 'episode_id', 'batch_id', 'feedback', 'unit_id', 'shot_ids', 'automation'}
     if set(payload) - allowed: raise ValueError('控制请求包含未知字段')
     with store.connection() as db:
         db.execute('BEGIN IMMEDIATE')
@@ -354,7 +382,18 @@ def control(pid, payload):
         if saved: return snapshot(pid, db=db)
         cas(p, payload)
         action = payload.get('action')
+        if action == 'enable_automation':
+            from .drama_automation import enable, reconcile
+            enable(db, p, payload.get('automation'), key)
+            p['operation_requests'][key] = {'signature': signature}
+            store._write(db, p)
+            reconcile(db, p)
+            return snapshot(pid, db=db)
+        if 'automation' in payload: raise ValueError('仅启用连续制作时可传入自动制作配置')
         if not isinstance(action,str) or action not in {'pause', 'resume', 'cancel', 'retry', 'approve', 'revise', 'reedit'}: raise ValueError('不支持的剧集操作')
+        if p.get('automation', {}).get('enabled') and not payload.get('episode_id') and not payload.get('batch_id'):
+            if action in {'pause', 'cancel'}: p['automation']['suspended'] = True
+            elif action in {'resume', 'retry'}: p['automation']['suspended'] = False
         targets = [store._read(db, eid) for eid in p['episodes'] if (not payload.get('episode_id') or eid == payload['episode_id'])]
         if payload.get('batch_id'): targets = [e for e in targets if e.get('batch_id') == payload['batch_id']]
         if not targets:
@@ -364,15 +403,34 @@ def control(pid, payload):
             if action in {'resume', 'retry'}:
                 if db.execute("SELECT 1 FROM jobs WHERE project_id=? AND status='running'", (pid,)).fetchone():
                     raise ValueError('请等待当前任务到达安全边界')
-                if p.get('plan_phase') == 'exhausted' or (not p.get('plan_phase') and p['status'] in {'blocked', 'failed'}):
+                feedback_changed = False
+                if 'feedback' in payload:
+                    feedback = payload['feedback']
+                    if not isinstance(feedback, str) or len(feedback.strip()) > 4000:
+                        raise ValueError('规划补充要求须为不超过4000字的文本')
+                    feedback = feedback.strip()
+                    if feedback and feedback != p.get('plan_feedback', ''):
+                        feedback_changed = True
+                        p['plan_feedback'] = feedback
+                        p.setdefault('plan_feedback_history', []).append({'feedback': feedback,
+                            'actor': 'producer', 'at': store.now(), 'request_id': key})
+                if feedback_changed or p.get('plan_phase') == 'exhausted' or (not p.get('plan_phase') and p['status'] in {'blocked', 'failed'}):
                     from .drama_planning import start_cycle
                     start_cycle(p)
+                    if feedback_changed:
+                        p.update(plan_review=None, plan_review_sha256=None, stage='plan_repair')
                 p.update(error=None, needs_decision=None)
             p.update(pause_requested=action in {'pause','cancel'},status='cancelled' if action=='cancel' else 'paused' if action=='pause' else 'queued')
             db.execute("UPDATE jobs SET status='cancelled',finished=? WHERE project_id=? AND status='queued'",(time.time(),pid))
             p['operation_requests'][key]={'signature':signature}
             store._write(db,p)
-            if action in {'resume','retry'}: store._enqueue(db,pid,'drama_plan')
+            if action in {'resume','retry'}:
+                if (p.get('plan_review') or {}).get('passed') and p.get('plan_phase') == 'approved':
+                    p.update(status='awaiting_plan',stage='plan_confirmation')
+                    store._write(db,p)
+                else: store._enqueue(db,pid,'drama_plan')
+                from .drama_automation import reconcile
+                reconcile(db,p)
             return snapshot(pid,db=db)
         if action in {'approve', 'revise', 'reedit'} and len(targets) != 1: raise ValueError('请明确选择一集验收或返修')
         for e in targets:
@@ -437,6 +495,8 @@ def control(pid, payload):
         p['operation_requests'][key] = {'signature': signature}
         aggregate(db,p)
         store._write(db, p)
+        from .drama_automation import reconcile
+        reconcile(db, p)
         dispatch(db, p)
         return snapshot(pid, db=db)
 

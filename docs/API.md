@@ -181,3 +181,38 @@ MiniMax 任务提交后持久化 `task_id`，生成成功后持久化 `file_id`�
 ## 制作团队任务账本（0.1.0）
 
 项目团队读取与任务分页接口、状态语义和兼容行为见 [可介入的 AI 制作团队](TEAM_CONTROL_0_1_0.md)。团队读取不执行模型，也不将文件存在推断为审核通过。
+
+## 整剧连续制作（0.3.1）
+
+`POST /api/factory/dramas` 增加可选 `automation`，其余剧名、主题/剧本、集数、时长和路线字段保持原有契约：
+
+```json
+{
+  "enabled": true,
+  "episode_numbers": [1, 2, 3],
+  "budget": {"gpu_minutes": 120, "wall_minutes": 180, "max_attempts": 3}
+}
+```
+
+`episode_numbers` 必须明确列出授权集数（全剧即 `1..episode_count`），不自动扩大到依赖剧集。GPU 分钟、墙钟分钟和尝试次数沿用原制作预算，作用于每个制作单元；长集的总上限随场景拆分后的实际单元数计算，不是全剧总价。省略 `automation` 或设置 `enabled:false` 保留旧项目的手动确认与派发行为。
+
+旧项目显式开启使用 `POST /api/factory/dramas/{id}/actions`：
+
+```json
+{
+  "action": "enable_automation",
+  "automation": {"enabled": true, "episode_numbers": [1, 2, 3], "budget": {"gpu_minutes": 120, "wall_minutes": 180, "max_attempts": 3}},
+  "expected_revision": 12,
+  "request_id": "enable-continuous-1"
+}
+```
+
+相同请求重放幂等；新请求必须提供最新 revision。授权保存请求标识、出品人授权来源和时间；自动固化的规划与生成批次使用 `actor:automation`，不冒充人工确认。无匹配当前稿件的独立审核通过记录时，先重新审核；有未解决歧义时保留人工入口。已开工或完成的剧集及其配置、预算用量、成果和固定规划版本不被重新生成。
+
+整剧快照增加 `automation` 和只读 `automation_state`。后者包括 `status`、`stage`、中文 `reason`、`episode_numbers`、`budget_scope:per_unit` 和 `attention:[{code,message,episode_number?}]`。状态为 disabled/planning/reviewing/paused/blocked/producing/awaiting_final/completed/cancelled。attention 区分规划审核/歧义、未授权依赖、剧集阻塞和配置错误；完整审核记录及剧集操作继续使用原字段和接口。读取快照不会派发任务或调用模型。
+
+自动推进由持久 worker 在规划任务释放执行权后执行；重启补齐漏掉的衔接，确认、建立剧集、生成批次及入队在同一事务提交。关闭浏览器不影响执行。全剧暂停阻止后续派发，恢复沿用原授权；费用不足、未知供应商任务和已用尽的自动返修不会被后台反复重试。人工修改已开工项目的全剧规划前须全剧暂停并等待安全边界，修改稿重新独立审核，明确恢复后继续；已有剧集保留固定版本，差异通过 `affected_episodes` 展示，需定向返修的成果沿用原返修入口。任何自动化状态均不批准成片，最终通过仍由出品人显式验收。
+
+规划阶段尚未建立剧集时，`actions` 的 `retry` / `resume` 可携带可选 `feedback`（不超过4000字的文本）。新的非空补充要求独立保存为 `plan_feedback` 并保留来源历史，原始主题与剧本不被覆盖；策划、分集编剧和独立审稿均显式收到该要求。要求改变时从新的有界创作轮次开始，不沿用旧稿的通过记录或只重复审核旧稿；相同要求的暂停恢复保留当前轮次。初始规划暂停后也可以提交修改稿：等待原任务停止后重新独立审核，连续制作继续保持暂停，显式恢复后才固化并派发。
+
+`enable_automation` 也可在全剧暂停后的安全边界重新授权未完成剧集/场景单元的每单元预算。已开始的工作变更额度须先全剧暂停，且受影响的剧集、单元和规划任务均无运行中的 job；额度或尝试次数不得降低，新时间上限须超过该单元累计用量。仅更新未完成记录的预算与已捕获配置中的相应有界限制，保留累计支出、尝试历史、供应商任务编号、成功素材以及原规划/模型身份；awaiting_final、approved 与 unit_ready 成果不修改。长集总授权显示已完成单元原额度与未完成单元新额度之和。重新授权后继续保持暂停，不自动重试；出品人明确恢复才继续，仍受新的有限额度约束。

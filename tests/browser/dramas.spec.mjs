@@ -129,7 +129,7 @@ test("new project imports a UTF-8 script before planning", async ({ page }) => {
     ),
   });
   await expect(form.getByLabel("剧本正文")).toContainText("第一集");
-  await form.getByRole("button", { name: "建立整剧项目" }).click();
+  await form.getByRole("button", { name: "创建并开始制作" }).click();
   await expect.poll(() => submitted?.source_name).toBe("剧本.md");
   expect(submitted.source_text).toContain("车站重逢");
 });
