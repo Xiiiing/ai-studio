@@ -16,12 +16,16 @@ import numpy as np
 from PIL import Image, ImageDraw
 from jsonschema import validate
 
-POLICY = "continuous-frame-challenge.v2"
+POLICY = "continuous-frame-challenge.v3"
+MAX_WINDOW_FRAMES = 32
 TEMPORAL_CODES = {"action", "continuity", "low_quality"}
 RULE = (
     "时间样本是间隔抽帧，不是视频全部连续帧。两个样本之间没有展示中间帧，不等于原视频缺帧、"
     "瞬移或跳变；不得仅据抽帧间隔报告阻断或给低分。对这类疑点填写temporal_concerns，"
-    "用from_sample和to_sample指出需核验的样本编号，等待连续帧补证。"
+    "用from_sample和to_sample指出需核验的样本编号、issue_ids关联issues按顺序编号I1/I2等，"
+    "claim_type=sampling_gap仅表示由抽样空档推断的时间跳变；"
+    "claim_type=motion_absence仅表示完全没有批准动作的疑点，可由实际批准动作正向反证。"
+    "已在某个样本实际可见的开口、错物、人体等缺陷不填入temporal_concerns，不能由其他时段正常推翻。"
     "真实可见的动作缺失、方向错误、错持道具、人物崩坏仍须据实报告；不能因为有运动就认为动作合格。"
     "先后关系依据实际姿态变化的顺序；动作之间有停顿不等于顺序颠倒，不擅自添加未批准的逐秒时限。"
     "道具归属和同一持物手以首帧及批准事实为准，区分画面左右与人物自身左右；明确换手也须报告。"
@@ -41,6 +45,11 @@ SYSTEM = (
     "按实际姿态变化判断先后关系，不把动作间停顿当作顺序颠倒。逐帧核对原持物手是否保持同一只手，"
     "不能只确认道具仍在同一人物身上就认定没有换手。"
     "二维动画的持帧不等于缺帧，不要求每个相邻帧都改变姿态。"
+    "本次只有candidate_temporal_claims_untrusted内明确关联的推断疑点可以澄清；"
+    "protected_visible_issues是首审基于实际可见帧的其他问题，不能因另一窗口正常而移除。"
+    "sampling_gap的refuted证据必须覆盖该问题全部原from_sample到to_sample区间；"
+    "motion_absence可由同一连续区间里实际完成的批准动作反证，但不能据此推翻开口或错物等可见缺陷。"
+    "必须检查全部原始S样本，尤其末帧；D窗口之外的可见错误仍然有效。"
 )
 
 
@@ -49,12 +58,15 @@ def concern_schema():
         "type": "object", "additionalProperties": False,
         "properties": {"from_sample": {"type": "integer", "minimum": 1, "maximum": 16},
                        "to_sample": {"type": "integer", "minimum": 1, "maximum": 16},
-                       "detail": {"type": "string", "maxLength": 600}},
-        "required": ["from_sample", "to_sample", "detail"]}}
+                       "detail": {"type": "string", "maxLength": 600},
+                       "issue_ids": {"type": "array", "minItems": 1, "maxItems": 3, "uniqueItems": True,
+                                     "items": {"type": "string", "pattern": "^I[1-9][0-9]*$"}},
+                       "claim_type": {"type": "string", "enum": ["sampling_gap", "motion_absence"]}},
+        "required": ["from_sample", "to_sample", "detail", "issue_ids", "claim_type"]}}
 
 
 def continuous_windows(path, sampled, concerns=(), *, cover_full_clip=False):
-    """At most two sheets of twelve actually consecutive decoded frames."""
+    """At most two sheets of up to 32 actually consecutive decoded frames."""
     stamps = [float(row["timestamp"]) for row in sampled]
     pairs, previous = [], None
     with av.open(str(path)) as container:
@@ -96,9 +108,18 @@ def continuous_windows(path, sampled, concerns=(), *, cover_full_clip=False):
         choices = [row for row in pairs if start < row[1] <= end]
         if not choices:
             continue
-        center = max(choices, key=lambda row: row[2])[0]
-        lo = max(0, min(center - 6, len(pairs) - 11))
-        hi = min(len(pairs), lo + 11)
+        first = next((i for i, timestamp, _ in pairs if timestamp >= start - 1e-5), 0)
+        if start <= 0:
+            first = 0
+        last = max(i for i, timestamp, _ in pairs if timestamp <= end + 1e-5)
+        needed = last - first + 1
+        length = min(MAX_WINDOW_FRAMES, max(12, needed))
+        if needed <= MAX_WINDOW_FRAMES:
+            lo = max(0, min(first, len(pairs) - length + 1))
+        else:
+            center = max(choices, key=lambda row: row[2])[0]
+            lo = max(0, min(center - length // 2, len(pairs) - length + 1))
+        hi = min(len(pairs), lo + length - 1)
         if (lo, hi) not in ranges:
             ranges.append((lo, hi))
     windows = [[] for _ in ranges]
@@ -137,13 +158,8 @@ def verify_temporal(config, schema, context, reference_content, sampled, samplin
     from .providers import context_budget
 
     issues = initial["issues"]
-    suspects = [(f"I{i+1}", issue) for i, issue in enumerate(issues)
-                if issue["code"] in TEMPORAL_CODES][:3]
-    motion = initial.get("motion_alignment", {}).get("status")
-    if not suspects and motion not in {"camera_only", "uncertain"}:
-        return initial
-    if not Path(path).is_file():
-        return initial  # Partial offline transport fixtures have no video bytes.
+    indexed = {f"I{i+1}": issue for i, issue in enumerate(issues)}
+    concerns = initial.get("temporal_concerns", [])
     audit = {"policy": POLICY, "initial_review": copy.deepcopy(initial), "status": "unavailable"}
 
     def pending(reason):
@@ -153,8 +169,38 @@ def verify_temporal(config, schema, context, reference_content, sampled, samplin
         return result
 
     try:
-        windows = continuous_windows(path, sampled, initial.get("temporal_concerns", []),
-                                     cover_full_clip=motion in {"camera_only", "uncertain"})
+        validate(concerns, concern_schema())
+    except Exception:
+        return pending("continuous_review_issue_scope_invalid")
+    linked = {}
+    invalid_scope = False
+    for concern in concerns:
+        if (concern.get("claim_type") not in {"sampling_gap", "motion_absence"}
+                or not 1 <= concern["from_sample"] < concern["to_sample"] <= len(sampled)):
+            invalid_scope = True
+            continue
+        if not concern.get("issue_ids"):
+            invalid_scope = True
+        for ident in concern.get("issue_ids", []):
+            if indexed.get(ident, {}).get("code") in TEMPORAL_CODES:
+                linked.setdefault(ident, []).append(concern)
+            else:
+                invalid_scope = True
+    audit["issue_scopes"] = copy.deepcopy(linked)
+    if len(linked) > 3:
+        return pending("continuous_review_issue_capacity")
+    suspects = [(ident, issue) for ident, issue in indexed.items() if ident in linked]
+    motion = initial.get("motion_alignment", {}).get("status")
+    if not suspects and not concerns and motion not in {"camera_only", "uncertain"}:
+        return initial
+    if not Path(path).is_file():
+        return initial  # Partial offline transport fixtures have no video bytes.
+    try:
+        if invalid_scope or concerns and not suspects:
+            return pending("continuous_review_issue_scope_missing")
+        windows = continuous_windows(path, sampled, concerns,
+                                     cover_full_clip=motion in {"camera_only", "uncertain"}
+                                     and not any(c.get("claim_type") == "sampling_gap" for c in concerns))
         audit["windows"] = [{k: v for k, v in window.items() if k != "image"} for window in windows]
         ids = [frame["id"] for window in windows for frame in window["frames"]]
         finding = {"type": "object", "additionalProperties": False, "properties": {
@@ -173,28 +219,28 @@ def verify_temporal(config, schema, context, reference_content, sampled, samplin
             dense.extend([{"type": "text", "text": "连续窗口D%d：" % index + json.dumps(window["frames"])},
                           {"type": "image_url", "image_url": {"url": _image_url(window["image"])}}])
         content = None
-        # Preserve every material reference, all continuous windows, and at
-        # least four uniformly spaced full-size video samples. Never truncate
-        # a request behind the reviewer's back to fit a model context.
-        for count in range(min(len(sampled), 8), 3, -1):
-            positions = sorted({round(i*(len(sampled)-1)/(count-1)) for i in range(count)})
-            candidate = [{"type": "text", "text": json.dumps({**context,
-                "candidate_temporal_claims_untrusted": [{"issue_id": ident, "claim": issue} for ident, issue in suspects],
-                "continuous_evidence_scope": "Only the labeled windows contain consecutive frames; other intervals remain sparsely sampled."}, ensure_ascii=False)}]
-            candidate.extend(reference_content)
-            for index in positions:
-                row = sampled[index]
-                candidate.extend([{"type": "text", "text": f"间隔样本S{index+1}，时间{row['timestamp']:.3f}秒"},
-                                  {"type": "image_url", "image_url": {"url": _image_url(row["image"])}}])
-            candidate.extend(dense)
-            if type(profile.get("context_tokens")) is not int or context_budget(profile,
-                    _messages(profile, _system_rules(profile, SYSTEM, followup_schema), candidate), 3400)["fits"]:
-                content = candidate
-                break
+        # Every original visible sample is potential counterevidence. A context
+        # limit must never silently remove the frame that showed the defect.
+        candidate = [{"type": "text", "text": json.dumps({**context,
+            "candidate_temporal_claims_untrusted": [{"issue_id": ident, "claim": issue,
+                "scopes": linked[ident]} for ident, issue in suspects],
+            "protected_visible_issues": [{"issue_id": ident, "claim": issue}
+                for ident, issue in indexed.items() if ident not in dict(suspects)],
+            "continuous_evidence_scope": "Only the labeled windows contain consecutive frames; other intervals remain sparsely sampled."}, ensure_ascii=False)}]
+        candidate.extend(reference_content)
+        for index, row in enumerate(sampled):
+            candidate.extend([{"type": "text", "text": f"间隔样本S{index+1}，时间{row['timestamp']:.3f}秒"},
+                              {"type": "image_url", "image_url": {"url": _image_url(row["image"])}}])
+        candidate.extend(dense)
+        if type(profile.get("context_tokens")) is not int or context_budget(profile,
+                _messages(profile, _system_rules(profile, SYSTEM, followup_schema), candidate), 3400)["fits"]:
+            content = candidate
         if content is None:
             return pending("continuous_review_context_too_small")
         answer = _request(config, "visual_critic", SYSTEM, None, followup_schema,
                           Path(record) / "continuous", max_tokens=3400, temperature=.1, content=content)
+        if isinstance(answer, dict):
+            audit.update(proposed_findings=copy.deepcopy(answer.get("findings")), followup_review=copy.deepcopy(answer.get("review")))
         validate(answer, followup_schema)
         findings = {item["issue_id"]: item for item in answer["findings"]}
         if set(findings) != {ident for ident, _ in suspects} or len(findings) != len(answer["findings"]):
@@ -211,6 +257,18 @@ def verify_temporal(config, schema, context, reference_content, sampled, samplin
             if finding["status"] != "uncertain" and not any(
                     a in supplied and b in supplied for window in spans for a, b in window):
                 return pending("continuous_review_requires_continuous_evidence")
+            if finding["status"] != "uncertain":
+                for concern in linked[finding["issue_id"]]:
+                    start = sampled[concern["from_sample"] - 1]["frame_index"]
+                    end = sampled[concern["to_sample"] - 1]["frame_index"]
+                    cited = [(a, b) for window in windows for i, a in enumerate(window["frames"])
+                             for b in window["frames"][i+1:] if a["id"] in supplied and b["id"] in supplied]
+                    whole_interval = (finding["status"] == "refuted" and concern["claim_type"] == "sampling_gap"
+                                      or finding["status"] == "confirmed" and concern["claim_type"] == "motion_absence")
+                    if whole_interval and not any(a["frame_index"] <= start and b["frame_index"] >= end for a, b in cited):
+                        return pending("continuous_review_refutation_outside_issue_scope")
+                    if not whole_interval and not any(start <= a["frame_index"] < b["frame_index"] <= end for a, b in cited):
+                        return pending("continuous_review_evidence_outside_issue_scope")
         result = copy.deepcopy(answer["review"])
         # A temporal challenge cannot silently clear identity, anatomy, props
         # or any unexamined issue. Confirmed temporal defects also remain.
@@ -228,7 +286,7 @@ def verify_temporal(config, schema, context, reference_content, sampled, samplin
                            and answer["review"]["score"] < config.get("quality", {}).get("minimum_score", 60))
         result["_temporal_unavailable"] = unresolved
         audit.update(status="uncertain" if unresolved else "verified", findings=answer["findings"],
-                     review=copy.deepcopy(answer["review"]), full_size_samples=count)
+                     review=copy.deepcopy(answer["review"]), full_size_samples=len(sampled))
         result["temporal_verification"] = audit
         return result
     except Exception as exc:

@@ -509,7 +509,10 @@ def review_media(project, shot, path, references, config=None, *, output_dir=Non
     if temporal_pending:
         from .temporal_review import TEMPORAL_CODES
         audit = result.get("temporal_verification", {})
-        confirmed = any(item.get("status") == "confirmed" for item in audit.get("findings", []))
+        original = audit.get("initial_review", {}).get("issues", [])
+        dispositions = {item.get("issue_id"): item.get("status") for item in audit.get("findings", [])}
+        confirmed = any(issue.get("severity") == "blocking" and dispositions.get(f'I{index+1}') == "confirmed"
+                        for index, issue in enumerate(original))
         other_blocking = any(issue["severity"] == "blocking" and issue["code"] not in TEMPORAL_CODES
                              for issue in result["issues"])
         mismatch = (result.get("style_alignment", {}).get("status") == "mismatch"
