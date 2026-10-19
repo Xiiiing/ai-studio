@@ -56,7 +56,7 @@ async function filledSelection(locator) {
 
 for (const width of [1440, 390])
   for (const theme of ["light", "dark"]) {
-    test(`filled navigation and complete selection outlines stay readable in all six palettes at ${width} ${theme}`, async ({
+    test(`monochrome main navigation and secondary setting selection stay distinct in all six palettes at ${width} ${theme}`, async ({
       page,
       request,
     }) => {
@@ -73,21 +73,53 @@ for (const width of [1440, 390])
         );
         await expect(selected.locator("input")).toBeChecked();
         await expect(selected.locator(".appearance-check")).toBeVisible();
-        const card = await filledSelection(selected);
-        expect(new Set(card.borders).size).toBe(1);
         const category = page.locator(
           '.settings-category[aria-current="page"]',
         );
-        await filledSelection(category);
+        const card = await filledSelection(category);
+        expect(new Set(card.borders).size).toBe(1);
+        await expect(
+          category.locator(".settings-category-check"),
+        ).toBeVisible();
+        const colors = await category.evaluate((el) => {
+          const probe = document.createElement("span");
+          el.append(probe);
+          probe.style.color = "var(--panel)";
+          const panel = getComputedStyle(probe).color;
+          probe.style.color = "var(--ink)";
+          const ink = getComputedStyle(probe).color;
+          probe.remove();
+          return {
+            panel,
+            ink,
+            background: getComputedStyle(el).backgroundColor,
+            color: getComputedStyle(el).color,
+          };
+        });
+        expect(colors.background).toBe(colors.panel);
+        expect(colors.color).toBe(colors.ink);
         const selectedBox = await category.boundingBox();
         await category.hover();
         expect(await category.boundingBox()).toEqual(selectedBox);
-        const mode = page.locator('.appearance-mode[data-selected="true"]');
-        await filledSelection(mode);
-        await expect(mode.locator(".appearance-check")).toBeVisible();
         if (width < 1024) await openDrawer(page);
         const nav = page.locator('.main-nav [aria-current="page"]');
-        await filledSelection(nav);
+        const main = await nav.evaluate((el) => {
+          const probe = document.createElement("span");
+          el.append(probe);
+          probe.style.color = "var(--ink)";
+          const background = getComputedStyle(probe).color;
+          probe.style.color = "var(--panel)";
+          const color = getComputedStyle(probe).color;
+          probe.remove();
+          return {
+            background,
+            color,
+            actualBackground: getComputedStyle(el).backgroundColor,
+            actualColor: getComputedStyle(el).color,
+          };
+        });
+        expect(main.actualBackground).toBe(main.background);
+        expect(main.actualColor).toBe(main.color);
         await expect(nav).toHaveCSS("font-weight", "600");
         await expect(page.locator(".main-nav [data-view]")).toHaveCount(5);
         await expect(
@@ -101,7 +133,9 @@ for (const width of [1440, 390])
         );
         expect(parseFloat(outline)).toBeGreaterThanOrEqual(2);
       }
-      await page.getByRole("heading", { name: "系统设置", exact: true }).click();
+      await page
+        .getByRole("heading", { name: "系统设置", exact: true })
+        .click();
       await page.evaluate(() => scrollTo(0, 0));
       await page.mouse.move(0, 0);
       await mkdir("docs/images/navigation-selection", { recursive: true });
@@ -125,26 +159,5 @@ for (const width of [1440, 390])
       expect(calls.filter((c) => !["GET", "HEAD"].includes(c.method))).toEqual(
         [],
       );
-    });
-
-    test(`recent projects, shots and workflow cards use complete selection surfaces at ${width} ${theme}`, async ({
-      page,
-    }) => {
-      await page.setViewportSize({ width, height: 1000 });
-      await page.emulateMedia({ colorScheme: theme });
-      await page.goto("/#project=012345abcdef&tab=shots");
-      const shot = page.locator(".shot-list-item").first();
-      await shot.click();
-      await filledSelection(page.locator(".shot-list-item.active"));
-      if (width < 1024) await openDrawer(page);
-      await filledSelection(page.locator(".project-item.active"));
-      if (width < 1024) await page.keyboard.press("Escape");
-      await page.goto("/#project=012345abcdef&tab=workflow");
-      const stage = page.locator('[data-stage="script"]');
-      await stage.focus();
-      await page.keyboard.press("Enter");
-      await expect(stage).toHaveAttribute("aria-pressed", "true");
-      await expect(stage).toBeFocused();
-      await filledSelection(page.locator(".workflow-fixed-node.is-selected"));
     });
   }

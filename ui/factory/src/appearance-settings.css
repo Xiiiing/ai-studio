@@ -40,7 +40,8 @@
 .appearance-mode[data-selected="true"],
 .appearance-palette[data-selected="true"] {
   border-color: var(--accent);
-  background: var(--selection);
+  background: var(--panel);
+  box-shadow: inset 2px 0 var(--accent);
 }
 .appearance-mode:has(input:focus-visible),
 .appearance-palette:has(input:focus-visible) {
@@ -68,11 +69,6 @@
   margin-left: auto;
   color: var(--accent-text);
   flex-shrink: 0;
-}
-.appearance-mode .appearance-check {
-  position: absolute;
-  top: 8px;
-  right: 8px;
 }
 .appearance-storage {
   color: var(--muted);
@@ -114,7 +110,7 @@
 .appearance-preview-selection {
   background: var(--accent-soft);
   color: var(--accent-text);
-  border: 1px solid var(--accent);
+  box-shadow: inset 2px 0 var(--accent);
 }
 @media (max-width: 700px) {
   .appearance-palettes {

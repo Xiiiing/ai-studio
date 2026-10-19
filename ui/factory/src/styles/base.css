@@ -1690,9 +1690,8 @@ legend {
   border-bottom: 1px solid var(--line);
 }
 .shot-list-item.active {
-  background: var(--selection);
-  border-radius: var(--control-radius);
-  box-shadow: inset 0 0 0 1px var(--accent);
+  background: var(--surface);
+  box-shadow: inset 3px 0 var(--accent);
 }
 .shot-list-item strong {
   font-size: var(--text-ui);

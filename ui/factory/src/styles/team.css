@@ -143,8 +143,8 @@
 }
 .team-task-button.selected {
   border-color: var(--accent);
-  background: var(--selection);
-  box-shadow: none;
+  background: var(--panel);
+  box-shadow: inset 3px 0 var(--accent);
 }
 .team-task-button > span {
   display: flex;

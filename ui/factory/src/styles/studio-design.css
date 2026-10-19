@@ -57,13 +57,9 @@ body {
 }
 .nav-item.active,
 .nav-item.active:hover {
-  background: var(--selection);
-  color: var(--ink);
-  font-weight: 600;
+  background: var(--ink);
+  color: var(--panel);
   box-shadow: none;
-}
-.nav-item.active > svg {
-  color: var(--accent-text);
 }
 .nav-item.active .nav-count {
   background: color-mix(in srgb, var(--ink) 80%, var(--panel));
@@ -76,13 +72,11 @@ body {
   border-radius: 10px;
 }
 .project-item.active {
-  background: var(--selection);
-  color: var(--ink);
-  box-shadow: none;
+  background: var(--surface);
+  box-shadow: inset 3px 0 var(--accent);
 }
 .project-item.active strong {
   color: var(--ink);
-  font-weight: 600;
 }
 #workspace {
   padding: 28px 30px 36px;

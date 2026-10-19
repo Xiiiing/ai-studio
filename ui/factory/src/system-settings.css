@@ -41,12 +41,16 @@
   color: var(--ink);
 }
 .settings-category[aria-current="page"] {
-  background: var(--selection);
+  background: var(--panel);
   color: var(--ink);
   border-color: var(--line);
 }
-.settings-category[aria-current="page"] > svg {
-  color: var(--accent-text);
+.settings-category > span {
+  flex: 1;
+  min-width: 0;
+}
+.settings-category-check {
+  color: var(--ink);
 }
 .settings-category[aria-current="page"] strong {
   font-weight: 600;

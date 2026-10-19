@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { Activity, Info, Palette, Plug } from "lucide-react";
+import { Activity, Check, Info, Palette, Plug } from "lucide-react";
 import { AppearanceSettings } from "./AppearanceSettings";
 import { Models } from "./LazyViews";
 import { PageHeader } from "./PageHeader";
@@ -92,6 +92,7 @@ export function SystemSettings({
                 <strong>{label}</strong>
                 <small>{description}</small>
               </span>
+              {selected.id === id && <Check className="settings-category-check" size={16} aria-hidden="true" />}
             </button>
           ))}
         </nav>

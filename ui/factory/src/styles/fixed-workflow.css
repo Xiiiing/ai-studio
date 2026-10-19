@@ -151,7 +151,6 @@
   overflow: hidden;
 }
 .workflow-fixed-node.is-selected {
-  background: var(--selection);
   border-color: var(--focus);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--focus) 15%, transparent);
 }

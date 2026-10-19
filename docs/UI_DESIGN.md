@@ -83,9 +83,9 @@
 
 ## 选中态
 
-导航选中项采用整块主题柔和底色、较高字重和图标强调，最近项目与设置分类保持一致；不使用左侧装饰竖条。外观模式与色卡通过完整细描边及勾选标记表达选择，工作流、任务和镜头卡保留完整轮廓及浅色面。选中状态不改变尺寸或内边距，键盘焦点独立使用外轮廓，悬停不会清除选中态；任务的运行/警告/错误语义颜色继续使用原有 token。
+主导航保留原有黑白反差选中态，不随六款主题改为彩色背景。第二级系统设置分类使用中性面板、完整细边、较高字重与末尾勾选，去除该分类左侧的竖条。其它制作页面与外观选项保留原有设计。键盘焦点独立使用外轮廓，选中不改变尺寸或内边距。
 
-设计参考 [Material 抽屉的容器选中示例](https://developer.android.com/develop/ui/compose/components/drawer) 和 [Fluent 导航层级原则](https://fluent2.microsoft.design/components/web/react/core/nav/usage)，样式结合本工作室六款配色与深浅模式调整。[桌面与手机截图](images/navigation-selection/README.md)使用隔离 API fixtures，非真实模型生成。
+[桌面与手机截图](images/navigation-selection/README.md)使用隔离 API fixtures，非真实模型生成。
 
 ## 导航与内容
 
