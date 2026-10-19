@@ -407,9 +407,12 @@ function WorkflowWorkspace({
               roles={
                 canvasSelection?.kind === "role"
                   ? [canvasSelection.id]
-                  : canvasSelection?.kind === "step"
-                    ? selected?.members
-                    : undefined
+                  : canvasSelection?.kind === "department"
+                    ? model.departments.find((d) => d.id === canvasSelection.id)
+                        ?.node_ids
+                    : canvasSelection?.kind === "step"
+                      ? selected?.members
+                      : undefined
               }
               pairs={
                 canvasSelection &&

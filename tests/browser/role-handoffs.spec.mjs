@@ -11,7 +11,7 @@ const ident = "a".repeat(32);
 const record = {
   id: ident,
   source: "screenwriter",
-  target: "independent_critic",
+  target: "storyboard_director",
   source_stage: "screenplay",
   target_stage: "script_review",
   version: { script_generation: 1 },
@@ -40,7 +40,7 @@ const snapshot = {
   requests: [
     {
       id: "request",
-      source: "independent_critic",
+      source: "storyboard_director",
       target: "screenwriter",
       scope: ["S03"],
       state: "supplemented",
@@ -73,6 +73,71 @@ for (const width of [1440, 390, 320])
         const response = await route.fetch();
         const data = await response.json();
         data.flow.controlled_handoffs = snapshot;
+        data.workflow.nodes = [
+          {
+            id: "screenplay",
+            label: "剧本创作",
+            owner: "screenwriter",
+            members: ["screenwriter"],
+            status: "completed",
+          },
+          {
+            id: "storyboard",
+            label: "分镜编排",
+            owner: "storyboard_director",
+            members: ["storyboard_director"],
+            status: "blocked",
+          },
+          {
+            id: "script_review",
+            label: "独立复审",
+            owner: "independent_critic",
+            members: ["independent_critic"],
+            status: "pending",
+          },
+        ];
+        data.workflow.active_node = "storyboard";
+        data.workflow.edges = [
+          { source: "screenplay", target: "storyboard" },
+          { source: "storyboard", target: "script_review" },
+        ];
+        data.workflow.presentation = {
+          workflow_version: 2,
+          stages: [
+            {
+              id: "script",
+              label: "剧本与分镜",
+              node_ids: ["screenplay", "storyboard", "script_review"],
+            },
+          ],
+          branches: [],
+        };
+        data.flow.collaboration_tasks = [];
+        data.flow.task_board = { tasks: [] };
+        data.flow.edges = [
+          {
+            source: "screenwriter",
+            target: "storyboard_director",
+            label: "剧本交付",
+          },
+          {
+            source: "storyboard_director",
+            target: "independent_critic",
+            label: "分镜复审",
+          },
+          {
+            source: "storyboard_director",
+            target: "screenwriter",
+            label: "指定镜头动作补料",
+            loop: true,
+          },
+          {
+            source: "independent_critic",
+            target: "screenwriter",
+            label: "独立审核返修要求",
+            loop: true,
+          },
+        ];
         await route.fulfill({ response, json: data });
       });
       await page.route("**/api/factory/projects/*/flow", async (route) => {
@@ -138,7 +203,7 @@ for (const width of [1440, 390, 320])
       expect(await canvasState(page)).toEqual(before);
       const edge = page
         .locator(
-          '[data-flow-edge*="/screenwriter>"][data-flow-edge$="/independent_critic:forward"]',
+          '[data-flow-edge*="/screenwriter>"][data-flow-edge$="/storyboard_director:forward"]',
         )
         .first();
       await expect(edge).toBeAttached();
@@ -147,6 +212,23 @@ for (const width of [1440, 390, 320])
       await card.getByText("查看交接记录 · 1 条", { exact: true }).click();
       await expect(card.getByText("已退回补料", { exact: true })).toBeVisible();
       await closeDetails(page);
+      for (const sender of ["storyboard_director", "independent_critic"]) {
+        const returned = page
+          .locator(
+            `[data-flow-edge*="/${sender}>"][data-flow-edge$="/screenwriter:repair"]`,
+          )
+          .first();
+        await expect(returned).toBeAttached();
+        await pointerEdge(page, returned);
+        await openDetails(page);
+        await card.getByText("查看交接记录 · 1 条", { exact: true }).click();
+        await expect(
+          card.getByText("本页暂无与所选岗位或连线对应的受控交接。", {
+            exact: true,
+          }),
+        ).toBeVisible();
+        await closeDetails(page);
+      }
       expect(details).toHaveLength(1);
       expect(errors).toEqual([]);
       expect(writes).toEqual([]);
