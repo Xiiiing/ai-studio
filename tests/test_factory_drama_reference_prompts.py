@@ -336,3 +336,20 @@ def test_actual_compiler_instructions_keep_names_out_of_images_and_architecture_
     facts = drama_assets._reference_requirements(current, 'character', current['plan']['characters'][0])
     drama_assets._compile_reference(current, {}, facts, case.render_config['image_connection'])
     assert len(observed) == 1 and case.calls[0]['compiler_system_sha256'] == core.fingerprint(drama_assets.REFERENCE_COMPILER_SYSTEM)
+
+
+def test_visual_context_is_pinned_when_new_episode_and_unit_are_created(case):
+    from factory import dramas
+    value = {'description': '动画允许二维绘制或三维CG，不能仅凭反射判摄影。',
+             'source_records': [{'field': 'format', 'value': 'animation'}]}
+    store.update(case.root['id'], {'resolved_visual_style': value})
+    episode = dramas.record('episode', 'New episode', 'Continue the approved plan', drama_id=case.root['id'])
+    with store.connection() as db:
+        dramas.insert(db, episode)
+    unit = dramas.record('scene_unit', 'New unit', 'Continue this scene', episode_id=episode['id'])
+    with store.connection() as db:
+        dramas.insert(db, unit)
+    store.update(case.root['id'], {'resolved_visual_style': {'description': 'Later direction'}})
+    assert store.get(episode['id'], False)['resolved_visual_style'] == value
+    assert store.get(unit['id'], False)['resolved_visual_style'] == value
+    assert store.get(case.episode['id'], False).get('resolved_visual_style') is None

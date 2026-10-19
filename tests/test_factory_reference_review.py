@@ -275,18 +275,20 @@ def test_missing_visual_clarification_keeps_legacy_context_compatible(tmp_path, 
     assert not any(item['field'].startswith('resolved_visual_style') for item in calls[1]['context']['approved_facts'])
 
 
-def test_visual_clarification_changes_reference_qa_identity_without_changing_image_or_other_targets(engine):
+@pytest.mark.parametrize('kind', ['image', 'video'])
+def test_visual_clarification_changes_all_media_qa_without_changing_generated_pixels(engine, kind):
     from test_factory_reference_repairs import reference_target, CASES
     run = engine
     first = reference_target(run, 'character_reference', CASES[0][1])
-    plain1 = run._target('plain', run.folder / 'plain', 'Ordinary prompt')
+    plain1 = run._target('plain', run.folder / 'plain', 'Ordinary prompt', kind=kind, seconds=1)
     run.project['resolved_visual_style'] = {'description': '本次采用三维3D动画',
         'source_records': [{'title': '制作方媒介澄清', 'scope': 'medium_only'}]}
     second = reference_target(run, 'character_reference', CASES[0][1])
-    plain2 = run._target('plain', run.folder / 'plain', 'Ordinary prompt')
+    plain2 = run._target('plain', run.folder / 'plain', 'Ordinary prompt', kind=kind, seconds=1)
     assert first['signature'] == second['signature']
     assert first['review_signature'] != second['review_signature']
-    assert plain1['signature'] == plain2['signature'] and plain1['review_signature'] == plain2['review_signature']
+    assert plain1['signature'] == plain2['signature']
+    assert plain1['review_signature'] != plain2['review_signature']
 
 
 def test_candidate_and_repeat_verification_records_do_not_overwrite_each_other(tmp_path, monkeypatch):
