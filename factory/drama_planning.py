@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import copy
+from contextlib import ExitStack
 from . import store
 from .schemas import object_schema as obj, text_schema as txt, array_schema as arr, cached_json_call
 from .dramas import validate_plan, source_excerpt
@@ -29,9 +30,35 @@ def plan_schema(count):
 def call(project, config, role, stage, instructions, payload, schema, tokens=6000):
     from .scheduler import ProductionPaused
     if store.get(project['id'],False).get('pause_requested'): raise ProductionPaused('已在创作任务边界暂停')
-    result=cached_json_call(project, config, role, stage, instructions, payload, schema,
-        checkpoint=lambda patch: store.update(project['id'], patch), max_tokens=tokens,
-        temperature=.2 if role in {'story_critic', 'independent_critic'} else .65)
+    from studio.core import ROOT
+    from . import role_handoffs as handoffs
+    from .team_flow import _project_root
+    from .workflows import ReviewBlocked
+    # Only controller-selected planning inputs become handoffs. Reading old
+    # projects never backfills transfers from matching output text.
+    folder = _project_root(project, root=ROOT) / 'planning'
+    transfers = []
+    if role == 'screenwriter' and stage.startswith('drama-outline-'):
+        transfers.append(('story_editor', 'planning', 'world_outline', payload['world']))
+    if role == 'story_critic' and stage.startswith('drama-plan-review-'):
+        transfers.append(('screenwriter', 'planning', 'outline_review',
+                          {k: payload[k] for k in ('world', 'episodes')}))
+    if payload.get('review_feedback') and role in {'story_editor', 'screenwriter'}:
+        transfers.append(('story_critic', 'review', 'review_feedback', {'issues': payload['review_feedback']}))
+    with ExitStack() as stack:
+        for source, source_stage, contract, material in transfers:
+            target_stage = 'review' if role == 'story_critic' else 'planning'
+            record = handoffs.submit(folder, project, source=source, target=role,
+                source_stage=source_stage, target_stage=target_stage, contract=contract,
+                value=material, source_sha256=handoffs.digest(payload))
+            received = handoffs.receive(folder, project, record['id'], role=role, stage=target_stage, value=material)
+            if not received['accepted']:
+                raise ReviewBlocked('规划交接资料不完整，已保留原稿与补料单',
+                    {'type': 'drama_plan', 'handoff_id': record['id'], 'supplement_request': received['request']})
+            stack.enter_context(handoffs.bind(folder, record))
+        result=cached_json_call(project, config, role, stage, instructions, payload, schema,
+            checkpoint=lambda patch: store.update(project['id'], patch), max_tokens=tokens,
+            temperature=.2 if role in {'story_critic', 'independent_critic'} else .65)
     if store.get(project['id'],False).get('pause_requested'): raise ProductionPaused('已在创作任务边界暂停')
     return result
 

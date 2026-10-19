@@ -4,6 +4,7 @@ from __future__ import annotations
 import copy
 import json
 import re
+from contextlib import ExitStack
 
 from .prompt_registry import load_prompt, derive_prompt
 from .review_policy import automation, exhausted_message, max_review_rounds
@@ -354,7 +355,7 @@ def _revision_visual_style(project, config, checkpoint):
             "source_signature": evidence["source_signature"], "artifact": relative_path(path)}
 
 
-def _styles(project, config, episode, checkpoint):
+def _styles(project, config, episode, checkpoint, approval_review=None):
     from .material_production import styles as material_styles
     selected = material_styles(project)
     if selected:
@@ -370,11 +371,24 @@ def _styles(project, config, episode, checkpoint):
             "previous_directions":[{k:v.get(k) for k in ("name","description","prompt","palette")}
                                    for v in project.get("styles",[])],
             "instruction":"落实producer_visual_feedback；被否决方向只用于理解原因，不重复生成。"}
-    value = cached_json_call(project, config, "visual_designer", "visual-styles", STYLE_SYSTEM,
-        {"project": context, "title": episode["title"],
-         "synopsis": episode["synopsis"], "cast": episode["cast"],
-         "locations": list(dict.fromkeys(s.get("location", "") for s in episode["shots"]))},
-        STYLES_SCHEMA, checkpoint, max_tokens=3600, temperature=0.7)
+    material = {"title": episode["title"], "synopsis": episode["synopsis"], "cast": episode["cast"],
+                "locations": list(dict.fromkeys(s.get("location", "") for s in episode["shots"]))}
+    def design():
+        return cached_json_call(project, config, "visual_designer", "visual-styles", STYLE_SYSTEM,
+            {"project": context, **material}, STYLES_SCHEMA, checkpoint, max_tokens=3600, temperature=0.7)
+    if approval_review is not None:
+        from . import role_handoffs as handoffs
+        transfer = handoffs.submit(planning_dir(project), project, source='independent_critic', target='visual_designer',
+            source_stage='script_review', target_stage='visual_design', contract='visual_design',
+            value=material, approval=approval_review, source_sha256=fingerprint(episode))
+        received = handoffs.receive(planning_dir(project), project, transfer['id'], role='visual_designer',
+                                    stage='visual_design', value=material)
+        if not received['accepted']:
+            raise CreativeReviewError('视觉设计交接校验未通过', received['request']['issues'])
+        with handoffs.bind(planning_dir(project), transfer):
+            value = design()
+    else:
+        value = design()
     return [{**style, "id": "style-%d" % (i + 1), "format": project.get("format", "motion_comic")}
             for i, style in enumerate(value["styles"])]
 
@@ -723,6 +737,7 @@ def _make_script(project, config, checkpoint, feedback=None):
             "你先完成剧情、action、对白与连续性，并提供这些制作字段的初稿；导演不能替你改剧情。")
         writer_system = derive_prompt(SCRIPT_SYSTEM, writer_system, "separate_storyboard")
     history, episode, final_review, direction = [], None, None, None
+    pending_supplement, repair_scope = None, None
     for index in range(1, maximum_rounds + 1):
         report(checkpoint, stage="script_creation", progress=29 + index * 2,
                message=("编剧正在完成剧情、人物、对白和逐镜动作（第%d轮）" if separate_storyboard else
@@ -736,9 +751,37 @@ def _make_script(project, config, checkpoint, feedback=None):
             if resolved and not affected:
                 request["rewrite_instruction"] = "保留requirements和删除项，在已选主题内重构AI工作方案；可重新设计回馈机制与后半结构。用实际setup/choice/payoff解决原创和结局问题，不依赖换礼物或追加尾声。逐项处理独立评审证据。"
             request["independent_feedback"] = final_review
-        raw = cached_json_call(project, config, "screenwriter", "screenplay-%d" % index,
-            writer_system, request, episode_schema(len(plan), project), checkpoint,
-            max_tokens=11500, temperature=0.65)
+        if pending_supplement:
+            request['supplement_request'] = {key: copy.deepcopy(pending_supplement[key])
+                for key in ('id', 'source', 'target', 'scope', 'issues')}
+            request['only_revise_shot_ids'] = repair_scope
+            request['previous_episode'] = previous_attempt
+            request['locked_shot_ids'] = [s['id'] for s in previous_attempt['shots'] if s['id'] not in repair_scope]
+        current_writer_system = writer_system
+        if pending_supplement:
+            supplement_system = load_prompt('screenwriter', '1.1.0')
+            rendered = str(supplement_system)
+            if separate_storyboard:
+                rendered = rendered.replace('你是短剧编剧兼分镜导演', '你是短剧编剧', 1)
+            current_writer_system = derive_prompt(supplement_system, rendered, 'controlled_supplement')
+        from . import role_handoffs as handoffs
+        with ExitStack() as bindings:
+            for source_role, source_stage, material in (
+                ('independent_critic', 'script_review', request.get('independent_feedback')),
+                ('storyboard_director', 'storyboard', request.get('supplement_request')),
+            ):
+                if not material:
+                    continue
+                returned = handoffs.submit(folder, project, source=source_role, target='screenwriter',
+                    source_stage=source_stage, target_stage='screenplay', contract='review_feedback',
+                    value=material, scope=repair_scope or affected or [])
+                accepted = handoffs.receive(folder, project, returned['id'], role='screenwriter', stage='screenplay', value=material)
+                if not accepted['accepted']:
+                    raise CreativeReviewError('返修依据缺少可交付内容', accepted['request']['issues'])
+                bindings.enter_context(handoffs.bind(folder, returned))
+            raw = cached_json_call(project, config, "screenwriter", "screenplay-%d" % index,
+                current_writer_system, request, episode_schema(len(plan), project), checkpoint,
+                max_tokens=11500, temperature=0.65)
         episode = _canonical_episode(raw, project)
         if affected and previous:
             for i, shot in enumerate(episode["shots"]):
@@ -751,14 +794,21 @@ def _make_script(project, config, checkpoint, feedback=None):
             episode["cast"] = copy.deepcopy(previous["cast"])
             episode["character_names"] = copy.deepcopy(previous.get("character_names", episode["character_names"]))
             episode["visual_style"] = previous["visual_style"]
+        if repair_scope and previous_attempt:
+            # The model may return a full script; only the explicitly returned
+            # shots are adopted. Approved identities and all other shots survive.
+            changed = {s['id']: s for s in episode['shots'] if s['id'] in repair_scope}
+            episode = copy.deepcopy(previous_attempt)
+            episode['shots'] = [copy.deepcopy(changed.get(s['id'], s)) for s in episode['shots']]
         director_issues = []
         if separate_storyboard:
             direction = direct_storyboard(project, config, episode, checkpoint,
                 approved_story=resolved_goal or proposal_reference,
-                shot_ids=affected or None, round_index=index,
+                shot_ids=repair_scope or affected or None, round_index=index,
                 producer_feedback=producer_feedback,
                 repair_issues=(final_review or {}).get("issues", []),
-                previous_attempt=previous_attempt)
+                previous_attempt=previous_attempt,
+                supplement_request_id=(pending_supplement or {}).get('id'))
             episode, director_issues = direction["episode"], direction["issues"]
         structural = (technical_issues(episode, project) +
                       _excluded_story_issues(episode, resolved) + director_issues)
@@ -766,7 +816,17 @@ def _make_script(project, config, checkpoint, feedback=None):
                message="独立审稿人正在逐镜检查剧情闭合、声音槽位和连续性",
                review_automation=automation(config, "script", index, project.get("script_generation", 1),
                                             "reviewing", "独立审核返修结果"))
-        final_review = cached_json_call(project, config, "independent_critic",
+        from . import role_handoffs as handoffs
+        review_transfer = handoffs.submit(folder, project,
+            source='storyboard_director' if separate_storyboard else 'screenwriter', target='independent_critic',
+            source_stage='storyboard' if separate_storyboard else 'screenplay', target_stage='script_review',
+            contract='episode_review', value=episode, scope=repair_scope or affected or [])
+        received = handoffs.receive(folder, project, review_transfer['id'], role='independent_critic',
+                                    stage='script_review', value=episode)
+        if not received['accepted']:
+            raise CreativeReviewError('剧本审核交接结构无效', received['request']['issues'])
+        with handoffs.bind(folder, review_transfer):
+            final_review = cached_json_call(project, config, "independent_critic",
             "screenplay-review-%d" % index, CRITIC_SYSTEM,
             {"project": _safe_context(project), "selected_story": resolved["logline"] if resolved else proposal["logline"],
              "resolved_story_brief": resolved_goal, "creative_scope": creative_scope,
@@ -775,9 +835,11 @@ def _make_script(project, config, checkpoint, feedback=None):
              "proposal_reference_only_where_feedback_does_not_override": True,
              "episode": episode, "technical_findings": structural,
              "task": "以出品人反馈修订后的故事目标评价完整成片因果链、结局与反转证据。原提案冲突部分已被反馈覆盖；不得因遵守删除要求而扣分，仍保留明确被删除要素则指出镜头证据并阻断。"},
-            SCRIPT_REVIEW_SCHEMA, checkpoint, max_tokens=5800, temperature=0.25)
+                SCRIPT_REVIEW_SCHEMA, checkpoint, max_tokens=5800, temperature=0.25)
         final_review["issues"] = structural + final_review["issues"]
         final_review["passed"] = review_passes(final_review)
+        pending_supplement = (direction or {}).get('supplement_request')
+        repair_scope = list(pending_supplement['scope']) if pending_supplement else None
         history.append({"round": index, "review": copy.deepcopy(final_review),
                         **({"storyboard": direction["receipt"]} if direction else {})})
         write_json(folder / "script-review.json", {"passed": final_review["passed"], "rounds": history,
@@ -793,7 +855,7 @@ def _make_script(project, config, checkpoint, feedback=None):
         # specification: later feedback still needs it to compile changed shots.
         styles = copy.deepcopy(project["styles"])
     elif passed:
-        styles = _styles(project, config, episode, checkpoint)
+        styles = _styles(project, config, episode, checkpoint, approval_review=final_review)
     else:
         styles = []
     write_json(folder / "styles.json", styles)

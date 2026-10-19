@@ -35,6 +35,19 @@ class Handler(LocalMediaHandler):
         try:
             if path == "/api/factory/system":
                 return self.json(public_system_info())
+            match = re.fullmatch(r'/api/factory/projects/([a-f0-9]{12})/handoffs(?:/([a-f0-9]{32}))?', path)
+            if match:
+                from . import role_handoffs
+                from .team_flow import _project_root
+                pid, ident = match.groups()
+                query = parse_qs(urlsplit(self.path).query, keep_blank_values=True)
+                if set(query) - ({'offset', 'limit'} if not ident else set()) or any(
+                        len(v) != 1 or not re.fullmatch(r'[0-9]{1,9}', v[0]) for v in query.values()):
+                    raise ValueError('交接分页无效')
+                project = store.get(pid, False)
+                folder = _project_root(project, root=ROOT) / 'planning'
+                return self.json(role_handoffs.detail(folder, project, ident) if ident else
+                    role_handoffs.snapshot(folder, project, **{k: int(v[0]) for k, v in query.items()}))
             if path == '/api/factory/dramas':
                 from .dramas import list_dramas
                 return self.json(list_dramas())

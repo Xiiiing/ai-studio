@@ -656,6 +656,122 @@
       "output_schema_refs": [
         "factory.h3_prompting:PROMPT_SCHEMA"
       ]
+    },
+    {
+      "role": "screenwriter",
+      "version": "1.1.0",
+      "responsibility": "在既有编剧职责内按控制层补料单定向修复指定镜头，保留锁定内容并继续独立审核。",
+      "path": "screenwriter/1.1.0.txt",
+      "sha256": "37728ab0d90fdd173e58d540810b008ef90526113ce699a56bdce41c4de49875",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "project": {},
+          "selected_proposal": {},
+          "resolved_story_brief": {},
+          "creative_scope": {},
+          "timeline": {},
+          "authorized_adaptation_material": {},
+          "previous_episode": {},
+          "producer_feedback": {},
+          "proposal_reference_only_where_feedback_does_not_override": {},
+          "only_revise_shot_ids": {},
+          "approved_visual_traits": {},
+          "previous_attempt": {},
+          "rewrite_instruction": {},
+          "independent_feedback": {},
+          "producer_task_requirements": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "stage": {
+                "type": "string"
+              },
+              "requirements": {
+                "type": "string",
+                "maxLength": 4000
+              },
+              "revision": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "rule": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "stage",
+              "requirements",
+              "revision",
+              "rule"
+            ]
+          },
+          "locked_shot_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^S[0-9]{2,3}$"
+            },
+            "maxItems": 150,
+            "uniqueItems": true
+          },
+          "supplement_request": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{32}$"
+              },
+              "source": {
+                "type": "string",
+                "enum": [
+                  "storyboard_director"
+                ]
+              },
+              "target": {
+                "type": "string",
+                "enum": [
+                  "screenwriter"
+                ]
+              },
+              "scope": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^S[0-9]{2,3}$"
+                },
+                "maxItems": 150,
+                "uniqueItems": true,
+                "minItems": 1
+              },
+              "issues": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 150,
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "description",
+                    "shot_ids"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "id",
+              "source",
+              "target",
+              "scope",
+              "issues"
+            ]
+          }
+        }
+      },
+      "output_schema_refs": [
+        "factory.schemas:episode_schema"
+      ]
     }
   ]
 }
