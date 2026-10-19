@@ -115,14 +115,14 @@ def test_compiler_failure_consumes_no_take_or_gpu(setup, monkeypatch):
 def test_failed_video_repairs_prompt_after_replacement_frame_gpu_is_released(setup):
     project, cfg, target, events, compiles, executions, frame = setup
     cfg['semantic_enabled'] = True
-    reviews = iter([{'status':'fail','score':40,'issues':[{'code':'action','severity':'blocking','detail':'Wrong action'}]},
+    reviews = iter([{'status':'fail','score':40,'issues':[{'code':'continuity','severity':'blocking','detail':'Wrong initial prop state requires a replacement frame'}]},
                     {'status':'pass','score':90,'issues':[]}])
     run = production._Run(project, cfg, None, None, evaluator=lambda *a: next(reviews))
     selected = run._render_targets([target(run)], 'diffusion_video')[0]
     assert [kind for kind, _ in executions] == ['video','image','video']
     assert len(compiles) == 2
     assert compiles[1][1]['previous_prompt'].startswith('Compiled approved action, take 1')
-    assert compiles[1][1]['repair']['diagnosis']['primary_code'] == 'action'
+    assert compiles[1][1]['repair']['diagnosis']['primary_code'] == 'continuity'
     assert compiles[1][1]['references'][0]['sha256'] != core.sha256(frame)
     assert selected['h3_prompt']['first_frame_sha256'] == compiles[1][1]['references'][0]['sha256']
     assert events == ['compile','gpu_enter','gpu_exit','gpu_enter','gpu_exit','compile','gpu_enter','gpu_exit']
@@ -140,7 +140,7 @@ def test_pending_repair_prompt_resumes_same_take_without_extra_frame_generation(
         return original(*args, **kwargs)
     monkeypatch.setattr(h3_prompting, 'compile_prompt', compile_prompt)
     run = production._Run(project, cfg, None, None, evaluator=lambda *a: {
-        'status':'fail','score':40,'issues':[{'code':'action','severity':'blocking'}]})
+        'status':'fail','score':40,'issues':[{'code':'continuity','severity':'blocking'}]})
     with pytest.raises(scheduler.ProductionNeedsDecision):
         run._render_targets([target(run)], 'diffusion_video')
     assert [kind for kind, _ in executions] == ['video','image']

@@ -144,9 +144,11 @@ def _grounded_repair_plan(assessment, stage, attempt, expected=None, reference_r
     repair = repair_plan({"issues": [{"code": route}]}, stage, attempt)
     technical = route in ("decode", "audio", "fps", "duration", "resolution")
     if route in ("continuity", "action"):
+        # A generated motion defect does not invalidate an approved starting
+        # frame. Keep frame replacement for continuity/identity diagnoses.
         repair.update(action="repair_scene_action_and_continuity",
                       seed_delta=1013 * attempt, prompt_suffix="",
-                      regenerate_keyframe=stage == "video",
+                      regenerate_keyframe=stage == "video" and route == "continuity",
                       simplify_motion=stage == "video" and route == "action")
     elif route == "identity":
         repair["prompt_suffix"] = ("Preserve the exact face, age, hairstyle and clothing "

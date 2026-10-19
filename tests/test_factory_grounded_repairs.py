@@ -6,7 +6,11 @@ import copy
 import unittest
 from unittest import mock
 
+import pytest
+
 from factory.production import _grounded_repair_plan
+from test_factory_generation_pipeline import production, transport
+from test_factory_team_ledger import project
 
 
 class GroundedRepairTests(unittest.TestCase):
@@ -158,3 +162,77 @@ def test_starting_pose_repair_never_reintroduces_full_future_action():
     video=_grounded_repair_plan(problem,'video',2,expected)
     assert 'FUTURE_ACTION_SENTINEL' in video['prompt_prefix']
     assert 'FUTURE_MOTION_SENTINEL' in video['prompt_prefix']
+
+
+@pytest.mark.parametrize('code,needs_frame', [('action', False), ('continuity', True), ('identity', True)])
+def test_video_action_uses_existing_frame_while_other_frame_repairs_remain_protected(code, needs_frame):
+    shot = {'id': 'S02', 'prompt': 'Medium close-up, closed lips.',
+            'action': 'Lean slightly forward.', 'continuity': 'The same person remains in the hall.',
+            'motion_prompt': 'A gentle camera push-in.'}
+    plan = _grounded_repair_plan({'issues': [{'code': code, 'severity': 'blocking', 'detail': 'Untrusted failure prose.'}]},
+                                 'video', 2, shot)
+    assert plan['regenerate_keyframe'] is needs_frame
+    assert plan['seed_delta'] != 0
+    assert 'Untrusted failure prose' not in plan['prompt_prefix']
+    for field in ('action', 'continuity', 'prompt', 'motion_prompt'):
+        assert shot[field] in plan['prompt_prefix']
+
+
+def test_late_mouth_failure_creates_compiled_video_retake_without_replacing_approved_frame(production, monkeypatch):
+    from factory import production as renderer, generation_pipeline as pipeline
+    from factory.video_providers import H3_PRODUCTION_PROFILE
+    from factory.scheduler import ProductionNeedsDecision
+    p, frame, config = production
+    monkeypatch.setattr(renderer, 'ROOT', pipeline.ROOT)
+    approved = {'id': 'S02', 'seconds': 5.708333333333333,
+                'prompt': 'Medium close-up of an adult woman, leaning slightly forward; visible mouths stay closed.',
+                'action': 'Lean slightly forward, maintaining closed lips throughout.',
+                'motion_prompt': 'Slow camera push-in on her serious expression.',
+                'camera_motion': 'push_in', 'characters': ['female'], 'reference_group': 'female',
+                'continuity': 'The same woman stays in the hall.', 'dialogue': [],
+                'image': {**pipeline.media_receipt(frame), 'qa': {'status': 'pass'}}}
+    p['script']['shots'] = [approved]
+    p['production'] = {'gpu_seconds': 651.07, 'elapsed_seconds': 400}
+    cfg = {**config, 'video_connection': {'profile': 'local_h3', **H3_PRODUCTION_PROFILE},
+           'h3_prompting': 'automatic', 'h3_prompt_config': config['generation_pipeline_config'],
+           'review_only_existing_videos': False, 'max_attempts': 2,
+           'video_width': 352, 'video_height': 640}
+    calls = transport(monkeypatch, approved)
+    run = renderer._Run(p, cfg, None, None)
+    shot = run.shots[0]
+    target = run._target('S02', run.folder / 'renders/S02', shot['motion_prompt'], [frame],
+                         kind='video', seconds=shot['seconds'], shot=shot, review=True, reference_roles=['female'])
+    assert target.get('generation_plan') and target['generation_plan']['phase'] == 'video'
+    previous = {'take': 'take_004', 'attempt': 1, 'stage': 'video', 'state': 'failed', 'seed': 7,
+                'source_signature': target['signature'], 'gpu_seconds': 651.07,
+                'qa': {'status': 'fail', 'issues': [{'code': 'action', 'severity': 'blocking',
+                        'detail': 'Mouth opens only in late video samples despite closed-mouth requirement.'}]},
+                'generation_plan': copy.deepcopy(target['generation_plan'])}
+    prior_path = target['folder'] / 'take_004/attempt.json'
+    renderer.write_json(prior_path, previous)
+    old_bytes = prior_path.read_bytes()
+    old_frame = copy.deepcopy(shot['image'])
+    initial_gpu = run.budget.snapshot()['gpu_seconds']
+    initial_calls = len(calls)
+    monkeypatch.setattr(run, '_team_admit_target', lambda target: None)
+    monkeypatch.setattr(run, '_team_begin_target', lambda target, record: None)
+    monkeypatch.setattr(run, '_remote_first_frame', lambda *a, **kw: pytest.fail('Approved frame must be reused'))
+    monkeypatch.setattr(run, '_finish_h3_prompt', lambda *a, **kw: pytest.fail('Frozen compiled plan must stay intact'))
+    record = run._new_attempt(target)
+    assert record['take'] == 'take_005' and record['attempt'] == 2
+    assert record['repair']['regenerate_keyframe'] is False
+    assert record['seed'] != previous['seed']
+    assert record['generation_plan'] == previous['generation_plan']
+    assert record['prompt'].startswith(target['generation_plan']['parameters']['prompt'])
+    for field in ('action', 'continuity', 'prompt', 'motion_prompt'):
+        assert shot[field] in record['prompt']
+    assert record['references'] == [pipeline.media_receipt(frame)]
+    assert shot['image'] == old_frame and prior_path.read_bytes() == old_bytes
+    assert run.budget.snapshot()['gpu_seconds'] == initial_gpu == 651.07
+    assert len(calls) == initial_calls
+    assert renderer.read_json(target['folder'] / 'take_005/attempt.json')['attempt'] == 2
+    # The normal retry cap still applies after the new attempt; history is not reset.
+    with pytest.raises(ProductionNeedsDecision) as stopped:
+        run._new_attempt(target)
+    assert stopped.value.reason == 'retry_limit'
+    assert prior_path.read_bytes() == old_bytes
