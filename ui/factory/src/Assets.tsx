@@ -1,3 +1,4 @@
+import { StudioSelect } from "./StudioSelect";
 import { useEffect, useState, type ReactNode } from "react";
 import { useShotDraft } from "./SessionDraft";
 import { ShotVersions } from "./ShotVersions";
@@ -233,7 +234,7 @@ function ShotDetail({
             </Field>
             <div className="form-row">
               <Field label="程序运镜">
-                <select
+                <StudioSelect
                   name="camera_motion"
                   value={values.camera_motion || "hold"}
                   onChange={(e) => edit("camera_motion", e.target.value)}
@@ -249,17 +250,17 @@ function ShotDetail({
                       {l}
                     </option>
                   ))}
-                </select>
+                </StudioSelect>
               </Field>
               <Field label="重制范围">
-                <select
+                <StudioSelect
                   name="stage"
                   value={values.stage || "image"}
                   onChange={(e) => edit("stage", e.target.value)}
                 >
                   <option value="image">首帧与依赖视频</option>
                   <option value="video">仅视频</option>
-                </select>
+                </StudioSelect>
               </Field>
             </div>
             <label className="check">
@@ -636,24 +637,24 @@ export function SeriesOperation({
       )}
       {base.action === "plan" && (
         <Field label="系列实体">
-          <select name="entity" required>
+          <StudioSelect name="entity" required>
             {rows(base.entities).map((o) => (
               <option key={o.id} value={o.id}>
                 {o.label}
               </option>
             ))}
-          </select>
+          </StudioSelect>
         </Field>
       )}
       {base.action === "register" && (
         <Field label="当前项目已登记图片">
-          <select name="source_key" required>
+          <StudioSelect name="source_key" required>
             {rows(library.sources).map((s) => (
               <option key={s.key} value={s.key}>
                 {s.key}
               </option>
             ))}
-          </select>
+          </StudioSelect>
         </Field>
       )}
       {base.action === "approve" && (
@@ -677,13 +678,13 @@ export function SeriesOperation({
           </fieldset>
           {base.kind === "character" ? (
             <Field label="对应本剧角色">
-              <select name="role">
+              <StudioSelect name="role">
                 {Object.keys(
                   (project.episode || project.script || {}).cast || {},
                 ).map((r) => (
                   <option key={r}>{r}</option>
                 ))}
-              </select>
+              </StudioSelect>
             </Field>
           ) : (
             <input type="hidden" name="role" value={base.entity_id} />
@@ -1047,7 +1048,7 @@ export function FeeConfirmation({
       >
         <ErrorNotice error={error} reserveSpace />
         <Field label="任务">
-          <select
+          <StudioSelect
             name="intent_id"
             required
             value={draft.intent_id}
@@ -1072,7 +1073,7 @@ export function FeeConfirmation({
                 {draft.intent_id} · 状态已更新
               </option>
             )}
-          </select>
+          </StudioSelect>
         </Field>
         <div className="form-row">
           <Field label="实际金额">

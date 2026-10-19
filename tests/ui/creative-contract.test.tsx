@@ -1,3 +1,4 @@
+import { nativeControl, selectControl } from "./select-control";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -35,7 +36,9 @@ function mount(seed?: RecordData) {
 
 it("defaults to actual 2D video generation and an explicit standalone short drama", () => {
   mount();
-  expect(screen.getByLabelText("画面与运动方式")).toHaveValue("anime_2d");
+  expect(nativeControl(screen.getByLabelText("画面与运动方式"))).toHaveValue(
+    "anime_2d",
+  );
   expect(screen.getByText("单部闭环短剧")).toBeVisible();
   expect(screen.getByText(/当前流程不承诺同步口型/)).toBeVisible();
   expect(fetchMock).not.toHaveBeenCalled();
@@ -51,7 +54,7 @@ it.each([
   async (style, format, motion) => {
     const user = userEvent.setup();
     mount();
-    await user.selectOptions(screen.getByLabelText("画面与运动方式"), style);
+    await selectControl(screen.getByLabelText("画面与运动方式"), style, user);
     await user.type(
       screen.getByLabelText("创作方向"),
       "成年修表师主动找出真相，最终完成和解。",
@@ -90,7 +93,9 @@ it("seeds a separate remake form without changing or posting the existing projec
     "旧版作品 · 重制",
   );
   expect(screen.getByLabelText("创作方向")).toHaveValue(seed.brief);
-  expect(screen.getByLabelText("画面与运动方式")).toHaveValue("anime_2d");
+  expect(nativeControl(screen.getByLabelText("画面与运动方式"))).toHaveValue(
+    "anime_2d",
+  );
   expect(
     screen.getByText(/原项目的成片、素材与历史记录继续保留/),
   ).toBeVisible();
@@ -105,7 +110,9 @@ it("preserves an explicit 3D choice when seeding a new remake", () => {
     brief: "原始创作方向。",
     creative_contract: { visual_style: "stylized_3d" },
   });
-  expect(screen.getByLabelText("画面与运动方式")).toHaveValue("stylized_3d");
+  expect(nativeControl(screen.getByLabelText("画面与运动方式"))).toHaveValue(
+    "stylized_3d",
+  );
 });
 
 it("reports camera-only receipts truthfully even when requested style is 2D animation", () => {

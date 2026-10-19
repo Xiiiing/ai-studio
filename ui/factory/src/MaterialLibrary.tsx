@@ -1,3 +1,5 @@
+import { StudioMenu } from "./StudioMenu";
+import { StudioSelect } from "./StudioSelect";
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { request, rows, mediaUrl, type RecordData } from "./api";
@@ -277,7 +279,17 @@ export function MaterialLibrary({
           description="保存可跨剧复用的人物、场景、画风与同框参考。"
         />
       )}
-      {query.data && (!project || selected.data) && <PageFocus label={project ? "本剧已选" : "本页素材"} value={`${project ? rows(selected.data?.selected).length : rows(query.data.assets).length} 项`} detail={project ? "选择固定版本的人物、场景与画风，用于本剧后续镜头制作。" : "当前页的素材结果；可搜索、分类并翻页查看，版本与原始素材保持关联。"} />}
+      {query.data && (!project || selected.data) && (
+        <PageFocus
+          label={project ? "本剧已选" : "本页素材"}
+          value={`${project ? rows(selected.data?.selected).length : rows(query.data.assets).length} 项`}
+          detail={
+            project
+              ? "选择固定版本的人物、场景与画风，用于本剧后续镜头制作。"
+              : "当前页的素材结果；可搜索、分类并翻页查看，版本与原始素材保持关联。"
+          }
+        />
+      )}
       <FloatingErrorNotice error={failure} />
       {selected.error && (
         <div>
@@ -298,7 +310,7 @@ export function MaterialLibrary({
           />
         </Field>
         <Field label="素材分类">
-          <select
+          <StudioSelect
             value={kind}
             onChange={(e) => {
               setKind(e.target.value);
@@ -311,7 +323,7 @@ export function MaterialLibrary({
                 {label}
               </option>
             ))}
-          </select>
+          </StudioSelect>
         </Field>
         <button
           className="button primary"
@@ -819,76 +831,80 @@ function MaterialCard({
           </button>
         )}
       </div>
-      <details className="secondary-actions">
-        <summary>更多素材操作</summary>
-        <div className="form-row">
-          {project && (
-            <button
-              className="button"
-              disabled={busy}
-              onClick={() =>
-                run(
-                  () =>
-                    request("/library", {
-                      action: "clone",
-                      project_id: project.id,
-                      asset_id: asset.asset_id,
-                      expected_version: asset.version,
-                      scope:
-                        asset.library_key === "global" ? "project" : "global",
-                    }),
-                  "已保存独立副本，来源与原素材保持可追溯。",
-                )
-              }
-            >
-              {asset.library_key === "global"
-                ? "复制为剧内造型"
-                : "保存到统一库"}
-            </button>
-          )}
-        </div>
-        <div className="form-row">
-          <button
-            className="button"
-            disabled={busy || !rows(asset.data.images).length}
-            onClick={() => startAI("describe")}
-          >
-            AI 识图建档
-          </button>
-          {project && asset.kind !== "style" && (
-            <button
-              className="button"
-              disabled={busy}
-              onClick={() => startAI("restyle")}
-            >
-              按本剧画风转换
-            </button>
-          )}
-          {asset.kind === "character" && (
-            <button
-              className="button"
-              disabled={busy || !rows(asset.data.images).length}
-              onClick={() => startAI("views")}
-            >
-              补充三视图
-            </button>
-          )}
-          {asset.kind === "composition" && (
-            <button
-              className="button"
-              disabled={busy}
-              onClick={() => startAI("compose")}
-            >
-              生成同框候选
-            </button>
-          )}
-        </div>
-      </details>
+      <StudioMenu
+        label="更多素材操作"
+        align="start"
+        items={[
+          ...(project
+            ? [
+                {
+                  key: "clone",
+                  label:
+                    asset.library_key === "global"
+                      ? "复制为剧内造型"
+                      : "保存到统一库",
+                  disabled: busy,
+                  onSelect: () =>
+                    run(
+                      () =>
+                        request("/library", {
+                          action: "clone",
+                          project_id: project.id,
+                          asset_id: asset.asset_id,
+                          expected_version: asset.version,
+                          scope:
+                            asset.library_key === "global"
+                              ? "project"
+                              : "global",
+                        }),
+                      "已保存独立副本，来源与原素材保持可追溯。",
+                    ),
+                },
+              ]
+            : []),
+          {
+            key: "describe",
+            label: "AI 识图建档",
+            disabled: busy || !rows(asset.data.images).length,
+            onSelect: () => startAI("describe"),
+          },
+          ...(project && asset.kind !== "style"
+            ? [
+                {
+                  key: "restyle",
+                  label: "按本剧画风转换",
+                  disabled: busy,
+                  onSelect: () => startAI("restyle"),
+                },
+              ]
+            : []),
+          ...(asset.kind === "character"
+            ? [
+                {
+                  key: "views",
+                  label: "补充三视图",
+                  disabled: busy || !rows(asset.data.images).length,
+                  onSelect: () => startAI("views"),
+                },
+              ]
+            : []),
+          ...(asset.kind === "composition"
+            ? [
+                {
+                  key: "compose",
+                  label: "生成同框候选",
+                  disabled: busy,
+                  onSelect: () => startAI("compose"),
+                },
+              ]
+            : []),
+        ]}
+      />
       {project && selected && (
         <div className="stack">
           {asset.kind === "character" && (
             <Field label={document.name + "对应角色"}>
-              <select
+              <StudioSelect
                 value={selectedRole}
                 onChange={(e) => setRole(e.target.value)}
               >
@@ -897,12 +913,12 @@ function MaterialCard({
                     {r.name}（{r.character_id}）
                   </option>
                 ))}
-              </select>
+              </StudioSelect>
             </Field>
           )}
           {(asset.kind === "scene" || asset.kind === "composition") && (
             <Field label={document.name + "适用镜头"}>
-              <select
+              <StudioSelect
                 multiple
                 value={shots}
                 onChange={(e) =>
@@ -919,7 +935,7 @@ function MaterialCard({
                     {shot.id} · {shot.prompt}
                   </option>
                 ))}
-              </select>
+              </StudioSelect>
               <small>
                 也可由分镜根据素材设定关联，人物按每镜实际出镜角色引用。
               </small>
@@ -1016,7 +1032,7 @@ function MaterialEditor({
         <fieldset className="material-editor-fields stack" disabled={busy}>
           {!asset.asset_id && (
             <Field label="新素材类型">
-              <select
+              <StudioSelect
                 value={asset.kind}
                 onChange={(e) => {
                   setDocument({
@@ -1031,7 +1047,7 @@ function MaterialEditor({
                     {label}
                   </option>
                 ))}
-              </select>
+              </StudioSelect>
             </Field>
           )}
           <Field label="素材名称">
@@ -1139,10 +1155,13 @@ function MaterialEditor({
           )}
           {!asset.asset_id && project && (
             <Field label="保存位置">
-              <select value={scope} onChange={(e) => setScope(e.target.value)}>
+              <StudioSelect
+                value={scope}
+                onChange={(e) => setScope(e.target.value)}
+              >
                 <option value="project">本剧素材库</option>
                 <option value="global">统一素材库</option>
-              </select>
+              </StudioSelect>
             </Field>
           )}
           <div className="form-row">
@@ -1345,7 +1364,7 @@ function CompositionEditor({
       {members.map((member, index) => (
         <div key={index} className="form-row">
           <Field label={"同框人物" + (index + 1)}>
-            <select
+            <StudioSelect
               value={member.asset_id + ":" + member.version}
               onChange={(e) => {
                 const [asset_id, version] = e.target.value.split(":");
@@ -1369,14 +1388,28 @@ function CompositionEditor({
                   {asset.data.document.name} · v{asset.version}
                 </option>
               ))}
-            </select>
+            </StudioSelect>
           </Field>
           <Field label={"对应角色" + (index + 1)}>
-            <input
-              list="composition-role-options"
-              value={member.role}
-              onChange={(e) => updateMember(index, { role: e.target.value })}
-            />
+            <div className="studio-role-input">
+              <input
+                value={member.role}
+                onChange={(e) => updateMember(index, { role: e.target.value })}
+              />
+              {!!roles.length && (
+                <StudioMenu
+                  label="已有角色"
+                  ariaLabel={"选择对应角色" + (index + 1)}
+                  items={roles.map((role: RecordData) => ({
+                    key: role.character_id,
+                    label: role.name + "（" + role.character_id + "）",
+                    selected: member.role === role.character_id,
+                    onSelect: () =>
+                      updateMember(index, { role: role.character_id }),
+                  }))}
+                />
+              )}
+            </div>
           </Field>
           <button
             type="button"
@@ -1452,13 +1485,7 @@ function CompositionEditor({
           </button>
         </div>
       ))}
-      <datalist id="composition-role-options">
-        {roles.map((role: RecordData) => (
-          <option key={role.character_id} value={role.character_id}>
-            {role.name}
-          </option>
-        ))}
-      </datalist>
+
       <button
         type="button"
         className="button"
@@ -1482,7 +1509,7 @@ function CompositionEditor({
         添加同框人物
       </button>
       <Field label="组合中的场景">
-        <select
+        <StudioSelect
           value={
             document.scene
               ? document.scene.asset_id + ":" + document.scene.version
@@ -1519,7 +1546,7 @@ function CompositionEditor({
               {asset.data.document.name}
             </option>
           ))}
-        </select>
+        </StudioSelect>
       </Field>
       {image && (
         <>

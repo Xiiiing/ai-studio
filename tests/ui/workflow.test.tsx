@@ -1,3 +1,4 @@
+import { selectControl, nativeControl } from "./select-control";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -272,9 +273,10 @@ describe("real server workflow and agent handoffs", () => {
       "writer-2",
       "writer-1",
     ]);
-    await userEvent.selectOptions(
+    await selectControl(
       screen.getByRole("combobox", { name: "调用角色" }),
       "screenwriter",
+      userEvent,
     );
     expect(calls()).toEqual([
       "writer-8",
@@ -295,9 +297,10 @@ describe("real server workflow and agent handoffs", () => {
       }),
     );
     expect(onInspect).toHaveBeenCalledWith("screenplay", "writer-2");
-    await userEvent.selectOptions(
+    await selectControl(
       screen.getByRole("combobox", { name: "调用角色" }),
       "independent_critic",
+      userEvent,
     );
     expect(calls()).toEqual(["critic-3", "critic-2", "critic-1"]);
     expect(
@@ -345,9 +348,10 @@ describe("real server workflow and agent handoffs", () => {
       </QueryClientProvider>
     );
     const rendered = render(view(executions));
-    await userEvent.selectOptions(
+    await selectControl(
       screen.getByRole("combobox", { name: "调用角色" }),
       "screenwriter",
+      userEvent,
     );
     await userEvent.click(screen.getByRole("button", { name: "下一页调用" }));
     const call = document.querySelector(
@@ -375,9 +379,9 @@ describe("real server workflow and agent handoffs", () => {
         })),
       ]),
     );
-    expect(screen.getByRole("combobox", { name: "调用角色" })).toHaveValue(
-      "screenwriter",
-    );
+    expect(
+      nativeControl(screen.getByRole("combobox", { name: "调用角色" })),
+    ).toHaveValue("screenwriter");
     expect(
       screen.getByRole("navigation", { name: "调用记录分页" }),
     ).toHaveTextContent("第 2 / 2 页");
@@ -419,9 +423,10 @@ describe("real server workflow and agent handoffs", () => {
       />
     );
     const rendered = render(view(executions));
-    await userEvent.selectOptions(
+    await selectControl(
       screen.getByRole("combobox", { name: "调用角色" }),
       "screenwriter",
+      userEvent,
     );
     await userEvent.click(screen.getByRole("button", { name: "下一页调用" }));
     rendered.rerender(view(executions.slice(4)));
@@ -435,14 +440,14 @@ describe("real server workflow and agent handoffs", () => {
       screen.getByRole("navigation", { name: "调用记录分页" }),
     ).toHaveTextContent("第 1 / 2 页");
     rendered.rerender(view([]));
-    expect(screen.getByRole("combobox", { name: "调用角色" })).toHaveValue(
-      "screenwriter",
-    );
+    expect(
+      nativeControl(screen.getByRole("combobox", { name: "调用角色" })),
+    ).toHaveValue("screenwriter");
     expect(screen.getByText("该角色尚无保存的执行记录。")).toBeVisible();
     rendered.rerender(view(executions));
-    expect(screen.getByRole("combobox", { name: "调用角色" })).toHaveValue(
-      "screenwriter",
-    );
+    expect(
+      nativeControl(screen.getByRole("combobox", { name: "调用角色" })),
+    ).toHaveValue("screenwriter");
     expect(
       screen.getByRole("navigation", { name: "调用记录分页" }),
     ).toHaveTextContent("第 1 / 2 页");

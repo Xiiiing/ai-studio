@@ -1,3 +1,4 @@
+import { selectControl } from "./select-control";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -135,7 +136,7 @@ it("keeps the operation identity on a failed application and offers a fresh sync
   failApply = true;
   mount();
   const user = userEvent.setup();
-  await user.selectOptions(await screen.findByLabelText("编辑版本"), e.id);
+  await selectControl(await screen.findByLabelText("编辑版本"), e.id, user);
   await user.click(screen.getByRole("button", { name: "将此版本应用到项目" }));
   await screen.findByText("请先暂停项目");
   await user.click(screen.getByRole("button", { name: "重试上次操作" }));
@@ -152,7 +153,7 @@ it("changing editor content invalidates preview and validation", async () => {
   saved = [e];
   mount();
   const user = userEvent.setup();
-  await user.selectOptions(await screen.findByLabelText("编辑版本"), e.id);
+  await selectControl(await screen.findByLabelText("编辑版本"), e.id, user);
   await user.click(screen.getByRole("button", { name: "验证已保存版本" }));
   await screen.findByText(/已通过结构与装配验证/);
   await user.type(screen.getByLabelText("岗位职责"), "，保留因果");

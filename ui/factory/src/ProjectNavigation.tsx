@@ -1,5 +1,5 @@
-import { useEffect, useRef } from "react";
-import { ChevronDown } from "lucide-react";
+import { StudioMenu } from "./StudioMenu";
+import { SelectionGroup } from "./SelectionGroup";
 
 export const projectPages = [
   ["overview", "制作概览"],
@@ -34,18 +34,6 @@ export function ProjectNavigation({
   attention?: boolean;
   onTab: (tab: string) => void;
 }) {
-  const more = useRef<HTMLDetailsElement>(null);
-  useEffect(() => {
-    if (more.current) more.current.open = false;
-  }, [tab]);
-  useEffect(() => {
-    const outside = (event: PointerEvent) => {
-      if (!more.current?.contains(event.target as Node) && more.current)
-        more.current.open = false;
-    };
-    document.addEventListener("pointerdown", outside);
-    return () => document.removeEventListener("pointerdown", outside);
-  }, []);
   const section =
     tab === "series"
       ? "materials"
@@ -67,9 +55,12 @@ export function ProjectNavigation({
         : [];
   return (
     <div className="project-navigation-bar">
-      <nav
+      <SelectionGroup
+        as="nav"
         className="project-navigation project-primary-navigation"
         aria-label="项目内容"
+        variant="underline"
+        value={section}
       >
         {primary.map(([value, label]) => (
           <button
@@ -86,54 +77,34 @@ export function ProjectNavigation({
             )}
           </button>
         ))}
-      </nav>
-      <details
-        className="project-more"
-        ref={more}
-        onBlur={(event) => {
-          if (!event.currentTarget.contains(event.relatedTarget as Node))
-            event.currentTarget.open = false;
-        }}
-        onKeyDown={(event) => {
-          if (event.key === "Escape") {
-            event.preventDefault();
-            event.currentTarget.open = false;
-            event.currentTarget.querySelector("summary")?.focus();
-          }
-        }}
-      >
-        <summary
-          aria-label={
+      </SelectionGroup>
+      <div className="project-more">
+        <StudioMenu
+          label="更多"
+          ariaLabel={
             "更多项目页面" +
             (["team", "prompts", "generation", "agent", "costs"].includes(tab)
               ? "：" + projectPages.find(([id]) => id === tab)?.[1]
               : "")
           }
-        >
-          更多
-          <ChevronDown size={14} aria-hidden="true" />
-        </summary>
-        <nav className="project-navigation-menu" aria-label="更多项目页面">
-          {["team", "prompts", "generation", "agent", "costs"].map((value) => (
-            <button
-              key={value}
-              data-project-page={value}
-              aria-current={tab === value ? "page" : undefined}
-              onClick={() => {
-                if (more.current) more.current.open = false;
-                onTab(value);
-                more.current?.querySelector("summary")?.focus();
-              }}
-            >
-              {projectPages.find(([id]) => id === value)?.[1]}
-            </button>
-          ))}
-        </nav>
-      </details>
+          triggerClassName="project-more-trigger"
+          items={["team", "prompts", "generation", "agent", "costs"].map(
+            (value) => ({
+              key: value,
+              label: projectPages.find(([id]) => id === value)?.[1],
+              selected: tab === value,
+              onSelect: () => onTab(value),
+            }),
+          )}
+        />
+      </div>
       {!!children.length && (
-        <nav
+        <SelectionGroup
+          as="nav"
           className="project-subnavigation"
           aria-label={section === "materials" ? "素材页面" : "审核页面"}
+          variant="underline"
+          value={tab}
         >
           {children.map(([value, label]) => (
             <button
@@ -145,7 +116,7 @@ export function ProjectNavigation({
               {label}
             </button>
           ))}
-        </nav>
+        </SelectionGroup>
       )}
     </div>
   );

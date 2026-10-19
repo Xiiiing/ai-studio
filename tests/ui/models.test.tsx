@@ -1,3 +1,4 @@
+import { nativeControl, selectControl } from "./select-control";
 import {
   render,
   screen,
@@ -221,13 +222,17 @@ describe("服务与制作分工", () => {
       screen.queryByRole("button", { name: "保存配置" }),
     ).not.toBeInTheDocument();
     await roleTab();
-    expect(screen.getByLabelText("文本创作模型")).toHaveValue("writer");
-    expect(screen.getByLabelText("视觉审核模型")).toHaveValue("writer");
-    expect(
-      within(screen.getByLabelText("视觉审核模型")).getByRole("option", {
-        name: /critic-a/,
-      }),
-    ).toBeDisabled();
+    expect(nativeControl(screen.getByLabelText("文本创作模型"))).toHaveValue(
+      "writer",
+    );
+    expect(nativeControl(screen.getByLabelText("视觉审核模型"))).toHaveValue(
+      "writer",
+    );
+    await userEvent.click(screen.getByLabelText("视觉审核模型"));
+    expect(screen.getByRole("option", { name: /critic-a/ })).toHaveAttribute(
+      "data-disabled",
+    );
+    await userEvent.keyboard("{Escape}");
   });
   it("groups models sharing the same endpoint and credential, while separating distinct keys", async () => {
     const { update, view } = setup();
@@ -385,9 +390,7 @@ describe("服务与制作分工", () => {
   it("changes grouped usage explicitly and preserves an unsaved draft across route mounts", async () => {
     const { view, client, calls } = setup();
     await roleTab();
-    fireEvent.change(screen.getByLabelText("文本创作模型"), {
-      target: { value: "critic" },
-    });
+    await selectControl(screen.getByLabelText("文本创作模型"), "critic");
     fireEvent.click(screen.getByRole("tab", { name: "服务连接" }));
     expect(screen.getByRole("button", { name: "添加服务" })).toBeDisabled();
     view.unmount();
@@ -397,7 +400,9 @@ describe("服务与制作分工", () => {
       </QueryClientProvider>,
     );
     await roleTab();
-    expect(screen.getByLabelText("文本创作模型")).toHaveValue("critic");
+    expect(nativeControl(screen.getByLabelText("文本创作模型"))).toHaveValue(
+      "critic",
+    );
     fireEvent.click(screen.getByRole("button", { name: "保存分工" }));
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "保存分工" })).toBeDisabled(),
@@ -424,20 +429,20 @@ describe("服务与制作分工", () => {
       },
     });
     await roleTab();
-    expect(screen.getByLabelText("文本创作模型")).toHaveValue("__mixed__");
+    expect(nativeControl(screen.getByLabelText("文本创作模型"))).toHaveValue(
+      "__mixed__",
+    );
     expect(screen.getByRole("button", { name: "保存分工" })).toBeDisabled();
     fireEvent.click(screen.getByText("按角色单独配置 · 总制片代理"));
-    fireEvent.change(screen.getByLabelText("总制片代理"), {
-      target: { value: "critic" },
-    });
-    expect(screen.getByLabelText("文本创作模型")).toHaveValue("__mixed__");
+    await selectControl(screen.getByLabelText("总制片代理"), "critic");
+    expect(nativeControl(screen.getByLabelText("文本创作模型"))).toHaveValue(
+      "__mixed__",
+    );
   });
   it("keeps failed role saves and original revisions instead of overwriting newer configuration", async () => {
     const { update, calls } = setup();
     await roleTab();
-    fireEvent.change(screen.getByLabelText("文本创作模型"), {
-      target: { value: "critic" },
-    });
+    await selectControl(screen.getByLabelText("文本创作模型"), "critic");
     update({ revision: "new-config" });
     fireEvent.click(screen.getByRole("button", { name: "保存分工" }));
     await waitFor(() =>
@@ -448,7 +453,9 @@ describe("服务与制作分工", () => {
           .join(),
       ).toContain("配置已更新"),
     );
-    expect(screen.getByLabelText("文本创作模型")).toHaveValue("critic");
+    expect(nativeControl(screen.getByLabelText("文本创作模型"))).toHaveValue(
+      "critic",
+    );
     expect(
       calls.find((c) => c.body?.expected_revision)?.body.expected_revision,
     ).toBe("config-1");
@@ -513,12 +520,14 @@ it("keeps visual review separate even when an older inventory omits the vision r
     roles: inventory().roles.map((r) => ({ ...r, requires_vision: undefined })),
   });
   await roleTab();
-  expect(screen.getByLabelText("视觉审核模型")).toHaveValue("writer");
-  expect(
-    within(screen.getByLabelText("视觉审核模型")).getByRole("option", {
-      name: /critic-a/,
-    }),
-  ).toBeDisabled();
+  expect(nativeControl(screen.getByLabelText("视觉审核模型"))).toHaveValue(
+    "writer",
+  );
+  await userEvent.click(screen.getByLabelText("视觉审核模型"));
+  expect(screen.getByRole("option", { name: /critic-a/ })).toHaveAttribute(
+    "data-disabled",
+  );
+  await userEvent.keyboard("{Escape}");
 });
 it("removes an unused service with one save and preserves assigned models", async () => {
   const { update, calls } = setup();

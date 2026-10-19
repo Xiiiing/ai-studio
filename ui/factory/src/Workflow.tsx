@@ -1,3 +1,6 @@
+import { Field } from "./ui";
+import { SelectionGroup } from "./SelectionGroup";
+import { StudioSelect } from "./StudioSelect";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ArrowRight, Users, CircleCheck } from "lucide-react";
 import { rows, roleName, date, activityName, type RecordData } from "./api";
@@ -423,10 +426,13 @@ function WorkflowWorkspace({
             />
             {canvasSelection?.kind === "step" ? (
               <>
-                <nav
+                <SelectionGroup
+                  as="nav"
                   className="workflow-steps"
                   aria-label="阶段内步骤"
                   hidden={!group || group.node_ids.length < 2}
+                  variant="underline"
+                  value={selected.id}
                 >
                   {stages
                     .filter((n) =>
@@ -473,7 +479,7 @@ function WorkflowWorkspace({
                           )}
                       </span>
                     ))}
-                </nav>
+                </SelectionGroup>
                 <header className="workflow-step-heading">
                   <div>
                     {group?.label !== selected.label && (
@@ -486,10 +492,11 @@ function WorkflowWorkspace({
                     {selected.conditional && <small>按需执行</small>}
                   </span>
                 </header>
-                <div
+                <SelectionGroup
                   className="workflow-detail-switch"
                   role="group"
                   aria-label="节点内容"
+                  value={detailView}
                 >
                   <button
                     aria-pressed={detailView === "materials"}
@@ -519,7 +526,7 @@ function WorkflowWorkspace({
                   >
                     执行记录
                   </button>
-                </div>
+                </SelectionGroup>
                 <div hidden={detailView !== "materials"}>
                   <p className="workflow-description">
                     {selected.description ||
@@ -1240,9 +1247,8 @@ export function Team({
       >
         {(executionEntries.length > 0 || executionRole !== "all") && (
           <div className="execution-history-toolbar">
-            <label className="field">
-              <span>调用角色</span>
-              <select
+            <Field label="调用角色">
+              <StudioSelect
                 value={executionRole}
                 onChange={(event) => showExecutions(event.target.value, 0)}
               >
@@ -1252,8 +1258,8 @@ export function Team({
                     {roleName(role)}
                   </option>
                 ))}
-              </select>
-            </label>
+              </StudioSelect>
+            </Field>
             <p className="muted">
               共 {filteredExecutions.length} 条 · 最近执行优先
             </p>

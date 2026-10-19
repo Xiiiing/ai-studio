@@ -1,3 +1,4 @@
+import { nativeControl, selectControl } from "./select-control";
 import { afterEach, expect, it, vi } from "vitest";
 import {
   cleanup,
@@ -222,13 +223,17 @@ it("shows the current material binding and keeps secondary actions behind their 
     await screen.findByRole("button", { name: "本批已选" }),
   ).toBeDisabled();
   expect(
-    screen.getByRole("button", { name: "复制为剧内造型" }),
-  ).not.toBeVisible();
+    screen.queryByRole("menuitem", { name: "复制为剧内造型" }),
+  ).not.toBeInTheDocument();
   await userEvent.click(screen.getByText("更多素材操作"));
-  expect(screen.getByRole("button", { name: "复制为剧内造型" })).toBeVisible();
-  await userEvent.selectOptions(
+  expect(
+    screen.getByRole("menuitem", { name: "复制为剧内造型" }),
+  ).toBeVisible();
+  await userEvent.keyboard("{Escape}");
+  await selectControl(
     screen.getByLabelText("林夏对应角色"),
     "char_partner",
+    userEvent,
   );
   expect(screen.getByRole("button", { name: "选入本剧" })).toBeEnabled();
 });
@@ -421,9 +426,9 @@ it("clears composition-only fields when changing a new material to a character",
   mount();
   await user.click(screen.getByRole("button", { name: "新建素材" }));
   await user.type(screen.getByLabelText("素材名称"), "新参考");
-  await user.selectOptions(screen.getByLabelText("新素材类型"), "composition");
+  await selectControl(screen.getByLabelText("新素材类型"), "composition", user);
   await user.click(await screen.findByRole("button", { name: "添加同框人物" }));
-  await user.selectOptions(screen.getByLabelText("新素材类型"), "character");
+  await selectControl(screen.getByLabelText("新素材类型"), "character", user);
   expect(screen.getByLabelText("素材名称")).toHaveValue("新参考");
   await user.click(screen.getByRole("button", { name: "保存素材" }));
   await waitFor(() => expect(posts).toHaveLength(1));
@@ -504,12 +509,14 @@ it("looks up character references independently of the composition-only gallery 
   );
   const user = userEvent.setup();
   mount();
-  await user.selectOptions(screen.getByLabelText("素材分类"), "composition");
+  await selectControl(screen.getByLabelText("素材分类"), "composition", user);
   await user.click(screen.getByRole("button", { name: "新建素材" }));
   const add = await screen.findByRole("button", { name: "添加同框人物" });
   await waitFor(() => expect(add).toBeEnabled());
   await user.click(add);
-  expect(screen.getByLabelText("同框人物1")).toHaveValue("mat_lin:2");
+  expect(nativeControl(screen.getByLabelText("同框人物1"))).toHaveValue(
+    "mat_lin:2",
+  );
 });
 
 it("uses canonical server character IDs for episode-owned profiles", async () => {
@@ -555,9 +562,12 @@ it("uses canonical server character IDs for episode-owned profiles", async () =>
     ),
   );
   const user = userEvent.setup();
+  const role = await screen.findByRole("combobox", { name: "林夏对应角色" });
+  await user.click(role);
   expect(
     await screen.findByRole("option", { name: "见证者（char_witness）" }),
   ).toBeInTheDocument();
+  await user.keyboard("{Escape}");
   await user.click(screen.getByRole("button", { name: "选入本剧" }));
   await waitFor(() => expect(posts).toHaveLength(1));
   expect(posts[0].references[0].role).toBe("char_witness");

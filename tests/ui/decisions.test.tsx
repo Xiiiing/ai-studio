@@ -1,3 +1,4 @@
+import { selectControl } from "./select-control";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   fireEvent,
@@ -566,9 +567,10 @@ describe("server-driven producer decisions", () => {
       screen.getByRole("textbox", { name: "获准改编的原文" }),
       "这是获准改编的完整素材。",
     );
-    await user.selectOptions(
+    await selectControl(
       screen.getByRole("combobox", { name: "素材权限" }),
       "licensed",
+      user,
     );
     await user.click(screen.getByRole("button", { name: "补充授权素材" }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
@@ -610,9 +612,10 @@ describe("server-driven producer decisions", () => {
       screen.getByRole("textbox", { name: "获准改编的原文" }),
       "当前版本补充的素材",
     );
-    await user.selectOptions(
+    await selectControl(
       screen.getByRole("combobox", { name: "素材权限" }),
       "owned",
+      user,
     );
     await user.click(screen.getByRole("button", { name: "补充授权素材" }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));

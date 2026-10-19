@@ -1,3 +1,4 @@
+import { StudioSelect } from "./StudioSelect";
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { request, rows, type RecordData } from "./api";
@@ -121,7 +122,7 @@ function ProjectAgent({ project }: { project: RecordData }) {
         </p>
         <div className="pipeline-grid">
           <Field label="动作协议">
-            <select
+            <StudioSelect
               disabled={busy || !!pending}
               value={config.protocol}
               onChange={(e) =>
@@ -131,7 +132,7 @@ function ProjectAgent({ project }: { project: RecordData }) {
               <option value="auto">按模型连接自动选择</option>
               <option value="native">原生工具调用</option>
               <option value="structured">结构化动作</option>
-            </select>
+            </StudioSelect>
           </Field>
           {limits.map(([name, label, min, max]) => (
             <Field key={name} label={label}>
