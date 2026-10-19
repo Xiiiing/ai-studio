@@ -223,22 +223,124 @@ def prepare(pid,config,control=None):
     store.update(pid,{'drama_references':selected})
 
 
+def _composition_source(project, path, shared):
+    """Bind pixels to approved entities; a bare image never creates an identity."""
+    path = within(ROOT, str(path))
+    digest = sha256(path)
+    candidates = []
+    for record in shared.values():
+        receipt = record['receipt']
+        if receipt.get('sha256') != digest:
+            continue
+        approved_path = valid(receipt)
+        if record.get('plan_version') != project.get('plan_version'):
+            raise ProductionNeedsDecision('组合参考图的批准素材版本不匹配', 'cache_integrity')
+        kind, key = record['kind'], record['entity_id']
+        collection = project.get('plan', {}).get({'character': 'characters', 'scene': 'scenes', 'prop': 'props'}[kind], [])
+        entity = next((item for item in collection if item.get('character_id' if kind == 'character' else 'entity_id') == key), None)
+        if entity is None:
+            continue
+        candidates.append((approved_path == path, {'kind': kind, 'entity_id': key,
+            'plan_version': record['plan_version'], 'approved_facts': copy.deepcopy(entity)}))
+    exact = [entity for match, entity in candidates if match]
+    entities = exact if exact else [candidates[0][1]] if len(candidates) == 1 else []
+    if not entities:
+        raise ProductionNeedsDecision('组合参考图缺少可验证的批准实体绑定，原图已保留',
+            'drama_composition_binding_required', {'path': str(path.relative_to(ROOT)), 'sha256': digest})
+    return {'path': str(path.relative_to(ROOT)), 'sha256': digest, 'entities': entities}
+
+
+def _composition_entities(bindings):
+    entities = {}
+    for binding in bindings:
+        for entity in binding['entities']:
+            key = (entity['kind'], entity['entity_id'])
+            if key in entities and entities[key] != entity:
+                raise ProductionNeedsDecision('组合参考图实体版本冲突，旧素材已保留', 'cache_integrity')
+            entities[key] = copy.deepcopy(entity)
+    return list(entities.values())
+
+
+def _composition_image_plan(bindings):
+    """Render facts once; journal paths and hashes stay in the evidence manifest."""
+    entities = _composition_entities(bindings)
+    return {'entities': entities,
+        'visible_character_count': sum(entity['kind'] == 'character' for entity in entities),
+        'reference_bindings': [{'reference_index': item['reference_index'],
+            'entities': [{'kind': entity['kind'], 'entity_id': entity['entity_id']} for entity in item['entities']]}
+            for item in bindings]}
+
+
 def shot_inputs(engine,shot,references):
     refs=engine.project.get('drama_references',{})
     extras=[valid(value['receipt']) for value in refs.values() if value['kind']!='character']
     paths=list(references)+extras
-    # Keep all inputs by composing in bounded stages, rather than dropping identities.
-    index=0
-    while len(paths)>4:
-        index+=1
-        prompt=engine.style_prompt+'\nCreate a coherent reference composition preserving every supplied identity, scene layout and prop. No text.'
-        target=engine._target('composition_'+shot['id']+'_'+str(index),
-            engine.folder/'assets/compositions'/shot['id']/str(index),prompt,paths[:4],
-            review=True,review_context={'id':shot['id'],'prompt':prompt,'review_purpose':'composition_reference','characters':shot.get('characters',[])})
-        engine._render_targets([target],'composition_references')
-        paths=[engine.receipt_path(target['selected'])]+paths[4:]
+    compositions = []
+    final_bindings = []
+    # A composed image inherits the actual entities of its input batch, so later
+    # rounds never turn a multi-character composition into one anonymous person.
+    if len(paths) > 4:
+        pending = [_composition_source(engine.project, path, refs) for path in paths]
+        index = 0
+        while len(pending) > 4:
+            index += 1
+            batch = [{**copy.deepcopy(row), 'reference_index': i+1} for i, row in enumerate(pending[:4])]
+            entities = _composition_entities(batch)
+            characters = [entity for entity in entities if entity['kind'] == 'character']
+            requirements = {'plan_version': engine.project.get('plan_version'), 'kind': 'composition',
+                'production_format': engine.project.get('format'),
+                'visual_rules': engine.project.get('plan', {}).get('visual_rules', engine.style_prompt),
+                'entities': entities, 'visible_character_count': len(characters),
+                'purpose': f'One coherent static composition with exactly {len(characters)} distinct people and the other entities in this batch; preserve every identity and corresponding wardrobe without merging people.',
+                'reference_bindings': batch}
+            image_plan = {key: requirements[key] for key in ('production_format', 'visual_rules')}
+            image_plan.update(_composition_image_plan(batch))
+            prompt = (engine.style_prompt + '\nCreate one coherent static reference composition with exactly '
+                + str(len(characters)) + ' distinct people. Show every listed character as a separate complete person, '
+                'keep their faces and bodies distinct, and match each identity and wardrobe to its numbered source image. '
+                'Do not fuse people, reduce the cast, duplicate a person or swap their clothes. '
+                'A source image labeled with several entities already contains all of them; preserve every inherited entity. '
+                'Use only the entities in this batch; do not require a prop or location whose reference is not supplied in this batch. '
+                'Keep the supplied scene layout and prop appearance where listed. No text or lettering.\n'
+                'Approved batch entities and numbered image mapping:\n' + store.encoded(image_plan))
+            profile = getattr(engine, 'config', {}).get('image_connection', {})
+            provider_limit = 5000 if profile.get('provider') == 'comfyui_qwen_image21' else 10000
+            # Reserve space for grounded retake guidance instead of letting a
+            # later repair truncate an identity or exceed the provider limit.
+            prompt_limit = min(provider_limit, 3500)
+            if len(prompt) > prompt_limit:
+                raise ProductionNeedsDecision('完整组合事实需要进一步编译才能容纳安全的图像提示词，原材料保留且未截断',
+                    'drama_composition_prompt_capacity', {'characters': len(characters), 'prompt_characters': len(prompt),
+                        'provider_limit': provider_limit, 'repairable_prompt_limit': prompt_limit})
+            batch_paths = [within(ROOT, item['path']) for item in batch]
+            if any(sha256(path) != item['sha256'] for path, item in zip(batch_paths, batch)):
+                raise ProductionNeedsDecision('组合参考图输入在装配后改变，旧素材已保留', 'cache_integrity')
+            target=engine._target('composition_'+shot['id']+'_'+str(index),
+                engine.folder/'assets/compositions'/shot['id']/str(index),prompt,batch_paths,
+                review=True,review_context={'id':shot['id'],'prompt':store.encoded(requirements),
+                    'review_purpose':'composition_reference', 'approved_reference_requirements': requirements,
+                    'reference_bindings': batch, 'characters':[entity['entity_id'] for entity in characters]})
+            engine._render_targets([target],'composition_references')
+            selected = target['selected']
+            output = valid(selected)
+            manifest = {'schema_version': 1, 'requirements': requirements,
+                'output': {'path': str(output.relative_to(ROOT)), 'sha256': sha256(output),
+                           'review_signature': selected.get('review_signature'), 'qa_sha256': fingerprint(selected['qa'])}}
+            manifest_path = target['folder'] / 'manifests' / (fingerprint(manifest) + '.json')
+            write_json(manifest_path, manifest)
+            combined = {**manifest['output'], 'entities': entities,
+                'composition_manifest': {'path': str(manifest_path.relative_to(ROOT)), 'sha256': sha256(manifest_path)}}
+            compositions.append({'kind': 'composition', 'entity_id': target['key'],
+                'version': engine.project.get('plan_version'), **copy.deepcopy(combined)})
+            pending = [combined] + pending[4:]
+        final_bindings = [{**copy.deepcopy(item), 'reference_index': i+1} for i, item in enumerate(pending)]
+        paths = [within(ROOT, item['path']) for item in pending]
     roles=set(engine._shot_render_roles(shot))
     provenance=[{'kind':v['kind'],'entity_id':v['entity_id'],'version':v['plan_version'],
                  'path':v['receipt']['path'],'sha256':v['receipt']['sha256']} for v in refs.values()
                  if v['kind']!='character' or v['entity_id'] in roles]
-    return paths,' Preserve the pinned whole-drama reference identities, scene geometry and props. ',provenance
+    note = ' Preserve the pinned whole-drama reference identities, scene geometry and props. '
+    if final_bindings:
+        note += ('The following map matches the actual supplied image order; a combined image contains all its listed distinct entities. '
+                 'Do not treat that combined image as a single person. ' + store.encoded(_composition_image_plan(final_bindings)))
+    return paths,note,provenance+compositions
