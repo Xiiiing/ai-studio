@@ -30,6 +30,7 @@ export function AppearanceSettings() {
                 />
                 <Icon size={20} aria-hidden="true" />
                 <span>{label}</span>
+                {preference === id && <Check className="appearance-check" size={16} aria-hidden="true" />}
               </label>
             ))}
           </div>

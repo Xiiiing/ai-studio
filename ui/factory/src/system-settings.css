@@ -41,10 +41,15 @@
   color: var(--ink);
 }
 .settings-category[aria-current="page"] {
-  background: var(--panel);
+  background: var(--selection);
   color: var(--ink);
   border-color: var(--line);
-  box-shadow: inset 3px 0 var(--accent);
+}
+.settings-category[aria-current="page"] > svg {
+  color: var(--accent-text);
+}
+.settings-category[aria-current="page"] strong {
+  font-weight: 600;
 }
 .settings-content {
   min-width: 0;
