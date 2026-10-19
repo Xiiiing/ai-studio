@@ -628,3 +628,38 @@ dialog.workflow-detail-card[open] {
   -webkit-line-clamp: 3;
   overflow: hidden;
 }
+.controlled-handoffs {
+  padding-block: 8px 18px;
+  margin-bottom: 18px;
+  border-bottom: 1px solid var(--line);
+  min-width: 0;
+}
+.controlled-handoff {
+  margin-top: 12px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow-wrap: anywhere;
+}
+.controlled-handoff header,
+.controlled-handoffs nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.controlled-handoff details,
+.handoff-frozen-material,
+.handoff-supplement {
+  margin-block: 12px;
+}
+.handoff-supplement {
+  padding-inline-start: 12px;
+  border-inline-start: 2px solid var(--line);
+}
+.controlled-handoff code,
+.controlled-handoff li {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
