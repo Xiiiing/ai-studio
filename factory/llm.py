@@ -76,6 +76,15 @@ def _request(config, role, system, payload, schema, output_dir, max_tokens=4096,
             record_call(current_execution.get(), role, redact_secrets(value, llm), folder / name)
             from .context_manifest import completed
             completed(folder, redact_secrets(value, llm))
+            # The transport receipt remains authoritative if the auxiliary
+            # journal cannot be updated after a paid response was obtained.
+            from .role_handoffs import observe_call
+            import sqlite3
+            try:
+                observe_call(redact_secrets(value, llm))
+            except (OSError, ValueError, sqlite3.Error):
+                value['controlled_handoff_observation'] = 'unavailable'
+                write_json(folder / name, redact_secrets(value, llm))
     user_content = content if content is not None else json.dumps(payload,ensure_ascii=False,allow_nan=False)
     rules = _system_rules(llm, system, schema)
     # Hash the actual composed system rules, including provider schema instructions.

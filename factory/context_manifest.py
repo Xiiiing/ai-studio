@@ -41,6 +41,7 @@ LABELS = {
     "dependency_context": "前集固定版本", "previous_unit_state": "上一单元结尾",
     "draft_plan": "规划稿件", "plan_review": "规划审核意见",
     "memory": "既有项目记忆", "source_text": "来源原文",
+    "supplement_request": "定向补料单", "locked_shot_ids": "保留不变的镜头",
 }
 SOURCE_KEYS = tuple(k for k in LABELS if k not in {"project", "context", "previous", "episode"})
 TEXT_FIELDS = {"brief", "producer_feedback", "story_feedback", "script_feedback", "revision_feedback",
@@ -87,6 +88,9 @@ def build(role, payload, prompt, execution=None, *, content=None):
               "project_version": copy.deepcopy(state.get("project_version", {})),
               "prompt": copy.deepcopy(prompt), "input_sha256": digest(payload),
               "materials": [], "source_checks": [], "truncated": False}
+    from .role_handoffs import current as current_handoffs
+    if current_handoffs():
+        result['controlled_handoff_ids'] = current_handoffs()
     values = payload if isinstance(payload, dict) else {}
     if content is not None:
         # In VLM calls payload is None. The actual multimodal content is the
@@ -219,6 +223,7 @@ def record_reuse(base, project, role, stage, saved):
     folder = (root / "planning" if root else base) / "context-reuse"
     name = time.strftime("%Y%m%dT%H%M%S", time.gmtime()) + "-" + uuid.uuid4().hex[:12]
     write_json(folder / (name + ".json"), record)
+    return record
 
 
 def public(value):
@@ -227,7 +232,7 @@ def public(value):
         return None
     result = {k: copy.deepcopy(value[k]) for k in
               ("schema", "role", "execution", "project_version", "input_sha256", "content_sha256",
-               "truncated", "budget", "delivery", "attempt", "request_sha256") if k in value}
+               "truncated", "budget", "delivery", "attempt", "request_sha256", "controlled_handoff_ids") if k in value}
     result["prompt"] = {k: value.get("prompt", {}).get(k) for k in ("version", "status", "input_sha256")}
     result["materials"] = [{k: copy.deepcopy(row[k]) for k in
                             ("field", "label", "sha256", "bytes", "state", "reason", "summary", "source_fields", "version") if k in row}

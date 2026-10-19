@@ -95,7 +95,8 @@ def _episode_context(episode):
 
 def direct_storyboard(project, config, episode, checkpoint=None, *,
                       approved_story, shot_ids=None, round_index=1,
-                      producer_feedback=None, repair_issues=None, previous_attempt=None):
+                      producer_feedback=None, repair_issues=None, previous_attempt=None,
+                      supplement_request_id=None):
     """Direct one draft; immutable story fields and unselected shots survive verbatim."""
     from .review_policy import max_review_rounds
     if type(round_index) is not int or not 1 <= round_index <= max_review_rounds(config):
@@ -117,11 +118,21 @@ def direct_storyboard(project, config, episode, checkpoint=None, *,
              for issue in (repair_issues or [])]
     allowed = set(ordered if shot_ids is None else shot_ids)
     selected = [sid for sid in ordered if sid in allowed]
+    from . import role_handoffs as handoffs
+    folder = planning_dir(project)
+    material = _episode_context(episode)
+    transfer = handoffs.submit(folder, project, source='screenwriter', target='storyboard_director',
+        source_stage='screenplay', target_stage='storyboard', contract='episode_direction',
+        value=material, source_sha256=fingerprint(episode), scope=selected, resolves=supplement_request_id)
+    received = handoffs.receive(folder, project, transfer['id'], role='storyboard_director',
+                                stage='storyboard', value=material)
+    if received['record'].get('return_context'):
+        return copy.deepcopy(received['record']['return_context'])
     payload = {
         "approved_story": copy.deepcopy(approved_story),
         "producer_feedback": copy.deepcopy(producer_feedback),
         "repair_issues": hints,
-        "current_episode": _episode_context(episode),
+        "current_episode": material,
         "editable_shot_ids": selected,
         "locked_shot_ids": [sid for sid in ordered if sid not in allowed],
         "editable_fields": list(DIRECTOR_FIELDS),
@@ -141,12 +152,17 @@ def direct_storyboard(project, config, episode, checkpoint=None, *,
                    (len(selected), round_index))
     schema = storyboard_schema(selected, project)
     system = adapt_system(DIRECTOR_SYSTEM, project)
-    raw = cached_json_call(project, config, "storyboard_director", stage,
-                           system, payload, schema, checkpoint,
-                           max_tokens=6500, temperature=0.35)
-    directed, issues = copy.deepcopy(episode), []
+    if received['accepted']:
+        with handoffs.bind(folder, transfer):
+            raw = cached_json_call(project, config, "storyboard_director", stage,
+                                   system, payload, schema, checkpoint,
+                                   max_tokens=6500, temperature=0.35)
+    else:
+        raw = {'not_submitted': True, 'validation_issues': received['request']['issues']}
+    directed = copy.deepcopy(episode)
+    issues = [] if received['accepted'] else copy.deepcopy(received['request']['issues'])
     applied = []
-    for shot in directed["shots"]:
+    for shot in directed["shots"] if received['accepted'] else []:
         sid = shot["id"]
         if sid not in allowed:
             continue
@@ -180,19 +196,28 @@ def direct_storyboard(project, config, episode, checkpoint=None, *,
     signature = fingerprint({"stage": stage, "system": system, "payload": payload,
                              "schema": schema, "model": identity, "max_tokens": 6500,
                              "temperature": 0.35})
+    request = None
+    if issues:
+        request = received['request'] or handoffs.return_for_supplement(folder, project, transfer['id'], issues)
     receipt = {
         "role": "storyboard_director", "round": round_index, "model_identity": identity,
         "source_signature": signature, "input_episode_signature": fingerprint(episode),
         "output_episode_signature": fingerprint(directed),
         "editable_fields": list(payload["editable_fields"]), "requested_shot_ids": selected,
-        "applied_shot_ids": applied, "blocked_shot_ids": list(raw["blocked_shots"]),
+        "applied_shot_ids": applied, "blocked_shot_ids": list(raw.get("blocked_shots", {})),
         "issues": copy.deepcopy(issues),
-        "status": "feasibility_blocked" if issues else "directed_pending_review",
+        "status": "needs_supplement" if not received['accepted'] else "feasibility_blocked" if issues else "directed_pending_review",
+        "controlled_handoff_id": transfer['id'],
+        "submission": "result_obtained_or_cached" if received['accepted'] else "not_submitted",
+        **({'supplement_request_id': request['id']} if request else {}),
     }
     snapshot_key = fingerprint({"receipt": receipt, "output": raw})[:16]
     artifact = planning_dir(project) / ("storyboard-director-%d-%s.json" % (round_index, snapshot_key))
     if not artifact.is_file():
         write_json(artifact, {**receipt, "created_at": utc_now(), "output": raw})
     receipt["artifact"] = relative_path(artifact)
-    return {"episode": directed, "issues": issues, "receipt": receipt,
-            "artifact": receipt["artifact"]}
+    result = {"episode": directed, "issues": issues, "receipt": receipt,
+              "artifact": receipt["artifact"], "supplement_request": request}
+    if request:
+        handoffs.remember_return(folder, project, transfer['id'], result)
+    return result

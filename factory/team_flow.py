@@ -122,14 +122,14 @@ def _timestamp(value):
     return None
 
 
-def _project_root(project):
+def _project_root(project, *, root=None):
     ident = project.get("id")
     if not isinstance(ident, str) or not re.fullmatch(r"[a-f0-9]{12}", ident):
         raise ValueError("Invalid factory project ID")
     slug = project.get("slug", "factory-" + ident)
     if slug != "factory-" + ident:
         raise ValueError("Invalid factory project directory")
-    base = (ROOT / "production").resolve()
+    base = ((ROOT if root is None else root) / "production").resolve()
     folder = base / slug
     if folder.is_symlink() or not folder.resolve().is_relative_to(base):
         raise ValueError("Factory project directory escapes its scope")
@@ -397,7 +397,10 @@ def team_spec(config=None):
                               "automatic_choices": ["story", "style"], "final_advisory_only": True},
         "teams": _bindings(config),
         "handoffs": [{"source": source, "target": target, "label": label}
-                     for source, target, label in HANDOFFS],
+                     for source, target, label in HANDOFFS] + [
+            {"source": "storyboard_director", "target": "screenwriter", "label": "指定镜头动作补料", "loop": True},
+            {"source": "independent_critic", "target": "screenwriter", "label": "独立审核返修要求", "loop": True},
+        ],
     }
 
 
@@ -698,7 +701,9 @@ def build_flow(project, config=None):
                 if current_runs.get(context["stage"]) == context["run_id"]:
                     execution["scope"] = "current_run"
     from .workflow_content import step_materials
+    from .role_handoffs import snapshot as handoff_snapshot
     return {"project_id": project["id"], "revision": project.get("revision"),
+            "controlled_handoffs": handoff_snapshot(root / 'planning', project),
             "task_board": task_board, "steps": step_materials(project, root, _artifact_url),
             "production_tasks":list(_object(project.get("production_tasks")).values()),
             "assignment_mode": "orchestrator", "orchestrator": "LangGraph",

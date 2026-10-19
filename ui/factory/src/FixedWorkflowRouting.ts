@@ -14,11 +14,19 @@ export function fixedWorkflowRouter(
 ) {
   const sorted = (values: number[]) =>
     [...new Set(values)].sort((a, b) => a - b);
-  const xs = sorted([
-    16,
-    bounds.width - 16,
-    ...boxes.flatMap((b) => [b.x - 14, b.x + b.width + 14, b.x + b.width / 2]),
-  ]);
+  const xs = sorted(
+    [
+      16,
+      bounds.width - 16,
+      ...boxes.flatMap((b) => [
+        b.x - 42,
+        b.x - 14,
+        b.x + b.width + 14,
+        b.x + b.width + 42,
+        b.x + b.width / 2,
+      ]),
+    ].filter((x) => x >= 4 && x <= bounds.width - 4),
+  );
   const ys = sorted([
     16,
     bounds.height - 16,
@@ -64,6 +72,12 @@ export function fixedWorkflowRouter(
     return !blocked;
   };
   const routes = new Map<string, { path: string; x: number; y: number }>();
+  // Shared destinations still need separate corridors wider than the pointer
+  // hit area. Reservations change paths, never the fixed node geometry.
+  const returnSegments: { a: Point; b: Point }[] = [];
+  const allSegments: { a: Point; b: Point }[] = [];
+  const returnLabels: Point[] = [];
+  const returnCounts = new Map<number, number>();
   return (source: CanvasBox, target: CanvasBox, repair = false) => {
     const key = `${source.id}>${target.id}:${repair}`,
       cached = routes.get(key);
@@ -76,8 +90,47 @@ export function fixedWorkflowRouter(
       t = center(target),
       sameColumn = Math.abs(s.x - t.x) < 30;
     const top = repair && source.kind === "stage" && target.kind === "stage";
+    const separateReturn = repair && sameColumn && !top;
+    const overlapCost = (a: Point, b: Point) =>
+      !sameColumn
+        ? 0
+        : (separateReturn ? allSegments : returnSegments).reduce(
+            (cost, segment) => {
+              const vertical = a.x === b.x && segment.a.x === segment.b.x;
+              const horizontal = a.y === b.y && segment.a.y === segment.b.y;
+              if (
+                (!vertical && !horizontal) ||
+                Math.abs(vertical ? a.x - segment.a.x : a.y - segment.a.y) >= 24
+              )
+                return cost;
+              const overlap = vertical
+                ? Math.min(
+                    Math.max(a.y, b.y),
+                    Math.max(segment.a.y, segment.b.y),
+                  ) -
+                  Math.max(
+                    Math.min(a.y, b.y),
+                    Math.min(segment.a.y, segment.b.y),
+                  )
+                : Math.min(
+                    Math.max(a.x, b.x),
+                    Math.max(segment.a.x, segment.b.x),
+                  ) -
+                  Math.max(
+                    Math.min(a.x, b.x),
+                    Math.min(segment.a.x, segment.b.x),
+                  );
+              return cost + Math.max(0, overlap) * 8;
+            },
+            0,
+          );
+    const column = Math.round(s.x / 260);
+    // A narrow left gutter cannot hold several returns on a one-column canvas.
     const side = sameColumn
-      ? t.y >= s.y && !repair
+      ? (separateReturn &&
+          source.x < 90 &&
+          (returnCounts.get(column) || 0) > 0) ||
+        (t.y >= s.y && !repair)
         ? 1
         : -1
       : t.x > s.x
@@ -188,6 +241,7 @@ export function fixedWorkflowRouter(
             current.cost +
             Math.abs(from.x - to.x) +
             Math.abs(from.y - to.y) +
+            overlapCost(from, to) +
             (dir === nextDir ? 0 : 18);
         if (cost >= distance[state]) continue;
         distance[state] = cost;
@@ -256,6 +310,15 @@ export function fixedWorkflowRouter(
             )
           )
             continue;
+          if (
+            separateReturn &&
+            returnLabels.some(
+              (p) =>
+                Math.abs(p.x - candidate.x) < 62 &&
+                Math.abs(p.y - candidate.y) < 28,
+            )
+          )
+            continue;
           label = candidate;
           break;
         }
@@ -272,6 +335,12 @@ export function fixedWorkflowRouter(
       }),
     };
     routes.set(key, result);
+    if (separateReturn) {
+      returnSegments.push(...segments);
+      returnLabels.push({ x: result.x, y: result.y });
+      returnCounts.set(column, (returnCounts.get(column) || 0) + 1);
+    }
+    allSegments.push(...segments);
     return result;
   };
 }

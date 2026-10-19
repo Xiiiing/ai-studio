@@ -4,6 +4,7 @@ import { rows, roleName, date, activityName, type RecordData } from "./api";
 import { Badge, Panel, Empty, Artifact, Modal } from "./ui";
 import { WorkflowSummary, selectedHandoffs } from "./WorkflowSummary";
 import { ExecutionRecord, MaterialCard } from "./DocumentReader";
+import { RoleHandoffs } from "./RoleHandoffs";
 import {
   FixedWorkflowCanvas,
   readCanvasSelection,
@@ -398,6 +399,28 @@ function WorkflowWorkspace({
               }
             }}
           >
+            <RoleHandoffs
+              key={`${graph.project_id}:${canvasSelection?.kind}:${canvasSelection?.id}`}
+              projectId={graph.project_id}
+              value={flow?.controlled_handoffs}
+              stale={!!stale}
+              roles={
+                canvasSelection?.kind === "role"
+                  ? [canvasSelection.id]
+                  : canvasSelection?.kind === "department"
+                    ? model.departments.find((d) => d.id === canvasSelection.id)
+                        ?.node_ids
+                    : canvasSelection?.kind === "step"
+                      ? selected?.members
+                      : undefined
+              }
+              pairs={
+                canvasSelection &&
+                ["handoff", "stage-edge"].includes(canvasSelection.kind)
+                  ? selectedHandoffs(canvasSelection, model, groups)
+                  : undefined
+              }
+            />
             {canvasSelection?.kind === "step" ? (
               <>
                 <nav
