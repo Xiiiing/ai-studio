@@ -226,9 +226,14 @@ for (const width of [320, 390, 1440])
             ).toBe(true);
           }
           await expectAnchorsUnchanged(page, baseline);
-          await expect(menu.getByRole("menuitem").first()).toBeFocused();
+          const enabledActions = menu.getByRole("menuitem", {
+            disabled: false,
+          });
+          await expect(enabledActions.first()).toBeFocused();
           await page.keyboard.press("ArrowDown");
-          await expect(menu.getByRole("menuitem").nth(1)).toBeFocused();
+          await expect(
+            enabledActions.nth((await enabledActions.count()) > 1 ? 1 : 0),
+          ).toBeFocused();
           await page.keyboard.press("Escape");
           await expect(menu).toBeHidden();
           await expect(summary).toBeFocused();
