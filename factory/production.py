@@ -61,7 +61,60 @@ def _matching_source(record, target):
             or record.get("source_signature") in target.get("compatible_source_signatures", ()))
 
 
-def _grounded_repair_plan(assessment, stage, attempt, expected=None, reference_roles=()):
+def _grounded_image_target_repair(repair, prompt, context):
+    """Reassert a reference/image target's approved requirements, never QA prose.
+
+    These targets have no shot starting state. In particular, an identity,
+    environment or prop reference must retain its purpose during a repair rather
+    than inherit the narrative staging rules used for shot keyframes.
+    """
+    context = context if isinstance(context, dict) else {}
+    # The final request already contains target.prompt. Do not repeat a compiled
+    # reference prompt here: that can exceed the image provider's input limit.
+    # Context is provenance for facts actually present in that approved request,
+    # not a second channel for adding uncompiled or unchecked requirements.
+    facts = [("target.prompt", prompt)]
+    if isinstance(prompt, str):
+        facts.extend(("review_context." + field, context.get(field))
+                     for field in ("prompt", "continuity")
+                     if isinstance(context.get(field), str) and context[field] in prompt)
+    seen = set()
+    for field, value in facts:
+        if isinstance(value, str) and value.strip() and value not in seen:
+            repair["positive_constraints"].append({"field": field, "text": value})
+            seen.add(value)
+    repair["constraint_source"] = "approved_image_target_fields"
+    if not repair["positive_constraints"]:
+        return repair
+    purpose = context.get("review_purpose")
+    focus = {
+        "character_reference": (
+            "Render the approved character identity reference. Make the approved face, hair, "
+            "wardrobe, worn accessories and carried equipment visibly readable as required below. "
+            "Keep the approved reference pose, framing and background; do not turn the identity "
+            "reference into a story action scene."),
+        "scene_reference": (
+            "Render the approved environment reference. Make its required spatial layout, "
+            "landmarks and environmental details visibly readable. Preserve the approved "
+            "reference composition without adding story actions or unrequested characters."),
+        "prop_reference": (
+            "Render the approved prop reference. Make its required shape, material, colors "
+            "and identifying details visibly readable. Keep the approved reference presentation "
+            "without adding a story action scene."),
+        "composition_reference": (
+            "Render the approved reference composition. Preserve every supplied character "
+            "identity, environment layout and prop required below in one coherent composition. "
+            "Keep this a reference image rather than a sequence of story actions."),
+    }.get(purpose, (
+        "Render the approved image requirements faithfully. Make the required subjects, "
+        "clothing, accessories, objects and composition visibly readable where specified below. "
+        "Keep the original image purpose and approved visual style."))
+    repair.update(prompt_prefix=focus, prompt_suffix="")
+    return repair
+
+
+def _grounded_repair_plan(assessment, stage, attempt, expected=None, reference_roles=(),
+                          *, target_prompt=None, review_context=None):
     """Route structured diagnoses and ground new prompts in approved shot facts.
 
     Review details remain audit evidence only: a description of the wrong image
@@ -107,7 +160,11 @@ def _grounded_repair_plan(assessment, stage, attempt, expected=None, reference_r
     repair["positive_constraints"] = []
     repair["prompt_prefix"] = ""
     repair["constraint_source"] = "approved_shot_fields"
-    if not isinstance(expected, dict) or technical:
+    if technical:
+        return repair
+    if not isinstance(expected, dict):
+        if stage == "image":
+            return _grounded_image_target_repair(repair, target_prompt, review_context)
         return repair
 
     if stage == "image":
@@ -897,7 +954,8 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
         number = len(previous) + 1
         repair = _grounded_repair_plan(
             previous[-1].get("qa", {"issues": [{"code": "generation", "detail": previous[-1].get("error", "")}]}),
-            target["kind"], number, target.get("shot"), target.get("reference_roles", ())) if previous else {}
+            target["kind"], number, target.get("shot"), target.get("reference_roles", ()),
+            target_prompt=target["prompt"], review_context=target.get("review_context")) if previous else {}
         seed = (int(fingerprint({"project": self.ident, "asset": target["key"]})[:8], 16)
                 + int(repair.get("seed_delta", 0)) + number - 1) % (2**31)
         retake = (target.get("shot") or {}).get("render_revisions", {}).get(target["kind"], 0) or self.project.get("team_character_revisions", {}).get(target.get("character"), 0)

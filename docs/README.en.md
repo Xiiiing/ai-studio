@@ -45,6 +45,7 @@ Start with the English README and getting-started guide. Most detailed reference
 | [Agent execution loop](AGENT_EXECUTION_LOOP.md) | Bounded role tools, recovery, media delegation and scoped handoffs; Chinese |
 | [Drama planning recovery](DRAMA_PLANNING_RECOVERY.md) | Scoped planning repairs, preserved drafts and actionable production steps; Chinese |
 | [Long episode production](LONG_EPISODE_PRODUCTION.md) | Fixed duration, evidence based scene reviews and automation boundaries; Chinese |
+| [Reference image repairs](REFERENCE_IMAGE_REPAIRS.md) | Grounded reference constraints in actual generation requests; Chinese |
 | [Generation prompt pipeline](GENERATION_PIPELINE.md) | Opt-in shot plans, real first-frame evidence and adapter compilation; Chinese |
 | [Versioned creative prompts](VERSIONED_CREATIVE_PROMPTS.md) | Prompt modules, sources, signatures and invalidation; English |
 | [Offline creative A/B protocol](CREATIVE_AB_PROTOCOL.md) | Frozen cases, blind review and regression aggregation; English |
