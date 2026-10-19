@@ -26,8 +26,9 @@ SOURCE_FILES = (
     "factory/creative_experiment.py", "factory/creative_comparison.py",
     "factory/creative_experiment_cli.py", "factory/creative_evidence_io.py",
     "factory/creative_holdout.py",
-    "factory/prompt_registry.py", "factory/prompt_workbench.py", "factory/profile_creative.py",
+    "factory/prompt_registry.py", "factory/prompt_workbench.py", "factory/generation_pipeline.py", "factory/profile_creative.py",
     "factory/llm.py", "factory/schemas.py", "factory/storyboard.py",
+    "factory/production.py", "factory/audio_editor.py", "factory/speech.py",
     "factory/production_profiles.py", "factory/config.py", "factory/providers.py",
 )
 # Existing text-critic dimensions, not the separate seven-dimension film gate.

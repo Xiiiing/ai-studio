@@ -24,6 +24,7 @@ import {
   type RecordData,
 } from "./api";
 import { Workflow } from "./Workflow";
+import { GenerationPipeline } from "./GenerationPipeline";
 import { PromptWorkbench } from "./PromptWorkbench";
 import { QualityComparison } from "./QualityComparison";
 import "./dramas.css";
@@ -381,6 +382,7 @@ const dramaTabs = [
   ["results", "成果"],
   ["comparison", "质量比较"],
   ["prompts", "提示词工作台"],
+  ["generation", "生成提示词流水线"],
 ];
 const dramaPrimary = [
   ["overview", "总览", "项目总览"],
@@ -407,7 +409,13 @@ function DramaNavigation({
     document.addEventListener("pointerdown", outside);
     return () => document.removeEventListener("pointerdown", outside);
   }, []);
-  const section = ["plan", "assets", "comparison", "prompts"].includes(tab)
+  const section = [
+    "plan",
+    "assets",
+    "comparison",
+    "prompts",
+    "generation",
+  ].includes(tab)
     ? "overview"
     : tab === "batches"
       ? "episodes"
@@ -450,7 +458,16 @@ function DramaNavigation({
         </summary>
         <div>
           {dramaTabs
-            .filter(([key]) => ["plan", "assets", "batches", "comparison", "prompts"].includes(key))
+            .filter(([key]) =>
+              [
+                "plan",
+                "assets",
+                "batches",
+                "comparison",
+                "prompts",
+                "generation",
+              ].includes(key),
+            )
             .map(([key, label]) => (
               <button
                 key={key}
@@ -462,7 +479,14 @@ function DramaNavigation({
             ))}
         </div>
       </details>
-      {["plan", "assets", "batches", "comparison", "prompts"].includes(tab) && (
+      {[
+        "plan",
+        "assets",
+        "batches",
+        "comparison",
+        "prompts",
+        "generation",
+      ].includes(tab) && (
         <span className="drama-location">
           {dramaTabs.find(([key]) => key === tab)?.[1]}
         </span>
@@ -724,6 +748,7 @@ export function DramaDetail({
       />
       <ErrorNotice error={error || query.error} />
       <DramaNavigation tab={tab} onTab={setTab} />
+      {tab === "generation" && <GenerationPipeline project={p} />}
       {tab === "prompts" && <PromptWorkbench project={p} />}
       {tab === "comparison" && <QualityComparison project={p} />}
       {tab === "plan" &&
@@ -820,7 +845,10 @@ export function DramaDetail({
                               ? "全剧规划已确认，可按集继续制作"
                               : "先完成全剧规划，再选择剧集制作"}
                     </span>
-                    <button className="text-link" onClick={() => setTab("plan")}>
+                    <button
+                      className="text-link"
+                      onClick={() => setTab("plan")}
+                    >
                       查看规划与审核
                     </button>
                   </div>
@@ -829,7 +857,10 @@ export function DramaDetail({
             }
           >
             <div className="drama-actions">
-              <button className="button primary" onClick={() => setTab("workflow")}>
+              <button
+                className="button primary"
+                onClick={() => setTab("workflow")}
+              >
                 打开制作流程
               </button>
               <button className="button" onClick={() => setTab("plan")}>
@@ -1571,7 +1602,8 @@ export function LongEpisodeDetail({
           ["overview", "剧集总览"],
           ["workflow", "制作流程与团队"],
           ["comparison", "质量比较"],
-  ["prompts", "提示词工作台"],
+          ["prompts", "提示词工作台"],
+          ["generation", "生成提示词流水线"],
         ].map(([key, label]) => (
           <button
             key={key}
@@ -1583,7 +1615,9 @@ export function LongEpisodeDetail({
           </button>
         ))}
       </nav>
-      {activeTab === "prompts" ? (
+      {activeTab === "generation" ? (
+        <GenerationPipeline project={p} />
+      ) : activeTab === "prompts" ? (
         <PromptWorkbench project={p} />
       ) : activeTab === "comparison" ? (
         <QualityComparison project={p} />
@@ -1630,14 +1664,22 @@ export function LongEpisodeDetail({
             }
             context={<p>{p.outline.synopsis}</p>}
           >
-            <button className="button primary" onClick={() => onTab("workflow")}>
+            <button
+              className="button primary"
+              onClick={() => onTab("workflow")}
+            >
               查看制作流程
             </button>
           </WorkFocus>
           <Panel title="剧集进度">
             <PageFocus
               label="完成单元"
-              progress={{completed: rows(p.units).filter(u => u.status === "unit_ready").length, total: rows(p.units).length}}
+              progress={{
+                completed: rows(p.units).filter(
+                  (u) => u.status === "unit_ready",
+                ).length,
+                total: rows(p.units).length,
+              }}
               value={`${rows(p.units).filter((u) => u.status === "unit_ready").length} / ${rows(p.units).length}`}
               detail={
                 <>

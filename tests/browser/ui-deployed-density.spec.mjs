@@ -150,7 +150,7 @@ test("project navigation does not push content away or stretch its grouped butto
   const trigger = more.locator(":scope > summary");
   await trigger.click();
   const menu = more.locator(".project-navigation-menu");
-  await expect(menu.locator("button")).toHaveCount(3);
+  await expect(menu.locator("button")).toHaveCount(4);
   expect(
     await menu
       .locator("button")

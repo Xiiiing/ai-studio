@@ -540,6 +540,10 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
         return None
 
     def _team_admit_target(self, target):
+        if target.get("generation_plan"):
+            actual = [media_receipt(p)["sha256"] for p in target["references"]]
+            if actual != target["generation_plan"]["parameters"]["reference_sha256"]:
+                raise ProductionNeedsDecision("生成前引用像素已变化，原编译结果不再适用", "generation_frame_changed")
         identity = self._team_target(target)
         team_control.admit(self.ident, *(identity or (target["kind"], str(target["key"]))))
 
@@ -703,9 +707,61 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                                         "expected": expected, "cast": self.cast, "format": self.mode})
         if self.project.get("team_review_revisions", {}).get(review_key):
             review_signature = fingerprint({"review": review_signature, "producer_review_revision": self.project["team_review_revisions"][review_key]})
-        return {"key": key, "folder": folder, "prompt": prompt, "references": refs,
+        target = {"key": key, "folder": folder, "prompt": prompt, "references": refs,
                 "kind": kind, "signature": signature, "review_signature": review_signature,
                 "compatible_source_signatures": compatible_sources, **extra}
+        from .generation_pipeline import enabled, prepare, source, capabilities
+        if enabled(self.project) and shot.get("id") == key and kind in {"image", "video"}:
+            # Reuse valid approved legacy results before introducing any new
+            # model request. An opt-in configuration is not a remake command.
+            if self._valid_selection(target):
+                return target
+            pipeline_config = {**self.config, "image_width": self.image_size[0], "image_height": self.image_size[1],
+                "video_width": self.video_size[0], "video_height": self.video_size[1], "video_connection": self.video_connection}
+            identities = [(r, _receipt_path(self.assets["characters"][r])) for r in self._shot_render_roles(shot)
+                          if r in self.assets["characters"]]
+            prior_path = folder / "selected.json"
+            prior = read_json(prior_path) if prior_path.exists() else {}
+            old_plan = prior.get("generation_plan") or {}
+            current_source = source(self.project, shot, refs, style=shot.get("render_style_prompt", self.style_prompt), cast=self.cast)
+            current_source["reference_bindings"] = copy.deepcopy(list(extra.get("asset_references", ())))
+            if identities:
+                current_source["identity_references"] = [{"character_id": r, "sha256": media_receipt(p)["sha256"]} for r, p in identities]
+            current_source["reference_map"] = [{"reference_index": i+1, "sha256": ref["sha256"],
+                "character_ids": [r["character_id"] for r in current_source.get("identity_references", []) if r["sha256"] == ref["sha256"]],
+                "materials": [r for r in current_source["reference_bindings"] if r.get("sha256") == ref["sha256"]]}
+                for i, ref in enumerate(current_source["references"])]
+            def facts(value):
+                return {k:v for k,v in value.items() if k not in {"pipeline_snapshot", "prompt_snapshot_sha256", "reference_bindings", "identity_references"}}
+            if (old_plan and prior.get("qa", {}).get("status") == "pass"
+                    and facts(old_plan.get("source", {})) == facts(current_source)
+                    and old_plan.get("capabilities") == capabilities(pipeline_config, self.project, kind)):
+                _receipt_path(prior)
+                target.update(prompt=old_plan["parameters"]["prompt"], signature=prior["source_signature"], generation_plan=old_plan,
+                    review_signature=fingerprint({"review": review_signature, "generation_plan": old_plan["signature"]}))
+                return target
+            # Resume a frozen compiled plan before checking the media journal;
+            # the legacy target signature must not hide its own in-flight job.
+            for attempt_path in sorted(folder.glob("take_*/attempt.json"), reverse=True):
+                attempt = read_json(attempt_path)
+                compiled = attempt.get("generation_plan") or {}
+                previous_source = compiled.get("source", {})
+                if previous_source == current_source and compiled.get("capabilities") == capabilities(pipeline_config, self.project, kind):
+                    target.update(prompt=compiled["parameters"]["prompt"], generation_plan=compiled,
+                        signature=fingerprint({"source": signature, "generation_plan": compiled["signature"]}),
+                        review_signature=fingerprint({"review": review_signature, "generation_plan": compiled["signature"]}))
+                    return target
+            self.boundary()
+            self._guard_remote_submissions(target)
+            compiled = prepare(self.project, shot, refs, config=pipeline_config, phase=kind,
+                style=shot.get("render_style_prompt", self.style_prompt), cast=self.cast,
+                reference_bindings=extra.get("asset_references", ()),
+                identities=identities, checkpoint=self.boundary)
+            self.boundary()
+            target.update(prompt=compiled["parameters"]["prompt"], generation_plan=compiled,
+                signature=fingerprint({"source": signature, "generation_plan": compiled["signature"]}),
+                review_signature=fingerprint({"review": review_signature, "generation_plan": compiled["signature"]}))
+        return target
 
     def _continuity_video_repair_allowed(self, target, retained):
         """A server-recorded return permits only its changed shot in this version.
@@ -880,7 +936,14 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                                       "resolution": self.video_connection["resolution"],
                                       "timeline_seconds": target.get("seconds"), "timeline_fps": 24})
         preparation_folder = False
-        if self.h3_automatic and target["kind"] == "video":
+        if target.get("generation_plan"):
+            record["generation_plan"] = copy.deepcopy(target["generation_plan"])
+            # Keep the adapter's compiled prefix intact, including H3's timing
+            # format. Grounded repair constraints cannot replace approved facts.
+            record["prompt"] = target["prompt"] + "\n" + (repair.get("prompt_prefix") or repair.get("prompt_suffix") or "")
+            if target["kind"] == "video" and repair.get("regenerate_keyframe"):
+                raise ProductionNeedsDecision("视频返修要求更换首帧；请先定向返修并确认图片，再读取新首帧编译视频", "generation_frame_revision_required")
+        if self.h3_automatic and target["kind"] == "video" and not target.get("generation_plan"):
             record["state"] = "prompt_preparing"
             if repair.get("regenerate_keyframe"):
                 # A replacement first frame must exist before its prompt is
@@ -893,6 +956,9 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
             folder.mkdir(parents=True, exist_ok=False)
         self._team_begin_target(target, record)
         self._save_attempt(target, record)
+        if record.get("generation_plan"):
+            from .generation_pipeline import request_receipt
+            request_receipt(self.project, target, record)
         return record
 
     def _finish_h3_prompt(self, target, record):
@@ -968,7 +1034,7 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                 h3 = self.video_connection["provider"] == "comfyui_h3" and any(t["kind"] == "video" for t in generate)
                 if h3 and self.h3_automatic:
                     for target in generate:
-                        if target["kind"] != "video":
+                        if target["kind"] != "video" or target.get("generation_plan"):
                             continue
                         record = target.get("resume_attempt")
                         if record is None:
@@ -1092,6 +1158,8 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                              "review_signature": target["review_signature"] if required else None,
                              "generation_kind": ("local_diffusion_image" if target["kind"] == "image" else
                                                  "cloud_diffusion_video" if self._remote_video(target) else "local_diffusion_video")}
+                    if record.get("generation_plan"):
+                        saved["generation_plan"] = copy.deepcopy(record["generation_plan"])
                     if target["kind"] == "video":
                         saved.update(motion_method="generated_video", diffusion_video=True)
                         if self.h3_automatic:

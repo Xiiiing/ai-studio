@@ -17,6 +17,7 @@ const tabs = [
   "decisions",
   "team",
   "prompts",
+  "generation",
   "shots",
   "script",
   "quality",
@@ -145,7 +146,7 @@ for (const width of [320, 390, 768, 1024, 1440, 1920]) {
             const box = await item.boundingBox();
             expect(box.height).toBeGreaterThanOrEqual(44);
           }
-          if (!["team", "prompts", "costs"].includes(route.tab))
+          if (!["team", "prompts", "generation", "costs"].includes(route.tab))
             await expect(
               navigation.locator(`[data-tab="${group}"]`),
             ).toHaveAttribute("aria-current", "page");
@@ -160,7 +161,7 @@ for (const width of [320, 390, 768, 1024, 1440, 1920]) {
           const more = page.locator(".project-more");
           const trigger = more.locator(":scope > summary");
           await trigger.click();
-          await expect(more.locator("[data-project-page]")).toHaveCount(3);
+          await expect(more.locator("[data-project-page]")).toHaveCount(4);
           for (const item of await more.locator("[data-project-page]").all()) {
             await expect(item).toBeInViewport({ ratio: 1 });
             const box = await item.boundingBox();

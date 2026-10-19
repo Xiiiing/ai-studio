@@ -65,6 +65,8 @@ def insert(db, project):
     from .prompt_workbench import pin_defaults
     parent_id = project.get("episode_id") or project.get("drama_id")
     parent = store._read(db, parent_id) if parent_id else None
+    if parent and "generation_pipeline" in parent:
+        project.setdefault("generation_pipeline", copy.deepcopy(parent["generation_pipeline"]))
     project.setdefault("prompt_snapshot", copy.deepcopy(parent.get("prompt_snapshot")) if parent else pin_defaults(db))
     db.execute("INSERT INTO projects(id,updated,revision,snapshot) VALUES(?,?,?,?)",
                (project['id'], time.time(), project['revision'], store.encoded(project)))

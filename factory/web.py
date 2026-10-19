@@ -39,6 +39,12 @@ class Handler(LocalMediaHandler):
                 if urlsplit(self.path).query:
                     raise ValueError("提示词查询参数无效")
                 return self.json(prompts.calls(match[1], match[3], root=ROOT) if match[2] else prompts.inventory(match[1]))
+            match = re.fullmatch(r"/api/factory/projects/([a-f0-9]{12})/generation-pipeline", path)
+            if match:
+                from .generation_pipeline import preview
+                if urlsplit(self.path).query:
+                    raise ValueError("制作计划查询参数无效")
+                return self.json(preview(store.get(match[1], False)))
             if path == "/api/factory/system":
                 return self.json(public_system_info())
             match = re.fullmatch(r"/api/factory/projects/([a-f0-9]{12})/quality-baselines(?:/([a-f0-9]{32}|compare))?", path)
@@ -227,6 +233,12 @@ class Handler(LocalMediaHandler):
             return super().do_POST()
         try:
             payload=self.read_json_body()
+            match = re.fullmatch(r"/api/factory/projects/([a-f0-9]{12})/generation-pipeline(?:/(settle))?", route)
+            if match:
+                from .generation_pipeline import configure, settle
+                if urlsplit(self.path).query:
+                    raise ValueError("制作计划写入参数无效")
+                return self.json((settle if match[2] else configure)(match[1], payload))
             match = re.fullmatch(r"/api/factory/projects/([a-f0-9]{12})/prompts/(save|preview|validate|activate|apply|trial|settle)", route)
             if match:
                 from . import prompt_workbench as prompts

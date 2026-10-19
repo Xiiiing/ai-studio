@@ -42,6 +42,7 @@ Start with the English README and getting-started guide. Most detailed reference
 | [Cloud-video budgets](CLOUD_VIDEO_BUDGET.md) | Estimates, authorization, ledger and limits; other cloud media in the provider guide |
 | [Production acceptance](PRODUCTION_ACCEPTANCE.md) | Read-only validation bound to project, production version and media hash |
 | [Quality evaluation](QUALITY_EVALUATION.md) | Technical quality, ASR, VLM, optional VBench and evidence limits |
+| [Generation prompt pipeline](GENERATION_PIPELINE.md) | Opt-in shot plans, real first-frame evidence and adapter compilation; Chinese |
 | [Versioned creative prompts](VERSIONED_CREATIVE_PROMPTS.md) | Prompt modules, sources, signatures and invalidation; English |
 | [Offline creative A/B protocol](CREATIVE_AB_PROTOCOL.md) | Frozen cases, blind review and regression aggregation; English |
 | [Architecture references](REFERENCE_ARCHITECTURES.md) | Official upstream sources, adopted principles and license boundaries |

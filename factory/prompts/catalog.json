@@ -9,7 +9,8 @@
     "executive_producer": "1.0.0",
     "story_editor": "2.0.0",
     "dialogue_editor": "2.0.0",
-    "edit_director": "2.0.0"
+    "edit_director": "2.0.0",
+    "visual_critic": "1.0.0"
   },
   "prompts": [
     {
@@ -771,6 +772,49 @@
       },
       "output_schema_refs": [
         "factory.schemas:episode_schema"
+      ]
+    },
+    {
+      "role": "storyboard_director",
+      "version": "4.0.0",
+      "responsibility": "将批准故事、镜头状态及真实首帧观察编译为制作计划，不能改剧情或权限。",
+      "path": "storyboard_director/4.0.0.txt",
+      "sha256": "38bd6ea6eeace747187206cc9ee32272880a96b6a8e6b829d8d5f2b0bff5d597",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "project": {},
+          "capabilities": {},
+          "frame_evidence": {},
+          "phase": {},
+          "producer_task_requirements": {}
+        }
+      },
+      "output_schema_refs": [
+        "factory.generation_pipeline:PLAN_SCHEMA"
+      ]
+    },
+    {
+      "role": "visual_critic",
+      "version": "1.0.0",
+      "responsibility": "读取首帧真实像素并记录起始状态证据，不授权生成或批准影片。",
+      "path": "visual_critic/1.0.0.txt",
+      "sha256": "5632c59aaabc8d8c2493989f664787fecfd0e915c8aa1261de398a006d37f1fd",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "project": {},
+          "approved_shot": {},
+          "approved_action": {},
+          "reference_sha256": {},
+          "rule": {},
+          "identity_references": {}
+        }
+      },
+      "output_schema_refs": [
+        "factory.generation_pipeline:FRAME_SCHEMA"
       ]
     }
   ]

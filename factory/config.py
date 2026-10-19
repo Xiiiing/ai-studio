@@ -173,6 +173,10 @@ def production_config(project, config):
             # media receipts. Provider credentials remain environment references.
             result["h3_prompt_config"] = {key: copy.deepcopy(config[key]) for key in
                 ("schema_version", "llm", "llm_profiles", "llm_roles", "setup_incomplete") if key in config}
+    from .generation_pipeline import enabled
+    if enabled(project):
+        result["generation_pipeline_config"] = {key: copy.deepcopy(config[key]) for key in
+            ("schema_version", "llm", "llm_profiles", "llm_roles", "quality", "setup_incomplete") if key in config}
     from .media_profiles import resolve
     result["image_connection"] = resolve(config, "image")
     if result['image_connection']['provider']=='comfyui_qwen_image21' and not result.get('gpu_service'):

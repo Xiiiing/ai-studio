@@ -47,6 +47,7 @@
 | [版本化创作 Prompt](VERSIONED_CREATIVE_PROMPTS.md) | Prompt 模块、来源、签名、兼容与失效规则 |
 | [角色输入来源与版本追踪](AGENT_CONTEXT_TRACE.md) | 实际输入、反馈版本、窗口预算和缓存复用来源 |
 | [离线创作 A/B 协议](CREATIVE_AB_PROTOCOL.md) | 冻结案例、匿名评审与回归汇总 |
+| [生成提示词流水线](GENERATION_PIPELINE.md) | 起始瞬间、真实首帧观察和按适配器编译的动作/声音计划 |
 | [提示词工作台](PROMPT_WORKBENCH.md) | 六段装配、不可变版本、项目快照和隔离试运行 |
 | [质量基线与比较台](QUALITY_BASELINES.md) | 项目版本冻结、质量证据与累计运行投入比较 |
 | [0.2 系列 Agent 路线](AGENT_020_ROADMAP.md) | 提示词、执行循环、团队配置与自动制作的分阶段交付 |

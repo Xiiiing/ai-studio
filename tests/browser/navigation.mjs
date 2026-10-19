@@ -3,7 +3,7 @@ import { expect } from "@playwright/test";
 export async function openProjectPage(page, tab) {
   const navigation = page.locator(".project-navigation");
   await expect(navigation).toBeVisible();
-  if (["team", "prompts", "costs"].includes(tab)) {
+  if (["team", "prompts", "generation", "costs"].includes(tab)) {
     const more = page.locator(".project-more");
     if ((await more.getAttribute("open")) === null)
       await more.locator(":scope > summary").click();
