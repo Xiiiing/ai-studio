@@ -38,6 +38,9 @@
   gap: 0.6rem;
   align-items: center;
 }
+.production-command-actions > .badge {
+  align-self: center;
+}
 .production-stage-rail {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));

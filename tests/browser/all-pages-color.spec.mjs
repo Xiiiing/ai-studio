@@ -66,7 +66,7 @@ async function inspect(page, { feature = false } = {}) {
       .flatMap(e => { const s = getComputedStyle(e); return neutral(s.backgroundColor) ? [] : [`${e.tagName}.${e.className}:${s.backgroundColor}`]; });
     const primary = [...document.querySelectorAll("#workspace .button.primary,dialog[open] .button.primary")].filter(visible).filter(e => !e.disabled && !e.matches('[aria-pressed="true"]') && !e.closest(".page-color-focus,.project-navigation,.drama-tabs"))
       .map(e => { const s = getComputedStyle(e); return { text: e.textContent.trim(), neutral: neutral(s.backgroundColor), contrast: contrast(s.color, s.backgroundColor) }; });
-    const features = [...document.querySelectorAll(".page-summary-value,.project-context > article")].filter(visible).map(e => { const s = getComputedStyle(e); return { background: rgb(s.backgroundColor), color: rgb(s.color), expectedBackground: rgb(tokens.panel), expectedColor: rgb(tokens.ink), mutedColor: rgb(tokens.muted), contrast: contrast(s.color, tokens.panel), image: s.backgroundImage, highlight: s.boxShadow, expectedHighlight: tokens.accent, height: e.getBoundingClientRect().height, viewport: innerWidth, text: [...e.querySelectorAll("*")].filter(n => !n.closest(".badge,[aria-hidden=true]") && [...n.childNodes].some(t => t.nodeType === Node.TEXT_NODE && t.textContent.trim())).map(n => ({ label: n.textContent.trim(), color: rgb(getComputedStyle(n).color), contrast: contrast(getComputedStyle(n).color, tokens.panel) })) }; });
+    const features = [...document.querySelectorAll(".page-summary-value,.project-context > article,.production-command")].filter(visible).map(e => { const s = getComputedStyle(e); return { background: rgb(s.backgroundColor), color: rgb(s.color), expectedBackground: rgb(tokens.panel), expectedColor: rgb(tokens.ink), mutedColor: rgb(tokens.muted), contrast: contrast(s.color, tokens.panel), image: s.backgroundImage, highlight: s.boxShadow, expectedHighlight: tokens.accent, height: e.getBoundingClientRect().height, viewport: innerWidth, text: [...e.querySelectorAll("*")].filter(n => !n.closest("button,a,.badge,[aria-hidden=true]") && [...n.childNodes].some(t => t.nodeType === Node.TEXT_NODE && t.textContent.trim())).map(n => ({ label: n.textContent.trim(), color: rgb(getComputedStyle(n).color), contrast: contrast(getComputedStyle(n).color, tokens.panel) })) }; });
     const statuses = [...document.querySelectorAll("#workspace [data-status-indicator]")].filter(visible).map(e => { const tone = e.dataset.statusIndicator; probe.style.color = `var(--status-${tone})`; document.body.append(probe); const expected = getComputedStyle(probe).color; probe.remove(); return { tone, color: rgb(getComputedStyle(e).backgroundColor), expected: rgb(expected), width: parseFloat(getComputedStyle(e).width) }; });
     const badges = [...document.querySelectorAll("#workspace .badge")].filter(visible).map(e => ({ text: e.textContent.trim(), height: e.getBoundingClientRect().height }));
     return { gradients, tintedReading, primary, features, badges, statuses, overflow: document.documentElement.scrollWidth > innerWidth + 1 };
@@ -132,24 +132,24 @@ for (const width of [1440, 390]) for (const theme of ["light", "dark"]) {
     await configure(page); const { drama } = await install(page, request);
     const writes = []; page.on("request", r => { if (r.url().includes("/api/") && !["GET", "HEAD"].includes(r.method())) writes.push(r.url()); });
     await page.goto(`/#project=${dramaId}&tab=overview`);
-    const work = page.getByRole("region", { name: "当前工作区", exact: true });
-    const summary = page.getByRole("region", { name: "已出片剧集摘要", exact: true });
-    const current = drama.workflow.graph.nodes.find(n => n.id === drama.workflow.graph.active_node);
-    await expect(work.getByRole("heading")).toHaveText(current.label);
-    await expect(work.getByRole("button", { name: "打开制作流程", exact: true })).toBeVisible();
-    await expect(work).not.toContainText("已出片剧集");
-    await expect(summary).toContainText("1 / 3 集");
-    const progress = summary.getByRole("progressbar");
+    const work = page.getByRole("region", { name: "连续制作状态", exact: true });
+    await expect(work.getByRole("heading")).toHaveText("可在这里开启 AI 连续制作");
+    await expect(work.getByRole("button", { name: "设置连续制作", exact: true })).toBeVisible();
+    await expect(work).toContainText("已出片 1 / 3 集");
+    const progress = work.getByRole("progressbar");
     await expect(progress).toHaveAttribute("aria-valuenow", "1");
     await expect(progress).toHaveAttribute("aria-valuemax", "3");
-    const a = await work.boundingBox(), b = await summary.boundingBox();
-    expect(b.y).toBeGreaterThanOrEqual(a.y + a.height);
-    await expect(summary).toHaveCSS("background-image", "none");
-    await work.getByRole("button", { name: "打开制作流程", exact: true }).click();
+    const attention = page.locator(".production-attention");
+    const blocked = attention.locator(".production-attention-item").filter({ hasText: "跨场景连续性需返修" });
+    await expect(blocked.getByRole("button", { name: "继续此集", exact: true })).toBeVisible();
+    await expect(attention.getByRole("button", { name: "观看与验收第 1 集", exact: true })).toBeVisible();
+    await expect(page.locator(".production-artifacts")).toBeVisible();
+    await expect(page.locator(".production-activity")).toBeVisible();
+    await openWorkflow(page);
     await expect(page.locator("[data-stage]")).toHaveCount(5);
-    await expect(page).toHaveURL(new RegExp(`project=${dramaId}&tab=workflow`));
-    await page.goBack(); await expect(work).toBeVisible();
-    await work.getByRole("button", { name: "查看全剧规划", exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(`project=${dramaId}&tab=overview`));
+    await page.getByRole("navigation", { name: "整剧工作区" }).getByRole("button", { name: "项目资料", exact: true }).click();
+    await page.getByRole("menuitem", { name: "全剧规划", exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`project=${dramaId}&tab=plan`));
     expect(writes).toEqual([]);
   });
@@ -204,18 +204,18 @@ for (const width of [1440, 390]) for (const theme of ["light", "dark"]) {
     test.setTimeout(90000);
     await configure(page); const { drama } = await install(page, request);
     const errors = [], writes = []; page.on("pageerror", e => errors.push(e.message)); page.on("request", r => { if (r.url().includes("/api/") && !["GET", "HEAD"].includes(r.method())) writes.push(r.url()); });
-    for (const [tab, label, content] of [["overview", "项目总览", "已建立3 / 3集"], ["plan", "全剧规划", "全剧规划已通过独立审核"], ["assets", "共享设定", "灰色外套"], ["episodes", "剧集", "第3集 · 重新出发"], ["workflow", "制作流程与团队", "全剧规划独立审核"], ["batches", "生成批次", "第1、2集 · 设定v1"], ["results", "成果", "无字幕成片"]]) {
+    for (const [tab, label, content] of [["overview", "制作", "已出片 1 / 3 集"], ["plan", "全剧规划", "全剧规划已通过独立审核"], ["assets", "素材", "灰色外套"], ["episodes", "剧集", "第3集 · 重新出发"], ["workflow", "制作", "全剧规划独立审核"], ["batches", "生成批次", "第1、2集 · 设定v1"], ["results", "成果", "无字幕成片"]]) {
       await page.goto(`/#project=${dramaId}&tab=${tab}`);
       await expect(page.locator("#workspace h1")).toHaveText(drama.title);
       await expect(page.locator("#workspace")).toContainText(content);
       const nav = page.getByRole("navigation", { name: "整剧工作区", exact: true });
-      if (["plan", "assets", "batches"].includes(tab)) {
+      if (["plan", "batches"].includes(tab)) {
         await nav.getByRole("button", { name: "项目资料", exact: true }).click();
         await expect(page.getByRole("menuitem", { name: label, exact: true })).toHaveAttribute("data-selected", "true");
         await page.keyboard.press("Escape");
       } else await expect(nav.getByRole("button", { name: label, exact: true })).toHaveAttribute("aria-pressed", "true");
       if (tab === "plan") await expect(page.getByLabel("全剧主线", { exact: true })).toHaveValue(drama.draft_plan.storyline);
-      if (tab === "workflow") { await expect(page.locator("[data-stage]")).toHaveCount(5); await expect(page.locator("[data-flow-edge]")).not.toHaveCount(0); }
+      if (tab === "workflow") { await openWorkflow(page); await expect(page.locator("[data-stage]")).toHaveCount(5); await expect(page.locator("[data-flow-edge]")).not.toHaveCount(0); }
       if (tab === "episodes") { await page.getByRole("checkbox", { name: "选择第3集", exact: true }).check(); await expect(page.getByRole("button", { name: "生成所选 1 集", exact: true })).toBeEnabled(); }
       if (tab === "results") await expect(page.locator(".drama-video")).toHaveCount(1);
       await inspect(page, { feature: tab === "overview" });
@@ -264,7 +264,7 @@ for (const width of [1440, 390]) for (const theme of ["light", "dark"]) {
       for (const hash of ["view=models", `project=${dramaId}&tab=overview`, `project=${unitId}&tab=shots`]) {
         await page.goto(`/#${hash}`);
         await expect(page.locator("html")).toHaveAttribute("data-accent", id);
-        await expect(page.locator(hash.includes("tab=shots") ? ".shot-workbench" : ".page-summary").first()).toBeVisible();
+        await expect(page.locator(hash.includes("tab=shots") ? ".shot-workbench" : hash.includes(`project=${dramaId}`) ? ".production-command" : ".page-summary").first()).toBeVisible();
         await inspect(page, { feature: !hash.includes("tab=shots") });
       }
       observed.add(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--accent-feature").trim()));

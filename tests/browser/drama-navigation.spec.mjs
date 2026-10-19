@@ -7,6 +7,7 @@ import {
   assertUnobstructedLines,
 } from "./fixed-canvas.mjs";
 import { test, expect } from "@playwright/test";
+import { openWorkflow } from "./navigation.mjs";
 import { lifecycleFixture } from "./lifecycle-fixture.mjs";
 
 const dramaId = "dd1122334455";
@@ -141,7 +142,7 @@ async function noHorizontalOverflow(page) {
 }
 
 for (const width of [1440, 390]) {
-  test(`unconfirmed blocked drama tabs are distinct and keep routes at ${width}`, async ({
+  test(`unconfirmed blocked drama keeps inline planning and four primary sections at ${width}`, async ({
     page,
   }) => {
     await page.setViewportSize({ width, height: 1000 });
@@ -150,35 +151,40 @@ for (const width of [1440, 390]) {
     await page.goto("/#project=" + dramaId);
     const nav = page.getByRole("navigation", { name: "整剧工作区" });
     await expect(
-      nav.getByRole("button", { name: "项目总览", exact: true }),
+      nav.locator(".drama-primary-tabs").getByRole("button"),
+    ).toHaveText(["制作", "剧集", "素材", "成果"]);
+    await expect(
+      nav.getByRole("button", { name: "制作", exact: true }),
     ).toHaveAttribute("aria-pressed", "true");
+    const attention = page.locator(".production-attention");
+    await expect(attention).toContainText(drama.error);
+    await expect(attention).toContainText(drama.plan_review.issues[0]);
     await expect(
-      page.locator(".drama-overview-issues > summary"),
-    ).toContainText("规划审核问题");
-    await page.locator(".drama-overview-issues > summary").click();
-    await expect(page.getByText(drama.error, { exact: true })).toBeVisible();
-    await expect(
-      page.getByRole("button", { name: "查看全剧规划", exact: true }),
+      attention.getByRole("button", { name: "继续规划与返修", exact: true }),
     ).toBeVisible();
     await expect(
-      page.getByRole("button", { name: "打开制作流程", exact: true }),
+      attention.getByLabel("补充创作要求", { exact: true }),
     ).toBeVisible();
-    await expect(page.getByLabel("全剧主线", { exact: true })).toHaveCount(0);
+    await attention.locator(".production-plan-editor > summary").click();
+    await expect(attention.getByLabel("全剧主线", { exact: true })).toHaveValue(
+      drama.draft_plan.storyline,
+    );
+    await expect(page).not.toHaveURL(/tab=plan/);
     await noHorizontalOverflow(page);
-
     for (const [tab, label, heading] of [
       ["episodes", "剧集", "剧集尚未建立"],
       ["plan", "全剧规划", "全剧规划"],
-      ["assets", "共享设定", "全剧共享设定"],
+      ["assets", "素材", "全剧共享设定"],
       ["batches", "生成批次", "尚无生成批次"],
       ["results", "成果", "暂无剧集成果"],
     ]) {
-      if (["plan", "assets", "batches"].includes(tab))
+      const advanced = ["plan", "batches"].includes(tab);
+      if (advanced)
         await nav
           .getByRole("button", { name: "项目资料", exact: true })
           .click();
       await (
-        ["plan", "assets", "batches"].includes(tab)
+        advanced
           ? page.getByRole("menuitem", { name: label, exact: true })
           : nav.getByRole("button", { name: label, exact: true })
       ).click();
@@ -186,7 +192,7 @@ for (const width of [1440, 390]) {
       await expect(
         page.getByRole("heading", { name: heading, exact: true }),
       ).toBeVisible();
-      if (["plan", "assets", "batches"].includes(tab))
+      if (advanced)
         await expect(page.locator(".drama-location")).toHaveText(label);
       else
         await expect(
@@ -199,37 +205,33 @@ for (const width of [1440, 390]) {
         await expect(
           page.getByRole("button", { name: "继续规划", exact: true }),
         ).toBeVisible();
-      } else {
+      } else
         await expect(page.getByLabel("全剧主线", { exact: true })).toHaveCount(
           0,
         );
-        await expect(
-          page.getByRole("button", { name: "确认全剧规划", exact: true }),
-        ).toHaveCount(0);
-        await expect(
-          page.getByRole("button", { name: "生成所选 0 集", exact: true }),
-        ).toHaveCount(0);
-      }
       await noHorizontalOverflow(page);
     }
-
     await page.reload();
     await expect(
       nav.getByRole("button", { name: "成果", exact: true }),
     ).toHaveAttribute("aria-pressed", "true");
-    await expect(page.getByLabel("全剧主线", { exact: true })).toHaveCount(0);
     await page.goBack();
-    await expect(page).toHaveURL(new RegExp("tab=batches"));
-    await expect(page.locator(".drama-location")).toHaveText("生成批次");
+    await expect(page).toHaveURL(/tab=batches/);
     await expect(
       nav.getByRole("button", { name: "剧集", exact: true }),
     ).toHaveAttribute("aria-pressed", "true");
-    await nav.getByRole("button", { name: "项目总览", exact: true }).click();
-    await page
-      .getByRole("button", { name: "查看全剧规划", exact: true })
-      .click();
-    await expect(page).toHaveURL(new RegExp("tab=plan"));
-    await expect(page.getByLabel("全剧主线", { exact: true })).toBeVisible();
+    await nav.getByRole("button", { name: "制作", exact: true }).click();
+    await expect(page).toHaveURL(/tab=production/);
+    await expect(attention).toBeVisible();
+    for (const alias of ["overview", "workflow"]) {
+      await page.goto(`/#project=${dramaId}&tab=${alias}`);
+      await expect(
+        nav.getByRole("button", { name: "制作", exact: true }),
+      ).toHaveAttribute("aria-current", "page");
+      await expect(
+        page.getByRole("region", { name: "连续制作状态", exact: true }),
+      ).toBeVisible();
+    }
   });
 
   test(`planning confirmation waits for the active job at ${width}`, async ({
@@ -260,10 +262,12 @@ for (const width of [1440, 390]) {
     await page.setViewportSize({ width, height: 1000 });
     const drama = blockedDrama();
     await installDrama(page, drama);
-    await page.goto("/#project=" + dramaId);
-    await page
-      .getByRole("button", { name: "打开制作流程", exact: true })
-      .click();
+    await page.goto("/#project=" + dramaId + "&tab=workflow");
+    await expect(page.locator(".production-full-workflow")).not.toHaveAttribute(
+      "open",
+      "",
+    );
+    await openWorkflow(page);
     await expect(page).toHaveURL(new RegExp("tab=workflow"));
     await expect(
       page.getByRole("heading", { name: "制作工作流", exact: true }),
@@ -274,10 +278,10 @@ for (const width of [1440, 390]) {
     await expect(
       page.getByRole("heading", { name: "执行记录", exact: true }),
     ).toBeVisible();
-    const writer = page.locator("details").filter({
+    const writer = page.locator(".drama-task").filter({
       has: page.locator("summary", { hasText: "分集大纲 · 编剧 ·" }),
     });
-    const critic = page.locator("details").filter({
+    const critic = page.locator(".drama-task").filter({
       has: page.locator("summary", {
         hasText: "全剧规划审核 · 独立审稿 · 需要处理",
       }),
@@ -312,7 +316,9 @@ for (const width of [1440, 390]) {
     await expect(critic.getByRole("note")).toContainText(
       drama.plan_review.issues[0],
     );
-    await expect(page.getByLabel("全剧主线", { exact: true })).toHaveCount(0);
+    await expect(
+      page.getByLabel("全剧主线", { exact: true }),
+    ).not.toBeVisible();
     await noHorizontalOverflow(page);
     await page.screenshot({
       path: `runtime/browser-report/drama-workflow-${width}.png`,
@@ -322,7 +328,7 @@ for (const width of [1440, 390]) {
     await expect(
       page
         .getByRole("navigation", { name: "整剧工作区" })
-        .getByRole("button", { name: "制作流程与团队", exact: true }),
+        .getByRole("button", { name: "制作", exact: true }),
     ).toHaveAttribute("aria-pressed", "true");
   });
 
@@ -419,7 +425,7 @@ for (const width of [1440, 390]) {
     await page.route(`**/api/factory/projects/${unitId}/tasks?**`, (route) =>
       route.fulfill({ json: { tasks: [], total: 0 } }),
     );
-    await page.goto("/#project=" + dramaId);
+    await page.goto("/#project=" + dramaId + "&tab=episodes");
     await page
       .getByRole("button", { name: "查看剧集流程", exact: true })
       .click();
@@ -530,11 +536,12 @@ for (const width of [1440, 390])
       .click();
     await page
       .getByRole("navigation", { name: "整剧工作区" })
-      .getByRole("button", { name: "制作流程与团队", exact: true })
+      .getByRole("button", { name: "制作", exact: true })
       .click();
     await expect(page).toHaveURL(
-      new RegExp("project=" + dramaId + "&tab=workflow"),
+      new RegExp("project=" + dramaId + "&tab=production"),
     );
+    await openWorkflow(page);
     await expect(page.locator("[data-stage]")).toHaveCount(5);
     await expect(page.locator("[data-flow-edge]")).not.toHaveCount(0);
     const sizes = await page
@@ -561,6 +568,7 @@ for (const width of [1440, 390, 320]) {
         writes.push(r.url());
     });
     await page.goto("/#project=" + dramaId + "&tab=workflow");
+    await openWorkflow(page);
     for (const theme of ["light", "dark"]) {
       await page.emulateMedia({ colorScheme: theme, reducedMotion: "reduce" });
       const nav = page.getByRole("navigation", { name: "整剧工作区" });
@@ -647,6 +655,7 @@ for (const width of [1440, 390]) {
         writes.push(r.url());
     });
     await page.goto("/#project=" + dramaId + "&tab=workflow");
+    await openWorkflow(page);
     await expect(page.locator(".workflow-canvas-board")).toHaveCount(1);
     await expect(
       page.getByRole("button", { name: "部门协作", exact: true }),
@@ -676,6 +685,7 @@ for (const width of [1440, 390]) {
       member.getByRole("region", { name: "岗位实际工作记录" }),
     ).not.toContainText(drama.workflow.tasks[1].output);
     await page.reload();
+    await openWorkflow(page);
     await openDetails(page);
     await expect(
       member.getByRole("heading", { name: "编剧", exact: true }),
@@ -732,6 +742,7 @@ for (const width of [1440, 390]) {
         writes.push(r.url());
     });
     await page.goto("/#project=" + dramaId + "&tab=workflow");
+    await openWorkflow(page);
     for (const phase of ["planning", "review"]) {
       await page
         .locator(`[data-stage="${phase}"]`)
@@ -794,6 +805,7 @@ for (const width of [1440, 390]) {
     const selected = await canvasState(page),
       url = page.url();
     await page.reload();
+    await openWorkflow(page);
     await openDetails(page);
     await expect(
       received
@@ -808,6 +820,7 @@ for (const width of [1440, 390]) {
     drama.workflow.graph.nodes.find((n) => n.id === "review").status = "paused";
     drama.workflow.tasks[1].status = "paused";
     await page.reload();
+    await openWorkflow(page);
     await expect(page.locator(".workflow-canvas-board")).toBeVisible();
     await expect(page.locator(".workflow-flow-stream")).toHaveCount(0);
     await noHorizontalOverflow(page);
@@ -828,23 +841,26 @@ for (const width of [1920, 1440, 390, 320]) {
     drama.plan_phase = "draft";
     await installDrama(page, drama);
     await page.goto("/#project=" + dramaId);
-    const notice = page.locator(".drama-next-action");
+    const notice = page.locator(".production-command-actions");
     await expect(notice).toBeVisible();
     const aligned = await notice.evaluate((el) => {
-      const badge = el.querySelector(".badge").getBoundingClientRect(),
-        text = el
-          .querySelector(":scope > span:nth-child(2)")
-          .getBoundingClientRect();
-      return Math.abs(badge.y + badge.height / 2 - text.y - text.height / 2);
+      const badge = el.querySelector(".badge").getBoundingClientRect();
+      const button = el.querySelector("button").getBoundingClientRect();
+      const overlaps = badge.top < button.bottom && badge.bottom > button.top;
+      return overlaps
+        ? Math.abs(badge.y + badge.height / 2 - button.y - button.height / 2)
+        : badge.top >= button.bottom
+          ? 0
+          : Infinity;
     });
     expect(aligned).toBeLessThan(1);
     await notice.screenshot({
       path: `runtime/browser-report/aligned-status-notice-${width}.png`,
     });
-    await page
-      .getByRole("navigation", { name: "整剧工作区" })
-      .getByRole("button", { name: "制作流程与团队", exact: true })
-      .click();
+    await expect(
+      page.getByRole("navigation", { name: "制作阶段" }).getByRole("button"),
+    ).toHaveCount(5);
+    await openWorkflow(page);
     const positions = await page.locator("[data-stage]").evaluateAll((nodes) =>
       nodes.map((el) => {
         const b = el.getBoundingClientRect();

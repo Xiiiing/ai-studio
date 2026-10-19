@@ -17,6 +17,8 @@ export async function openProjectPage(page, tab) {
     await page
       .getByRole("menuitem", { name: labels[tab], exact: true })
       .click();
+    await expect(more).toHaveAttribute("aria-expanded", "false");
+    await expect(more).toBeFocused();
     return;
   }
   const group =
@@ -29,7 +31,9 @@ export async function openProjectPage(page, tab) {
 }
 
 export async function openWorkflow(page) {
-  const process = page.locator(".project-process");
+  const process = page
+    .locator(".production-full-workflow, .project-process")
+    .first();
   await process.waitFor();
   if ((await process.getAttribute("open")) === null)
     await process.locator(":scope > summary").click();

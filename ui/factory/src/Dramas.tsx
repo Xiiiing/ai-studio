@@ -281,7 +281,11 @@ export function CreateDrama({
         <ErrorNotice error={error} />
         <div className="drama-actions">
           <button type="submit" className="button primary" disabled={busy}>
-            {busy ? "正在建立…" : "建立整剧项目"}
+            {busy
+              ? "正在建立…"
+              : automation.enabled
+                ? "创建并开始制作"
+                : "建立整剧项目"}
           </button>
           <button
             type="button"

@@ -32,11 +32,16 @@ const submitted = () => JSON.parse(fetchMock.mock.calls[0][1].body);
 
 it("starts with a theme and authorizes the displayed full-drama defaults", async () => {
   create();
+  expect(
+    screen.getByRole("button", { name: "创建并开始制作" }),
+  ).toBeVisible();
   await userEvent.type(
     screen.getByRole("textbox", { name: "创作方向" }),
     "成年修表师寻找家族真相，最终达成和解。",
   );
-  await userEvent.click(screen.getByRole("button", { name: "建立整剧项目" }));
+  await userEvent.click(
+    screen.getByRole("button", { name: /创建并开始制作|建立整剧项目/ }),
+  );
   await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
   expect(submitted()).toMatchObject({
     title: "成年修表师寻找家族真相，最终达成和解",
@@ -60,7 +65,9 @@ it("keeps the all-drama scope aligned when episode count changes", async () => {
     screen.getByRole("textbox", { name: "创作方向" }),
     "成年人在旧车站重逢的故事。",
   );
-  await userEvent.click(screen.getByRole("button", { name: "建立整剧项目" }));
+  await userEvent.click(
+    screen.getByRole("button", { name: /创建并开始制作|建立整剧项目/ }),
+  );
   await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
   expect(submitted().automation.episode_numbers).toEqual([1, 2]);
 });
@@ -76,11 +83,15 @@ it("submits only explicitly selected episodes and blocks an empty authorization"
     await userEvent.click(
       screen.getByRole("checkbox", { name: `第 ${number} 集` }),
     );
-  await userEvent.click(screen.getByRole("button", { name: "建立整剧项目" }));
+  await userEvent.click(
+    screen.getByRole("button", { name: /创建并开始制作|建立整剧项目/ }),
+  );
   expect(fetchMock).not.toHaveBeenCalled();
   expect(screen.getByText("请至少选择一集作为本次制作范围。")).toBeVisible();
   await userEvent.click(screen.getByRole("checkbox", { name: "第 3 集" }));
-  await userEvent.click(screen.getByRole("button", { name: "建立整剧项目" }));
+  await userEvent.click(
+    screen.getByRole("button", { name: /创建并开始制作|建立整剧项目/ }),
+  );
   await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
   expect(submitted().automation.episode_numbers).toEqual([3]);
 });
@@ -92,7 +103,9 @@ it("leaves the legacy engine manual when the user selects step-by-step creation"
     "成年人在旧车站重逢的故事。",
   );
   await userEvent.click(screen.getByRole("button", { name: "手动分步" }));
-  await userEvent.click(screen.getByRole("button", { name: "建立整剧项目" }));
+  await userEvent.click(
+    screen.getByRole("button", { name: /创建并开始制作|建立整剧项目/ }),
+  );
   await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
   expect(submitted()).not.toHaveProperty("automation");
 });
@@ -113,7 +126,9 @@ it("imports the source script and retains it in the automatic creation request",
       source,
     ),
   );
-  await userEvent.click(screen.getByRole("button", { name: "建立整剧项目" }));
+  await userEvent.click(
+    screen.getByRole("button", { name: /创建并开始制作|建立整剧项目/ }),
+  );
   await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
   expect(submitted()).toMatchObject({
     source_text: source,
