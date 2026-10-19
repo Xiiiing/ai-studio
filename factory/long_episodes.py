@@ -307,6 +307,36 @@ def return_continuity_issue(episode, failure):
     return True
 
 
+def _reference_stage(episode_id, unit_id, *, finished=False):
+    """Publish actual reference work without overwriting a gate or a later stage."""
+    from .execution_context import current_job
+    with store.connection() as db:
+        db.execute('BEGIN IMMEDIATE')
+        episode = store._read(db, episode_id)
+        unit = store._read(db, unit_id)
+        job = current_job.get()
+        if job:
+            owner = db.execute('SELECT project_id,status,lease FROM jobs WHERE id=?', (job['id'],)).fetchone()
+            if (not owner or owner['project_id'] != episode_id or owner['status'] != 'running'
+                    or owner['lease'] != job.get('lease')):
+                raise ProductionPaused('执行租约已失效，保留原任务和素材', 'stale_job')
+        if (unit.get('episode_id') != episode_id or unit_id not in episode.get('unit_ids', [])):
+            raise ValueError('制作单元不属于本集')
+        if any(p.get('pause_requested') or p['status'] in {'paused', 'cancelled'} for p in (episode, unit)):
+            raise ProductionPaused('已在共享参考素材边界暂停')
+        if unit['status'] == 'unit_ready':
+            return False
+        preparing = unit.get('stage') in {'queued', 'shared_references'} and unit['status'] in {
+            'queued', 'producing', 'waiting_remote'}
+        stage = 'shared_references' if preparing and not finished else 'scene_units'
+        if preparing and not finished:
+            unit.update(status='producing', stage='shared_references')
+            store._write(db, unit)
+        episode.update(status='producing', stage=stage, active_unit_id=unit_id)
+        store._write(db, episode)
+        return True
+
+
 def run(episode, config):
     from .drama_runtime import setup_episode
     from .workflows import advance, ReviewBlocked
@@ -322,7 +352,9 @@ def run(episode, config):
             check_parent(episode['id'])
             unit=store.get(uid,False)
             if unit['status']=='unit_ready': continue
-            if unit['status'] in {'blocked','paused','failed'}:
+            if unit.get('pause_requested') or unit['status'] in {'paused','cancelled'}:
+                raise ProductionPaused('已在制作单元边界暂停')
+            if unit['status'] in {'blocked','failed'}:
                 store.update(uid,{'status':'queued','pause_requested':False,'error':None})
             if i and not unit.get('production_profile'):
                 previous=store.get(episode['unit_ids'][i-1],False)
@@ -331,16 +363,18 @@ def run(episode, config):
                     'last_shot_continuity':(script.get('shots') or [{}])[-1].get('continuity')}})
             setup_episode(store.get(uid,False))
             from .drama_assets import prepare
+            if not _reference_stage(episode['id'], uid): continue
             try:
                 prepare(uid,config,lambda:bool(store.get(episode['id'],False).get('pause_requested')))
-                advance(uid)
-            except Exception:
-                # Surface the actual failed unit on its parent without discarding state.
-                store.update(episode['id'],{'active_unit_id':uid,'stage':'scene_units'})
-                raise
+                if _reference_stage(episode['id'], uid, finished=True):
+                    advance(uid)
             finally:
-                units=[store.get(value,False) for value in episode['unit_ids']]
-                store.update(episode['id'],{'production':{'gpu_seconds':sum(u.get('production',{}).get('gpu_seconds',0) for u in units)}})
+                from .execution_context import current_job
+                from .remote_tasks import owns_job
+                job = current_job.get()
+                if not job or owns_job(job):
+                    units=[store.get(value,False) for value in episode['unit_ids']]
+                    store.update(episode['id'],{'production':{'gpu_seconds':sum(u.get('production',{}).get('gpu_seconds',0) for u in units)}})
             unit=store.get(uid,False)
             if unit['status']!='unit_ready':
                 raise ReviewBlocked('制作单元尚未自动完成，已保留审核与交接记录',{'unit_id':uid,'status':unit['status']})
