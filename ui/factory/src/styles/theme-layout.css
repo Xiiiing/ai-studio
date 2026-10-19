@@ -179,9 +179,6 @@
 .project-subnavigation [aria-pressed="true"] {
   text-decoration-color: var(--accent);
 }
-.sidebar .nav-item.active {
-  box-shadow: inset 3px 0 var(--accent);
-}
 @media (max-width: 760px) {
   .work-focus,
   .dashboard-view .dashboard-focus {

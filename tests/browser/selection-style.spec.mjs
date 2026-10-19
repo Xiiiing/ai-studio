@@ -122,6 +122,9 @@ for (const width of [1440, 390])
         });
         expect(main.actualBackground).toBe(main.background);
         expect(main.actualColor).toBe(main.color);
+        await expect(nav).toHaveCSS("box-shadow", "none");
+        await nav.hover();
+        await expect(nav).toHaveCSS("box-shadow", "none");
         await expect(nav).toHaveCSS("font-weight", "600");
         await expect(page.locator(".main-nav [data-view]")).toHaveCount(5);
         await expect(
