@@ -50,6 +50,7 @@
 | [生成提示词流水线](GENERATION_PIPELINE.md) | 起始瞬间、真实首帧观察和按适配器编译的动作/声音计划 |
 | [Agent 执行循环](AGENT_EXECUTION_LOOP.md) | 有界工具动作、岗位补料、恢复证据与执行配置快照 |
 | [整剧规划返修与下一步](DRAMA_PLANNING_RECOVERY.md) | 规划问题的定向修复、旧草稿恢复与可操作的制作入口 |
+| [长集场景规划与真实制作](LONG_EPISODE_PRODUCTION.md) | 固定片长、证据审核、定向返修及当前自动化边界 |
 | [提示词工作台](PROMPT_WORKBENCH.md) | 六段装配、不可变版本、项目快照和隔离试运行 |
 | [质量基线与比较台](QUALITY_BASELINES.md) | 项目版本冻结、质量证据与累计运行投入比较 |
 | [0.2 系列 Agent 路线](AGENT_020_ROADMAP.md) | 提示词、执行循环、团队配置与自动制作的分阶段交付 |

@@ -16,53 +16,136 @@ def unit_durations(seconds):
     return [base + (i < remainder) for i in range(count)]
 
 
-def scene_schema(characters):
+def scene_schema(characters, seconds=None):
     return obj({'scenes': arr(obj({'scene_id': {'type':'string','pattern':'^C[0-9]{2,3}$'},
-        'title': txt(1,100), 'synopsis':txt(10,3000), 'seconds':{'type':'integer','minimum':15,'maximum':900},
+        'title': txt(1,100), 'synopsis':txt(10,3000), 'seconds':{'type':'integer','minimum':15,'maximum':min(900, seconds) if seconds is not None else 900},
         'characters':{'type':'array','items':{'type':'string','enum':characters},'minItems':1,'maxItems':4,'uniqueItems':True},
         'location_id':txt(0,64), 'prop_ids':arr(txt(1,64),0,16),
-        'opening_state':txt(1,1200),'ending_state':txt(1,1200)}),1,60)})
+        'opening_state':txt(1,1200),'ending_state':txt(1,1200)}),1,min(60, seconds // 15) if seconds is not None else 60)})
 
 
 def plan_units(episode, config):
     if episode['unit_ids']: return
     from .workflows import ReviewBlocked
-    feedback = []
+    from studio.core import fingerprint
+    feedback, technical_feedback, previous_candidate = [], [], None
     plan = episode['plan']
     ids = episode['outline']['characters']
-    schema = scene_schema(ids)
-    for attempt in range(1,4):
-        generation=episode.get('scene_generation',1)
-        result = call(episode,config,'screenwriter',f'episode-scenes-{generation}-{attempt}',
-            '将已确认的单集大纲展开成顺序场景，写明每场动作因果、开场与结尾状态。每场聚焦最多4位角色；'
-            '更多人物用相邻场景切换焦点，不改变身份。所有seconds之和必须等于目标时长，每场至少15秒。'
-            'location_id、prop_ids只引用给出的全剧场景和道具；没有则留空。保持全剧画风。',
-            {'outline':episode['outline'],'seconds':episode['duration_seconds'],'world':plan['world'],
-             'storyline':plan['storyline'], 'relationships':plan.get('relationships',[]),
-             'characters':[c for c in plan['characters'] if c['character_id'] in ids],
-             'scenes':plan['scenes'],'props':plan['props'],'feedback':feedback,'producer_feedback':episode.get('scene_feedback'),
-             'source_excerpt':episode.get('source_excerpt',''),
-             'dependency_context':episode.get('dependency_context',[])},schema,11000)
+    seconds = episode['duration_seconds']
+    generation = episode.get('scene_generation', 1)
+    schema = scene_schema(ids, seconds)
+    duration_contract = {'scope': 'single_episode', 'episode_number': episode['episode_number'],
+        'series_episode_count': len(plan.get('episodes', [])), 'target_seconds': seconds,
+        'minimum_scene_seconds': 15, 'maximum_scene_count': min(60, seconds // 15),
+        'policy': '固定本集总时长；返修须在片长内简化或重排，不能扩大授权时长'}
+    shared = {'outline': episode['outline'], 'seconds': seconds, 'duration_contract': duration_contract,
+        'world': plan['world'], 'storyline': plan['storyline'], 'visual_rules': plan.get('visual_rules', ''),
+        'relationships': plan.get('relationships', []),
+        'characters': [c for c in plan['characters'] if c['character_id'] in ids],
+        'known_locations': plan['scenes'], 'props': plan['props'],
+        'producer_feedback': episode.get('scene_feedback'), 'source_excerpt': episode.get('source_excerpt', ''),
+        'dependency_context': episode.get('dependency_context', []),
+        'required_states': {'opening': episode['outline']['opening_state'], 'ending': episode['outline']['ending_state']},
+        'downstream_context': [{'number': item['number'], 'opening_state': item['opening_state']}
+            for item in plan.get('episodes', []) if episode['episode_number'] in item.get('depends_on', [])]}
+    # Scope checkpoints to actual planning inputs, preserving earlier generations.
+    basis = fingerprint({'contract_version': 2, 'inputs': shared, 'schema': schema,
+        'config': config, 'prompt_snapshot': episode.get('prompt_snapshot'), 'agent_loop': episode.get('agent_loop')})
+
+    def remember(entry):
+        with store.connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            current = store._read(db, episode['id'])
+            if current.get('scene_generation', 1) != generation:
+                raise ProductionPaused('场景规划版本已改变，保留旧调用记录')
+            history = current.get('scene_plan_history', [])
+            matches = lambda item: (item.get('generation'), item.get('attempt'), item.get('basis_sha256')) == (generation, entry['attempt'], basis)
+            history = [copy.deepcopy(entry) if matches(item) else item for item in history]
+            if not any(matches(item) for item in history):
+                history.append(copy.deepcopy(entry))
+            current['scene_plan_history'] = history
+            store._write(db, current)
+
+    for attempt in range(1, 4):
+        check_parent(episode['id'])
+        history = store.get(episode['id'], False).get('scene_plan_history', [])
+        saved = next((item for item in history if (item.get('generation'), item.get('attempt'), item.get('basis_sha256')) == (generation, attempt, basis)), None)
+        if saved and saved['status'] in {'technical_rejected', 'returned'}:
+            previous_candidate = saved['candidate']
+            feedback = saved['issues']
+            technical_feedback = saved['technical_issues']
+            continue
+        if saved:
+            result = saved['candidate']
+        else:
+            result = call(episode, config, 'screenwriter', f'episode-scenes-{generation}-{attempt}',
+                '将已确认的单集大纲展开成顺序场景，写明每场动作因果、开场与结尾状态。每场聚焦最多4位角色；'
+                '更多人物用相邻场景切换焦点，不改变身份。duration_contract是单集硬约束，所有seconds之和必须精确等于target_seconds，每场至少15秒。'
+                'location_id、prop_ids只引用给出的全剧场景和道具；没有则留空。保持全剧画风。'
+                'previous_candidate是待定向返修的上一稿，feedback和technical_feedback是检查依据。保留正确场景和已确认开结尾，'
+                '按具体问题局部修复；不得通过增加总时长落实审核建议。空间不足时在片长内简化动作或重排，不能添加未要求的对白或剧情。',
+                {**shared, 'scenes': plan['scenes'], 'previous_candidate': previous_candidate,
+                 'feedback': feedback, 'technical_feedback': technical_feedback}, schema, 11000)
+        prior_feedback = copy.deepcopy(feedback)
         scenes = result['scenes']
-        feedback = []
-        if sum(s['seconds'] for s in scenes) != episode['duration_seconds']: feedback.append('场景秒数总和不等于目标时长')
-        if len({s['scene_id'] for s in scenes}) != len(scenes): feedback.append('场景ID重复')
-        if any(s['location_id'] and s['location_id'] not in {v['entity_id'] for v in plan['scenes']} for s in scenes): feedback.append('场景引用了未定义地点')
-        if any(not set(s['prop_ids']) <= {v['entity_id'] for v in plan['props']} for s in scenes): feedback.append('场景引用了未定义道具')
-        if feedback: continue
-        review = call(episode,config,'independent_critic',f'episode-scenes-review-{generation}-{attempt}',
-            '独立审核单集场景的因果、跨场景人物状态、对白空间、与已确认大纲的一致性及目标时长可行性。'
-            '只提出影响成片目标的实际问题；passed=true时issues为空。',
-            {'outline':episode['outline'],'scenes':scenes,'characters':[c for c in plan['characters'] if c['character_id'] in ids]},
-            obj({'passed':{'type':'boolean'},'issues':arr(txt(1,1200),0,20)}),3500)
+        actual = sum(s['seconds'] for s in scenes)
+        technical_feedback = []
+        if actual != seconds:
+            technical_feedback.append({'code': 'duration_total', 'expected_seconds': seconds,
+                'actual_seconds': actual, 'difference_seconds': actual - seconds,
+                'message': f'场景秒数总和{actual}秒不等于本集目标{seconds}秒，差额{actual - seconds:+d}秒；须在固定片长内修复'})
+        if len({s['scene_id'] for s in scenes}) != len(scenes):
+            technical_feedback.append({'code': 'scene_ids', 'message': '场景ID重复'})
+        if any(s['location_id'] and s['location_id'] not in {v['entity_id'] for v in plan['scenes']} for s in scenes):
+            technical_feedback.append({'code': 'location_reference', 'message': '场景引用了未定义地点'})
+        if any(not set(s['prop_ids']) <= {v['entity_id'] for v in plan['props']} for s in scenes):
+            technical_feedback.append({'code': 'prop_reference', 'message': '场景引用了未定义道具'})
+        feedback = [issue['message'] for issue in technical_feedback]
+        entry = saved or {'generation': generation, 'attempt': attempt, 'basis_sha256': basis,
+            'candidate': copy.deepcopy(result), 'candidate_sha256': fingerprint(result), 'created_at': store.now()}
+        entry.update(technical_issues=copy.deepcopy(technical_feedback), issues=feedback,
+            prior_feedback=entry.get('prior_feedback', prior_feedback),
+            duration_contract={**duration_contract, 'actual_total_seconds': actual,
+                               'scene_seconds': [s['seconds'] for s in scenes]})
+        if feedback:
+            entry.update(status='technical_rejected', review=None)
+            remember(entry)
+            previous_candidate = result
+            continue
+        if saved and saved['status'] == 'approved':
+            review = saved['review']
+        else:
+            entry['status'] = 'reviewing'
+            remember(entry)
+            review = call(episode, config, 'independent_critic', f'episode-scenes-review-{generation}-{attempt}',
+                '独立审核当前版本的单集场景大纲：因果、跨场景人物与道具状态、已确认大纲及制作可行性。'
+                'duration_contract是本集固定片长，不是全剧时长；scene_seconds和actual_total_seconds由系统计算。'
+                '以本集已确认的开结尾为边界，不要求一集完成全剧主线；上下游承接须符合给定状态，不自行扩写本集范围。'
+                '这是场景大纲，不是完整对白、逐镜剧本或实际媒体。仅依据输入中存在的动作、设定和状态审核，'
+                '不得假设未提供的完整对白、额外停顿、表情表演或新剧情，再以其挤占时间判不通过。'
+                '真实必要动作过密仍须指出具体文本证据，并建议在固定target_seconds内简化或重排；不得要求扩展授权时长。'
+                '每个阻断issues必须标明scene_id、具体字段、逐字引文、违反的已确认要求或实际矛盾以及片长内可落实的修改。'
+                '审美偏好、可选表演和仅可优化节奏不能成为阻断；不能为通过门槛而忽略实际因果缺口、身份道具冲突或不可执行动作。'
+                '前次意见只作为返修背景，须重新核对本稿证据，不得复述已修复的问题。passed=true时issues为空。',
+                {**shared, 'scenes': scenes, 'duration_contract': entry['duration_contract'],
+                 'previous_review_feedback': entry['prior_feedback'],
+                 'review_scope': 'current_scene_outline_not_unprovided_dialogue_or_finished_media'},
+                obj({'passed': {'type': 'boolean'}, 'issues': arr(txt(1, 1200), 0, 20)}), 3500)
+            entry.update(review=copy.deepcopy(review), reviewed_at=store.now(),
+                status='approved' if review['passed'] and not review['issues'] else 'returned',
+                issues=review['issues'] or ([] if review['passed'] else ['场景审核未通过']))
+            remember(entry)
         if not review['passed'] or review['issues']:
-            feedback=review['issues'] or ['场景审核未通过']
+            feedback = entry['issues']
+            previous_candidate = result
             continue
         with store.connection() as db:
             db.execute('BEGIN IMMEDIATE')
             e=store._read(db,episode['id'])
             if e['unit_ids']: return
-            if e.get('pause_requested'): raise ProductionPaused()
+            if e.get('pause_requested') or e['status'] == 'cancelled': raise ProductionPaused()
+            if e.get('scene_generation', 1) != generation:
+                raise ProductionPaused('场景规划版本已改变，不能提交旧候选')
             sequence=0
             for scene in scenes:
                 durations=unit_durations(scene['seconds'])
