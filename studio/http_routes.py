@@ -45,6 +45,7 @@ FACTORY_ROUTES = (
     *(Route("GET", PROJECT + "/" + name, "read", name) for name in (
         "shots", "series", "cloud-budget", "flow", "delivery-readiness", "workspace", "team", "tasks")),
     Route("GET", PROJECT + r"/tasks/[a-z_]+:[A-Za-z0-9_.-]{1,120}", "read", "team_task"),
+    Route("GET", PROJECT + r"/handoffs(?:/[a-f0-9]{32})?", "read", "controlled_handoffs"),
     Route("GET", PROJECT + r"/interventions", "read", "team_instructions"),
     Route("GET", PROJECT + r"/generation-pipeline", "read", "generation_plan"),
     Route("POST", PROJECT + r"/generation-pipeline(?:/settle)?", "configuration", "generation_plan_configure", 4096),
