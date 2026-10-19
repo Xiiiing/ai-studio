@@ -757,6 +757,8 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                             visual_direction=shot.get("visual_direction"))
         if shot.get("material_constraints"):
             expected["material_constraints"] = shot["material_constraints"]
+        if self.project.get("resolved_visual_style") is not None:
+            expected["resolved_visual_style"] = copy.deepcopy(self.project["resolved_visual_style"])
         if extra.get("character") and self.project.get("team_character_revisions", {}).get(extra["character"]):
             signature = fingerprint({"source_signature": signature, "character_revision": self.project["team_character_revisions"][extra["character"]]})
         review_key = ("video_review:" if kind == "video" else "image_review:") + str(extra.get("character") or key)

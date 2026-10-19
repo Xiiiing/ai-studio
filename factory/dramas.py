@@ -76,6 +76,8 @@ def insert(db, project):
         project.setdefault("agent_loop", copy.deepcopy(parent["agent_loop"]))
     if parent and "generation_pipeline" in parent:
         project.setdefault("generation_pipeline", copy.deepcopy(parent["generation_pipeline"]))
+    if parent and "resolved_visual_style" in parent:
+        project.setdefault("resolved_visual_style", copy.deepcopy(parent["resolved_visual_style"]))
     project.setdefault("prompt_snapshot", copy.deepcopy(parent.get("prompt_snapshot")) if parent else pin_defaults(db))
     db.execute("INSERT INTO projects(id,updated,revision,snapshot) VALUES(?,?,?,?)",
                (project['id'], time.time(), project['revision'], store.encoded(project)))
