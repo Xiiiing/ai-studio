@@ -127,6 +127,7 @@ def test_approved_shared_reference_and_library_recovery_do_not_recompile_or_gene
         pytest.fail('Approved root or library reference must be reused')
     monkeypatch.setattr(drama_assets, '_compile_reference', forbidden)
     monkeypatch.setattr(config, 'production_config', forbidden)
+    monkeypatch.setattr(drama_assets, 'REFERENCE_COMPILER_SYSTEM', drama_assets.REFERENCE_COMPILER_SYSTEM + '\n')
     drama_assets.prepare(case.episode['id'], {'compiler_model': 'changed-model'})
     assert store.get(case.episode['id'], False)['drama_references'] == original
     store.update(case.root['id'], {'shared_assets': {}})
@@ -296,3 +297,42 @@ def test_other_medium_preserves_supplied_creative_contract_without_inferring_new
     from factory.reference_review import _approved_facts
     assert any(item['field'] == 'creative_contract.motion' and item['text'] == contract['motion']
                for item in _approved_facts({'shot': {'approved_reference_requirements': facts}}))
+
+
+def test_controller_instruction_hash_changes_artifact_without_overwriting_old_result(case, monkeypatch):
+    current = case.episode
+    requirements = drama_assets._reference_requirements(current, 'character', current['plan']['characters'][0])
+    profile = case.render_config['image_connection']
+    first = drama_assets._compile_reference(current, {}, requirements, profile)
+    old_path = case.folder / first[1]['path']
+    old_bytes = old_path.read_bytes()
+    original_system = drama_assets.REFERENCE_COMPILER_SYSTEM
+    assert first[1]['compiler_system_sha256'] == core.fingerprint(original_system)
+    # A formatting-only controller change must still select a distinct artifact.
+    monkeypatch.setattr(drama_assets, 'REFERENCE_COMPILER_SYSTEM', original_system + '\n')
+    second = drama_assets._compile_reference(current, {}, requirements, profile)
+    assert len(case.calls) == 2 and first[1]['signature'] != second[1]['signature']
+    assert first[1]['path'] != second[1]['path'] and old_path.read_bytes() == old_bytes
+    assert first[1]['compiler_system_sha256'] != second[1]['compiler_system_sha256']
+    assert core.read_json(case.folder / second[1]['path'])['compiler_system_sha256'] == core.fingerprint(original_system + '\n')
+    assert drama_assets._compile_reference(current, {}, requirements, profile) == second
+    assert len(case.calls) == 2 and old_path.read_bytes() == old_bytes
+
+
+def test_actual_compiler_instructions_keep_names_out_of_images_and_architecture_surfaces_blank(case, monkeypatch):
+    observed = []
+    original_transport = llm._request
+    def transport(cfg, role, system, payload, schema, output_dir, *args, **kwargs):
+        if role == 'prompt_style_compiler':
+            observed.append(system)
+            assert '实体原名仅作身份对应资料，不得写在画面' in system
+            assert '角色、道具和环境均不生成可读文字或标记' in system
+            assert 'blank/unlettered surfaces' in system
+            assert '保留批准的金色装饰和建筑结构' in system
+            assert '不要使用Chinese calligraphy或ornate lettering' in system
+        return original_transport(cfg, role, system, payload, schema, output_dir, *args, **kwargs)
+    monkeypatch.setattr(llm, '_request', transport)
+    current = case.episode
+    facts = drama_assets._reference_requirements(current, 'character', current['plan']['characters'][0])
+    drama_assets._compile_reference(current, {}, facts, case.render_config['image_connection'])
+    assert len(observed) == 1 and case.calls[0]['compiler_system_sha256'] == core.fingerprint(drama_assets.REFERENCE_COMPILER_SYSTEM)

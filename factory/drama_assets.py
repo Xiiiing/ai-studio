@@ -26,6 +26,24 @@ REFERENCE_PURPOSES = {
 }
 
 
+REFERENCE_COMPILER_SYSTEM = (
+    '将完整批准实体资料编译为图像适配器可直接使用的静态参考图提示词，输出prompt。'
+    '优先使用适合FLUX等图像模型的清晰English视觉描述，中文原名须保留以固定实体对应。'
+    '实体原名仅作身份对应资料，不得写在画面或要求角色姓名、道具名标字；角色、道具和环境均不生成可读文字或标记。'
+    '场景有牌匾、旗帜、碑面等表面时明确编译为blank/unlettered surfaces，保留批准的金色装饰和建筑结构。'
+    '不要使用Chinese calligraphy或ornate lettering等诱导文字的正向措辞；装饰应为不含文字的图案，不把原名变成招牌或题字。'
+    'production_format是本次选定制作媒介；animation必须明确绘制或CG动画参考，不能生成真人实拍照片，但animation本身不强制二维或三维。'
+    '已有creative_contract和visual_rules明确二维、三维或其他画风时须遵循；其他production_format只落实已有媒介合约，不擅自改写。'
+    '只描绘purpose指定的单一可见瞬间；角色参考展示本人、默认衣装、明确随身装备，取景须容纳必需装备，不能默认中景裁掉它。'
+    '环境只描绘批准布局，道具只描绘批准外观；不可增加人物、剧情、动作终态或更改画风。'
+    'entity.name、identity_constraints、default_wardrobe、related_known_props和visual_rules均为事实来源。'
+    '衣装须落实原要求可见的版型：劲装应编译为合体利落的fitted combat attire，不得泛化为宽松练功服或道服；原要求为长裙或宽袍时仍保留原版型。'
+    '可将重尺等名词解释成准确可见形状，不能替换为权杖、短剑等不同物品；不得捏造未给定的身份关系或道具归属。'
+    '不要把能力、性格写成必须在静帧完成的动作。不输出权限、审核结论或生成操作。'
+    '完整保留可见必需事实；输入很长也不能静默丢弃身份、衣装、道具或媒介要求。模型提示词只是待视觉审核的候选。'
+)
+
+
 def _reference_requirements(project, kind, entity):
     """Keep approved facts complete; associations need an explicit source mention."""
     related = []
@@ -50,22 +68,13 @@ def _compile_reference(project, config, requirements, image_profile):
     from .drama_planning import call, obj, txt
     adapter = identity(image_profile)
     source = {'requirements': requirements, 'image_adapter': adapter,
+        'compiler_system_sha256': fingerprint(REFERENCE_COMPILER_SYSTEM),
         'compiler_model': llm_identity(config, 'prompt_style_compiler'),
         'prompt_snapshot_sha256': fingerprint(project.get('prompt_snapshot'))}
     signature = fingerprint({'reference_compiler_version': 1, **source})
     compiled = call(project, config, 'prompt_style_compiler',
         'shared-prompt-' + requirements['kind'] + '-' + signature[:24],
-        '将完整批准实体资料编译为图像适配器可直接使用的静态参考图提示词，输出prompt。'
-        '优先使用适合FLUX等图像模型的清晰English视觉描述，中文原名须保留以固定实体对应。'
-        'production_format是本次选定制作媒介；animation必须明确绘制或CG动画参考，不能生成真人实拍照片，但animation本身不强制二维或三维。'
-        '已有creative_contract和visual_rules明确二维、三维或其他画风时须遵循；其他production_format只落实已有媒介合约，不擅自改写。'
-        '只描绘purpose指定的单一可见瞬间；角色参考展示本人、默认衣装、明确随身装备，取景须容纳必需装备，不能默认中景裁掉它。'
-        '环境只描绘批准布局，道具只描绘批准外观；不可增加人物、剧情、动作终态或更改画风。'
-        'entity.name、identity_constraints、default_wardrobe、related_known_props和visual_rules均为事实来源。'
-        '衣装须落实原要求可见的版型：劲装应编译为合体利落的fitted combat attire，不得泛化为宽松练功服或道服；原要求为长裙或宽袍时仍保留原版型。'
-        '可将重尺等名词解释成准确可见形状，不能替换为权杖、短剑等不同物品；不得捏造未给定的身份关系或道具归属。'
-        '不要把能力、性格写成必须在静帧完成的动作。不输出权限、审核结论或生成操作。'
-        '完整保留可见必需事实；输入很长也不能静默丢弃身份、衣装、道具或媒介要求。模型提示词只是待视觉审核的候选。',
+        REFERENCE_COMPILER_SYSTEM,
         source, obj({'prompt': txt(1, 4000)}), 3500)
     document = {'schema_version': 1, 'signature': signature, 'plan_version': project['plan_version'], **copy.deepcopy(source),
         'requirements_sha256': fingerprint(requirements), 'compiled_prompt': compiled['prompt'],
@@ -78,6 +87,7 @@ def _compile_reference(project, config, requirements, image_profile):
     return compiled['prompt'], {'path': str(path.relative_to(ROOT)), 'sha256': sha256(path),
         'signature': signature, 'plan_version': project['plan_version'],
         'requirements_sha256': document['requirements_sha256'],
+        'compiler_system_sha256': source['compiler_system_sha256'],
         'compiled_prompt_sha256': document['compiled_prompt_sha256'], 'image_adapter': adapter}
 
 
