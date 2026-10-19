@@ -128,3 +128,93 @@ for (const width of [1440, 390, 320])
       expect(errors).toEqual([]);
     });
   }
+
+for (const kind of ["drama", "episode"])
+  for (const width of [1440, 390]) {
+    test(`quality snapshots are reachable before media exists for ${kind} at ${width}px`, async ({
+      page,
+    }) => {
+      const p = {
+        id: pid,
+        record_kind: kind,
+        title: "尚在规划阶段的整剧",
+        brief: "仅用于浏览器协议验证",
+        revision: 9,
+        episode_count: 2,
+        duration_seconds: 120,
+        drama_id: "abcdef012345",
+        status: "blocked",
+        stage: "plan_review",
+        progress: 10,
+        format: "animation",
+        episodes: [],
+        plans: [],
+        batches: [],
+        units: [],
+        plan_version: 0,
+        outline: { synopsis: "尚未制作" },
+      };
+      await page.route(`**/api/factory/projects/${pid}/workspace`, (r) =>
+        r.fulfill({
+          json: {
+            project: p,
+            revision: p.revision,
+            operator: {},
+            flow: {},
+            workflow: {},
+          },
+        }),
+      );
+      await page.route(`**/api/factory/dramas/${pid}`, (r) =>
+        r.fulfill({ json: p }),
+      );
+      await page.route(
+        `**/api/factory/dramas/${p.drama_id}/episodes/${pid}`,
+        (r) => r.fulfill({ json: p }),
+      );
+      const writes = [];
+      let saved = [];
+      await page.route(`**${base}**`, async (r) => {
+        const url = new URL(r.request().url());
+        if (r.request().method() === "POST") {
+          const body = r.request().postDataJSON();
+          writes.push(body);
+          const result = {
+            ...first,
+            id: body.request_id,
+            label: body.label,
+            project_revision: 9,
+          };
+          saved = [result];
+          return r.fulfill({ json: result });
+        }
+        return r.fulfill({
+          json: url.pathname === base ? { baselines: saved } : saved[0],
+        });
+      });
+      await page.setViewportSize({ width, height: 1000 });
+      await page.goto(`/#project=${pid}&tab=overview`);
+      if (kind === "drama") {
+        await page.locator(".drama-more > summary").click();
+        await page
+          .getByRole("button", { name: "质量比较", exact: true })
+          .click();
+      } else
+        await page
+          .getByRole("button", { name: "质量比较", exact: true })
+          .click();
+      await expect(page.locator("[data-quality-comparison]")).toBeVisible();
+      await page.getByLabel("快照名称").fill("规划阶段基线");
+      await page.getByRole("button", { name: "冻结当前版本" }).click();
+      await expect(page.getByLabel("快照名称")).toHaveValue("");
+      expect(writes).toHaveLength(1);
+      expect(writes[0].expected_revision).toBe(9);
+      await page.reload();
+      await expect(page.locator("[data-quality-comparison]")).toBeVisible();
+      expect(
+        await page.evaluate(
+          () => document.documentElement.scrollWidth <= innerWidth + 1,
+        ),
+      ).toBe(true);
+    });
+  }

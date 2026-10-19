@@ -8,6 +8,7 @@ const dimensions: Record<string, string> = {
   creation_review: "故事提案",
   resolution_review: "故事目标",
   script_review: "剧本与分镜",
+  plan_review: "全剧规划审核",
   image: "首帧",
   video: "视频",
   hook: "开场吸引力",
@@ -123,6 +124,10 @@ function ProjectComparison({ project }: { project: RecordData }) {
                 client.invalidateQueries({ queryKey: key });
                 client.invalidateQueries({
                   queryKey: ["workspace", project.id],
+                });
+                client.invalidateQueries({ queryKey: ["drama", project.id] });
+                client.invalidateQueries({
+                  queryKey: ["long-episode", project.id],
                 });
               }}
             >
@@ -340,6 +345,10 @@ function Snapshot({
         <div>
           <dt>剧本返修轮次</dt>
           <dd>{value(metrics.review_repairs?.script_review)}</dd>
+        </div>
+        <div>
+          <dt>规划返修轮次</dt>
+          <dd>{value(metrics.review_repairs?.plan_review)}</dd>
         </div>
       </dl>
       <p className="muted">

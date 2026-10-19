@@ -167,6 +167,24 @@ def test_missing_currency_or_unknown_cost_is_not_reported_as_free():
     assert len(metrics["costs"]) == 2 and metrics["elapsed_seconds_sum"] is None
 
 
+def test_whole_drama_preserves_plan_failures_rounds_and_source_identity(project, tmp_path):
+    p = store.update(project["id"], {"record_kind": "drama", "genre": "悬疑", "source_text": "授权原文材料一",
+        "episode_count": 2, "plan_cycle": 1, "plan_attempt": 3, "plan_version": 0,
+        "plan_review": {"passed": False, "issues": ["第二集缺少第一集线索的承接"]},
+        "plan_history": [{"cycle": 1, "attempt": 1}, {"cycle": 1, "attempt": 2}, {"cycle": 1, "attempt": 3}]})
+    a = freeze(p, tmp_path)
+    detail = q.detail(p["id"], a["id"])
+    assert detail["metrics"]["review_repairs"]["plan_review"] == 2
+    assert detail["versions"]["plan_attempt"] == 3
+    review = detail["reviews"][0]
+    assert review["scope"] == "plan_review" and review["status"] == "fail"
+    assert review["issues"][0]["description"] == "第二集缺少第一集线索的承接"
+    assert "授权原文材料一" not in json.dumps(detail, ensure_ascii=False)
+    p = store.update(p["id"], {"source_text": "授权原文材料二"})
+    b = freeze(p, tmp_path)
+    assert q.compare(p["id"], a["id"], b["id"])["same_inputs"] is False
+
+
 def test_source_symlink_is_a_gap_not_a_read_outside_project(project, tmp_path):
     folder = call(tmp_path, project)
     secret = tmp_path / "private.json"

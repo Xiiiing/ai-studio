@@ -27,9 +27,11 @@ PROTOCOL = "recorded-project-comparison.v1"
 ID = re.compile(r"[a-f0-9]{32}\Z")
 INPUTS = ("brief", "format", "creation_mode", "production_profile", "creative_contract",
           "story_feedback", "script_feedback", "series_bible", "submitted_sources",
-          "material_package", "revision_request")
+          "material_package", "revision_request", "record_kind", "genre", "visual_style",
+          "episode_count", "duration_seconds", "source_text", "source_name", "outline", "dependency_context")
 VERSION_KEYS = ("workflow_version", "proposal_generation", "script_generation", "style_generation",
                 "production_revision", "production_edit_revision", "final_generation")
+VERSION_KEYS += ("plan_version", "plan_cycle", "plan_attempt")
 
 
 def _folder(pid):
@@ -148,6 +150,10 @@ def _metrics(project, records):
     for name in ("creation_review", "script_review"):
         rounds = (project.get(name) or {}).get("rounds")
         repairs[name] = max(0, len(rounds) - 1) if isinstance(rounds, list) and rounds else None
+    history = project.get("plan_history")
+    repairs["plan_review"] = (len({(r.get("cycle"), r["attempt"]) for r in history
+        if isinstance(r, dict) and type(r.get("attempt")) is int and r["attempt"] > 1})
+        if isinstance(history, list) and history else None)
     retries = [row["schema_retries"] for row in model_calls]
     return {"scope": "cumulative_recorded_history_at_freeze",
         "observed_operations": len(records),
@@ -163,7 +169,7 @@ def _metrics(project, records):
 
 def _reviews(project):
     result = []
-    for name in ("creation_review", "resolution_review", "script_review"):
+    for name in ("creation_review", "resolution_review", "script_review", "plan_review"):
         review = project.get(name)
         if isinstance(review, dict) and review:
             current = review.get("review") if isinstance(review.get("review"), dict) else review
@@ -202,6 +208,8 @@ def _public_review(row):
         for issue in (value.get("issues") or [])[:30]:
             if isinstance(issue, dict):
                 issues.append({k: _text(issue.get(k)) for k in ("code", "severity", "description", "detail", "evidence", "suggestion")})
+            elif isinstance(issue, str):
+                issues.append({"description": _text(issue)})
     passed = evidence.get("passed")
     status = "pass" if passed is True else "fail" if passed is False else evidence.get("status", "recorded")
     return {"scope": row["scope"], "shot_id": row["shot_id"],
