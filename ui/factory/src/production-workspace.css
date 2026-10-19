@@ -1,0 +1,337 @@
+.production-workspace {
+  display: grid;
+  gap: 1.25rem;
+  min-width: 0;
+}
+.production-command {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  padding: clamp(1.2rem, 2.5vw, 2rem);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--surface);
+}
+.production-command-copy {
+  flex: 1 1 30rem;
+  min-width: 0;
+}
+.production-command h2 {
+  margin: 0.4rem 0 0.7rem;
+  font-size: clamp(1.2rem, 2.2vw, 1.65rem);
+  overflow-wrap: anywhere;
+}
+.production-command p {
+  margin: 0 0 1rem;
+  color: var(--muted);
+}
+.production-command small {
+  display: block;
+  margin-top: 0.5rem;
+  color: var(--muted);
+}
+.production-command-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: center;
+}
+.production-stage-rail {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+.production-stage-rail button {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  min-width: 0;
+  padding: 0.9rem 0.8rem;
+  text-align: left;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--muted);
+}
+.production-stage-rail button[aria-pressed="true"] {
+  color: var(--ink);
+}
+.production-stage-rail strong {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.production-stage-rail small {
+  display: block;
+  margin-top: 0.3rem;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+.production-stage-number {
+  display: grid;
+  place-items: center;
+  flex: 0 0 1.8rem;
+  width: 1.8rem;
+  height: 1.8rem;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  font-size: 0.8rem;
+}
+.production-workspace-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1.65fr) minmax(17rem, 1fr);
+  gap: 1.25rem;
+  align-items: start;
+}
+.production-workspace-columns > *,
+.production-attention,
+.production-artifacts {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.production-workspace .panel {
+  margin: 0;
+}
+.production-artifacts > .readable,
+.production-artifacts > .readable-list {
+  max-height: 40rem;
+  overflow: auto;
+  scrollbar-gutter: stable;
+}
+.production-attention-item {
+  display: grid;
+  justify-items: start;
+  gap: 0.5rem;
+  padding: 1rem 0;
+  border-top: 1px solid var(--line);
+}
+.production-attention-item p {
+  margin: 0;
+  color: var(--muted);
+}
+.production-attention-item small {
+  color: var(--muted);
+}
+.production-plan-editor {
+  width: 100%;
+  min-width: 0;
+}
+.production-plan-editor summary,
+.production-assets summary,
+.production-advanced-tools summary,
+.production-full-workflow > summary {
+  cursor: pointer;
+  min-height: 44px;
+  align-content: center;
+  font-weight: 500;
+}
+.production-plan-editor > form {
+  padding: 1rem 0;
+}
+.production-episode {
+  padding: 1rem 0;
+  border-top: 1px solid var(--line);
+}
+.production-episode header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.production-episode p {
+  color: var(--muted);
+}
+.production-episode .button {
+  margin-top: 0.8rem;
+}
+.production-asset-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr));
+  gap: 1rem;
+}
+.production-asset-grid figure {
+  margin: 0;
+  min-width: 0;
+}
+.production-asset-grid img {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: contain;
+  background: var(--media);
+  border-radius: 10px;
+}
+.production-asset-grid figcaption {
+  font-size: 0.8rem;
+  color: var(--muted);
+  padding-top: 0.4rem;
+}
+.production-activity-item {
+  padding: 1rem 0;
+  border-top: 1px solid var(--line);
+}
+.production-activity-item:first-of-type {
+  border-top: 0;
+  padding-top: 0;
+}
+.production-activity-item > strong {
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+.production-activity-item p {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+.production-activity-item small,
+.production-activity-item time {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+.production-activity-item details {
+  margin-top: 0.7rem;
+  font-size: 0.85rem;
+}
+.production-activity-item details > .readable {
+  padding-top: 0.7rem;
+}
+.production-advanced-tools {
+  border-top: 1px solid var(--line);
+  margin-top: 1rem;
+  padding-top: 0.5rem;
+}
+.production-tool-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.production-tool-links .button {
+  font-size: 0.8rem;
+}
+.production-full-workflow {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 0.75rem 1rem;
+  min-width: 0;
+}
+.automation-settings {
+  display: grid;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+.automation-settings fieldset {
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+  border: 0;
+}
+.automation-settings legend {
+  margin-bottom: 0.7rem;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+.automation-scope {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  max-width: 100%;
+}
+.automation-scope button {
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  border-radius: 10px;
+  padding: 0.65rem 0.9rem;
+}
+.automation-scope button[aria-pressed="true"] {
+  color: var(--ink);
+}
+.automation-episode-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-top: 0.8rem;
+  max-height: 12rem;
+  overflow-y: auto;
+}
+.automation-episode-options label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.5rem;
+  min-height: 44px;
+}
+.automation-episode-options input {
+  width: auto;
+}
+.automation-settings .muted {
+  margin: 0.8rem 0 0;
+  font-size: 0.8rem;
+}
+@media (max-width: 1050px) {
+  .production-stage-rail {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .production-workspace-columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 600px) {
+  .production-command {
+    padding: 1rem;
+    gap: 1rem;
+  }
+  .production-command-actions {
+    width: 100%;
+  }
+  .production-command-actions .button {
+    flex: 1 1 auto;
+  }
+  .production-stage-rail {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.25rem;
+  }
+  .production-stage-rail button {
+    padding: 0.7rem 0.5rem;
+    min-height: 72px;
+    gap: 0.5rem;
+  }
+  .production-stage-rail strong {
+    font-size: 0.8rem;
+  }
+  .production-workspace {
+    gap: 1rem;
+  }
+}
+.production-create-details > summary {
+  min-height: 44px;
+  align-content: center;
+  cursor: pointer;
+}
+.production-create-details[open] {
+  display: grid;
+  gap: 1rem;
+}
+.production-episode-artifacts {
+  margin-top: 1rem;
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  min-width: 0;
+}
+.production-episode-artifacts > .automation-scope {
+  margin-bottom: 1rem;
+}
+.production-episode-artifacts > .readable {
+  max-height: 30rem;
+  overflow: auto;
+  scrollbar-gutter: stable;
+}
+.production-asset-grid video {
+  width: 100%;
+  max-height: 20rem;
+  background: var(--media);
+}
