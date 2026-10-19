@@ -238,6 +238,24 @@ def _check(plan, base, caps):
         raise ProductionNeedsDecision('当前媒介仅支持静帧运镜，不能完成批准的人物动作', 'generation_capability')
 
 
+def _image_reference_projection(reference_map):
+    """Render correspondence only; full provenance stays in the frozen source.
+
+    Compositions can inherit compositions, so retain their entity tree without
+    exposing file paths, hashes, manifests or arbitrary internal metadata.
+    """
+    def entity(value):
+        projected = {key: value[key] for key in ('kind', 'entity_id') if isinstance(value.get(key), str)}
+        if isinstance(value.get('entities'), list) and value['entities']:
+            projected['entities'] = [entity(child) for child in value['entities'] if isinstance(child, dict)]
+        return projected
+
+    return [{'reference_index': row['reference_index'],
+             'character_ids': list(row['character_ids']),
+             'materials': [entity(material) for material in row['materials']]}
+            for row in reference_map]
+
+
 def prepare(project, shot, references, *, config, phase, style='', cast=None, reference_bindings=(), identities=(), checkpoint=None):
     if not enabled(project):
         raise ValueError('请先显式启用生成提示词流水线')
@@ -310,7 +328,7 @@ def prepare(project, shot, references, *, config, phase, style='', cast=None, re
                           '\nEnd state: ' + video['end_state'] + '\nCamera: ' + video['camera'] + '\nExternal voiceover; naturally closed mouths; no generated speech, music, text or watermark.')
         prompt += '\nKeep the approved identities, wardrobe, props and reference correspondence. '
         if phase == 'image':
-            prompt += '\nActual reference correspondence (1-based image order): ' + json.dumps(base['reference_map'], ensure_ascii=False)
+            prompt += '\nActual reference correspondence (1-based image order): ' + json.dumps(_image_reference_projection(base['reference_map']), ensure_ascii=False)
             if base['approved_shot'].get('material_constraints'):
                 prompt += '\nApproved material correspondence: ' + json.dumps(base['approved_shot']['material_constraints'], ensure_ascii=False)
         parameters = {'prompt': prompt, 'reference_sha256': [r['sha256'] for r in base['references']], 'width': caps['width'], 'height': caps['height']}
