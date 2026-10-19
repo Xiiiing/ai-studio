@@ -17,6 +17,7 @@ from . import store
 from .creative_evidence_io import digest, read_json
 from .prompt_registry import load_prompt, prompt_receipt
 from .scheduler import ProductionNeedsDecision
+from .reference_identity import generation_identity
 
 VERSION = 'ai-studio.generation-pipeline.v1'
 ROLE, PROMPT_VERSION = 'storyboard_director', '4.0.0'
@@ -185,7 +186,7 @@ def _observe(project, shot, path, config, base, identities=()):
     from .profile_creative import adapt_system
     vision_system = adapt_system(load_prompt('visual_critic', '1.0.0'), project)
     frame = media_receipt(path)
-    identity = {'frame': frame['sha256'], 'source': base, 'model': llm_identity(config, 'visual_critic'),
+    identity = {'frame': frame['sha256'], 'source': generation_identity(base, root=ROOT), 'model': llm_identity(config, 'visual_critic'),
                 'prompt': prompt_receipt(vision_system, 'visual_critic', {}, FRAME_SCHEMA), 'implementation': sha256(Path(__file__))}
     def run():
         # No historic QA is promoted into pixel evidence. The bytes sent here
@@ -304,7 +305,7 @@ def prepare(project, shot, references, *, config, phase, style='', cast=None, re
     from .profile_creative import adapt_system
     from .schemas import cached_json_call
     system = adapt_system(load_prompt(ROLE, PROMPT_VERSION), project)
-    identity = {'source': base, 'phase': phase, 'capabilities': caps, 'frame': evidence,
+    identity = {'source': generation_identity(base, root=ROOT), 'phase': phase, 'capabilities': caps, 'frame': evidence,
                 'model': llm_identity(task_config(llm_config, ROLE), ROLE), 'prompt': prompt_receipt(system, ROLE, {}, PLAN_SCHEMA),
                 'implementation': sha256(Path(__file__))}
     def compile_plan():

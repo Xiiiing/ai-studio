@@ -182,6 +182,23 @@ const stateLabels: Record<string, string> = {
 const statusLabel = (status: string) =>
   stateLabels[status] || status || "尚未开始";
 
+const stoppedProductionCodes = new Set([
+  "retry_limit",
+  "production_recovery_stop",
+  "production_recovery_request_upstream",
+]);
+const stopReasons: Record<string, string> = {
+  retry_limit: "本制作对象的授权尝试次数已用尽。",
+  recovery_cycle_limit: "已达到本次自主修订上限。",
+  recovery_has_no_new_directed_change:
+    "现有修订已经尝试，系统尚无可执行的新修复方案。",
+  approved_inputs_require_upstream_revision: "需要核对上游材料或当前媒介能力。",
+  actual_reference_evidence_missing: "缺少可核验的实际参考素材。",
+  first_frame_requires_independent_upstream_repair:
+    "首帧未通过独立审核，需要先处理首帧问题。",
+  first_frame_review_unverified: "当前首帧缺少有效的独立审核证据。",
+};
+
 /** Opened on demand; viewing an artifact never dispatches production work. */
 function EpisodeArtifacts({
   dramaId,
@@ -416,6 +433,11 @@ export function ProductionWorkspace({
               ? `已授权${targetNumbers.length ? `第 ${targetNumbers.join("、")} 集` : "指定范围"}。AI 完成规划、剧本、素材与质检，成片由你验收。`
               : "保留已有成果和执行方式。开启后，AI 接续授权范围内尚未完成的工作。"}
           </p>
+          {automated && p.automation?.production_recovery?.enabled && (
+            <small>
+              自主返修已启用：系统在剩余次数和预算内定向修订、复核并继续。
+            </small>
+          )}
           <WorkProgress
             label="已生成成片"
             completed={completed}
@@ -428,6 +450,17 @@ export function ProductionWorkspace({
           </small>
         </div>
         <div className="production-command-actions">
+          {automated &&
+            paused &&
+            !p.automation?.production_recovery?.enabled && (
+              <button
+                className="button"
+                disabled={busy || p.status === "cancelled"}
+                onClick={() => invoke({ action: "enable_autonomous_repair" })}
+              >
+                启用自主返修
+              </button>
+            )}
           {(!automated || paused || state.status === "blocked") && (
             <button
               className="button primary"
@@ -596,36 +629,70 @@ export function ProductionWorkspace({
               )}
             </div>
           )}
-          {blockedEpisodes.map((episode) => (
-            <div className="production-attention-item" key={episode.id}>
-              <strong>
-                第 {episode.episode_number} 集 · {statusLabel(episode.status)}
-              </strong>
-              <p>
-                {episode.error ||
-                  (episode.status === "waiting_dependency"
-                    ? "等待前集完成；若依赖不在已授权范围内，请先调整制作范围。"
-                    : "已有进度和素材保留，可继续此集。")}
-              </p>
-              <button
-                className="button"
-                disabled={busy || paused}
-                onClick={() =>
-                  invoke({
-                    action: ["blocked", "failed"].includes(episode.status)
-                      ? "retry"
-                      : "resume",
-                    episode_id: episode.id,
-                  })
-                }
-              >
-                {episode.status === "waiting_dependency"
-                  ? "检查依赖并继续"
-                  : "继续此集"}
-              </button>
-              {paused && <small>请先继续整剧制作。</small>}
-            </div>
-          ))}
+          {blockedEpisodes.map((episode) => {
+            const need = episode.needs_decision || {};
+            const hardStop = stoppedProductionCodes.has(
+              String(need.code || ""),
+            );
+            const diagnosis = need.details || {};
+            const used = diagnosis.attempts_used ?? diagnosis.attempts;
+            const limit = diagnosis.attempts_limit;
+            const reason = stopReasons[diagnosis.reason || need.code];
+            return (
+              <div className="production-attention-item" key={episode.id}>
+                <strong>
+                  第 {episode.episode_number} 集 · {statusLabel(episode.status)}
+                </strong>
+                <p>
+                  {episode.error ||
+                    need.message ||
+                    (episode.status === "waiting_dependency"
+                      ? "等待前集完成；若依赖不在已授权范围内，请先调整制作范围。"
+                      : "已有进度和素材保留，可继续此集。")}
+                </p>
+                {hardStop ? (
+                  <div aria-label="制作停止原因">
+                    {reason && <p>{reason}</p>}
+                    {typeof diagnosis.asset === "string" && (
+                      <p>
+                        制作对象：{diagnosis.asset}
+                        {diagnosis.stage === "video"
+                          ? " · 视频"
+                          : diagnosis.stage === "image"
+                            ? " · 图片"
+                            : ""}
+                        {typeof used === "number" &&
+                          ` · 已用尝试 ${used}${typeof limit === "number" ? ` / ${limit}` : ""}`}
+                      </p>
+                    )}
+                    <p className="muted">
+                      核对材料与授权后，再使用顶部入口继续制作。已有成果与累计用量保留。
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    <button
+                      className="button"
+                      disabled={busy || paused}
+                      onClick={() =>
+                        invoke({
+                          action: ["blocked", "failed"].includes(episode.status)
+                            ? "retry"
+                            : "resume",
+                          episode_id: episode.id,
+                        })
+                      }
+                    >
+                      {episode.status === "waiting_dependency"
+                        ? "检查依赖并继续"
+                        : "继续此集"}
+                    </button>
+                    {paused && <small>请先继续整剧制作。</small>}
+                  </>
+                )}
+              </div>
+            );
+          })}
           {awaiting.map((episode) => (
             <div className="production-attention-item" key={episode.id}>
               <strong>第 {episode.episode_number} 集 · 等待你的成片验收</strong>

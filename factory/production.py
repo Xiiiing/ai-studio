@@ -32,6 +32,7 @@ from .production_profiles import explicit as explicit_profile, resolve as resolv
 from .video_providers import LOCAL_PROFILE, normalize_video_profile
 from .minimax_video import video_identity, validate_video_plan
 from .quality import combine, inspect_image, inspect_video, repair_plan, semantic_review
+from .visual_constraints import POLICY as VISUAL_CONSTRAINT_POLICY
 from .creative_contract import resolve as resolve_contract, style_prompt
 from .media_contract import video_motion
 from .scheduler import (Budget, ProductionBudgetExceeded, ProductionNeedsDecision,
@@ -352,6 +353,10 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                                                self.project.get("budget", {}).get("max_attempts", 3)))
         if not 1 <= self.max_attempts <= 5:
             raise ValueError("max_attempts must be between one and five")
+        from .production_execution import enabled as recovery_enabled
+        self.autonomous_recovery = recovery_enabled(self.config)
+        if self.autonomous_recovery and (not self.semantic_enabled or not callable(self.evaluator)):
+            raise ProductionNeedsDecision('系统自主返修需要可用的独立画面审核；未新增生成', 'semantic_unavailable')
         self.mode = self.project.get("format", self.project.get("mode", "motion_comic"))
         if self.mode not in ("motion_comic", "animation", "live_action"):
             raise ValueError("Unsupported production format")
@@ -514,6 +519,13 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                 from .media_contract import visual_direction
                 if receipt.get("visual_direction_signature") != fingerprint(visual_direction(target["style"])):
                     return False
+        if self.autonomous_recovery and target['kind'] == 'video':
+            from .visual_constraints import required, certified
+            expected = copy.deepcopy(target.get('shot') or {})
+            if not expected.get('lip_sync'):
+                expected['execution_constraints'] = {'visible_mouths_closed': True}
+            if required(expected) and not certified(receipt.get('qa', {}).get('semantic', {}), _receipt_path(receipt)):
+                return False
         return (receipt.get("qa", {}).get("semantic", {}).get("status") == "pass"
                 and receipt.get("review_signature") == target["review_signature"])
 
@@ -529,14 +541,20 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
 
     def _semantic_assessment(self, target, record, path):
         history = record.setdefault("semantic_attempts", [])
+        expected = copy.deepcopy(target.get('shot') or target.get('review_context') or
+                                 {'id': target['key'], 'prompt': target['prompt']})
+        if self.autonomous_recovery and target['kind'] == 'video' and not expected.get('lip_sync'):
+            expected['execution_constraints'] = {'visible_mouths_closed': True,
+                                                 'source': 'existing_external_voiceover_adapter_contract'}
         answer = None
         for number in range(1, self.semantic_max_attempts + 1):
             self.boundary()
             started = time.monotonic()
-            answer = semantic_review(self.evaluator, self.project,
-                                     target.get("shot") or target.get("review_context") or
-                                     {"id": target["key"], "prompt": target["prompt"]},
-                                     path, target["references"])
+            answer = semantic_review(self.evaluator, self.project, expected, path, target["references"])
+            if self.autonomous_recovery and target['kind'] == 'video':
+                from .visual_constraints import required, certified
+                if required(expected) and answer.get('status') == 'pass' and not certified(answer, path):
+                    answer.update(status='unavailable', detail='明确视觉要求缺少本媒体的独立样本证据，原视频保留待补审。')
             history.append({"attempt": len(history) + 1, "invocation_attempt": number,
                             "review_signature": target["review_signature"],
                             "at": time.time(), "elapsed_seconds": round(time.monotonic() - started, 3),
@@ -699,6 +717,7 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
         self._scheduler = value
 
     def _target(self, key, folder, prompt, references=(), kind="image", **extra):
+        from .reference_identity import generation_identity
         refs = [Path(p) for p in references]
         dimensions = self.image_size if kind == "image" else self.video_size
         signature = fingerprint({"prompt": prompt, "references": [media_receipt(p) for p in refs],
@@ -711,7 +730,7 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                                  **({"connection": media_identity(self.video_connection)} if kind == "video" and self.video_connection["provider"] == "comfyui_h3" else {}),
                                  "seconds": extra.get("seconds"),
                                  "mode": self.mode, "profile": self.config.get("video_profile", "quality"),
-                                 **({"asset_references": extra["asset_references"]} if extra.get("asset_references") else {}),
+                                 **({"asset_references": generation_identity(extra["asset_references"], root=ROOT)} if extra.get("asset_references") else {}),
                                  **({"render_revision": extra["shot"]["render_revisions"][kind]}
                                     if (extra.get("shot") or {}).get("render_revisions", {}).get(kind) else {}),
                                  **({"production_profile": profile_signature(self.project)} if explicit_profile(self.project) else {})})
@@ -766,6 +785,9 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
             signature = fingerprint({"source_signature": signature, "character_revision": self.project["team_character_revisions"][extra["character"]]})
         review_key = ("video_review:" if kind == "video" else "image_review:") + str(extra.get("character") or key)
         review_signature = fingerprint({"source_signature": signature, "policy": self.review_policy,
+                                        **({"explicit_constraint_policy": VISUAL_CONSTRAINT_POLICY}
+                                           if kind == "video" and self.autonomous_recovery else {}),
+                                        **({"reference_evidence": extra["asset_references"]} if extra.get("asset_references") else {}),
                                         **({"temporal_evidence_policy": self.temporal_evidence_policy}
                                            if kind == "video" else {}),
                                         "expected": expected, "cast": self.cast, "format": self.mode})
@@ -802,7 +824,10 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                 "materials": [r for r in current_source["reference_bindings"] if r.get("sha256") == ref["sha256"]]}
                 for i, ref in enumerate(current_source["references"])]
             def facts(value):
-                return {k:v for k,v in value.items() if k not in {"pipeline_snapshot", "prompt_snapshot_sha256", "reference_bindings", "identity_references"}}
+                # Keep reference mapping, versions and approved facts in the
+                # identity; only verified composition review journals may vary.
+                return generation_identity({k:v for k,v in value.items()
+                    if k not in {"pipeline_snapshot", "prompt_snapshot_sha256"}}, root=ROOT)
             if (old_plan and prior.get("qa", {}).get("status") == "pass"
                     and facts(old_plan.get("source", {})) == facts(current_source)
                     and old_plan.get("capabilities") == capabilities(pipeline_config, self.project, kind)):
@@ -816,9 +841,11 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                 attempt = read_json(attempt_path)
                 compiled = attempt.get("generation_plan") or {}
                 previous_source = compiled.get("source", {})
-                if previous_source == current_source and compiled.get("capabilities") == capabilities(pipeline_config, self.project, kind):
+                if generation_identity(previous_source, root=ROOT) == generation_identity(current_source, root=ROOT) and compiled.get("capabilities") == capabilities(pipeline_config, self.project, kind):
                     target.update(prompt=compiled["parameters"]["prompt"], generation_plan=compiled,
-                        signature=fingerprint({"source": signature, "generation_plan": compiled["signature"]}),
+                        # An accepted request resumes under its own immutable
+                        # identity even when only upstream QA evidence changed.
+                        signature=attempt.get("source_signature") or fingerprint({"source": signature, "generation_plan": compiled["signature"]}),
                         review_signature=fingerprint({"review": review_signature, "generation_plan": compiled["signature"]}))
                     return target
             self.boundary()
@@ -956,10 +983,17 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
             if target.get("shot") is not None:
                 target["shot"]["status"] = "failed"
             self.emit("needs_attention")
-            raise ProductionNeedsDecision("A production asset exhausted its authorized retry limit",
+            if self.autonomous_recovery:
+                self.production['recovery'] = {'status': 'stopped', 'reason': 'retry_limit',
+                    'asset': target['key'], 'stage': target['kind'], 'attempts_used': len(previous),
+                    'attempts_limit': self.max_attempts, 'message': '本制作对象的授权尝试次数已用尽；保留结果与费用，系统已停止新增生成。'}
+                self.emit('needs_attention')
+            raise ProductionNeedsDecision(f"{target['key']} 的 {target['kind']} 已用完 {self.max_attempts} 次授权尝试；已有成果和费用已保留。需调整尝试次数授权，直接继续不会获得新额度。" if self.autonomous_recovery else "A production asset exhausted its authorized retry limit",
                                           "retry_limit",
                                           {"asset": target["key"], "stage": target["kind"],
-                                           "attempts": len(previous)})
+                                           "attempts": len(previous),
+                                           **({'attempts_used': len(previous), 'attempts_limit': self.max_attempts}
+                                              if self.autonomous_recovery else {})})
         indexes = [int(p.name[5:]) for p in target["folder"].glob("take_*")
                    if p.is_dir() and p.name[5:].isdigit()]
         take = f"take_{max(indexes, default=0) + 1:03d}"
@@ -969,6 +1003,44 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
             previous[-1].get("qa", {"issues": [{"code": "generation", "detail": previous[-1].get("error", "")}]}),
             target["kind"], number, target.get("shot"), target.get("reference_roles", ()),
             target_prompt=target["prompt"], review_context=target.get("review_context")) if previous else {}
+        directed = None
+        if previous and self.autonomous_recovery:
+            from .production_recovery import prepare_repair, applicable
+            self.boundary()
+            checked_target = {**target, 'first_frame_assessment': copy.deepcopy(
+                (target.get('shot') or {}).get('image', {}).get('qa'))}
+            failed = previous[-1]
+            assessment = failed.get('qa') or {'status': 'fail', 'issues': [{'code': 'generation', 'severity': 'blocking'}]}
+            directed = prepare_repair(self.project, self.config, checked_target, assessment,
+                                      previous_attempt=failed, root=ROOT)
+            self.boundary()
+            state = {'status': 'repairing', 'asset': target['key'], 'stage': target['kind'],
+                     'action': directed['action'], 'reason': directed['reason'],
+                     'record_id': directed.get('id'), 'attempts_used': len(previous),
+                     'attempts_limit': self.max_attempts}
+            if directed['action'] in {'stop', 'request_upstream'}:
+                explanations = {
+                    'approved_inputs_require_upstream_revision': '批准材料存在矛盾或模型能力不足，需要核对上游材料或执行能力。',
+                    'actual_reference_evidence_missing': '缺少实际参考素材，需要补齐引用证据。',
+                    'first_frame_requires_independent_upstream_repair': '当前首帧未通过独立审核，需要先修复并复核首帧。',
+                    'first_frame_review_unverified': '首帧审核证据不足，需要补审原首帧。',
+                    'paid_repair_authorization_unverified': '供应商返修缺少可验证的金额授权，不能用 GPU 分钟代替付费许可。',
+                    'recovery_has_no_new_directed_change': '已有定向约束未解决问题，系统不再重复相同返修。',
+                    'recovery_cycle_limit': '已达到自主返修计划上限，需要核对失败证据后调整方案。',
+                }
+                explanation = explanations.get(directed['reason'], '当前材料、证据或授权不足以安全继续。')
+                state.update(status='stopped', message=f"{target['key']} · {explanation} 已保留原结果及诊断证据（{directed['reason']}）。")
+                self.production['recovery'] = state
+                self.emit('needs_attention')
+                raise ProductionNeedsDecision(state['message'], 'production_recovery_' + directed['action'], state)
+            if not applicable(directed, self.project, self.config, checked_target, assessment,
+                              previous_attempt=failed, root=ROOT):
+                raise ProductionNeedsDecision('返修材料或执行条件已改变，原计划仅保留为证据，未新增生成', 'production_recovery_stale')
+            repair.update(prompt_prefix=directed['prompt_appendix'], prompt_suffix='',
+                          regenerate_keyframe=False,
+                          recovery_record=directed['id'], recovery_action=directed['action'])
+            self.production['recovery'] = state
+            self.emit('production_repair')
         seed = (int(fingerprint({"project": self.ident, "asset": target["key"]})[:8], 16)
                 + int(repair.get("seed_delta", 0)) + number - 1) % (2**31)
         retake = (target.get("shot") or {}).get("render_revisions", {}).get(target["kind"], 0) or self.project.get("team_character_revisions", {}).get(target.get("character"), 0)
@@ -986,6 +1058,9 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                                  "steps": 4 if target["kind"] == "image" else 20},
                   "references": [media_receipt(p) for p in target["references"]],
                   "started_at": time.time()}
+        if directed:
+            record['production_recovery'] = {'record_id': directed['id'], 'action': directed['action'],
+                                             'attempts_used_before': len(previous), 'attempt_limit': self.max_attempts}
         if target["kind"] == "video" and self.video_connection["provider"] == "comfyui_h3":
             from studio.h3 import frame_count, recipe
             selected = recipe(self.video_connection)
@@ -1269,6 +1344,11 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                                                         input_version=target["review_signature"])
                     selection_file = target["folder"] / "selected.json"
                     if qa["eligible_for_selection"]:
+                        recovery = self.production.get('recovery') or {}
+                        if recovery.get('asset') == target['key'] and recovery.get('stage') == target['kind']:
+                            recovery.update(status='resolved', reviewed_take=record['take'],
+                                            message='定向返修已通过独立审核，系统继续后续制作。')
+                            self.production['recovery'] = recovery
                         self._team_publish_target(target)
                         identity = self._team_target(target)
                         if identity:

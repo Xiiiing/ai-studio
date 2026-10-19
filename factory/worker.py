@@ -126,6 +126,8 @@ def _handle(job):
         planning = blocked_project.get('record_kind') == 'drama' and not blocked_project.get('plan_version')
         next_message = ('规划已暂停。请在全剧规划中查看问题，补充要求后继续；已有草稿保留。' if planning else
             '请在待办决策中查看问题并选择处理方式。' if expected else '异常详情已写入本地运行日志。')
+        if isinstance(exc, ProductionNeedsDecision) and (needs.get('code') == 'retry_limit' or str(needs.get('code', '')).startswith('production_recovery_')):
+            next_message = str(exc)
         store.event(pid, next_message, "review_blocked" if expected else "error",
                     {"exception_type":name,"stage":blocked_project.get("stage"), **({'next_tab': 'plan'} if planning else {})})
         if isinstance(exc, (ReviewBlocked, CreativeReviewError)):

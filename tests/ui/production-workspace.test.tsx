@@ -366,3 +366,213 @@ it("requires a safe global pause before adjusting a begun episode's budget", asy
   await userEvent.click(screen.getByRole("button", { name: "暂停后调整预算" }));
   expect(onOperation).toHaveBeenCalledWith("actions", { action: "pause" });
 });
+
+it("explicitly enables autonomous repair for a paused authorized project without resuming or changing its budget", async () => {
+  const { onOperation } = mount({
+    status: "paused",
+    pause_requested: true,
+    automation_state: { status: "paused", reason: "已在安全边界暂停" },
+  });
+  expect(onOperation).not.toHaveBeenCalled();
+  await userEvent.click(screen.getByRole("button", { name: "启用自主返修" }));
+  expect(onOperation.mock.calls).toEqual([
+    ["actions", { action: "enable_autonomous_repair" }],
+  ]);
+  expect(screen.getByRole("button", { name: "继续制作" })).toBeVisible();
+  // The server snapshot owns activation; clicking does not fabricate success.
+  expect(screen.queryByText(/自主返修已启用/)).not.toBeInTheDocument();
+});
+
+it("disables the autonomous-repair upgrade while an operation is busy", async () => {
+  const { onOperation } = mount(
+    {
+      status: "paused",
+      pause_requested: true,
+      automation_state: { status: "paused" },
+    },
+    { busy: true },
+  );
+  const upgrade = screen.getByRole("button", { name: "启用自主返修" });
+  expect(upgrade).toBeDisabled();
+  await userEvent.click(upgrade);
+  expect(onOperation).not.toHaveBeenCalled();
+});
+
+it.each(["producing", "repairing", "blocked"])(
+  "does not offer an execution-policy upgrade for an unpaused %s project",
+  (status) => {
+    const { onOperation } = mount({
+      status: status === "blocked" ? "blocked" : "producing",
+      pause_requested: false,
+      automation_state: { status, reason: "当前执行状态" },
+    });
+    expect(
+      screen.queryByRole("button", { name: "启用自主返修" }),
+    ).not.toBeInTheDocument();
+    expect(onOperation).not.toHaveBeenCalled();
+  },
+);
+
+it.each(["paused", "producing"])(
+  "shows an acknowledged autonomous-repair policy without a duplicate upgrade in %s state",
+  (status) => {
+    const { onOperation } = mount({
+      status,
+      pause_requested: status === "paused",
+      automation: {
+        enabled: true,
+        episode_numbers: [1, 2],
+        budget: { gpu_minutes: 120, wall_minutes: 180, max_attempts: 3 },
+        production_recovery: {
+          version: "ai-studio.production-recovery.v1",
+          enabled: true,
+        },
+      },
+      automation_state: { status },
+    });
+    expect(
+      screen.getByText(
+        "自主返修已启用：系统在剩余次数和预算内定向修订、复核并继续。",
+      ),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: "启用自主返修" }),
+    ).not.toBeInTheDocument();
+    expect(onOperation).not.toHaveBeenCalled();
+  },
+);
+
+it("keeps a legacy project's execution policy unchanged until explicit authorization", () => {
+  const legacy = project({
+    status: "paused",
+    pause_requested: true,
+    automation: undefined,
+    automation_state: { status: "disabled" },
+  });
+  const before = structuredClone(legacy);
+  const onOperation = vi.fn();
+  const view = render(
+    <ProductionWorkspace
+      project={legacy}
+      busy={false}
+      onOperation={onOperation}
+      onReview={vi.fn()}
+      onTab={vi.fn()}
+    />,
+  );
+  view.rerender(
+    <ProductionWorkspace
+      project={legacy}
+      busy={false}
+      onOperation={onOperation}
+      onReview={vi.fn()}
+      onTab={vi.fn()}
+    />,
+  );
+  expect(screen.getByRole("button", { name: "设置连续制作" })).toBeVisible();
+  expect(
+    screen.queryByRole("button", { name: "启用自主返修" }),
+  ).not.toBeInTheDocument();
+  expect(screen.queryByText(/自主返修已启用/)).not.toBeInTheDocument();
+  expect(onOperation).not.toHaveBeenCalled();
+  expect(legacy).toEqual(before);
+});
+
+it("shows a recorded repair as active work without treating it as film acceptance", () => {
+  const { onOperation, onReview } = mount({
+    automation_state: {
+      status: "repairing",
+      reason: "AI 正在定向返修第1集的S02，完成后自动复核并继续",
+      episode_numbers: [1, 2],
+      recovery: { status: "repairing", asset: "S02", stage: "video" },
+    },
+  });
+  const status = screen.getByRole("region", { name: "连续制作状态" });
+  expect(within(status).getByText("自动返修中")).toBeVisible();
+  expect(
+    within(status).getByRole("heading", { name: /完成后自动复核并继续/ }),
+  ).toBeVisible();
+  expect(screen.getByText("已出片 0 / 3 集 · 已验收 0 集")).toBeVisible();
+  expect(onOperation).not.toHaveBeenCalled();
+  expect(onReview).not.toHaveBeenCalled();
+});
+
+it.each([
+  "retry_limit",
+  "production_recovery_stop",
+  "production_recovery_request_upstream",
+])(
+  "explains an explicit %s stop without offering a futile episode retry",
+  async (code) => {
+    const { onOperation } = mount({
+      status: "paused",
+      pause_requested: true,
+      automation_state: { status: "paused", reason: "全剧已暂停" },
+      episodes: [
+        {
+          id: "episode-1",
+          episode_number: 1,
+          status: "blocked",
+          active_unit_id: "unit-1",
+          error: "系统保留了本单元的原素材和诊断。",
+          needs_decision: {
+            code,
+            message: "该制作对象需要核对后处理",
+            details: {
+              reason:
+                code === "production_recovery_request_upstream"
+                  ? "first_frame_requires_independent_upstream_repair"
+                  : "retry_limit",
+              asset: "S02",
+              stage: "video",
+              attempts_used: 3,
+              attempts_limit: 3,
+            },
+          },
+        },
+      ],
+    });
+    const attention = screen
+      .getByRole("heading", { name: "在这里处理" })
+      .closest("section")!;
+    expect(
+      within(attention).getByText("系统保留了本单元的原素材和诊断。"),
+    ).toBeVisible();
+    expect(
+      screen.getByText("制作对象：S02 · 视频 · 已用尝试 3 / 3"),
+    ).toBeVisible();
+    expect(
+      screen.getByText(
+        "核对材料与授权后，再使用顶部入口继续制作。已有成果与累计用量保留。",
+      ),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: "继续此集" }),
+    ).not.toBeInTheDocument();
+    expect(onOperation).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("button", { name: "继续制作" }));
+    expect(onOperation.mock.calls).toEqual([["actions", { action: "resume" }]]);
+  },
+);
+
+it.each(["semantic_unavailable", "unresolved_submission", "ordinary_error"])(
+  "preserves the existing explicit episode action for %s without inferring a stop from error prose",
+  async (code) => {
+    const { onOperation } = mount({
+      episodes: [
+        {
+          id: "episode-1",
+          episode_number: 1,
+          status: "blocked",
+          error: "描述文字可能提到 retry_limit 或额度用尽，不能据此修改操作。",
+          needs_decision: { code },
+        },
+      ],
+    });
+    await userEvent.click(screen.getByRole("button", { name: "继续此集" }));
+    expect(onOperation).toHaveBeenCalledWith("actions", {
+      action: "retry",
+      episode_id: "episode-1",
+    });
+  },
+);

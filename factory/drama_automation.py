@@ -52,6 +52,8 @@ def authorize(config, request_id):
     result = copy.deepcopy(config)
     if result['enabled']:
         result.update(authorization={'request_id': request_id, 'actor': 'producer', 'at': store.now()}, suspended=False)
+        from .production_execution import DEFAULT_POLICY
+        result['production_recovery'] = copy.deepcopy(DEFAULT_POLICY)
     return result
 
 
@@ -220,6 +222,15 @@ def state(p, episodes, *, db=None):
         return {**result, 'status': 'awaiting_final', 'stage': 'final_review', 'reason': '成片已就绪，等待人工验收'}
     if attention:
         return {**result, 'status': 'blocked', 'stage': 'production', 'reason': attention[0]['message'], 'attention': attention}
+    if db is not None:
+        for episode in selected:
+            if episode.get('active_unit_id'):
+                unit = store._read(db, episode['active_unit_id'])
+                repair = (unit.get('production') or {}).get('recovery') or {}
+                if repair.get('status') == 'repairing':
+                    return {**result, 'status': 'repairing', 'stage': 'production',
+                            'reason': f'AI 正在定向返修第{episode["episode_number"]}集的{repair.get("asset", "镜头")}，完成后自动复核并继续',
+                            'recovery': copy.deepcopy(repair)}
     return {**result, 'status': 'producing', 'stage': 'production', 'reason': 'AI 正在连续制作所选剧集，成片将等待人工验收'}
 
 

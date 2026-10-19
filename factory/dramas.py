@@ -321,6 +321,10 @@ def confirm(pid, payload):
 
 def _generate_batch(db, p, numbers, budget, config):
     config=copy.deepcopy(config)
+    policy = p.get('automation', {}).get('production_recovery')
+    if policy:
+        from .production_execution import apply_configuration
+        config = apply_configuration(config, policy)
     config.setdefault('creative',{})['max_review_rounds']=budget['max_attempts']
     chosen = [store._read(db, eid) for eid in p['episodes'] if store._read(db, eid)['episode_number'] in numbers]
     if any(e['status'] != 'draft' for e in chosen): raise ValueError('已开始的剧集请使用继续、返修或失败重试')
@@ -414,6 +418,14 @@ def control(pid, payload):
         if saved: return snapshot(pid, db=db)
         cas(p, payload)
         action = payload.get('action')
+        if action == 'enable_autonomous_repair':
+            if set(payload) - {'action', 'request_id', 'expected_revision'}:
+                raise ValueError('执行版本应用请求包含未知字段')
+            from .production_execution import activate
+            activate(db, p, key)
+            p['operation_requests'][key] = {'signature': signature}
+            store._write(db, p)
+            return snapshot(pid, db=db)
         if action == 'enable_automation':
             from .drama_automation import enable, reconcile
             enable(db, p, payload.get('automation'), key)

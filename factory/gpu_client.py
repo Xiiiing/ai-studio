@@ -132,6 +132,7 @@ class GPUClient:
         destination = Path(destination)
         destination.mkdir(parents=True, exist_ok=True)
         submission_path = destination / "submission.json"
+        retained_submission = submission_path.exists()
         if (not submission_path.exists() and workload.get("kind") == "comfy" and
                 any(n.get("class_type") == "MiniMaxH3ImageToVideo" for n in workload.get("graph", {}).values())):
             from studio.h3 import graph_recipe
@@ -163,12 +164,23 @@ class GPUClient:
             write_json(submission_path, submission)
         if not re.fullmatch(r"[a-f0-9]{64}", request_id):
             raise ProductionNeedsDecision("GPU submission identity is invalid", "remote_gpu_receipt_invalid")
-        deadline = time.monotonic() + budget.timeout(timeout)
-        answer = self.request("/jobs/" + request_id, timeout=budget.timeout(self.request_timeout), missing=True)
+        blocked = None
+        try:
+            budget.check(control)
+            remaining = budget.timeout(timeout)
+        except (ProductionBudgetExceeded, ProductionPaused) as exc:
+            if not retained_submission:
+                raise
+            blocked, remaining = exc, 0
+        deadline = time.monotonic() + remaining
+        answer = self.request("/jobs/" + request_id,
+                              timeout=min(10, self.request_timeout) if blocked else budget.timeout(self.request_timeout), missing=True)
         if answer is None:
+            if blocked or retained_submission and submission.get('state') != 'dispatching':
+                raise ProductionNeedsDecision('Saved GPU submission is missing during read-only reconciliation; no resubmission permitted',
+                                              'remote_gpu_unresolved', {'job_id': request_id})
             answer = self.request("/jobs", payload, timeout=budget.timeout(self.request_timeout))
         while True:
-            budget.check(control)
             if answer.get("id") != request_id:
                 raise ProductionNeedsDecision("GPU response does not match the saved submission", "remote_gpu_receipt_invalid")
             status = answer.get("status")
@@ -195,6 +207,9 @@ class GPUClient:
                 raise RuntimeError("Remote GPU execution failed; its terminal receipt was retained")
             if status not in {"queued", "running"}:
                 raise ProductionNeedsDecision("Unknown GPU job state", "remote_gpu_receipt_invalid")
+            if blocked:
+                raise blocked
+            budget.check(control)
             if time.monotonic() >= deadline:
                 raise ProductionPaused("GPU job is still pending; resume the saved job", "remote_gpu_wait", {"job_id": request_id})
             until = min(deadline, time.monotonic() + self.poll_seconds)

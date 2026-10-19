@@ -47,6 +47,11 @@ def test_resident_h3_health_includes_pair_without_giving_it_to_tts(monkeypatch):
     from studio import h3
     monkeypatch.setattr(h3,'installation',lambda:{'model':h3.MODEL,'gpu_count':2,'revision':h3.REVISION,'installed':True})
     monkeypatch.setattr(qwen_image21,'installed',lambda:True)
+    # This test isolates routing after runtime verification. Real HTTP node,
+    # model-enum and cancellation validation is covered by owned_budget_stop.
+    monkeypatch.setattr(gpu_service.InferenceEngine, '_resident_h3_health',
+        lambda self, cold: {**cold, 'gpu_cards': [6, 7], 'execution': 'resident_comfy',
+            'validation': 'runtime_node_contract_only_not_inference'})
     observed=gpu_service.InferenceEngine({'gpu_cards':[5],'resident_h3':{'base_url':'http://127.0.0.1:8346','gpu_cards':[6,7]}}).health()
     assert observed['gpu_cards']==[4,5,6,7] and observed['tts_gpu_cards']==[5]
     assert h3.backend_ready(observed['video_backends']['comfyui_h3'],observed['gpu_cards'])

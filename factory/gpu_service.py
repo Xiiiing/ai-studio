@@ -293,8 +293,9 @@ class InferenceEngine:
         image_ready=image_installed()
         cards=set(self.production.get('gpu_cards',list(range(8))))
         if resident:
-            cards.update(resident['gpu_cards'])
-            h3={**h3,'gpu_cards':resident['gpu_cards'],'execution':'resident_comfy'}
+            h3 = self._resident_h3_health(h3)
+            if h3.get('installed'):
+                cards.update([6, 7])
         if image_ready: cards.add(4)
         return {"ok": True, "service": "gpu_inference", "workflow_execution": False,
                 "execution_host": socket.gethostname(),
@@ -307,7 +308,65 @@ class InferenceEngine:
                 "image_backends": {"comfyui_qwen_image21": {"model": "Qwen-Image-2.1", "installed": image_ready, "protocol": "qwen_image21", "gpu_cards":[4]}},
                 "video_backends": {"comfyui_h3": h3,
                     "comfyui_wan": {"model": "Wan2.2-TI2V-5B", "installed": (ROOT / "models/diffusion_models/wan2.2_ti2v_5B_fp16.safetensors").is_file()}},
-                "model_check": "installed_files_only_not_inference"}
+                "model_check": "filesystem_and_runtime_node_contracts_not_inference" if resident else "installed_files_only_not_inference"}
+
+    def _resident_client(self):
+        from .external_comfy import ExternalComfy
+        resident = self.production.get('resident_h3')
+        if (not isinstance(resident, dict) or resident.get('base_url') != 'http://127.0.0.1:8346'
+                or resident.get('gpu_cards') != [6, 7]
+                or set(resident) - {'base_url', 'gpu_cards', 'owned_cancel_protocol', 'verified_comfyui_version'}):
+            raise ValueError('Resident H3 must select the owned Wkp service and GPU pair')
+        return ExternalComfy({'base_url': resident['base_url'], 'network_mode': 'loopback',
+            'owned_cancel_protocol': resident.get('owned_cancel_protocol'),
+            'verified_comfyui_version': resident.get('verified_comfyui_version')})
+
+    def _resident_h3_health(self, cold):
+        """Inspect the already loaded runtime; cold-start files remain separate."""
+        from studio.graphs import h3_video
+        from .workflow_templates import check_nodes
+        result = {**copy.deepcopy(cold), 'cold_start_installation': copy.deepcopy(cold),
+                  'installed': False, 'missing': ['resident_node_contract_unavailable'],
+                  'validation': 'runtime_node_contract_only_not_inference', 'execution': 'resident_comfy',
+                  'gpu_cards': [6, 7], 'recipes': {}}
+        try:
+            client = self._resident_client()
+            client.profile['request_timeout_seconds'] = 2
+            info = client.check()
+            if not isinstance(info, dict):
+                raise ValueError('Invalid node contract')
+            capability = client._owned_capability()
+            result.update(object_info_sha256=fingerprint(info), owned_cancel_capability=capability)
+            images = info.get('LoadImage', {}).get('input', {}).get('required', {}).get('image')
+            if not isinstance(images, list) or not images or not isinstance(images[0], list) or not images[0]:
+                raise ValueError('No inspected image input is available')
+            for quality in ('preview', 'production'):
+                recipe = {**copy.deepcopy(cold['recipes'][quality]), 'installed': False,
+                          'missing': ['resident_node_contract_unavailable'],
+                          'validation': result['validation']}
+                try:
+                    graph = h3_video('Runtime node contract inspection.', 42, images[0][0], profile={'quality': quality})
+                    check_nodes({'graph': graph}, info)
+                    for node in graph.values():
+                        spec = info[node['class_type']].get('input', {})
+                        fields = {**spec.get('required', {}), **spec.get('optional', {})}
+                        if set(node['inputs']) - fields.keys():
+                            raise ValueError('Graph inputs are missing from the runtime contract')
+                        for name in {'unet_name', 'clip_name', 'vae_name', 'lora_name'} & node['inputs'].keys():
+                            definition = fields[name]
+                            if not isinstance(definition, list) or not definition or not isinstance(definition[0], list):
+                                raise ValueError('Runtime model enumeration is unavailable')
+                    recipe.update(installed=True, missing=[])
+                except Exception as exc:
+                    recipe['error_type'] = type(exc).__name__
+                result['recipes'][quality] = recipe
+            result.update(installed=result['recipes']['preview']['installed'], missing=result['recipes']['preview']['missing'])
+        except Exception as exc:
+            result['error_type'] = type(exc).__name__
+            result['recipes'] = {quality: {**copy.deepcopy(cold['recipes'][quality]), 'installed': False,
+                'missing': ['resident_node_contract_unavailable'], 'validation': result['validation']}
+                for quality in ('preview', 'production')}
+        return result
 
     def model(self, name, route, payload, method):
         from .providers import request_json, model_matches
@@ -382,18 +441,60 @@ class InferenceEngine:
         session, voices = self.speech(payload, folder)
         return {"expected": session._speech_sources(payload["lines"], voices)}
 
-    def execute(self, payload, folder):
+    def execute(self, payload, folder, *, owned_recovery=False):
         self.active_budget = None
         try:
-            result = self._execute(payload, folder)
+            result = self._execute(payload, folder, owned_recovery=owned_recovery)
             result["receipt"]["execution_host"] = socket.gethostname()
+            if result['receipt'].get('usage_final') is False:
+                from .scheduler import ProductionNeedsDecision
+                error = ProductionNeedsDecision('驻留视频已保留但实际费用尚未确认，禁止新增付费提交', 'comfy_usage_unresolved')
+                error.retained_result = result
+                raise error
             return result
         except Exception as exc:
             exc.gpu_receipt = {"execution_host": socket.gethostname(),
                                **(self.active_budget.snapshot() if self.active_budget else {"gpu_seconds": 0})}
+            journal = folder / 'output/submission.json'
+            if journal.is_file():
+                saved = read_json(journal)
+                if saved.get('cancellation_capability'):
+                    from .external_comfy import owned_usage
+                    exc.gpu_receipt.update(owned_usage(saved))
+                    if exc.gpu_receipt.get('usage_final') is False and getattr(exc, 'reason', None) != 'comfy_cancellation_unresolved':
+                        exc.reason = 'comfy_usage_unresolved'
+            elif (self.production.get('resident_h3') and payload.get('kind') == 'comfy'
+                    and any(node.get('class_type') == 'MiniMaxH3ImageToVideo' for node in payload.get('graph', {}).values())):
+                exc.gpu_receipt.update(gpu_seconds=0, usage_final=True, accounting='no_owned_prompt_submitted')
             raise
 
-    def _execute(self, payload, folder):
+    def reconcile_owned_stop(self, state, folder):
+        """A GET may settle retained work even when the caller cannot spend more."""
+        if state.get('status') != 'unresolved' or state.get('reason') not in {'comfy_cancellation_unresolved', 'comfy_usage_unresolved'}:
+            return state
+        resident = self.production.get('resident_h3') or {}
+        if resident.get('base_url') != 'http://127.0.0.1:8346':
+            return state
+        from .external_comfy import ExternalComfy, owned_usage
+        client = ExternalComfy({'base_url': resident['base_url'], 'network_mode': 'loopback'})
+        try:
+            saved = client.reconcile_owned_stop(folder / 'output')
+        except Exception:
+            return state
+        receipt = state.setdefault('result', {}).setdefault('receipt', {})
+        receipt.update(owned_usage(saved), execution_host=socket.gethostname())
+        if receipt['usage_final']:
+            if state.get('started_at') is not None and (saved.get('owned_usage') or {}).get('end_timestamp_ms') is not None:
+                receipt['elapsed_seconds'] = round(max(receipt.get('elapsed_seconds', 0),
+                    saved['owned_usage']['end_timestamp_ms'] / 1000 - state['started_at']), 3)
+            complete = state['reason'] == 'comfy_usage_unresolved' and saved.get('state') == 'completed'
+            state.update(status='completed' if complete else 'failed', reason='comfy_usage_settled' if complete else 'comfy_budget_stopped',
+                         finished_at=saved['stop_confirmed_at'],
+                         error=None if complete else 'Owned Comfy task stopped; retained receipt settled without resubmission')
+        write_json(folder / 'job.json', state)
+        return state
+
+    def _execute(self, payload, folder, *, owned_recovery=False):
         from .scheduler import Budget, Scheduler
         files = []
         if payload["kind"] == "comfy":
@@ -402,26 +503,34 @@ class InferenceEngine:
             self.active_budget = budget
             scheduler = Scheduler(self.production, budget)
             h3 = any(node.get("class_type") == "MiniMaxH3ImageToVideo" for node in payload["graph"].values())
+            resident = self.production.get("resident_h3") if h3 else None
             if h3:
                 from studio.h3 import require_installation, graph_recipe
-                require_installation(graph_recipe(payload["graph"]))
-            resident = self.production.get("resident_h3") if h3 else None
+                if not resident and not owned_recovery:
+                    require_installation(graph_recipe(payload["graph"]))
             if resident:
-                from .external_comfy import ExternalComfy
-                if resident != {"base_url": "http://127.0.0.1:8346", "gpu_cards": [6, 7]}:
-                    raise ValueError("Resident H3 must select the owned Wkp service and GPU pair")
-                client = ExternalComfy({"base_url": resident["base_url"], "network_mode": "loopback"})
-                graph = copy.deepcopy(payload["graph"])
-                names = {}
-                for value in payload.get("inputs", []):
-                    local = folder / "inputs" / value["name"]
-                    local.parent.mkdir(parents=True, exist_ok=True)
-                    local.write_bytes(base64.b64decode(value["data"], validate=True))
-                    names[value["name"]] = client.upload(local)
-                for node in graph.values():
-                    if node["class_type"] == "LoadImage": node["inputs"]["image"] = names[node["inputs"]["image"]]
-                with budget.gpu_operation(2):
-                    path = client.execute(graph, folder / "output", "video", timeout=budget.timeout(payload.get("timeout_seconds", 7200), 2))
+                client = self._resident_client()
+                if owned_recovery:
+                    saved = read_json(folder / 'output/submission.json')
+                    if not saved.get('prompt_id') or not saved.get('cancellation_capability') or not saved.get('deadline_at'):
+                        raise ValueError('Owned recovery requires the original submission and deadline')
+                    graph = read_json(folder / 'output/owned_workflow.json')
+                    # Existing journal + exact graph prohibits a new /prompt;
+                    # ExternalComfy keeps the original absolute deadline.
+                    path = client.execute(graph, folder / 'output', 'video', stop_on_timeout=True)
+                else:
+                    graph = copy.deepcopy(payload["graph"])
+                    names = {}
+                    for value in payload.get("inputs", []):
+                        local = folder / "inputs" / value["name"]
+                        local.parent.mkdir(parents=True, exist_ok=True)
+                        local.write_bytes(base64.b64decode(value["data"], validate=True))
+                        names[value["name"]] = client.upload(local)
+                    for node in graph.values():
+                        if node["class_type"] == "LoadImage": node["inputs"]["image"] = names[node["inputs"]["image"]]
+                    with budget.gpu_operation(2):
+                        path = client.execute(graph, folder / "output", "video", timeout=budget.timeout(payload.get("timeout_seconds", 7200), 2),
+                                              check=lambda: budget.check(require_gpu=True), stop_on_timeout=True)
                 files.append(path)
             else:
                 with scheduler.worker("inference-" + payload["request_id"][:24], **({"h3": True} if h3 else {})) as worker:
@@ -433,7 +542,8 @@ class InferenceEngine:
                     files.append(path)
             result = {"receipt": {**read_json(path.parent / "result.json"), **budget.snapshot()}}
             if resident:
-                result['receipt'].update(accounting='resident_request_wall_seconds_times_gpu_count_including_queue_wait',gpu_count=2)
+                from .external_comfy import owned_usage
+                result['receipt'].update(owned_usage(read_json(folder / 'output/submission.json')))
             if h3:
                 from studio.h3 import MODEL, graph_recipe
                 selected = graph_recipe(payload["graph"])
@@ -491,7 +601,18 @@ class InferenceStore:
             state = read_json(path)
             if state["status"] == "running":
                 state.update(status="unresolved", error="Service restarted during inference; inspect saved submission before a new request", finished_at=time.time())
+                request = state.get('request', {})
+                if (getattr(engine, 'production', {}).get('resident_h3') and request.get('kind') == 'comfy'
+                        and any(node.get('class_type') == 'MiniMaxH3ImageToVideo' for node in request.get('graph', {}).values())):
+                    saved = read_json(path.parent / 'output/submission.json') if (path.parent / 'output/submission.json').exists() else {}
+                    recoverable = (saved.get('prompt_id') and saved.get('deadline_at') and saved.get('cancellation_capability')
+                                   and (path.parent / 'output/owned_workflow.json').is_file())
+                    state['reason'] = 'comfy_owned_recovery' if recoverable else 'comfy_submission_unresolved'
+                    if recoverable:
+                        self.queue.put(state['id'])
                 write_json(path, state)
+            elif state['status'] == 'unresolved' and state.get('reason') == 'comfy_owned_recovery':
+                self.queue.put(state['id'])
             elif state["status"] == "queued":
                 self.queue.put(state["id"])
         self.thread = None
@@ -507,7 +628,22 @@ class InferenceStore:
             raise FileNotFoundError("Inference job not found")
         with self.lock:
             state = read_json(path)
+            if hasattr(self.engine, 'reconcile_owned_stop'):
+                state = self.engine.reconcile_owned_stop(state, path.parent)
             return {key: value for key, value in state.items() if key not in {"request"}}
+
+    def _owned_stop_blocker(self, payload):
+        if not getattr(self.engine, 'production', {}).get('resident_h3') or payload.get('kind') != 'comfy':
+            return None
+        if not any(node.get('class_type') == 'MiniMaxH3ImageToVideo' for node in payload.get('graph', {}).values()):
+            return None
+        for path in self.folder.glob('*/job.json'):
+            state = read_json(path)
+            if state.get('status') == 'unresolved' and state.get('reason') in {'comfy_cancellation_unresolved', 'comfy_submission_unresolved', 'comfy_usage_unresolved', 'comfy_owned_recovery'}:
+                current = self.get(state['id'])
+                if current['status'] == 'unresolved':
+                    return state['id']
+        return None
 
     def submit(self, payload):
         payload = validate_request(payload)
@@ -519,6 +655,8 @@ class InferenceStore:
                 if read_json(path)["request_hash"] != signature:
                     raise Conflict("request_id already identifies different inference inputs")
                 return self.get(ident)
+            if self._owned_stop_blocker(payload):
+                raise Conflict('An owned resident Comfy task has unresolved cancellation or usage; no new submission allowed')
             if self.queue.qsize() >= 64:
                 raise Conflict("Inference queue is full")
             state = {"id": ident, "request_hash": signature, "status": "queued", "request": payload, "created_at": time.time()}
@@ -530,15 +668,25 @@ class InferenceStore:
         with self.lock:
             path = self.folder / ident / "job.json"
             state = read_json(path)
-            if state["status"] != "queued":
+            recovery = state['status'] == 'unresolved' and state.get('reason') == 'comfy_owned_recovery'
+            if state["status"] != "queued" and not recovery:
                 return
-            state.update(status="running", started_at=time.time())
+            if not recovery and self._owned_stop_blocker(state['request']):
+                state.update(status='failed', reason='resident_cancel_barrier', finished_at=time.time(),
+                             error='Owned resident cancellation remains unresolved; this request was never executed',
+                             result={'receipt': {'execution_host': socket.gethostname(), 'gpu_seconds': 0, 'usage_final': True}})
+                write_json(path, state)
+                return
+            if not recovery:
+                state.update(status="running", started_at=time.time())
             write_json(path, state)  # A crash after this write must never replay the GPU request.
         try:
-            result = self.engine.execute(state["request"], path.parent)
+            result = self.engine.execute(state["request"], path.parent, **({'owned_recovery': True} if recovery else {}))
             state.update(status="completed", result=result, finished_at=time.time())
         except Exception as exc:
-            state.update(status="failed", result={"receipt": getattr(exc, "gpu_receipt", {"execution_host": socket.gethostname(), "gpu_seconds": 0})}, error=type(exc).__name__ + ": " + str(exc)[:1500],
+            unknown = getattr(exc, 'reason', '') in {'comfy_cancellation_unresolved', 'comfy_submission_unresolved', 'comfy_usage_unresolved'}
+            retained = getattr(exc, 'retained_result', {"receipt": getattr(exc, "gpu_receipt", {"execution_host": socket.gethostname(), "gpu_seconds": 0})})
+            state.update(status="unresolved" if unknown else "failed", result=retained, error=type(exc).__name__ + ": " + str(exc)[:1500],
                          reason=getattr(exc, "reason", "inference_failed"), details=getattr(exc, "details", {}), finished_at=time.time())
         with self.lock:
             write_json(path, state)

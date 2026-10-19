@@ -272,6 +272,7 @@ export const names: Record<string, string> = {
   not_run: "未检查",
   human_required: "人工核验",
   needs_attention: "需要处理",
+  production_repair: "定向返修",
   advisory: "建议",
   selected: "已采纳",
   waiting_resources: "等待资源",

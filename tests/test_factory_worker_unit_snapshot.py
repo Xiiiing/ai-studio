@@ -156,6 +156,23 @@ def test_uncaught_interrupt_restores_snapshot_and_worker_context(environment, mo
     assert store.get(unit['id'], False)['execution_config'] == frozen
 
 
+@pytest.mark.parametrize('reason', ['retry_limit', 'production_recovery_request_upstream'])
+def test_bounded_production_stop_keeps_specific_next_step_in_worker_event(environment, monkeypatch, reason):
+    from factory.scheduler import ProductionNeedsDecision
+    unit, job, _ = unit_job()
+    explanation = 'S02 的授权次数已用尽；请核对材料与授权，直接继续不会获得新额度。'
+    def advance(pid):
+        raise ProductionNeedsDecision(explanation, reason, {'asset': 'S02', 'attempts': 3})
+    monkeypatch.setattr(workflows, '_advance', advance)
+    worker.handle(job)
+    current = store.get(unit['id'], False)
+    assert current['status'] == 'blocked'
+    assert current['needs_decision']['message'] == explanation
+    with store.connection() as db:
+        last = db.execute("SELECT message FROM events WHERE project_id=? AND kind='review_blocked' ORDER BY id DESC LIMIT 1", (unit['id'],)).fetchone()
+    assert last['message'] == explanation
+
+
 @pytest.mark.parametrize('value', ['missing', None, [], 'legacy-config'])
 def test_legacy_unit_without_explicit_snapshot_keeps_existing_configuration_behavior(environment, monkeypatch, value):
     unit, job, frozen = unit_job(execution_config=value)

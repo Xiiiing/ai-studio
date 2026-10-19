@@ -19,7 +19,6 @@ def test_prepare_projects_actual_reference_order_without_internal_provenance(pro
         Image.new('RGB', (64, 64), color).save(path)
         refs.append(path)
     internal = {'path': 'private/full/source.png', 'sha256': 'e' * 64,
-                'composition_manifest': {'path': 'private/manifest.json', 'sha256': 'f' * 64},
                 'purpose': 'arbitrary private instructions must not enter the image prompt'}
     bindings = [
         {**internal, 'kind': 'composition', 'entity_id': 'combined-cast', 'sha256': g.sha256(refs[0]),
@@ -31,6 +30,15 @@ def test_prepare_projects_actual_reference_order_without_internal_provenance(pro
         {**internal, 'kind': 'scene', 'entity_id': 'Hall', 'sha256': g.sha256(refs[1])},
         {**internal, 'kind': 'prop', 'entity_id': 'Cup', 'sha256': g.sha256(refs[2])},
     ]
+    # Composition provenance is real checked evidence, even though the model
+    # must see only its compact entity mapping. Build inner evidence first.
+    for binding in (bindings[0]['entities'][1], bindings[0]):
+        binding.update(path=str(refs[0].relative_to(g.ROOT)), sha256=g.sha256(refs[0]))
+        manifest = g.ROOT / 'private' / (binding['entity_id'] + '-manifest.json')
+        g.write_json(manifest, {'schema_version': 1,
+            'requirements': {'kind': 'composition', 'entities': copy.deepcopy(binding['entities'])},
+            'output': {'path': binding['path'], 'sha256': binding['sha256']}})
+        binding['composition_manifest'] = {'path': str(manifest.relative_to(g.ROOT)), 'sha256': g.sha256(manifest)}
     original = copy.deepcopy(bindings)
     calls = transport(monkeypatch)
     result = g.prepare(p, shot(), refs, config=config, phase='image',

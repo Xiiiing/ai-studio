@@ -13,7 +13,7 @@ from pathlib import Path
 from jsonschema import Draft202012Validator
 from .providers import (check_model, context_budget, request_json, model_matches,
                         chat_request, chat_response, redact_secrets, config_revision)
-from studio.core import ROOT, write_json
+from studio.core import ROOT, write_json, sha256
 from .config import TEXT_CRITIC_ROLES, llm_identity, resolve_llm
 
 BASE_SYSTEM = (
@@ -245,6 +245,7 @@ def _review_expectations(shot):
               "lip_sync", "delivery_method", "characters", "character_states", "asset_references",
               "review_purpose", "visual_direction", "material_constraints", "scene_id", "composition_id",
               "approved_reference_requirements", "reference_bindings")
+    fields = (*fields, 'execution_constraints')
     expected = {key: shot[key] for key in fields if key in shot}
     if isinstance(shot.get("dialogue"), list):
         expected["dialogue"] = [
@@ -327,6 +328,7 @@ def review_media(project, shot, path, references, config=None, *, output_dir=Non
         "format":project.get("format"),"shot":copy.deepcopy(_review_expectations(shot)),
         "approved_sequence":_review_sequence(project),
         "sequence_rule":"approved_sequence是批准剧情时序，只用于检查明显的道具提前出现或持有人矛盾；只要求本镜动作，不要求单帧演完整段事件。",
+        "absence_rule":"本镜未提及持物不等于禁止持物；参考图中持物也不等于本镜必须持物。只能依据批准的当前状态明确判定必要或禁止的道具，不得凭描述缺省在相反要求之间反复切换。",
         "criteria":{"pass":"叙事主体/服装/构图足够匹配，无明显多肢/脸部崩坏或关键剧情错置",
                     "fail":"仅对清晰可见且影响剧情的严重错误判fail；不能从单张静态图推断口型或全过程表演连续性"},
         "evidence_rule":"只用待评镜头样本判断当前人物动作、道具持有人、位置与构图；参考图仅用于身份和衣装对照，参考图中的持物或背景不代表候选帧已经具备。逐项根据本次可见证据判断，不猜测历史评审。",
@@ -447,6 +449,8 @@ def review_media(project, shot, path, references, config=None, *, output_dir=Non
         content[0]["text"] = json.dumps(context, ensure_ascii=False)
     reference_content = list(content[1:])
     sampling = {"policy":"single_image","timestamps":[0.0]}
+    from .visual_constraints import enabled as constraint_review_enabled
+    constraint_media_sha = sha256(path) if constraint_review_enabled(config) else None
     if is_video:
         from .evaluation_sampling import sample_video
         requested = config.get("quality",{}).get("temporal_samples",8)
@@ -486,12 +490,17 @@ def review_media(project, shot, path, references, config=None, *, output_dir=Non
         from .temporal_review import verify_temporal
         result = verify_temporal(config, schema, context, reference_content,
                                  sampled, sampling, result, path, record)
+        if constraint_media_sha:
+            from .visual_constraints import verify as verify_constraints
+            result = verify_constraints(config, shot, path, samples, sampling, result,
+                                        record, constraint_media_sha, _request, _image_url)
     elif contract and contract["motion"] == "generated_video" and not reference_purpose and shot.get("review_purpose") != "visual_direction_preview":
         from .spatial_review import verify_spatial
         result = verify_spatial(config, schema, context, reference_content, result, path, record)
     reference_pending = result.pop("_reference_unavailable", False)
     temporal_pending = result.pop("_temporal_unavailable", False)
     spatial_pending = result.pop("_spatial_unavailable", False)
+    constraint_pending = result.pop("_constraint_unavailable", False)
     blocking=[issue for issue in result["issues"] if issue["severity"]=="blocking"]
     result["model_status"] = result["status"]
     # The verdict follows the declared severity and configured score gate;
@@ -542,6 +551,11 @@ def review_media(project, shot, path, references, config=None, *, output_dir=Non
         if audit.get("status") == "unavailable" or not (confirmed or new_blocking or mismatch):
             result["status"] = "unavailable"
             result["detail"] = "参考图问题尚无充分的批准事实与同像素复核依据；原图和两次审核已保留，需补审，不据此自动重绘。"
+    if constraint_pending and result['status'] != 'fail':
+        result['status'] = 'unavailable'
+        result['detail'] = '明确视觉要求尚缺逐样本可验证证据；保留已有视频，等待补审，不据此重新生成。'
+    if result.get('explicit_constraint_verification', {}).get('status') == 'fail':
+        result['status'] = 'fail'
     selected_model = resolve_llm(config, "visual_critic", require_vision=True)
     result.update(evaluator="vlm_sampled_frames",model=selected_model["model"],
                   profile=selected_model["profile"],endpoint=selected_model.get("base_url"),
