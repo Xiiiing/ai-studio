@@ -71,6 +71,14 @@ class AudioEditorMixin:
             team_ledger.mark_reused(self.ident, "video", shot["id"], artifact=record,
                                     input_version=signature, review_status=record.get("qa", {}).get("status"))
             return record
+        from .generation_pipeline import enabled, prepare
+        compiled = None
+        if enabled(self.project):
+            self.boundary()
+            compiled = prepare(self.project, shot, [image], config={**self.config, "video_width": width, "video_height": height},
+                phase="video", style=shot.get("render_style_prompt", self.style_prompt), cast=self.cast,
+                identities=[(r, self.receipt_path(self.assets["characters"][r])) for r in self._shot_render_roles(shot) if r in self.assets["characters"]], checkpoint=self.boundary)
+            self.boundary()
         folder.mkdir(parents=True, exist_ok=True)
         if target.exists():
             target = folder / ("video_recovery_" + str(time.time_ns()) + ".mp4")
@@ -110,6 +118,8 @@ class AudioEditorMixin:
                                    source_image=shot["image"], qa=qa, plan_signature=plan_signature(self.project, shot, "video"),
                                    take=folder.name, model="ffmpeg_zoompan_v1", shot_revision=shot.get("shot_revision", 1),
                                    elapsed_seconds=round(time.monotonic() - started, 3))
+            if compiled:
+                record["generation_plan"] = compiled
             if explicit_profile(self.project):
                 record["production_profile_signature"] = profile_signature(self.project)
             write_json(receipt_path, record)

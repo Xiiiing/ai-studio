@@ -457,7 +457,9 @@ class SpeechMixin:
         else:
             for role in self.cast:
                 voices.setdefault(role, {"speaker": "Serena" if role == "female" else "Uncle_Fu", "language": "Chinese"})
+        from .generation_pipeline import audio
         expected = self._speech_sources(lines, voices)
+        audio(self.project, lines, voices, self.config, expected)
         previous = {line["id"]: line for line in self.assets.get("audio", {}).get("lines", [])}
         records, missing = {}, []
         for line in lines:

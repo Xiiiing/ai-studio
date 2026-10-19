@@ -1,0 +1,56 @@
+.generation-pipeline {
+  min-width: 0;
+}
+.generation-pipeline .panel > * + * {
+  margin-top: 14px;
+}
+.generation-pipeline pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 500px;
+  overflow: auto;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 12px;
+}
+.pipeline-confirm,
+.pipeline-actions {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+.pipeline-confirm {
+  flex-wrap: nowrap;
+}
+.pipeline-confirm span {
+  min-width: 0;
+}
+.pipeline-confirm input {
+  flex: none;
+  width: auto;
+  margin-top: 5px;
+}
+.pipeline-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+.pipeline-record {
+  padding: 12px 0;
+  border-top: 1px solid var(--line);
+  overflow-wrap: anywhere;
+}
+.pipeline-record details {
+  margin: 12px 0;
+}
+@media (max-width: 650px) {
+  .pipeline-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .pipeline-actions .button {
+    max-width: 100%;
+    white-space: normal;
+  }
+}
