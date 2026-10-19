@@ -81,6 +81,17 @@ for (const width of [1982, 1440, 390])
         await expect(trigger).toBeFocused();
         expect(await measure()).toEqual(initial);
       }
+      // A route selection followed by a fast reopen must keep the new menu.
+      await trigger.click();
+      await page
+        .getByRole("menuitem", { name: "全剧规划", exact: true })
+        .click();
+      await trigger.click();
+      await expect(page.getByRole("menu")).toBeVisible();
+      await page.waitForTimeout(140);
+      await expect(page.getByRole("menu")).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(trigger).toBeFocused();
       if (width < 1024)
         await page
           .getByRole("button", { name: "展开导航", exact: true })
@@ -150,7 +161,10 @@ for (const reducedMotion of ["no-preference", "reduce"]) {
         const r = group
           .querySelector("[data-selection-marker]")
           .getBoundingClientRect();
-        out.push({ x: r.x, width: r.width });
+        const marker = group.querySelector("[data-selection-marker]");
+        const scale = new DOMMatrixReadOnly(getComputedStyle(marker).transform)
+          .a;
+        out.push({ x: r.x, width: r.width, scale });
       }
       return out;
     });
@@ -166,6 +180,14 @@ for (const reducedMotion of ["no-preference", "reduce"]) {
     if (reducedMotion === "no-preference")
       expect(
         samples.some((r) => r.x > initial.x + 1 && r.x < label.x - 1),
+      ).toBe(true);
+    if (reducedMotion === "no-preference")
+      expect(
+        Math.max(...samples.map((sample) => sample.scale)),
+      ).toBeGreaterThan(1.005);
+    else
+      expect(
+        samples.every((sample) => Math.abs(sample.scale - 1) < 0.001),
       ).toBe(true);
     await group.getByRole("button", { name: "全部项目", exact: true }).click();
     await target.click();

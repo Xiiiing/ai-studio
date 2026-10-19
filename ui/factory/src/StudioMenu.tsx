@@ -39,11 +39,13 @@ export function StudioMenu({
   ariaLabel?: string;
 }) {
   const trigger = useRef<HTMLButtonElement>(null);
+  const opening = useRef(false);
   const [container, setContainer] = useState<HTMLElement>();
   return (
     <Menu.Root
       modal={false}
       onOpenChange={(open) => {
+        opening.current = open;
         if (open)
           setContainer(
             portalContainer ?? controlPortalContainer(trigger.current),
@@ -65,6 +67,13 @@ export function StudioMenu({
           align={align}
           sideOffset={6}
           collisionPadding={12}
+          onCloseAutoFocus={(event) => {
+            // A previous close can settle after a fast reopen. It must not
+            // move focus out of the newly opened menu and dismiss that menu.
+            event.preventDefault();
+            if (!opening.current)
+              trigger.current?.focus({ preventScroll: true });
+          }}
           loop
         >
           {items.map((item, index) => (
