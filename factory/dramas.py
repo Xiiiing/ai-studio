@@ -13,6 +13,13 @@ from studio.core import fingerprint
 MAX_EPISODE_SECONDS = 900
 
 
+class PlanValidationError(ValueError):
+    """A candidate contract problem the author can repair, not a service failure."""
+    def __init__(self, message, *, role='screenwriter', episodes=()):
+        super().__init__(message)
+        self.repair_targets = [{'role': role, 'episode_numbers': list(episodes)}]
+
+
 def source_excerpt(source, number, count):
     headers=list(re.finditer(r'(?im)^\s*(?:第\s*([零〇一二两三四五六七八九十百0-9]+)\s*集|(?:episode|ep)\s*([0-9]+)\b)',source))
     def ordinal(value):
@@ -189,7 +196,7 @@ def snapshot(pid, *, db=None, details=True):
     if details:
         from .drama_workflow import build
         result['source_text'] = p['source_text']
-        result['review_history'] = [{k: copy.deepcopy(entry.get(k)) for k in ('cycle','attempt','at','review','returned_to','phase')}
+        result['review_history'] = [{k: copy.deepcopy(entry.get(k)) for k in ('cycle','attempt','at','review','returned_to','phase','reused')}
             for entry in p.get('plan_history', [])]
         job = db.execute("SELECT status,started FROM jobs WHERE project_id=? AND kind='drama_plan' AND status IN ('queued','running') ORDER BY started DESC LIMIT 1", (pid,)).fetchone()
         result['workflow'] = build(p, episodes=episodes, batches=result['batches'],
@@ -201,16 +208,39 @@ def validate_plan(plan, project):
     from jsonschema import validate, ValidationError
     from .drama_planning import plan_schema
     try: validate(plan, plan_schema(project['episode_count']))
-    except ValidationError as exc: raise ValueError('全剧规划字段无效：' + '.'.join(map(str, exc.absolute_path))) from exc
+    except ValidationError as exc:
+        path = list(exc.absolute_path)
+        raise PlanValidationError('全剧规划字段无效：' + '.'.join(map(str, path)),
+            role='screenwriter' if path and path[0] == 'episodes' else 'story_editor') from exc
     ids = [c['character_id'] for c in plan['characters']]
-    if len(set(ids)) != len(ids): raise ValueError('全剧角色ID须唯一')
+    if len(set(ids)) != len(ids): raise PlanValidationError('全剧角色ID须唯一，请修正设定及对应引用', role='story_editor')
+    names = {}
+    for character in plan['characters']:
+        name = character['name'].strip().casefold()
+        if not name:
+            raise PlanValidationError('全剧角色须有可识别的名称', role='story_editor')
+        if name in names:
+            raise PlanValidationError(f"角色名称重复：{names[name]} 与 {character['character_id']} 均名为“{character['name']}”。"
+                '请区分不同角色；同一角色应统一ID和身份，不可让后续大纲猜测。', role='story_editor')
+        names[name] = character['character_id']
     numbers = [e['number'] for e in plan['episodes']]
-    if sorted(numbers) != list(range(1, project['episode_count'] + 1)): raise ValueError('分集大纲须覆盖全部集数且不重复')
+    if sorted(numbers) != list(range(1, project['episode_count'] + 1)): raise PlanValidationError('分集大纲须覆盖全部集数且不重复')
+    seen = {}
     for e in plan['episodes']:
-        if not set(e['characters']) <= set(ids) or not e['characters']: raise ValueError('剧集必须引用全剧已定义角色')
-        if len(e['characters'])!=len(set(e['characters'])): raise ValueError('剧集角色不能重复')
-        if project['duration_seconds']<=90 and len(e['characters'])>4: raise ValueError('短片规格每集最多4位角色')
-        if any(dep >= e['number'] or dep < 1 for dep in e['depends_on']): raise ValueError('剧集依赖只能引用前面的集数')
+        target = {'episodes': [e['number']]}
+        if not set(e['characters']) <= set(ids) or not e['characters']: raise PlanValidationError('剧集必须引用全剧已定义角色', **target)
+        if len(e['characters'])!=len(set(e['characters'])): raise PlanValidationError('剧集角色不能重复', **target)
+        if project['duration_seconds']<=90 and len(e['characters'])>4: raise PlanValidationError('短片规格每集最多4位角色', **target)
+        if any(dep >= e['number'] or dep < 1 for dep in e['depends_on']):
+            raise PlanValidationError(f"第{e['number']}集：剧集依赖只能引用前面的集数；仅剧情承接不需要制作依赖。", **target)
+        if e['synopsis'].strip() == e['opening_state'].strip() == e['ending_state'].strip():
+            raise PlanValidationError(f"第{e['number']}集仅重复起止状态，没有本集新事件。"
+                '请从前集结尾继续发展本集剧情，不要把收尾状态作为整集大纲。', **target)
+        content = fingerprint({k: e[k] for k in ('title','synopsis','opening_state','ending_state','characters')})
+        if content in seen:
+            raise PlanValidationError(f"第{e['number']}集与第{seen[content]}集的大纲内容完全重复。"
+                '请保留前集已发生的事件，在本集推进新的冲突或结果，不要复制前集高潮。', **target)
+        seen[content] = e['number']
     return copy.deepcopy(plan)
 
 
@@ -364,9 +394,29 @@ def control(pid, payload):
             if action in {'resume', 'retry'}:
                 if db.execute("SELECT 1 FROM jobs WHERE project_id=? AND status='running'", (pid,)).fetchone():
                     raise ValueError('请等待当前任务到达安全边界')
-                if p.get('plan_phase') == 'exhausted' or (not p.get('plan_phase') and p['status'] in {'blocked', 'failed'}):
+                feedback = payload.get('feedback', '')
+                if not isinstance(feedback, str) or len(feedback) > 4000:
+                    raise ValueError('规划补充要求须为不超过4000字的文本')
+                feedback = feedback.strip()
+                changed_feedback = bool(feedback and feedback != p.get('planning_feedback'))
+                if changed_feedback:
+                    p['planning_feedback'] = feedback
+                invalid_candidate = False
+                if p.get('plan_phase') == 'reviewing' and p['status'] in {'blocked', 'failed'} and p.get('draft_plan'):
+                    try:
+                        validate_plan(p['draft_plan'], p)
+                    except PlanValidationError as exc:
+                        invalid_candidate = True
+                        if p.get('plan_review'):
+                            p.setdefault('plan_review_archive', []).append({'cycle': p.get('plan_cycle'),
+                                'attempt': p.get('plan_attempt'), 'review': copy.deepcopy(p['plan_review']),
+                                'reason': 'preserved_before_contract_recovery'})
+                        p['plan_review'] = {'passed': False, 'issues': [str(exc)],
+                            'source': 'contract', 'candidate_sha256': fingerprint(p['draft_plan']),
+                            'repair_targets': exc.repair_targets}
+                if changed_feedback or invalid_candidate or p.get('plan_phase') == 'exhausted' or (not p.get('plan_phase') and p['status'] in {'blocked', 'failed'}):
                     from .drama_planning import start_cycle
-                    start_cycle(p)
+                    start_cycle(p, full_repair=changed_feedback)
                 p.update(error=None, needs_decision=None)
             p.update(pause_requested=action in {'pause','cancel'},status='cancelled' if action=='cancel' else 'paused' if action=='pause' else 'queued')
             db.execute("UPDATE jobs SET status='cancelled',finished=? WHERE project_id=? AND status='queued'",(time.time(),pid))

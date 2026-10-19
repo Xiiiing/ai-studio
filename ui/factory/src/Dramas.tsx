@@ -28,6 +28,7 @@ import { AgentLoop } from "./AgentLoop";
 import { GenerationPipeline } from "./GenerationPipeline";
 import { PromptWorkbench } from "./PromptWorkbench";
 import { QualityComparison } from "./QualityComparison";
+import { DramaNextStep } from "./DramaNextStep";
 import "./dramas.css";
 
 export const dramaDefaults = { seconds: 300, maxSeconds: 900 };
@@ -217,21 +218,28 @@ function PlanEditor({
   busy,
   confirm,
   reviewPassed,
+  onDirty,
 }: {
   document: RecordData;
   busy: boolean;
   reviewPassed: boolean;
   confirm: (value: RecordData) => void;
+  onDirty: (dirty: boolean) => void;
 }) {
   const [draft, setDraft] = useState<RecordData>(() =>
     structuredClone(document),
   );
+  useEffect(() => {
+    onDirty(false);
+  }, [onDirty]);
   function update(key: string, value: unknown) {
-    setDraft({ ...draft, [key]: value });
+    const next = { ...draft, [key]: value };
+    setDraft(next);
+    onDirty(JSON.stringify(next) !== JSON.stringify(document));
   }
   return (
     <form
-      className="drama-form"
+      className="drama-form drama-plan-editor"
       onSubmit={(e) => {
         e.preventDefault();
         confirm(
@@ -682,6 +690,7 @@ export function DramaDetail({
     refetchInterval: 5000,
   });
   const [selected, setSelected] = useState<number[]>([]),
+    [planDirty, setPlanDirty] = useState(false),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [feedback, setFeedback] = useState(""),
@@ -700,7 +709,7 @@ export function DramaDetail({
     onTab(value);
   }
   async function operation(path: string, body: RecordData) {
-    if (!p || pending.current) return;
+    if (!p || pending.current) return false;
     pending.current = true;
     setBusy(true);
     setError("");
@@ -715,8 +724,10 @@ export function DramaDetail({
       setReviewing(null);
       setSelected([]);
       await client.invalidateQueries();
+      return true;
     } catch (e) {
       setError((e as Error).message);
+      return false;
     } finally {
       pending.current = false;
       setBusy(false);
@@ -753,6 +764,17 @@ export function DramaDetail({
       />
       <ErrorNotice error={error || query.error} />
       <DramaNavigation tab={tab} onTab={setTab} />
+      <DramaNextStep
+        key={id}
+        project={p}
+        tab={tab}
+        busy={busy}
+        manualChanges={planDirty}
+        onTab={setTab}
+        repair={(value) =>
+          operation("actions", { action: "resume", feedback: value })
+        }
+      />
       {tab === "agent" && <AgentLoop project={p} />}
       {tab === "generation" && <GenerationPipeline project={p} />}
       {tab === "prompts" && <PromptWorkbench project={p} />}
@@ -995,7 +1017,7 @@ export function DramaDetail({
               {p.status === "paused" || p.status === "blocked" ? (
                 <button
                   className="button"
-                  disabled={busy || !!p.workflow?.active_job}
+                  disabled={busy || !!p.workflow?.active_job || planDirty}
                   onClick={() =>
                     void operation("actions", { action: "resume" })
                   }
@@ -1033,6 +1055,7 @@ export function DramaDetail({
               key={JSON.stringify(p.draft_plan)}
               document={p.draft_plan}
               busy={busy || !!p.workflow?.active_job}
+              onDirty={setPlanDirty}
               reviewPassed={!!p.plan_review?.passed}
               confirm={(value) => void operation("confirm", { plan: value })}
             />

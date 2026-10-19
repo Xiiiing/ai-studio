@@ -219,7 +219,7 @@ def test_sixteen_characters_and_changed_shared_plan_do_not_overwrite_started_epi
     p=dramas.generate(p['id'],{'expected_revision':p['revision'],'request_id':'first-batch','episode_numbers':[1]})
     original=store.get(p['episodes'][0]['id'],False)
     edited=plan()
-    edited['characters']=[{**edited['characters'][0],'character_id':f'person{i}'} for i in range(16)]
+    edited['characters']=[{**edited['characters'][0],'character_id':f'person{i}','name':f'角色{i}'} for i in range(16)]
     for outline in edited['episodes']:outline['characters']=['person0']
     edited['relationships']=['person0与person1是成年兄妹，分别寻找旧信的线索。']
     root=store.update(p['id'],{'duration_seconds':300,'draft_plan':edited,'plan_review':{'passed':True}})

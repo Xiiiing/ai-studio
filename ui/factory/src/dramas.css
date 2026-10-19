@@ -27,6 +27,19 @@
 .drama-card p {
   white-space: pre-wrap;
 }
+.drama-next-step {
+  min-width: 0;
+  padding: 1rem;
+  margin: 1rem 0;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  overflow-wrap: anywhere;
+}
+.drama-next-step h2 { font-size: 1rem; margin: 0 0 .5rem; }
+.drama-next-step p { margin: .5rem 0; }
+.drama-next-step label { display: grid; gap: .5rem; }
+.drama-next-step textarea { width: 100%; min-width: 0; }
 .drama-episode-select {
   display: flex;
   gap: 0.7rem;

@@ -113,8 +113,12 @@ def _handle(job):
         store.update(pid,{"status":"blocked","error":str(exc)[:2500],"needs_decision":needs,
                           "message":"制片已保留进度并暂停："+str(exc)[:1500]})
         expected = isinstance(exc, (ReviewBlocked, CreativeReviewError, ProductionNeedsDecision)) or name=="ProductionBudgetExceeded"
-        store.event(pid,"请在待办决策中查看问题并选择处理方式。" if expected else "异常详情已写入本地运行日志。",
-                    "review_blocked" if expected else "error",{"exception_type":name,"stage":store.get(pid,False).get("stage")})
+        blocked_project = store.get(pid, False)
+        planning = blocked_project.get('record_kind') == 'drama' and not blocked_project.get('plan_version')
+        next_message = ('规划已暂停。请在全剧规划中查看问题，补充要求后继续；已有草稿保留。' if planning else
+            '请在待办决策中查看问题并选择处理方式。' if expected else '异常详情已写入本地运行日志。')
+        store.event(pid, next_message, "review_blocked" if expected else "error",
+                    {"exception_type":name,"stage":blocked_project.get("stage"), **({'next_tab': 'plan'} if planning else {})})
         if isinstance(exc, (ReviewBlocked, CreativeReviewError)):
             from .review_advice import eligible, run
             if (not isinstance(exc, CreativeReviewError) or bool(exc.issues)) and eligible(store.get(pid, False)):

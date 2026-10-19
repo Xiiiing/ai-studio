@@ -3,9 +3,10 @@ from __future__ import annotations
 
 import copy
 from contextlib import ExitStack
+from studio.core import fingerprint
 from . import store
 from .schemas import object_schema as obj, text_schema as txt, array_schema as arr, cached_json_call
-from .dramas import validate_plan, source_excerpt
+from .dramas import PlanValidationError, validate_plan, source_excerpt
 
 CHARACTER = obj({'character_id': {'type': 'string', 'pattern': '^[A-Za-z][A-Za-z0-9_-]{0,63}$'},
     'name': txt(1, 30), 'identity_constraints': txt(1, 2000), 'default_wardrobe': txt(1, 1000),
@@ -19,6 +20,17 @@ OUTLINE = obj({'number': {'type': 'integer', 'minimum': 1, 'maximum': 100}, 'tit
     'synopsis': txt(10, 2500), 'opening_state': txt(1, 1200), 'ending_state': txt(1, 1200),
     'characters': arr(txt(1, 64), 1, 16), 'depends_on': arr({'type': 'integer', 'minimum': 1, 'maximum': 100}, 0, 99)})
 REVIEW = obj({'passed': {'type': 'boolean'}, 'issues': arr(txt(1, 1500), 0, 30)})
+
+
+def outline_schema(number, world):
+    schema = copy.deepcopy(OUTLINE)
+    schema['properties']['number'] = {'type': 'integer', 'const': number}
+    schema['properties']['characters']['items'] = {'type': 'string', 'enum': [c['character_id'] for c in world['characters']]}
+    dependencies = schema['properties']['depends_on']
+    dependencies.update(maxItems=number - 1, uniqueItems=True)
+    if number > 1:
+        dependencies['items']['maximum'] = number - 1
+    return schema
 
 
 def plan_schema(count):
@@ -66,7 +78,7 @@ def call(project, config, role, stage, instructions, payload, schema, tokens=600
 MAX_ATTEMPTS = 3
 
 
-def start_cycle(project, *, edited=False):
+def start_cycle(project, *, edited=False, full_repair=False):
     """An explicit user action starts fresh work; pauses keep the current cycle."""
     history = copy.deepcopy(project.get('plan_history', []))
     if project.get('draft_plan') and project.get('plan_review'):
@@ -77,9 +89,10 @@ def start_cycle(project, *, edited=False):
                 'returned_to': [] if project['plan_review'].get('passed') else ['story_editor', 'screenwriter']})
     project.update(plan_history=history, plan_cycle=int(project.get('plan_cycle', 0)) + 1,
         plan_attempt=1, plan_max_attempts=MAX_ATTEMPTS,
-        plan_phase='reviewing' if edited else 'writing', plan_returned_to=[],
+        plan_phase='reviewing' if edited else 'writing', plan_returned_to=[], plan_reused=[],
         plan_repair_basis={'plan': copy.deepcopy(project.get('draft_plan')),
-            'issues': copy.deepcopy((project.get('plan_review') or {}).get('issues', []))},
+            'issues': copy.deepcopy((project.get('plan_review') or {}).get('issues', [])),
+            'repair_targets': [] if full_repair else copy.deepcopy((project.get('plan_review') or {}).get('repair_targets', []))},
         error=None, needs_decision=None)
 
 
@@ -121,20 +134,35 @@ def run(pid, config):
     while attempt <= MAX_ATTEMPTS and phase != 'exhausted':
         p = store.get(pid, False)
         if phase == 'returned':
-            basis = {'plan': copy.deepcopy(p.get('draft_plan')), 'issues': copy.deepcopy(review['issues'])}
+            basis = {'plan': copy.deepcopy(p.get('draft_plan')), 'issues': copy.deepcopy(review['issues']),
+                'repair_targets': copy.deepcopy(review.get('repair_targets', []))}
             p = store.update(pid, {'plan_attempt': attempt, 'plan_phase': 'writing',
                 'plan_repair_basis': basis, 'stage': 'plan_repair', 'status': 'creating'})
             phase = 'writing'
         basis = p.get('plan_repair_basis') or {'plan': None, 'issues': []}
         previous_plan, feedback = basis.get('plan'), basis.get('issues', [])
+        targets = basis.get('repair_targets', [])
+        scoped = bool(previous_plan and targets and all(t['role'] == 'screenwriter' for t in targets))
+        first_changed = min((n for t in targets for n in t.get('episode_numbers', [])), default=1)
+        reused = []
+        requirements = {'episode_count': p['episode_count'], 'episode_seconds': p['duration_seconds'],
+            'total_seconds': p['episode_count'] * p['duration_seconds'], 'duration_scope': 'per_episode',
+            'producer_feedback': p.get('planning_feedback', '')}
         if phase == 'reviewing':
             plan = p['draft_plan']
+            reused = copy.deepcopy(p.get('plan_reused', []))
         else:
-            base = call(p, config, 'story_editor', f'drama-world-{cycle}-{attempt}',
+            if scoped:
+                base = {k: copy.deepcopy(v) for k, v in previous_plan.items() if k != 'episodes'}
+                reused.append({'kind': 'world', 'sha256': fingerprint(base)})
+            else:
+                base = call(p, config, 'story_editor', f'drama-world-{cycle}-{attempt}',
                 '你是全剧策划。为一部连续剧建立统一世界、故事主线、具名成年角色、固定声线、场景和道具。'
                 '总角色最多16人，不在单个镜头安排超过4人；relationships用角色ID列明关系和变化依据；列明未知项。已有剧本优先保留原剧情。画风必须遵循用户选择。'
-                '若提供previous_world与review_feedback，按审核意见局部修复原设定，保留未受影响的角色身份、画风和剧情。',
-                {'brief': p['brief'], 'genre': p['genre'], 'visual_style': p['visual_style'],
+                '角色ID和名称须分别唯一；同一角色不要使用两个ID，不同人物不能用同一名称让下游猜测身份。'
+                '若提供previous_world与review_feedback，逐项核对并修正已指出的问题；保留未受影响的角色身份、画风和剧情。'
+                'producer_feedback是用户补充要求，不能被旧稿覆盖。',
+                {**requirements, 'brief': p['brief'], 'genre': p['genre'], 'visual_style': p['visual_style'],
                  'episode_count': p['episode_count'], 'episode_seconds': p['duration_seconds'],
                  'source_summaries': summaries, 'review_feedback': feedback,
                  'previous_world': {k: v for k, v in previous_plan.items() if k != 'episodes'} if previous_plan else None}, GLOBAL, 6500)
@@ -142,46 +170,65 @@ def run(pid, config):
             for number in range(1, p['episode_count'] + 1):
                 source_index = (number-1)*len(summaries)//p['episode_count']
                 previous_outline = next((e for e in (previous_plan or {}).get('episodes', []) if e['number'] == number), None)
+                if scoped and previous_outline and number < first_changed:
+                    outlines.append(copy.deepcopy(previous_outline))
+                    reused.append({'kind': 'outline', 'number': number, 'sha256': fingerprint(previous_outline)})
+                    continue
                 outline = call(p, config, 'screenwriter', f'drama-outline-{cycle}-{attempt}-{number}',
+                    f'当前任务仅为第{number}集，共{p["episode_count"]}集，每集{p["duration_seconds"]}秒。审核意见提及其他集，不会改变当前任务集号。'
                     '根据全剧主线编写指定集的大纲。延续上一集人物状态，明确本集冲突、转折和结尾。'
                     '只引用设定角色。depends_on仅列需要前集实际制作结果才能确定的依赖；大纲本身已确定的剧情不构成制作依赖。'
+                    'seconds/episode_seconds是本集时长，不是全剧总时长。每集须推进一个新事件或结果，不得复制previous中的标题、剧情及起止状态。'
                     '短片规格每集至多4位角色；长集可有16位，单镜最多4位。'
                     '若提供previous_outline与review_feedback，逐项修复原大纲，保留无关剧情；特别核对前后集人物状态与因果，勿重新创作无关故事。',
-                    {'world': base, 'number': number, 'episode_count': p['episode_count'], 'seconds': p['duration_seconds'],
+                    {**requirements, 'world': base, 'number': number, 'episode_count': p['episode_count'], 'seconds': p['duration_seconds'],
                      'previous': outlines[-2:], 'previous_outline': previous_outline, 'review_feedback': feedback,
                      'source_summaries_excerpt': summaries[source_index:source_index+2],
-                     'source_excerpt': source_excerpt(source, number, p['episode_count'])}, OUTLINE, 3000)
-                if outline['number'] != number: raise ValueError('生成大纲集号不匹配')
-                if p['duration_seconds'] <= 90 and len(outline['characters']) > 4: raise ValueError('短片规格每集至多4位角色')
+                     'source_excerpt': source_excerpt(source, number, p['episode_count']),
+                     'current_task': {'episode_number': number, 'episode_seconds': p['duration_seconds'],
+                         'previous_ending': outlines[-1]['ending_state'] if outlines else None,
+                         'requirement': '从前集结尾继续，写本集新发生的事件和结果；不要把前集结尾抄作整集剧情。'}}, outline_schema(number, base), 3000)
                 outlines.append(outline)
             plan = {**base, 'episodes': outlines}
-            p = store.update(pid, {'draft_plan': plan, 'plan_attempt': attempt, 'plan_phase': 'reviewing',
+            p = store.update(pid, {'draft_plan': plan, 'plan_attempt': attempt, 'plan_phase': 'reviewing', 'plan_reused': reused,
                 'stage': 'plan_review', 'plan_returned_to': [], 'status': 'creating',
                 'message': f'第{attempt}/{MAX_ATTEMPTS}轮规划已交独立审稿'})
-        validate_plan(plan, p)
         issues, groups = [], []
+        contract_error = None
+        try:
+            validate_plan(plan, p)
+        except PlanValidationError as exc:
+            contract_error = exc
+            issues.append(str(exc))
         global_context = {k: v for k, v in plan.items() if k != 'episodes'}
-        for offset in range(0, len(plan['episodes']), 3):
+        for offset in range(0, len(plan['episodes']) if not contract_error else 0, 3):
             group = plan['episodes'][offset:offset+3]
             assessment = call(p, config, 'story_critic', f'drama-plan-review-{cycle}-{attempt}-{offset}',
                 '你是独立全剧审稿。结合全剧主线审核本组分集的因果、与前组结尾的连续性、原文忠实度、人物一致性、目标时长和可制作性。'
-                '只将会破坏目标的实际问题列为问题；passed=true时issues必须为空。',
-                {'world': global_context, 'episodes': group, 'previous': plan['episodes'][max(0, offset-1):offset],
+                'episode_seconds/seconds是每集时长，total_seconds是全剧时长，不得把多集内容压进单集预算。'
+                'depends_on只表示需要前集实际制作产物的依赖；单纯剧情连续不要求填写。'
+                '前集结尾与后集开场状态一致是正常承接，不能仅凭状态相同判重复；应检查本集剧情是否有新进展。'
+                'world.storyline描述全剧，不能擅自要求第一集演完全剧主线。当前稿是大纲，不能仅因未展开成完整动作或对白而否定。'
+                '只将有当前稿件依据且会破坏用户目标的实际问题列为阻断问题，避免以推测、措辞偏好或额外设定反复返修；passed=true时issues必须为空。',
+                {**requirements, 'world': global_context, 'episodes': group, 'previous': plan['episodes'][max(0, offset-1):offset],
                  'brief': p['brief'], 'seconds': p['duration_seconds'],
                  'source_excerpt': source_excerpt(source, group[0]['number'], p['episode_count'])}, REVIEW, 3000)
             if not assessment['passed'] and not assessment['issues']: assessment['issues'] = ['该组审核未通过']
             issues.extend(assessment['issues'])
             groups.append({'episodes': [e['number'] for e in group], 'passed': assessment['passed'] and not assessment['issues']})
-        review = {'passed': not issues, 'issues': issues[:30], 'groups': groups}
+        review = {'passed': not issues, 'issues': issues[:30], 'groups': groups, 'candidate_sha256': fingerprint(plan)}
+        if contract_error:
+            review.update(source='contract', repair_targets=contract_error.repair_targets)
         exhausted = not review['passed'] and attempt == MAX_ATTEMPTS
         phase = 'approved' if review['passed'] else 'exhausted' if exhausted else 'returned'
         history = copy.deepcopy(p.get('plan_history', []))
-        history.append({'cycle': cycle, 'attempt': attempt, 'at': store.now(),
+        returned_to = list(dict.fromkeys(t['role'] for t in review.get('repair_targets', []))) or ['story_editor', 'screenwriter']
+        history.append({'cycle': cycle, 'attempt': attempt, 'at': store.now(), 'reused': reused,
             'draft_plan': copy.deepcopy(plan), 'review': copy.deepcopy(review),
-            'returned_to': [] if review['passed'] or exhausted else ['story_editor', 'screenwriter'], 'phase': phase})
+            'returned_to': [] if review['passed'] or exhausted else returned_to, 'phase': phase})
         store.update(pid, {'draft_plan': plan, 'plan_review': review, 'plan_attempt': attempt,
             'plan_history': history, 'plan_phase': phase, 'plan_max_attempts': MAX_ATTEMPTS,
-            'plan_returned_to': [] if review['passed'] or exhausted else ['story_editor', 'screenwriter'],
+            'plan_returned_to': [] if review['passed'] or exhausted else returned_to,
             'status': 'awaiting_plan' if review['passed'] else 'creating',
             'stage': 'plan_confirmation' if review['passed'] else 'plan_repair',
             'message': '规划审核通过，等待用户确认' if review['passed'] else
