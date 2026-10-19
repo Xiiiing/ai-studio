@@ -211,6 +211,10 @@ test("horizontal project navigation reaches all ten pages on mobile", async ({
       page.locator(".project-more").getByRole("button"),
     ).toHaveAttribute("aria-expanded", "false");
     await expect(page.locator("main .loading")).toHaveCount(0);
+    if (["team", "prompts", "generation", "agent", "costs"].includes(tab))
+      await expect(
+        page.locator(".project-more").getByRole("button"),
+      ).toBeFocused();
   }
 });
 
@@ -412,7 +416,11 @@ for (const theme of ["light", "dark"])
       ].flatMap((selector) => {
         const element = document.querySelector(selector);
         if (!element || element.matches(":disabled")) return [];
-        let background = element;
+        let background = element.matches(".nav-item.active")
+          ? element
+              .closest("[data-selection-group]")
+              .querySelector(".selection-marker") || element
+          : element;
         while (
           background.parentElement &&
           getComputedStyle(background).backgroundColor === "rgba(0, 0, 0, 0)"

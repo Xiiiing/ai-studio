@@ -6,7 +6,13 @@ import {
   type HTMLAttributes,
   type ReactNode,
 } from "react";
-import { motion, useReducedMotion } from "motion/react";
+import {
+  motion,
+  useMotionValue,
+  useReducedMotion,
+  useTransform,
+  useVelocity,
+} from "motion/react";
 import "./styles/selection.css";
 
 type Box = { x: number; y: number; width: number; height: number };
@@ -30,6 +36,18 @@ export function SelectionGroup({
     id = useId(),
     reduce = useReducedMotion();
   const [box, setBox] = useState<Box | null>(null);
+  const markerX = useMotionValue(0);
+  const speed = useVelocity(markerX);
+  // Stretch only the visual marker in proportion to its actual movement. This
+  // also works for equal-width choices and continuous, interrupted gestures.
+  const stretch = useTransform(speed, (v) =>
+    reduce ? 1 : 1 + Math.min(Math.abs(v) / 12000, 0.065),
+  );
+  const squash = useTransform(speed, (v) =>
+    reduce || variant === "underline"
+      ? 1
+      : 1 - Math.min(Math.abs(v) / 32000, 0.02),
+  );
   useLayoutEffect(() => {
     const group = root.current;
     if (!group) return;
@@ -130,6 +148,7 @@ export function SelectionGroup({
           layoutId={`selection-${id}`}
           className="selection-marker"
           initial={false}
+          style={{ x: markerX, scaleX: stretch, scaleY: squash }}
           animate={box}
           transition={
             reduce
