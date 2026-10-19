@@ -133,6 +133,34 @@ for (const width of [1440, 390])
         );
         expect(parseFloat(outline)).toBeGreaterThanOrEqual(2);
       }
+      // The selected marker must not change category size or position.
+      await page.evaluate(() => {
+        document.querySelector(".main-shell").scrollTop = 0;
+        scrollTo(0, 0);
+      });
+      const bounds = await page
+        .locator(".settings-category")
+        .evaluateAll((nodes) =>
+          nodes.map((el) => ({
+            y: el.getBoundingClientRect().y,
+            height: el.getBoundingClientRect().height,
+          })),
+        );
+      await page
+        .getByRole("button", { name: "模型与服务", exact: true })
+        .click();
+      await expect(page.locator(".model-service-card").first()).toBeVisible();
+      expect(
+        await page
+          .locator(".settings-category")
+          .evaluateAll((nodes) =>
+            nodes.map((el) => ({
+              y: el.getBoundingClientRect().y,
+              height: el.getBoundingClientRect().height,
+            })),
+          ),
+      ).toEqual(bounds);
+      await page.getByRole("button", { name: "外观显示", exact: true }).click();
       await page
         .getByRole("heading", { name: "系统设置", exact: true })
         .click();
