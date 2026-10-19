@@ -36,7 +36,7 @@ def _approved_facts(context):
     shot = context.get('shot', {})
     requirements = shot.get('approved_reference_requirements')
     if requirements:
-        sources = {key: requirements[key] for key in ('entity', 'related_known_props', 'visual_rules', 'purpose')
+        sources = {key: requirements[key] for key in ('entity', 'related_known_props', 'visual_rules', 'purpose', 'production_format', 'creative_contract')
                    if key in requirements}
     else:
         # Legacy reference targets still carry their original approved prompt.
