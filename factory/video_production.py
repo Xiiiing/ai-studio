@@ -21,6 +21,14 @@ class VideoProductionMixin:
         return target["kind"] == "video" and self.video_connection.get("provider") == "minimax"
 
     def _guard_remote_submissions(self, target):
+        # GPU-service journals can still say "running" after their remote job
+        # finished. Reconcile identity, terminal state and accounting first;
+        # the legacy Comfy fence below must not preempt that GET-only recovery.
+        if self.config.get("gpu_service"):
+            from .gpu_client import guard_remote_submissions
+            guard_remote_submissions(self.config, target["folder"], self.budget, self.control,
+                                     event_callback=lambda event: self.emit("remote_gpu", remote_gpu_execution=event),
+                                     current_signature=target["signature"])
         for path in target["folder"].glob("take_*/submission.json"):
             attempt=path.parent/"attempt.json"
             if attempt.exists() and read_json(attempt).get("source_signature") != target["signature"] and not (path.parent/"result.json").exists():
@@ -28,11 +36,6 @@ class VideoProductionMixin:
                 history=read_json(path.parent/"history.json") if (path.parent/"history.json").exists() else {}
                 if state.get("state") not in {"failed", "completed"} and history.get("status",{}).get("status_str") != "error" and not (path.parent/"submission_error.json").exists():
                     raise ProductionNeedsDecision("旧 ComfyUI 请求尚未确认完成，不能用新配置绕过恢复", "unresolved_submission")
-        if self.config.get("gpu_service"):
-            from .gpu_client import guard_remote_submissions
-            guard_remote_submissions(self.config, target["folder"], self.budget, self.control,
-                                     event_callback=lambda event: self.emit("remote_gpu", remote_gpu_execution=event),
-                                     current_signature=target["signature"])
         if target["kind"] != "video":
             return
         for path in sorted(target["folder"].glob("take_*/remote_task.json")):
