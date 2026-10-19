@@ -243,7 +243,8 @@ def _review_expectations(shot):
     fields = ("id", "seconds", "dramatic_beat", "action", "location", "prompt",
               "motion_prompt", "camera_motion", "reference_group", "continuity",
               "lip_sync", "delivery_method", "characters", "character_states", "asset_references",
-              "review_purpose", "visual_direction", "material_constraints", "scene_id", "composition_id")
+              "review_purpose", "visual_direction", "material_constraints", "scene_id", "composition_id",
+              "approved_reference_requirements")
     expected = {key: shot[key] for key in fields if key in shot}
     if isinstance(shot.get("dialogue"), list):
         expected["dialogue"] = [
@@ -408,6 +409,18 @@ def review_media(project, shot, path, references, config=None, *, output_dir=Non
                            "不得为了表达动作未兑现而把已观察到的人物运动误标为camera_only，不能用无关背景漂移替代批准动作。"
                            "motion_alignment的证据须写明实际样本时间和可见变化；无法确定时填uncertain，"
                            "不能凭文件是视频或少量姿态变化推断批准动作全过程合格。"))
+    reference_purpose = shot.get("review_purpose") in {
+        "character_reference", "scene_reference", "prop_reference", "composition_reference"}
+    if reference_purpose and not is_video:
+        context["任务"] = (
+            "本次审核静态参考素材，具体用途见shot.review_purpose；不是故事镜头、动作首帧或终态。"
+            "仅以shot.approved_reference_requirements中的原批准事实及指定画风为验收依据；"
+            "模型编译出的图像提示词不是新增剧情或新的事实授权。角色参考检查姓名所对应的身份、默认衣装和明确必需的随身装备；"
+            "环境参考检查批准布局且不要求有人，道具参考检查该物本身形状材质；组合参考保留全部已提供实体。"
+            "不能要求参考图表演故事动作；缺少可见必需物、错道具、身份错误或媒介不符仍独立阻断。")
+        context["approved_sequence"] = []
+        context.pop("keyframe_rule", None)
+        context["sequence_rule"] = "参考图用途独立于剧情时序，不把后续镜头动作或终态作为参考素材要求。"
     content=[{"type":"text","text":json.dumps(context,ensure_ascii=False)}]
     review_references = (references or []) if shot.get("material_constraints") else (references or [])[:4]
     for index, reference in enumerate(review_references):
@@ -415,6 +428,17 @@ def review_media(project, shot, path, references, config=None, *, output_dir=Non
         if ref and Path(ref).is_file():
             content.extend([{"type":"text","text":f"角色或场景参考 {index+1}"},
                             {"type":"image_url","image_url":{"url":_image_url(ref)}}])
+    if reference_purpose:
+        supplied = sum(item.get("type") == "image_url" for item in content[1:])
+        context["reference_evidence"] = {"supplied_image_count": supplied,
+            "comparison_available": supplied > 0}
+        context["reference_evidence_rule"] = (
+            "只能与本次实际提供的参考图片对照。supplied_image_count=0时没有任何图片对照依据，"
+            "不得声称脸、服装、道具与某张参考图不一致，也不得根据想象中的原作形象判身份漂移。"
+            "没有对照图时根据原批准事实和候选像素检查身份描述、衣装、必需装备、布局和画风，"
+            "仍应指出实际可见的缺失或错误，不能用没有参照图放过错误道具。"
+            "有参照图时写明实际参考序号及具体可见差异；参考图中偶然持物不能覆盖批准实体要求。")
+        content[0]["text"] = json.dumps(context, ensure_ascii=False)
     reference_content = list(content[1:])
     sampling = {"policy":"single_image","timestamps":[0.0]}
     if is_video:
@@ -453,7 +477,7 @@ def review_media(project, shot, path, references, config=None, *, output_dir=Non
         from .temporal_review import verify_temporal
         result = verify_temporal(config, schema, context, reference_content,
                                  sampled, sampling, result, path, record)
-    elif contract and contract["motion"] == "generated_video" and shot.get("review_purpose") != "visual_direction_preview":
+    elif contract and contract["motion"] == "generated_video" and not reference_purpose and shot.get("review_purpose") != "visual_direction_preview":
         from .spatial_review import verify_spatial
         result = verify_spatial(config, schema, context, reference_content, result, path, record)
     temporal_pending = result.pop("_temporal_unavailable", False)
@@ -496,7 +520,7 @@ def review_media(project, shot, path, references, config=None, *, output_dir=Non
     selected_model = resolve_llm(config, "visual_critic", require_vision=True)
     result.update(evaluator="vlm_sampled_frames",model=selected_model["model"],
                   profile=selected_model["profile"],endpoint=selected_model.get("base_url"),
-                  sampled_frames=len(samples),reference_count=len(review_references), sampling=sampling,
+                  sampled_frames=len(samples),reference_count=supplied if reference_purpose else len(review_references), sampling=sampling,
                   temporal_scope="sampled_frames_only",human_reviewed=False,
                   project_id=project.get("id"),shot_id=shot.get("id"),config_revision=config_revision(config))
     return result

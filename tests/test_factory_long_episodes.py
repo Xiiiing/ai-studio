@@ -166,6 +166,7 @@ def test_reviewed_shared_character_is_pinned_reused_and_corruption_blocks(isolat
     from PIL import Image
     monkeypatch.setattr(drama_assets,'ROOT',isolated)
     monkeypatch.setattr(config,'production_config',lambda *args:{})
+    monkeypatch.setattr(drama_assets,'_compile_reference',lambda p,cfg,requirements,profile: (store.encoded(requirements), {'fixture':True}))
     p=ready()
     for e in p['episodes'][:2]: drama_runtime.setup_episode(store.get(e['id'],False))
     calls=[]
