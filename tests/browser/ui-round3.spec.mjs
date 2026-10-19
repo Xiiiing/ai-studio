@@ -214,7 +214,7 @@ for (const width of [320, 1440])
         await page.goto("/#view=models", { waitUntil: "domcontentloaded" });
         await expect(page.locator("h1")).toHaveCount(1);
         await expect(page.locator(".shared-page-header h1")).toHaveText(
-          "模型配置",
+          "系统设置",
         );
         await expect(page.locator(".topbar, .breadcrumb")).toHaveCount(0);
         await expect(await exposeTheme(page)).toBeEnabled();
@@ -238,7 +238,7 @@ for (const width of [320, 1440])
           await expect(page.locator(".service-card-grid")).toBeVisible();
         }
         await expect(page.locator(".shared-page-header h1")).toHaveText(
-          "模型配置",
+          "系统设置",
         );
       } finally {
         release();
