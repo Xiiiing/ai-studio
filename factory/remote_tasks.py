@@ -65,8 +65,11 @@ def settle_wait(project, timestamp=None):
     started = production.pop("remote_wait_started_at", None)
     if isinstance(started, (int, float)) and math.isfinite(started):
         elapsed = max(0.0, timestamp - started)
-        production["elapsed_seconds"] = round(float(production.get("elapsed_seconds", 0)) + elapsed, 3)
-        production["remote_wait_seconds"] = round(float(production.get("remote_wait_seconds", 0)) + elapsed, 3)
+        if (production.get("remote_wait") or {}).get("wait_kind") == "resources":
+            production["resource_wait_seconds"] = round(float(production.get("resource_wait_seconds", 0)) + elapsed, 3)
+        else:
+            production["elapsed_seconds"] = round(float(production.get("elapsed_seconds", 0)) + elapsed, 3)
+            production["remote_wait_seconds"] = round(float(production.get("remote_wait_seconds", 0)) + elapsed, 3)
     production.pop("next_poll_at", None)
 
 

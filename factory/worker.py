@@ -114,6 +114,9 @@ def _handle(job):
         return  # A completed/recovered claim is not permission to execute again.
     pid=job["project_id"]
     try:
+        from .production_resource_wait import before_execution
+        if before_execution(job):
+            return
         episode_job = job.get('kind') == 'workflow' and store.get(pid,False).get('record_kind') == 'episode'
         if job.get('kind') in {'drama_plan', 'drama_episode'} or episode_job:
             from .drama_runtime import run_plan, execute_episode

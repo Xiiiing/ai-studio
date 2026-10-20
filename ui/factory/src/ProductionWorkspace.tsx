@@ -378,11 +378,16 @@ export function ProductionWorkspace({
   const awaiting = episodes.filter(
     (episode) => episode.status === "awaiting_final",
   );
+  const waitingForResources =
+    state.status === "waiting_resources" &&
+    !p.pause_requested &&
+    p.status !== "paused";
   const issues = rows(state.attention);
-  const blockedEpisodes = episodes.filter((episode) =>
-    ["blocked", "failed", "paused", "waiting_dependency"].includes(
-      episode.status,
-    ),
+  const blockedEpisodes = (waitingForResources ? [] : episodes).filter(
+    (episode) =>
+      ["blocked", "failed", "paused", "waiting_dependency"].includes(
+        episode.status,
+      ),
   );
   const paused =
     !!p.pause_requested || state.status === "paused" || p.status === "paused";
@@ -397,11 +402,12 @@ export function ProductionWorkspace({
       ),
     );
   const hasAttention =
-    issues.length > 0 ||
-    !!p.error ||
-    planNeedsAttention ||
-    blockedEpisodes.length > 0 ||
-    awaiting.length > 0;
+    !waitingForResources &&
+    (issues.length > 0 ||
+      !!p.error ||
+      planNeedsAttention ||
+      blockedEpisodes.length > 0 ||
+      awaiting.length > 0);
   const completed = episodes.filter((episode) =>
     ["awaiting_final", "approved"].includes(episode.status),
   ).length;
@@ -437,6 +443,11 @@ export function ProductionWorkspace({
               ? `已授权${targetNumbers.length ? `第 ${targetNumbers.join("、")} 集` : "指定范围"}。AI 完成规划、剧本、素材与质检，成片由你验收。`
               : "保留已有成果和执行方式。开启后，AI 接续授权范围内尚未完成的工作。"}
           </p>
+          {waitingForResources && (
+            <small>
+              当前等待制作资源，不会提交新的生成任务。无需点击继续，资源恢复后系统自动接续已有进度；等待期间仍可暂停或取消。
+            </small>
+          )}
           {automated && autonomousRepairV2 && (
             <small>
               自主返修 v2 已启用：原 GPU 与时限额度内至多 2
@@ -740,7 +751,13 @@ export function ProductionWorkspace({
             <span className="production-stage-number">{index + 1}</span>
             <span>
               <strong>{entry.label}</strong>
-              <small>{statusLabel(entry.status)}</small>
+              <small>
+                {statusLabel(
+                  waitingForResources && entry.id === active
+                    ? "waiting_resources"
+                    : entry.status,
+                )}
+              </small>
             </span>
           </button>
         ))}
@@ -801,11 +818,21 @@ export function ProductionWorkspace({
                     <strong>
                       {episode.title || `第 ${episode.episode_number} 集`}
                     </strong>
-                    <Badge status={episode.status} />
+                    <Badge
+                      status={
+                        waitingForResources &&
+                        episode.status === "waiting_remote"
+                          ? "waiting_resources"
+                          : episode.status
+                      }
+                    />
                   </header>
                   <p>
                     {episode.outline?.synopsis ||
-                      episode.error ||
+                      (waitingForResources &&
+                      episode.status === "waiting_remote"
+                        ? state.reason
+                        : episode.error) ||
                       statusLabel(episode.status)}
                   </p>
                   {episode.delivery && (
@@ -889,7 +916,11 @@ export function ProductionWorkspace({
               <strong>{task.title}</strong>
               <p>
                 {roleName(task.role || "orchestrator")} ·{" "}
-                {statusLabel(task.status)}
+                {statusLabel(
+                  waitingForResources && task.status === "running"
+                    ? "waiting_resources"
+                    : task.status,
+                )}
               </p>
               {task.model && <small>{task.model}</small>}
               {(task.finished_at || task.generated_at || task.started_at) && (

@@ -679,3 +679,63 @@ it("does not turn a v1 continue operation into an implicit upgrade", async () =>
   await userEvent.click(screen.getByRole("button", { name: "继续制作" }));
   expect(onOperation.mock.calls).toEqual([["actions", { action: "resume" }]]);
 });
+
+it.each([false, true])(
+  "shows durable resource waiting without reviving an old stop or offering continue while busy=%s",
+  async (busy) => {
+    const onOperation = vi.fn();
+    render(
+      <ProductionWorkspace
+        busy={busy}
+        project={project({
+          status: "producing",
+          error: "旧返修停止，保留为历史证据",
+          pause_requested: false,
+          automation_state: {
+            status: "waiting_resources",
+            stage: "production",
+            reason: "等待 Wkp 制作资源，恢复后系统自动继续。",
+            attention: [],
+            recovery: { reason: "model_resources_unavailable" },
+          },
+          episodes: [
+            {
+              id: "episode-1",
+              episode_number: 1,
+              status: "waiting_remote",
+              progress: 42,
+              production: { recovery: { status: "stopped" } },
+              error: "旧视频尝试用尽",
+              needs_decision: { code: "retry_limit" },
+            },
+          ],
+        })}
+        onOperation={onOperation}
+        onReview={vi.fn()}
+        onTab={vi.fn()}
+      />,
+    );
+    const region = screen.getByRole("region", { name: "连续制作状态" });
+    expect(
+      within(region).getByRole("heading", {
+        name: "等待 Wkp 制作资源，恢复后系统自动继续。",
+      }),
+    ).toBeVisible();
+    expect(within(region).getByText(/无需点击继续/)).toBeVisible();
+    expect(
+      screen.queryByText("旧返修停止，保留为历史证据"),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("旧视频尝试用尽")).not.toBeInTheDocument();
+    expect(screen.queryByText("云端生成中")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /继续制作|继续此集/ }),
+    ).not.toBeInTheDocument();
+    const pause = within(region).getByRole("button", { name: "暂停制作" });
+    if (busy) expect(pause).toBeDisabled();
+    else expect(pause).toBeEnabled();
+    await userEvent.click(pause);
+    expect(onOperation.mock.calls).toEqual(
+      busy ? [] : [["actions", { action: "pause" }]],
+    );
+  },
+);

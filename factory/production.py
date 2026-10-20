@@ -485,7 +485,11 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
         self.checkpoint(payload)
 
     def _resource_event(self, event):
-        self.production["resource_wait"] = copy.deepcopy(event)
+        current = self.production.get('resource_wait') or {}
+        if current.get('enabled') is True and current.get('authorized_by') == 'producer':
+            current['scheduler_event'] = copy.deepcopy(event)
+        else:
+            self.production["resource_wait"] = copy.deepcopy(event)
         if event["status"] in ("checking", "waiting"):
             self.production.setdefault("resource_resume_phase", self.production.get("phase", "production"))
             self.emit("waiting_resources")

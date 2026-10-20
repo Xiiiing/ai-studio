@@ -225,6 +225,11 @@ def state(p, episodes, *, db=None):
             'stage': 'production', 'reason': attention[0]['message'], 'attention': attention}
     if db is not None:
         for episode in selected:
+            resource_wait = (episode.get('production') or {}).get('resource_wait') or {}
+            if resource_wait.get('enabled') and resource_wait.get('status') == 'waiting' and episode['status'] in {'queued', 'waiting_remote', 'producing'}:
+                return {**result, 'status': 'waiting_resources', 'stage': 'production',
+                    'reason': resource_wait.get('message') or '等待制作资源，恢复后系统自动继续。',
+                    'recovery': copy.deepcopy(resource_wait)}
             waiting = (episode.get('production') or {}).get('review_transport_recovery') or {}
             if episode['status'] == 'waiting_remote' and waiting.get('status') == 'waiting':
                 return {**result, 'status': 'reviewing', 'stage': 'production',

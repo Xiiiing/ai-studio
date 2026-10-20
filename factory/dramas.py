@@ -498,6 +498,49 @@ def settle_execution(pid, job):
         dispatch(db, root)
 
 
+def _wait_for_resources(db, drama, request_id):
+    """Explicitly queue the authorized unfinished work behind read-only checks."""
+    automation = drama.get('automation') or {}
+    if not automation.get('enabled') or drama['status'] == 'cancelled':
+        raise ValueError('资源等待需要已有连续制作授权且项目未取消')
+    episodes = [store._read(db, eid) for eid in drama.get('episodes', [])]
+    selected = [e for e in episodes if e['episode_number'] in automation['episode_numbers']
+                and e['status'] not in {'approved', 'awaiting_final', 'cancelled', 'draft'}]
+    units = [store._read(db, uid) for e in selected for uid in e.get('unit_ids', [])]
+    if not selected:
+        raise ValueError('没有可等待制作资源的已授权剧集')
+    prior = automation.get('resource_wait') or {}
+    if (prior.get('enabled') and not drama.get('pause_requested') and not automation.get('suspended')
+            and any(db.execute("SELECT 1 FROM jobs WHERE project_id=? AND status IN ('queued','running','waiting_remote')",
+                               (e['id'],)).fetchone() for e in selected)):
+        return
+    for record in [drama, *selected, *units]:
+        if db.execute("SELECT 1 FROM jobs WHERE project_id=? AND status IN ('queued','running','waiting_remote')",
+                      (record['id'],)).fetchone():
+            raise ValueError('请等待当前任务到达安全边界，资源等待不会中断或重投模型')
+        if (record.get('production') or {}).get('active_gpu_leases', 0):
+            raise ValueError('请先对账现有 GPU 执行，资源等待不会中断或重投模型')
+        from .production_execution import _guard_remote_evidence
+        _guard_remote_evidence(db, record)
+    marker = {'enabled': True, 'status': 'waiting', 'reason': 'model_resources_unavailable',
+        'message': '等待 Wkp 制作资源，恢复后系统自动继续。', 'poll_seconds': 300,
+        'authorized_by': 'producer', 'authorization_id': request_id, 'authorized_at': store.now()}
+    for episode in selected:
+        episode.setdefault('production', {})['resource_wait'] = copy.deepcopy(marker)
+        episode.update(status='queued', pause_requested=False, error=None, needs_decision=None)
+        store._write(db, episode)
+    for unit in units:
+        if unit['status'] in {'unit_ready', 'cancelled'}:
+            continue
+        unit.setdefault('production', {})['resource_wait'] = copy.deepcopy(marker)
+        unit.update(status='queued', pause_requested=False, error=None, needs_decision=None)
+        store._write(db, unit)
+    automation.update(resource_wait=copy.deepcopy(marker), suspended=False)
+    drama.update(status='producing', pause_requested=False, error=None, needs_decision=None)
+    store._event(db, drama['id'], '已授权等待制作资源；系统只读预检并自动恢复，保留原预算、用量和素材，不停用其他模型任务。',
+                 'production_resource_wait_authorized', marker)
+
+
 def control(pid, payload):
     allowed = {'expected_revision', 'expected_episode_revision', 'request_id', 'action', 'episode_id', 'batch_id', 'feedback', 'unit_id', 'shot_ids', 'automation'}
     if set(payload) - allowed: raise ValueError('控制请求包含未知字段')
@@ -508,6 +551,14 @@ def control(pid, payload):
         if saved: return snapshot(pid, db=db)
         cas(p, payload)
         action = payload.get('action')
+        if action == 'wait_for_resources':
+            if set(payload) - {'action', 'request_id', 'expected_revision'}:
+                raise ValueError('资源等待请求包含未知字段')
+            _wait_for_resources(db, p, key)
+            p['operation_requests'][key] = {'signature': signature}
+            store._write(db, p)
+            dispatch(db, p)
+            return snapshot(pid, db=db)
         if action == 'enable_autonomous_repair':
             if set(payload) - {'action', 'request_id', 'expected_revision'}:
                 raise ValueError('执行版本应用请求包含未知字段')

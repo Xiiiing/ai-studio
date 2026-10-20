@@ -254,3 +254,130 @@ for (const previousVersion of [null, "ai-studio.production-recovery.v1"])
         }
       });
     }
+
+for (const width of [1440, 390])
+  for (const theme of ["light", "dark"]) {
+    test(`resource wait is automatic and retains pause and cancel ${width} ${theme}`, async ({
+      page,
+      request,
+    }) => {
+      await request.post("/__test/reset");
+      await page.setViewportSize({ width, height: 1000 });
+      await page.emulateMedia({ colorScheme: theme, reducedMotion: "reduce" });
+      await page.addInitScript(
+        (t) => localStorage.setItem("studio.theme", t),
+        theme,
+      );
+      const drama = fixture("ai-studio.production-recovery.v2");
+      drama.status = "producing";
+      drama.pause_requested = false;
+      drama.automation.suspended = false;
+      drama.error = "旧返修停止，保留为历史证据";
+      drama.episodes[0].status = "waiting_remote";
+      drama.automation_state = {
+        status: "waiting_resources",
+        stage: "production",
+        reason: "等待 Wkp 制作资源，恢复后系统自动继续。",
+        episode_numbers: [1, 2],
+        attention: [],
+        recovery: {
+          reason: "model_resources_unavailable",
+          next_poll_at: Date.now() / 1000 + 300,
+        },
+      };
+      const budget = structuredClone(drama.episodes[0].budget),
+        writes = [],
+        mutations = [];
+      page.on("request", (req) => {
+        if (req.url().includes("/api/factory/") && req.method() !== "GET")
+          mutations.push(req.postDataJSON());
+      });
+      await page.route(`**/api/factory/projects/${id}/workspace`, (route) =>
+        route.fulfill({
+          json: {
+            project: { id, title: drama.title, record_kind: "drama" },
+            revision: drama.revision,
+            operator: {},
+            workflow: {},
+          },
+        }),
+      );
+      await page.route(`**/api/factory/dramas/${id}**`, async (route) => {
+        if (route.request().method() === "POST") {
+          const body = route.request().postDataJSON();
+          writes.push(body);
+          expect(body.expected_revision).toBe(drama.revision);
+          drama.revision++;
+          if (body.action === "pause") {
+            drama.status = "paused";
+            drama.pause_requested = true;
+            drama.automation.suspended = true;
+            drama.episodes[0].status = "paused";
+            drama.automation_state = {
+              status: "paused",
+              reason: "制作已暂停",
+              episode_numbers: [1, 2],
+              attention: [],
+            };
+          } else if (body.action === "cancel") {
+            expect(body.episode_id).toBe(drama.episodes[0].id);
+            drama.episodes[0].status = "cancelled";
+          } else
+            throw new Error(
+              `Unexpected write while waiting for resources: ${body.action}`,
+            );
+        }
+        await route.fulfill({ json: drama });
+      });
+      await page.goto(`/#project=${id}&tab=production`);
+      const command = page.getByRole("region", { name: "连续制作状态" });
+      await expect(
+        command.getByRole("heading", {
+          name: "等待 Wkp 制作资源，恢复后系统自动继续。",
+        }),
+      ).toBeVisible();
+      await expect(command).toContainText("无需点击继续");
+      await expect(command).toContainText("等待资源");
+      await expect(page.getByText("云端生成中", { exact: true })).toHaveCount(
+        0,
+      );
+      await expect(
+        page.getByText("旧返修停止，保留为历史证据", { exact: true }),
+      ).toHaveCount(0);
+      await expect(page.locator(".production-attention")).toHaveCount(0);
+      await expect(
+        command.getByRole("button", { name: "继续制作", exact: true }),
+      ).toHaveCount(0);
+      expect(mutations).toHaveLength(0);
+      await page.reload();
+      await expect(command).toContainText("无需点击继续");
+      expect(mutations).toHaveLength(0);
+      await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
+      expect(
+        await page.evaluate(
+          () => document.documentElement.scrollWidth <= innerWidth + 1,
+        ),
+      ).toBe(true);
+      await mkdir("runtime/resource-wait-browser/screenshots", {
+        recursive: true,
+      });
+      await command.screenshot({
+        path: `runtime/resource-wait-browser/screenshots/wait-${width}-${theme}.png`,
+      });
+      await command
+        .getByRole("button", { name: "暂停制作", exact: true })
+        .click();
+      await expect(
+        command.getByRole("button", { name: "继续制作", exact: true }),
+      ).toBeEnabled();
+      expect(writes.map((v) => v.action)).toEqual(["pause"]);
+      await page.goto(`/#project=${id}&tab=episodes`);
+      await page.getByRole("button", { name: "取消此集", exact: true }).click();
+      await expect(
+        page.getByRole("button", { name: "取消此集", exact: true }),
+      ).toHaveCount(0);
+      expect(writes.map((v) => v.action)).toEqual(["pause", "cancel"]);
+      expect(drama.episodes[0].budget).toEqual(budget);
+      expect(mutations).toHaveLength(2);
+    });
+  }
