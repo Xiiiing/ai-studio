@@ -189,8 +189,9 @@ def snapshot(pid, *, db=None, details=True):
         members=[e for e in episodes if e['id'] in batch['episode_ids']]
         states={e['status'] for e in members}
         batch['status']=('approved' if states=={'approved'} else 'cancelled' if states=={'cancelled'}
-            else 'awaiting_final' if states <= {'approved','awaiting_final'} else 'producing' if states & {'queued','producing','scripting','waiting_remote','creating','visual_development'}
-            else 'blocked' if states & {'blocked','failed','waiting_dependency'} else 'paused' if 'paused' in states else 'queued')
+            else 'awaiting_final' if states <= {'approved','awaiting_final'} else 'blocked' if states & {'blocked','failed'}
+            else 'paused' if 'paused' in states else 'producing' if states & {'queued','producing','scripting','waiting_remote','creating','visual_development'}
+            else 'blocked' if 'waiting_dependency' in states else 'queued')
         batch['progress']=round(sum(e['progress'] for e in members)/max(1,len(members)))
         batch['spent_gpu_minutes']=round(sum(e['budget'].get('spent_gpu_minutes',0) for e in members),3)
         batch['authorized_gpu_minutes']=sum(e.get('total_authorized_gpu_minutes',e['budget']['gpu_minutes']) for e in members)
@@ -387,11 +388,15 @@ def dispatch(db, drama):
         return
 
 
-def after_episode(pid):
+def after_episode(pid, job=None):
     e = store.get(pid, False)
     if not e.get('drama_id'): return
     with store.connection() as db:
         db.execute('BEGIN IMMEDIATE')
+        if job:
+            owner = db.execute('SELECT lease FROM jobs WHERE id=?', (job['id'],)).fetchone()
+            if not owner or owner['lease'] != job.get('lease'):
+                return
         p = require(db, e['drama_id'])
         aggregate(db,p)
         store._write(db, p)
@@ -400,12 +405,97 @@ def after_episode(pid):
 
 def aggregate(db,drama):
     members=[store._read(db,eid) for eid in drama['episodes']]
+    for episode in members:
+        uid = episode.get('active_unit_id')
+        if (uid not in episode.get('unit_ids', []) or episode['status'] not in {'blocked','failed','paused','cancelled','waiting_remote'}
+                or db.execute("SELECT 1 FROM jobs WHERE project_id=? AND status='running'", (episode['id'],)).fetchone()):
+            continue
+        unit = store._read(db, uid)
+        if unit['status'] in {'unit_ready','cancelled'}:
+            continue
+        desired = {'status': 'blocked' if episode['status'] == 'failed' else episode['status']}
+        if desired['status'] == 'blocked':
+            desired.update(error=episode.get('error'), needs_decision=copy.deepcopy(episode.get('needs_decision')))
+        if desired['status'] in {'paused','cancelled'}:
+            desired['pause_requested'] = True
+        if any(unit.get(k) != v for k, v in desired.items()):
+            unit.update(desired)
+            store._write(db, unit)
     states={e['status'] for e in members}
     if not drama.get('pause_requested') and drama['status']!='cancelled':
-        drama['status']=('approved' if states=={'approved'} else 'producing' if states & {'queued','producing','scripting','waiting_remote','creating','visual_development'}
-            else 'awaiting_final' if 'awaiting_final' in states else 'blocked' if states & {'blocked','failed','waiting_dependency'} else 'ready')
+        drama['status']=('approved' if states=={'approved'} else 'blocked' if states & {'blocked','failed'} else 'paused' if 'paused' in states
+            else 'producing' if states & {'queued','producing','scripting','waiting_remote','creating','visual_development'}
+            else 'awaiting_final' if 'awaiting_final' in states
+            else 'blocked' if 'waiting_dependency' in states else 'ready')
+        failure = next((e for e in members if e['status'] in {'blocked','failed'}), None)
+        if failure:
+            drama['error'] = failure.get('error') or f'第{failure["episode_number"]}集制作已停止'
+            drama['needs_decision'] = {**copy.deepcopy(failure.get('needs_decision') or {}),
+                'episode_id': failure['id'], 'episode_number': failure['episode_number']}
+        elif drama['status'] in {'producing','awaiting_final','approved','ready'}:
+            drama.update(error=None, needs_decision=None)
     drama['budget']['spent_gpu_minutes']=round(sum(e['budget'].get('spent_gpu_minutes',0) for e in members),3)
     drama['progress']=round(sum(e['progress'] for e in members)/max(1,len(members)))
+
+
+def settle_execution(pid, job):
+    """Publish child outcomes only at an owned worker boundary, never on GET."""
+    with store.connection() as db:
+        db.execute('BEGIN IMMEDIATE')
+        owner = db.execute('SELECT lease FROM jobs WHERE id=?', (job['id'],)).fetchone()
+        if not owner or owner['lease'] != job.get('lease'):
+            return
+        current = store._read(db, pid)
+        episode = current if current.get('record_kind') == 'episode' else (
+            store._read(db, current['episode_id']) if current.get('record_kind') == 'scene_unit' else None)
+        if not episode or not episode.get('drama_id'):
+            return
+        root = require(db, episode['drama_id'])
+        review_wait = (current.get('production') or {}).get('review_transport_recovery')
+        if review_wait and review_wait.get('status') == 'waiting':
+            if current['status'] in {'blocked','failed'}:
+                review_wait.update(status='stopped', message='审核服务自动重试已停止，保留原素材和错误证据。')
+                store._write(db, current)
+            elif current['status'] in {'unit_ready','awaiting_final','approved'}:
+                review_wait.update(status='resolved', message='已保存素材复核完成，系统继续制作。')
+                store._write(db, current)
+        if current.get('record_kind') == 'episode':
+            uid = episode.get('active_unit_id')
+            if uid and uid in episode.get('unit_ids', []):
+                unit = store._read(db, uid)
+                if unit['status'] != 'unit_ready' and unit['status'] != 'cancelled':
+                    if episode['status'] in {'blocked','failed'}:
+                        unit.update(status='blocked', error=episode.get('error'),
+                            needs_decision=copy.deepcopy(episode.get('needs_decision')),
+                            message=episode.get('message'))
+                        waiting = (unit.get('production') or {}).get('review_transport_recovery')
+                        if waiting and waiting.get('status') == 'waiting':
+                            waiting.update(status='stopped', message='审核服务自动重试已停止，保留原素材和错误证据。')
+                        store._write(db, unit)
+                    elif episode['status'] in {'paused','cancelled','waiting_remote'}:
+                        unit.update(status=episode['status'], error=None)
+                        if episode['status'] in {'paused','cancelled'}:
+                            unit['pause_requested'] = True
+                        store._write(db, unit)
+        elif current['id'] in episode.get('unit_ids', []) and episode.get('active_unit_id') == current['id']:
+            if episode['status'] != 'cancelled':
+                if current['status'] in {'blocked','failed'} and not episode.get('pause_requested'):
+                    episode.update(status='blocked', error=current.get('error'),
+                        needs_decision={**copy.deepcopy(current.get('needs_decision') or {}), 'unit_id': current['id']})
+                elif current['status'] in {'paused','waiting_remote'}:
+                    episode.update(status=current['status'], error=None)
+                elif (current['status'] == 'unit_ready' and episode['status'] in {'blocked','waiting_remote','awaiting_final','approved'}
+                        and not episode.get('pause_requested') and not root.get('pause_requested')
+                        and not root.get('automation', {}).get('suspended')
+                        and not db.execute("SELECT 1 FROM jobs WHERE project_id=? AND status IN ('queued','running','waiting_remote')",
+                                           (episode['id'],)).fetchone()):
+                    episode.update(status='queued', pause_requested=False, error=None, needs_decision=None,
+                        production_revision=episode['production_revision']+1)
+                    store._enqueue(db, episode['id'], 'drama_episode')
+                store._write(db, episode)
+        aggregate(db, root)
+        store._write(db, root)
+        dispatch(db, root)
 
 
 def control(pid, payload):

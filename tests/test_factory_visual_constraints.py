@@ -76,8 +76,9 @@ def test_late_changed_pixels_prevent_certification(case):
 
 def test_network_failure_is_pending_and_old_execution_does_not_call(case):
     def failure(*a,**k):raise TimeoutError('inspection unavailable')
-    result=invoke(case,failure)
-    assert result['_constraint_unavailable']
+    with pytest.raises(TimeoutError):
+        invoke(case,failure)
+    assert (case[5] / 'explicit-constraints/evidence.json').exists()
     case[2]['production'].clear()
     assert invoke(case,lambda *a,**k:pytest.fail('Legacy execution is frozen')) is case[4]
 

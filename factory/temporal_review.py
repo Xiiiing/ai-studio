@@ -290,4 +290,10 @@ def verify_temporal(config, schema, context, reference_content, sampled, samplin
         result["temporal_verification"] = audit
         return result
     except Exception as exc:
-        return pending("continuous_review_unavailable:" + type(exc).__name__)
+        result = pending("continuous_review_unavailable:" + type(exc).__name__)
+        from .quality import is_transient_transport
+        if is_transient_transport(exc):
+            from studio.core import write_json
+            write_json(Path(record) / "continuous" / "transport_failure.json", result["temporal_verification"])
+            raise
+        return result

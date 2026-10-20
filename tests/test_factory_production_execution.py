@@ -183,3 +183,97 @@ def test_missing_optional_cloud_table_does_not_block_clean_legacy_project(isolat
     import sqlite3
     with sqlite3.connect(':memory:') as db:
         _guard_remote_evidence(db,{'id':'abcdef123456','production':{}})
+
+
+def test_v1_reading_never_implicitly_grants_new_attempts():
+    from factory.production_execution import VERSION, VERSION_V2, enabled, strategy_enabled, attempt_limit
+    old = {'max_attempts': 3, 'production_recovery': {'version': VERSION, 'enabled': True,
+           'max_asset_cycles': 2, 'max_project_cycles': 8, 'strategy_attempt_allowance': 200}}
+    before = copy.deepcopy(old)
+    assert enabled(old) and not strategy_enabled(old) and attempt_limit(old) == 3
+    assert old == before
+    new = {**old, 'production_recovery': copy.deepcopy(DEFAULT_POLICY)}
+    assert new['production_recovery']['version'] == VERSION_V2
+    assert enabled(new) and strategy_enabled(new) and attempt_limit(new) == 5
+    assert attempt_limit({**new, 'max_attempts': 5}) == 7
+    new['production_recovery']['enabled'] = False
+    assert not enabled(new) and not strategy_enabled(new) and attempt_limit(new) == 3
+
+
+@pytest.mark.parametrize('key,value', [
+    ('max_asset_cycles', 3), ('max_project_cycles', 9), ('strategy_attempt_allowance', 3),
+    ('strategy_attempt_allowance', True), ('strategy_attempt_allowance', -1),
+    ('strategy_attempt_allowance', 2.0), ('strategy_attempt_allowance', '2')])
+def test_strategy_allowance_cannot_exceed_immutable_safety_ceiling(key, value):
+    from factory.production_execution import attempt_limit
+    policy = {**DEFAULT_POLICY, key: value}
+    with pytest.raises(ValueError, match='额度'):
+        attempt_limit({'max_attempts': 3, 'production_recovery': policy})
+
+
+@pytest.mark.parametrize('base', [0, 6, True, 3.0, '3', None])
+def test_strategy_slots_cannot_expand_an_invalid_base_budget(base):
+    from factory.production_execution import attempt_limit
+    with pytest.raises(ValueError, match='原始'):
+        attempt_limit({'max_attempts': base, 'production_recovery': DEFAULT_POLICY})
+
+
+def test_explicit_v1_to_v2_upgrade_preserves_base_and_history_and_records_distinct_slots(isolated):
+    from factory.production_execution import VERSION, VERSION_V2, attempt_limit
+    p = legacy_run()
+    with store.connection() as db:
+        root = store._read(db, p['id'])
+        root['automation']['production_recovery'] = {'version': VERSION, 'enabled': True,
+                                                    'max_asset_cycles': 2, 'max_project_cycles': 8}
+        store._write(db, root)
+        for eid in root['episodes']:
+            episode = store._read(db, eid)
+            episode['execution_config']['production']['production_recovery'] = copy.deepcopy(root['automation']['production_recovery'])
+            episode['execution_config']['production']['max_attempts'] = 3
+            episode['budget']['max_attempts'] = 3
+            episode['production']['shots'] = {'S02': {'video': {'attempts': [
+                {'attempt': i, 'state': 'failed', 'source_signature': 'original'} for i in range(1, 4)]}}}
+            store._write(db, episode)
+    p = dramas.snapshot(p['id'])
+    before = {e['id']: store.get(e['id'], False) for e in p['episodes']}
+    upgraded = action(p, 'enable_autonomous_repair', key='v2-upgrade')
+    assert upgraded['automation']['production_recovery']['version'] == VERSION_V2
+    auth = upgraded['execution_policy_authorizations'][-1]
+    assert auth['strategy_attempt_allowance'] == 2
+    assert auth['historical_attempts_preserved'] and auth['base_max_attempts_preserved']
+    assert auth['strategy_attempt_scope'] == 'distinct_validated_strategies_within_existing_gpu_and_wall_budget'
+    for eid, old in before.items():
+        new = store.get(eid, False)
+        assert new['budget'] == old['budget']
+        assert new['production'] == old['production']
+        assert new['execution_config']['production']['max_attempts'] == 3
+        assert attempt_limit(new['execution_config']['production']) == 5
+    again = action(upgraded, 'enable_autonomous_repair', key='another-request')
+    assert len(again['execution_policy_authorizations']) == 1
+    for eid in before:
+        assert len(store.get(eid, False)['execution_config_changes']) == 1
+
+
+@pytest.mark.parametrize('tamper', ['change_policy', 'downgrade'])
+def test_repeated_upgrade_cannot_refresh_strategy_authorization(isolated, tamper):
+    from factory.production_execution import VERSION
+    p = action(legacy_run(), 'enable_autonomous_repair', key='first-policy')
+    with store.connection() as db:
+        root = store._read(db, p['id'])
+        if tamper == 'change_policy':
+            root['automation']['production_recovery']['strategy_attempt_allowance'] = 1
+        else:
+            root['automation']['production_recovery']['version'] = VERSION
+        store._write(db, root)
+    current = dramas.snapshot(p['id'])
+    with pytest.raises(ValueError, match='不能'):
+        action(current, 'enable_autonomous_repair', key='refresh-attempts')
+    assert len(dramas.snapshot(p['id'])['execution_policy_authorizations']) == 1
+
+
+def test_explicit_constraint_checks_accept_v2_without_modifying_frozen_config():
+    from factory.visual_constraints import enabled
+    config = {'production': {'production_recovery': copy.deepcopy(DEFAULT_POLICY)}}
+    before = copy.deepcopy(config)
+    assert enabled(config)
+    assert config == before

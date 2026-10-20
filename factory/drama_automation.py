@@ -221,15 +221,26 @@ def state(p, episodes, *, db=None):
     if selected and states <= FINAL:
         return {**result, 'status': 'awaiting_final', 'stage': 'final_review', 'reason': '成片已就绪，等待人工验收'}
     if attention:
-        return {**result, 'status': 'blocked', 'stage': 'production', 'reason': attention[0]['message'], 'attention': attention}
+        return {**result, 'status': 'paused' if all(item['code'] == 'episode_paused' for item in attention) else 'blocked',
+            'stage': 'production', 'reason': attention[0]['message'], 'attention': attention}
     if db is not None:
         for episode in selected:
+            waiting = (episode.get('production') or {}).get('review_transport_recovery') or {}
+            if episode['status'] == 'waiting_remote' and waiting.get('status') == 'waiting':
+                return {**result, 'status': 'reviewing', 'stage': 'production',
+                    'reason': waiting.get('message') or '审核服务暂时连接失败，系统将自动复核已保存素材',
+                    'recovery': copy.deepcopy(waiting)}
             if episode.get('active_unit_id'):
                 unit = store._read(db, episode['active_unit_id'])
                 repair = (unit.get('production') or {}).get('recovery') or {}
-                if repair.get('status') == 'repairing':
-                    return {**result, 'status': 'repairing', 'stage': 'production',
-                            'reason': f'AI 正在定向返修第{episode["episode_number"]}集的{repair.get("asset", "镜头")}，完成后自动复核并继续',
+                if unit['status'] != 'unit_ready' and (unit['status'] in {'blocked','failed'} or repair.get('status') == 'stopped'):
+                    reason = unit.get('error') or repair.get('message') or '当前制作单元已停止，原素材和问题证据已保留'
+                    return {**result, 'status': 'blocked', 'stage': 'production', 'reason': reason,
+                        'recovery': copy.deepcopy(repair), 'attention': [{'code': 'unit_blocked',
+                            'episode_number': episode['episode_number'], 'unit_id': unit['id'], 'message': reason}]}
+                if repair.get('status') in {'diagnosing','planning','handing_off','repairing','reviewing'}:
+                    return {**result, 'status': repair['status'], 'stage': 'production',
+                            'reason': repair.get('message') or f'AI 正在处理第{episode["episode_number"]}集的{repair.get("asset", "镜头")}，完成后自动复核并继续',
                             'recovery': copy.deepcopy(repair)}
     return {**result, 'status': 'producing', 'stage': 'production', 'reason': 'AI 正在连续制作所选剧集，成片将等待人工验收'}
 
@@ -269,6 +280,12 @@ def reconcile(db, p):
         changed = True
     if changed:
         store._write(db, p)
+    # Persist aggregation during scheduler/restart recovery, never during reads.
+    if p.get('episodes'):
+        previous = copy.deepcopy(p)
+        dramas.aggregate(db, p)
+        if p != previous:
+            store._write(db, p)
     dramas.dispatch(db, p)
 
 

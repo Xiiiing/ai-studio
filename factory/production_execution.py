@@ -10,16 +10,53 @@ from .schemas import fingerprint
 from .creative_evidence_io import read_json
 from studio import core
 
+# Keep the original name for old snapshots and callers. Reading v1 never grants
+# extra attempts: only a separately authorized v2 snapshot can do so.
 VERSION = 'ai-studio.production-recovery.v1'
-DEFAULT_POLICY = {'version': VERSION, 'enabled': True, 'max_asset_cycles': 2, 'max_project_cycles': 8}
+VERSION_V2 = 'ai-studio.production-recovery.v2'
+DEFAULT_POLICY = {'version': VERSION_V2, 'enabled': True, 'max_asset_cycles': 2,
+                  'max_project_cycles': 8, 'strategy_attempt_allowance': 2}
+
+
+def _validated_v2(policy):
+    if not isinstance(policy, dict) or policy.get('version') != VERSION_V2:
+        raise ValueError('自主返修策略版本无效')
+    for key, maximum in (('max_asset_cycles', 2), ('max_project_cycles', 8),
+                         ('strategy_attempt_allowance', 2)):
+        value = policy.get(key)
+        if type(value) is not int or not 1 <= value <= maximum:
+            raise ValueError('自主返修策略额度必须在已授权范围内')
+    return policy
+
+
+def strategy_enabled(configuration):
+    policy = configuration.get('production_recovery', {})
+    if not isinstance(policy, dict) or policy.get('enabled') is not True or policy.get('version') != VERSION_V2:
+        return False
+    _validated_v2(policy)
+    return True
 
 
 def enabled(configuration):
     policy = configuration.get('production_recovery', {})
-    return isinstance(policy, dict) and policy.get('enabled') is True and policy.get('version') == VERSION
+    if not isinstance(policy, dict) or policy.get('enabled') is not True:
+        return False
+    return policy.get('version') == VERSION or strategy_enabled(configuration)
+
+
+def attempt_limit(configuration):
+    """Total lifetime ceiling; v2 grants bounded strategy slots, not a reset."""
+    base = configuration.get('max_attempts', 3)
+    if type(base) is not int or not 1 <= base <= 5:
+        raise ValueError('原始制作尝试额度无效')
+    if strategy_enabled(configuration):
+        return base + configuration['production_recovery']['strategy_attempt_allowance']
+    return base
 
 
 def apply_configuration(configuration, policy):
+    if isinstance(policy, dict) and policy.get('version') == VERSION_V2:
+        _validated_v2(policy)
     result = copy.deepcopy(configuration)
     result.setdefault('production', {})['production_recovery'] = copy.deepcopy(policy)
     return result
@@ -132,9 +169,25 @@ def activate(db, drama, request_id):
             raise ValueError('请先对账现有远端请求，不能跨未知提交切换执行版本')
         _guard_remote_evidence(db, p)
     policy = copy.deepcopy(DEFAULT_POLICY)
+    current = drama['automation'].get('production_recovery') or {}
+    prior_v2 = [item for item in drama.get('execution_policy_authorizations', [])
+                if (item.get('policy') or {}).get('version') == VERSION_V2]
+    if current.get('version') == VERSION_V2:
+        if current != policy:
+            raise ValueError('自主返修版本已经授权，不能通过改配置刷新策略机会')
+        # A fresh request id is not a fresh authorization. No extra slots,
+        # snapshot changes, or policy events are created for an existing v2.
+        return
+    if prior_v2:
+        raise ValueError('自主返修版本已经授权，不能重复升级刷新策略机会')
     authorization = {'request_id': request_id, 'actor': 'producer', 'at': store.now(),
                      'policy': policy, 'scope': 'unfinished_authorized_episodes_and_units',
-                     'budget_and_attempt_limits_preserved': True}
+                     'budget_and_attempt_limits_preserved': True,
+                     'strategy_attempt_allowance': policy['strategy_attempt_allowance'],
+                     'strategy_attempt_scope': 'distinct_validated_strategies_within_existing_gpu_and_wall_budget',
+                     'historical_attempts_preserved': True,
+                     'base_max_attempts_preserved': True,
+                     'lifetime_attempt_ceiling': 'base_max_attempts_plus_strategy_attempt_allowance_max_7'}
     selected = set(drama['automation']['episode_numbers'])
     selected_episodes = [p for p in episodes if p['episode_number'] in selected]
     selected_units = {uid for p in selected_episodes for uid in p.get('unit_ids', [])}
@@ -150,5 +203,5 @@ def activate(db, drama, request_id):
             store._write(db, p)
     drama['automation']['production_recovery'] = policy
     drama.setdefault('execution_policy_authorizations', []).append(authorization)
-    store._event(db, drama['id'], '已应用系统自主返修版本；保留预算、累计费用、尝试历史和有效成果，等待恢复制作。',
+    store._event(db, drama['id'], '已应用系统自主返修 v2；原 GPU 和时限内增加至多 2 次不同策略机会，保留原次数上限与累计尝试、费用和有效成果，等待恢复制作。',
                  'execution_policy_applied', authorization)

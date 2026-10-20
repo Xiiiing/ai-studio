@@ -167,4 +167,8 @@ def verify_reference(config, schema, context, references, initial, path, record)
         write_json(folder / 'verification.json', audit)
         return result
     except Exception as exc:
-        return pending('reference_review_unavailable:' + type(exc).__name__)
+        result = pending('reference_review_unavailable:' + type(exc).__name__)
+        from .quality import is_transient_transport
+        if is_transient_transport(exc):
+            raise
+        return result

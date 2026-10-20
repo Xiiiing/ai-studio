@@ -355,6 +355,9 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
             raise ValueError("max_attempts must be between one and five")
         from .production_execution import enabled as recovery_enabled
         self.autonomous_recovery = recovery_enabled(self.config)
+        from .production_execution import strategy_enabled, attempt_limit
+        self.strategy_recovery = strategy_enabled(self.config)
+        self.attempt_ceiling = attempt_limit({**self.config, 'max_attempts': self.max_attempts})
         if self.autonomous_recovery and (not self.semantic_enabled or not callable(self.evaluator)):
             raise ProductionNeedsDecision('系统自主返修需要可用的独立画面审核；未新增生成', 'semantic_unavailable')
         self.mode = self.project.get("format", self.project.get("mode", "motion_comic"))
@@ -411,6 +414,9 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
         seen = set()
         for i, raw in enumerate(source_shots):
             shot = {**copy.deepcopy(current.get(raw.get("id"), {})), **copy.deepcopy(raw)}
+            if self.strategy_recovery:
+                from .production_handoffs import restore_media
+                shot.update(restore_media(self, raw, current.get(raw.get('id'), {})))
             shot["id"] = _safe_id(shot.get("id") or f"S{i + 1:02d}")
             if shot["id"] in seen:
                 raise ValueError("Duplicate shot ID")
@@ -469,6 +475,7 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
             self.production["phase"] = phase
         self.production.update(self.budget.snapshot())
         self.production.update({"format": self.mode, "max_attempts": self.max_attempts,
+                                "strategy_attempt_limit": self.attempt_ceiling,
                                 "engine": "cami_orchestrator_remote_gpu_v1" if self.config.get("gpu_service") else "local_autonomous_factory_v1",
                                 "active_workers_limit": 1,
                                 "semantic_enabled": self.semantic_enabled, "semantic_max_attempts": self.semantic_max_attempts})
@@ -540,6 +547,10 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                 "prompt": target["prompt"], "output": receipt}
 
     def _semantic_assessment(self, target, record, path):
+        if record.get('media_handoff'):
+            from .production_handoffs import load, advance
+            case = load(self, record['media_handoff'])
+            advance(self, case, 'reviewing', 'visual_critic', artifact={'path': str(path), 'sha256': sha256(path)})
         history = record.setdefault("semantic_attempts", [])
         expected = copy.deepcopy(target.get('shot') or target.get('review_context') or
                                  {'id': target['key'], 'prompt': target['prompt']})
@@ -913,11 +924,17 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                                    if path.parent.parent == target["folder"]],
              "resume_action": "review_existing_assets_only", "regeneration_allowed": False})
 
+    def _reject_upstream_media(self, target, receipt):
+        return receipt.get("sha256") in target.get("_rejected_media_sha256", ())
+
     def _unfinished_candidate(self, target):
         self._guard_remote_submissions(target)
         for record in reversed(self._attempts(target)):
             folder = target["folder"] / record["take"]
             result = folder / "result.json"
+            if self.strategy_recovery and record.get('state') == 'rendering' and record.get('prepared_only') is True and not (folder / 'submission.json').exists() and not result.exists():
+                target['resume_attempt'] = record
+                return None
             if (self.h3_automatic and target["kind"] == "video" and
                     (record.get("state") == "prompt_preparing" or
                      record.get("state") == "rendering" and record.get("h3_prompt") and
@@ -935,6 +952,8 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                 if reassess_failed and not _matching_source(media, target):
                     continue
                 _receipt_path(media)
+                if self._reject_upstream_media(target, media):
+                    continue
                 return record, media
             if uses_bound(self, target) and record.get("state") == "rendering":
                 target["resume_attempt"] = record
@@ -966,6 +985,9 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                     raise ProductionNeedsDecision("A previous GPU submission has no proven terminal result",
                                                   "unresolved_submission",
                                                   {"receipt": str((folder / "submission.json").relative_to(ROOT))})
+            elif self.strategy_recovery and record.get('state') == 'rendering':
+                raise ProductionNeedsDecision('已有生成缺少可核对的提交回执，未重复提交',
+                                              'unresolved_submission', {'asset': target['key'], 'take': record['take']})
             elif record.get("state") == "rendering" and self.config.get("gpu_service"):
                 # A pause before the main submission may leave an accepted
                 # repair-keyframe job. Re-enter the same take so its client can
@@ -974,25 +996,180 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                 return None
         return None
 
+    def _quota_attempts(self, target):
+        if not self.strategy_recovery:
+            return self._attempts(target)
+        lineage = (self.production.get('recovery_lineage') or {}).get(target['kind'] + ':' + target['key'], [])
+        result = []
+        for path in sorted(target['folder'].glob('take_*/attempt.json')):
+            record = read_json(path)
+            if (record.get('stage') == target['kind'] and
+                    (_matching_source(record, target) or record.get('source_signature') in lineage
+                     or record.get('production_strategy'))):
+                record['_file'] = str(path)
+                result.append(record)
+        return result
+
+    def _verify_frame_compatibility(self, case, target):
+        from . import production_strategy as strategy
+        from .production_recovery import _STRATEGY_SHOT_FIELDS
+        from .creative_evidence_io import digest
+        frame = _receipt_path(target['shot']['image'])
+        checksum = sha256(frame)
+        approved = {k: copy.deepcopy(target['shot'][k]) for k in _STRATEGY_SHOT_FIELDS if k in target['shot']}
+        model_config, models = strategy._models(self.config, 'video')
+        identity = {'case_id': case['id'], 'frame_sha256': checksum, 'approved_shot': approved,
+                    'models': models, 'protocol': 'same-frame-schema-after-upstream.v1'}
+        base = case['path'].parent / 'compatibility' / digest({'asset': target['key']})
+        checked_target = {**target, 'references': [frame]}
+        def check():
+            self.boundary()
+            if sha256(frame) != checksum or digest({k: copy.deepcopy(target['shot'][k]) for k in _STRATEGY_SHOT_FIELDS if k in target['shot']}) != digest(approved):
+                raise ProductionNeedsDecision('上游首帧或批准要求在复验期间变化', 'production_handoff_corrupt')
+        evidence = strategy._once(base, 'frame', identity,
+            lambda: strategy._observe(self.project, model_config, checked_target,
+                                       {'sha256': checksum}, base / 'vision'), check)
+        strategy._check_observation(evidence, target['shot'])
+        path = base / ('frame-' + digest(identity) + '.json')
+        return {**evidence, 'receipt_path': str(path), 'receipt_sha256': sha256(path)}
+
+    def _prepare_system_repair(self, target, previous=None):
+        """Execute upstream handoffs before acquiring the next media worker."""
+        if not self.strategy_recovery or target.get('_system_repair_context'):
+            return
+        previous = previous if previous is not None else self._quota_attempts(target)
+        previous = [r for r in previous if r.get('state') != 'prompt_preparing']
+        if not previous or len(previous) >= self.attempt_ceiling:
+            return
+        from .production_recovery import prepare_repair
+        from .production_handoffs import start, advance, role, upstream_receipt
+        self.boundary()
+        failed = previous[-1]
+        assessment = target.get('_upstream_assessment') or failed.get('qa') or {
+            'status': 'fail', 'issues': [{'code': 'generation', 'severity': 'blocking'}]}
+        def checked():
+            return {**target, 'first_frame_assessment': copy.deepcopy(target.get('_frame_observation_assessment') or
+                    (target.get('shot') or {}).get('image', {}).get('qa'))}
+        returned = (self.production.get('upstream_returns') or {}).get((target.get('shot') or {}).get('id')) if target['kind'] == 'video' else None
+        if returned:
+            from .production_handoffs import load
+            case = load(self, returned['case_id'])
+            shot = target['shot']
+            with role(self, case, 'handing_off', 'image_generator'):
+                missing = [r for r in self._shot_render_roles(shot) if r not in self.assets.get('characters', {})]
+                self._characters_and_images(roles=missing, shot_ids=[shot['id']], upstream_return=returned)
+            if shot['image']['sha256'] in returned['rejected_media_sha256']:
+                raise ProductionNeedsDecision('首帧返修仍为已拒绝的相同像素，未宣告上游修复成功', 'production_upstream_unchanged')
+            compatibility = self._verify_frame_compatibility(case, {**target, 'references': [_receipt_path(shot['image'])]})
+            refreshed = self._video_target(shot)
+            refreshed['first_frame_assessment'] = copy.deepcopy(shot['image'].get('qa'))
+            refreshed['first_frame_compatibility'] = compatibility
+            refreshed['upstream_resolution'] = upstream_receipt(self, case, refreshed, returned['operation'],
+                returned['previous_video_source_signature'])
+            refreshed['_frame_handoff_count'] = 1
+            target.clear(); target.update(refreshed)
+            self.production['upstream_returns'].pop(shot['id'], None)
+            self.emit('production_repair')
+            directed = prepare_repair(self.project, self.config, checked(), assessment, previous_attempt=failed, root=ROOT)
+            advance(self, case, 'resolved', 'visual_critic', artifact=refreshed['upstream_resolution'])
+            target['_system_repair_context'] = (directed, start(self, target, directed) if directed.get('id') else None)
+            return
+        directed = prepare_repair(self.project, self.config, checked(), assessment, previous_attempt=failed, root=ROOT)
+        if not directed.get('id'):
+            target['_system_repair_context'] = (directed, None)
+            return
+        case = start(self, target, directed)
+        if directed['action'] == 'request_upstream':
+            operations = directed.get('required_handoffs') or []
+            operation = operations[0] if operations else None
+            if operation in {'review_first_frame', 'revise_first_frame', 'revise_reference'} and target['kind'] == 'video' and target.get('shot'):
+                old_source = failed.get('source_signature') or target['signature']
+                shot = target['shot']
+                lineages = self.production.setdefault('recovery_lineage', {})
+                key = target['kind'] + ':' + target['key']
+                lineages[key] = list(dict.fromkeys([*lineages.get(key, []), old_source, target['signature']]))
+                from .production_recovery import _STRATEGY_SHOT_FIELDS
+                from .creative_evidence_io import digest
+                self.production.setdefault('upstream_contracts', {})[shot['id']] = digest({k: copy.deepcopy(shot[k]) for k in _STRATEGY_SHOT_FIELDS if k in shot})
+                # Persist the inherited quota before an upstream media write or
+                # model call can pause, crash or return a different frame.
+                self.emit('production_repair')
+                needs_pixels = operation != 'review_first_frame'
+                diagnosis = copy.deepcopy(target.get('_frame_observation_assessment') or shot['image'].get('qa') or {})
+                if operation == 'review_first_frame':
+                    from .production_handoffs import review_first_frame
+                    needs_pixels = review_first_frame(self, case, target) != 'pass'
+                    if not needs_pixels:
+                        try:
+                            self._verify_frame_compatibility(case, target)
+                        except ProductionNeedsDecision as exc:
+                            if exc.reason != 'generation_frame_conflict':
+                                raise
+                            needs_pixels = True
+                            diagnosis = {'scope': 'independent_first_frame_compatibility',
+                                         'observation': copy.deepcopy(exc.details.get('observation') or {})}
+                if needs_pixels:
+                    rejected = copy.deepcopy(shot['image'])
+                    returned = {
+                        'case_id': case['id'], 'operation': 'revise_first_frame',
+                        'previous_image_source_signature': rejected.get('source_signature'),
+                        'previous_video_source_signature': old_source,
+                        'rejected_media_sha256': [rejected['sha256']],
+                        'original_qa': copy.deepcopy(rejected.get('qa')),
+                        'assessment': {'status': 'fail', 'issues': [{
+                            'code': 'composition', 'severity': 'blocking',
+                            'detail': '真实首帧未满足批准的起始状态，按独立像素诊断修订。',
+                            'evidence': {'media_sha256': rejected['sha256'], 'diagnosis': diagnosis}}]}}
+                    self.production.setdefault('upstream_returns', {})[shot['id']] = returned
+                    self.emit('production_repair')
+                    with role(self, case, 'handing_off', 'image_generator'):
+                        prior_policy = self.review_policy
+                        try:
+                            self.review_policy = fingerprint({'policy': prior_policy, 'upstream_case': case['id']})
+                            missing = [r for r in self._shot_render_roles(shot) if r not in self.assets.get('characters', {})]
+                            self._characters_and_images(roles=missing, shot_ids=[shot['id']], upstream_return=returned)
+                        finally:
+                            self.review_policy = prior_policy
+                    if shot['image']['sha256'] in returned['rejected_media_sha256']:
+                        raise ProductionNeedsDecision('首帧返修仍为已拒绝的相同像素，未宣告上游修复成功', 'production_upstream_unchanged')
+                compatibility = self._verify_frame_compatibility(case, {**target, 'references': [_receipt_path(shot['image'])]})
+                refreshed = self._video_target(shot)
+                refreshed['first_frame_assessment'] = copy.deepcopy(shot['image'].get('qa'))
+                refreshed['first_frame_compatibility'] = compatibility
+                receipt = upstream_receipt(self, case, refreshed, operation, old_source)
+                refreshed['upstream_resolution'] = receipt
+                self.production.setdefault('upstream_returns', {}).pop(shot['id'], None)
+                if target.get('_upstream_assessment'):
+                    refreshed['_upstream_assessment'] = copy.deepcopy(target['_upstream_assessment'])
+                if target.get('_frame_handoff_count'):
+                    refreshed['_frame_handoff_count'] = target['_frame_handoff_count']
+                target.clear(); target.update(refreshed)
+                self.emit('production_repair')
+                directed = prepare_repair(self.project, self.config, checked(), assessment, previous_attempt=failed, root=ROOT)
+                if directed.get('id'):
+                    advance(self, case, 'resolved', 'visual_critic', artifact=receipt)
+                    case = start(self, target, directed)
+        target['_system_repair_context'] = (directed, case)
+
     def _new_attempt(self, target):
         if self._review_only_video(target):
             self._stop_existing_video(target)
         self._team_admit_target(target)
-        previous = [record for record in self._attempts(target) if record.get("state") != "prompt_preparing"]
-        if len(previous) >= self.max_attempts:
+        previous = [record for record in self._quota_attempts(target) if record.get("state") != "prompt_preparing"]
+        if len(previous) >= self.attempt_ceiling:
             if target.get("shot") is not None:
                 target["shot"]["status"] = "failed"
             self.emit("needs_attention")
             if self.autonomous_recovery:
                 self.production['recovery'] = {'status': 'stopped', 'reason': 'retry_limit',
                     'asset': target['key'], 'stage': target['kind'], 'attempts_used': len(previous),
-                    'attempts_limit': self.max_attempts, 'message': '本制作对象的授权尝试次数已用尽；保留结果与费用，系统已停止新增生成。'}
+                    'attempts_limit': self.attempt_ceiling, 'message': '本制作对象的授权尝试次数已用尽；保留结果与费用，系统已停止新增生成。'}
                 self.emit('needs_attention')
-            raise ProductionNeedsDecision(f"{target['key']} 的 {target['kind']} 已用完 {self.max_attempts} 次授权尝试；已有成果和费用已保留。需调整尝试次数授权，直接继续不会获得新额度。" if self.autonomous_recovery else "A production asset exhausted its authorized retry limit",
+            raise ProductionNeedsDecision(f"{target['key']} 的 {target['kind']} 已用完 {self.attempt_ceiling} 次授权尝试；已有成果和费用已保留。需调整尝试次数授权，直接继续不会获得新额度。" if self.autonomous_recovery else "A production asset exhausted its authorized retry limit",
                                           "retry_limit",
                                           {"asset": target["key"], "stage": target["kind"],
                                            "attempts": len(previous),
-                                           **({'attempts_used': len(previous), 'attempts_limit': self.max_attempts}
+                                           **({'attempts_used': len(previous), 'attempts_limit': self.attempt_ceiling}
                                               if self.autonomous_recovery else {})})
         indexes = [int(p.name[5:]) for p in target["folder"].glob("take_*")
                    if p.is_dir() and p.name[5:].isdigit()]
@@ -1003,21 +1180,31 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
             previous[-1].get("qa", {"issues": [{"code": "generation", "detail": previous[-1].get("error", "")}]}),
             target["kind"], number, target.get("shot"), target.get("reference_roles", ()),
             target_prompt=target["prompt"], review_context=target.get("review_context")) if previous else {}
-        directed = None
-        if previous and self.autonomous_recovery:
+        directed, case, compiled_strategy = None, None, None
+        if (previous or target.get("upstream_return")) and self.autonomous_recovery:
             from .production_recovery import prepare_repair, applicable
             self.boundary()
             checked_target = {**target, 'first_frame_assessment': copy.deepcopy(
                 (target.get('shot') or {}).get('image', {}).get('qa'))}
-            failed = previous[-1]
-            assessment = failed.get('qa') or {'status': 'fail', 'issues': [{'code': 'generation', 'severity': 'blocking'}]}
-            directed = prepare_repair(self.project, self.config, checked_target, assessment,
-                                      previous_attempt=failed, root=ROOT)
+            failed = previous[-1] if previous else {}
+            assessment = target.get('_upstream_assessment') or failed.get('qa') or {'status': 'fail', 'issues': [{'code': 'generation', 'severity': 'blocking'}]}
+            self._prepare_system_repair(target, previous)
+            context = target.pop('_system_repair_context', None)
+            checked_target = {**target, 'first_frame_assessment': copy.deepcopy(target.get('_frame_observation_assessment') or
+                            (target.get('shot') or {}).get('image', {}).get('qa'))}
+            if context:
+                directed, case = context
+            else:
+                directed = prepare_repair(self.project, self.config, checked_target, assessment,
+                                          previous_attempt=failed, root=ROOT)
+            if self.strategy_recovery and case is None and directed.get('id'):
+                from .production_handoffs import start
+                case = start(self, target, directed)
             self.boundary()
             state = {'status': 'repairing', 'asset': target['key'], 'stage': target['kind'],
                      'action': directed['action'], 'reason': directed['reason'],
                      'record_id': directed.get('id'), 'attempts_used': len(previous),
-                     'attempts_limit': self.max_attempts}
+                     'attempts_limit': self.attempt_ceiling}
             if directed['action'] in {'stop', 'request_upstream'}:
                 explanations = {
                     'approved_inputs_require_upstream_revision': '批准材料存在矛盾或模型能力不足，需要核对上游材料或执行能力。',
@@ -1032,6 +1219,9 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                 state.update(status='stopped', message=f"{target['key']} · {explanation} 已保留原结果及诊断证据（{directed['reason']}）。")
                 self.production['recovery'] = state
                 self.emit('needs_attention')
+                if case:
+                    from .production_handoffs import advance
+                    advance(self, case, 'stopped', directed.get('assigned_role', 'storyboard_director'), reason=state['message'])
                 raise ProductionNeedsDecision(state['message'], 'production_recovery_' + directed['action'], state)
             if not applicable(directed, self.project, self.config, checked_target, assessment,
                               previous_attempt=failed, root=ROOT):
@@ -1041,6 +1231,23 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                           recovery_record=directed['id'], recovery_action=directed['action'])
             self.production['recovery'] = state
             self.emit('production_repair')
+            if self.strategy_recovery:
+                from .production_strategy import compile_strategy
+                from .production_handoffs import role
+                try:
+                    with role(self, case, 'planning', 'storyboard_director'):
+                        compiled_strategy = compile_strategy(self.project, self.config, checked_target, directed, checkpoint=self.boundary, root=ROOT)
+                except ProductionNeedsDecision as exc:
+                    if exc.reason != 'generation_frame_conflict' or target.get('_frame_handoff_count', 0) >= 1:
+                        raise
+                    observation = exc.details.get('observation') or {}
+                    target['_frame_observation_assessment'] = {
+                        'status': 'fail' if observation.get('alignment') == 'conflict' and observation.get('conflicts') else 'unavailable',
+                        'scope': 'independent_first_frame_compatibility', 'observation': copy.deepcopy(observation)}
+                    target['_frame_handoff_count'] = 1
+                    target.pop('_system_repair_context', None)
+                    self._prepare_system_repair(target, previous)
+                    return self._new_attempt(target)
         seed = (int(fingerprint({"project": self.ident, "asset": target["key"]})[:8], 16)
                 + int(repair.get("seed_delta", 0)) + number - 1) % (2**31)
         retake = (target.get("shot") or {}).get("render_revisions", {}).get(target["kind"], 0) or self.project.get("team_character_revisions", {}).get(target.get("character"), 0)
@@ -1058,9 +1265,11 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                                  "steps": 4 if target["kind"] == "image" else 20},
                   "references": [media_receipt(p) for p in target["references"]],
                   "started_at": time.time()}
+        if self.strategy_recovery:
+            record['prepared_only'] = True
         if directed:
             record['production_recovery'] = {'record_id': directed['id'], 'action': directed['action'],
-                                             'attempts_used_before': len(previous), 'attempt_limit': self.max_attempts}
+                                             'attempts_used_before': len(previous), 'attempt_limit': self.attempt_ceiling}
         if target["kind"] == "video" and self.video_connection["provider"] == "comfyui_h3":
             from studio.h3 import frame_count, recipe
             selected = recipe(self.video_connection)
@@ -1089,7 +1298,14 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
             record["prompt"] = target["prompt"] + "\n" + (repair.get("prompt_prefix") or repair.get("prompt_suffix") or "")
             if target["kind"] == "video" and repair.get("regenerate_keyframe"):
                 raise ProductionNeedsDecision("视频返修要求更换首帧；请先定向返修并确认图片，再读取新首帧编译视频", "generation_frame_revision_required")
-        if self.h3_automatic and target["kind"] == "video" and not target.get("generation_plan"):
+        if compiled_strategy:
+            record.update(prompt=compiled_strategy['parameters']['prompt'], production_strategy=compiled_strategy,
+                          media_handoff=case['id'])
+            record['repair'].update(strategy=directed['strategy'], compiled_strategy_signature=compiled_strategy['signature'])
+            from .production_handoffs import advance
+            advance(self, case, 'repairing', 'video_generator' if target['kind'] == 'video' else 'image_generator',
+                    artifact={'strategy_signature': compiled_strategy['signature'], 'take': take})
+        if self.h3_automatic and target["kind"] == "video" and not target.get("generation_plan") and not compiled_strategy:
             record["state"] = "prompt_preparing"
             if repair.get("regenerate_keyframe"):
                 # A replacement first frame must exist before its prompt is
@@ -1140,7 +1356,15 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
             raise ProductionNeedsDecision("请先配置并启用图像连接", "image_unconfigured")
         pending = []
         for target in targets:
+            wait = self.production.get('review_transport_recovery') or {}
+            item = next((i for i in wait.get('pending', []) if i.get('asset') == target['key'] and i.get('stage') == target['kind']), None) if wait.get('status') == 'waiting' else None
+            if item:
+                target['review_candidate'] = self._transport_candidate(target, item)
+                pending.append(target)
+                continue
             selected = self._valid_selection(target)
+            if selected and self._reject_upstream_media(target, selected):
+                selected = None
             if selected and self._review_current(target, selected):
                 identity = self._team_target(target)
                 if identity:
@@ -1166,6 +1390,16 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                                        if row.get("state") == "failed"), None)
                         self._stop_existing_video(target, failed, (failed or {}).get("output"))
                     generate.append(target)
+            waiting = self.production.get('review_transport_recovery') or {}
+            if waiting.get('status') == 'waiting':
+                if generate:
+                    raise ProductionNeedsDecision('原媒体补审尚未完成，未新增生成', 'semantic_unavailable',
+                        {'pending': waiting.get('pending', []), 'resume_action': 'review_existing_assets_only'})
+            for target in generate:
+                if not target.get('resume_attempt'):
+                    self._prepare_system_repair(target)
+                    if self.strategy_recovery:
+                        target['resume_attempt'] = self._new_attempt(target)
             from .bound_media import uses_bound, render_targets
             bound = [target for target in generate if uses_bound(self, target)]
             if bound:
@@ -1246,6 +1480,9 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                             # budget; count both leased GPUs when bounding local work.
                             task_limit = (1800 if target["kind"] == "image" else
                                           21600 if h3 and self.video_connection.get("quality") == "production" else 7200)
+                            if self.strategy_recovery:
+                                record['prepared_only'] = False
+                                self._save_attempt(target, record)
                             path = worker.execute(graph, target["folder"] / record["take"], target["kind"],
                                                   timeout=self.budget.timeout(task_limit, 2 if h3 else 1))
                             receipt = read_json(path.parent / "result.json")
@@ -1270,6 +1507,9 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                 with self._team_review_unit(target, record, receipt) as review_token:
                     self.boundary()
                     path = _receipt_path(receipt)
+                    if self._reject_upstream_media(target, receipt):
+                        raise ProductionNeedsDecision('上游返修返回了已被独立像素证据拒绝的同一首帧，未宣告修复成功',
+                                                      'production_upstream_unchanged', {'asset': target['key'], 'sha256': receipt['sha256']})
                     shot = target.get("shot")
                     if shot is not None:
                         shot["status"] = "reviewing"
@@ -1306,6 +1546,9 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                                                  "cloud_diffusion_video" if self._remote_video(target) else "local_diffusion_video")}
                     if record.get("generation_plan"):
                         saved["generation_plan"] = copy.deepcopy(record["generation_plan"])
+                    if record.get('production_strategy'):
+                        saved['production_strategy'] = copy.deepcopy(record['production_strategy'])
+                        saved['media_handoff'] = record['media_handoff']
                     if target["kind"] == "video":
                         saved.update(motion_method="generated_video", diffusion_video=True)
                         if self.h3_automatic:
@@ -1344,6 +1587,9 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                                                         input_version=target["review_signature"])
                     selection_file = target["folder"] / "selected.json"
                     if qa["eligible_for_selection"]:
+                        if record.get('media_handoff'):
+                            from .production_handoffs import load, advance
+                            advance(self, load(self, record['media_handoff']), 'resolved', 'visual_critic', artifact=saved)
                         recovery = self.production.get('recovery') or {}
                         if recovery.get('asset') == target['key'] and recovery.get('stage') == target['kind']:
                             recovery.update(status='resolved', reviewed_take=record['take'],
@@ -1358,6 +1604,10 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                         self._attach(target, saved)
                         (target["folder"] / "pending_review.json").unlink(missing_ok=True)
                     else:
+                        if record.get('media_handoff') and qa['status'] == 'fail':
+                            from .production_handoffs import load, advance
+                            advance(self, load(self, record['media_handoff']), 'diagnosing', 'storyboard_director',
+                                    reason='独立复验未通过，保留失败证据并检查下一个不同方案。', artifact=saved)
                         # Retain the actual media and its receipt, but withdraw stale automatic approval.
                         if selection_file.exists() and read_json(selection_file).get("sha256") == saved["sha256"]:
                             selection_file.unlink()
@@ -1373,8 +1623,17 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                             write_json(target["folder"] / "pending_review.json", saved)
                             semantic_pending.append({"asset": target["key"], "stage": target["kind"],
                                                      "path": saved["path"], "take": saved["take"],
+                                                     "retryable_transport": semantic.get("retryable_transport") is True,
                                                      "detail": semantic.get("detail")})
                     self.emit(phase)
+                    waiting = self.production.get('review_transport_recovery') or {}
+                    if waiting.get('status') == 'waiting' and not awaiting_review:
+                        remaining = [p for p in waiting.get('pending', []) if not
+                                     (p.get('asset') == target['key'] and p.get('stage') == target['kind'])]
+                        waiting['pending'] = remaining
+                        if not remaining:
+                            waiting.update(status='resolved', message='原媒体补审已完成，系统继续制作。')
+                        self.production['review_transport_recovery'] = waiting
                     if qa["status"] == "fail" and self._review_only_video(target):
                         self._stop_existing_video(target, record, saved)
                     self._team_after_target(target)
@@ -1387,6 +1646,8 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                                               "semantic_unavailable",
                                               {"pending": semantic_pending, "review_attempts_per_asset": self.semantic_max_attempts,
                                                "resume_action": "review_existing_assets_only"})
+            if getattr(self, '_transport_review_only', False):
+                return [target['selected'] for target in targets if target.get('selected')]
             pending = [target for target in pending if "selected" not in target]
         return [target["selected"] for target in targets]
 
@@ -1466,7 +1727,7 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                      or list(self.cast)[:1])
         return [role for role in roles if role in self.cast]
 
-    def _characters_and_images(self, roles=None, shot_ids=None):
+    def _characters_and_images(self, roles=None, shot_ids=None, upstream_return=None):
         preview_role, preview = self._approved_preview_reference()
         targets = []
         for role, description in self.cast.items():
@@ -1522,13 +1783,90 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                 if not isinstance(shot_style, str) or not shot_style.strip():
                     raise ValueError("render_style_prompt must be a non-empty string")
                 prompt = shot_style + "\n" + identity + "Create a single clear story frame: " + shot["prompt"]
-                targets.append(self._target(shot["id"], self.folder / "assets/shots" / shot["id"],
-                                            prompt, references, shot=shot, review=True, reference_roles=roles,
-                                            **({"asset_references": asset_references} if asset_references else {})))
+                target = self._target(shot["id"], self.folder / "assets/shots" / shot["id"],
+                                      prompt, references, shot=shot, review=True, reference_roles=roles,
+                                      **({"asset_references": asset_references} if asset_references else {}))
+                returned = upstream_return or (self.production.get('upstream_returns') or {}).get(shot['id'])
+                if returned:
+                    target['upstream_return'] = copy.deepcopy(returned)
+                    target['_upstream_assessment'] = copy.deepcopy(returned['assessment'])
+                    target['_rejected_media_sha256'] = list(returned['rejected_media_sha256'])
+                    lineage = self.production.setdefault('recovery_lineage', {}).setdefault('image:' + shot['id'], [])
+                    for source in (target['signature'], returned.get('previous_image_source_signature')):
+                        if source and source not in lineage:
+                            lineage.append(source)
+                targets.append(target)
             self._render_targets(targets, "story_frames")
             for shot in batch:
                 done.add(shot["id"])
                 pending.remove(shot)
+
+    def _video_target(self, shot):
+        image = _receipt_path(shot['image'])
+        prompt = shot['motion_prompt'] + ' Preserve the reference character identities, clothing, lighting and composition. Restrained natural motion and a single readable action.'
+        if self.creative_contract:
+            prompt = (style_prompt(self.project) + '\n' + prompt +
+                ' Animate the character performing the approved action over time. '
+                'Character movement must be visible independently of camera movement; do not deliver a pan over a still image.')
+        if not shot.get('lip_sync'):
+            prompt += ' Visible people keep relaxed closed lips; dialogue may be off-screen voiceover.'
+        return self._target(shot['id'], self.folder / 'renders' / shot['id'], prompt, [image], kind='video',
+            seconds=shot['seconds'], shot=shot, review=True,
+            **({'asset_references': shot['image']['asset_references']} if shot['image'].get('asset_references') else {}))
+
+    def _review_transport_pending(self):
+        wait = self.production.get('review_transport_recovery') or {}
+        if wait.get('status') != 'waiting':
+            return
+        lookup = {s['id']: s for s in self.shots}
+        self._transport_review_only = True
+        try:
+            self._resume_transport_reviews(wait, lookup)
+        finally:
+            self._transport_review_only = False
+
+    def _resume_transport_reviews(self, wait, lookup):
+        for item in list(wait.get('pending', [])):
+            shot = lookup.get(item.get('asset'))
+            if shot is None or item.get('stage') not in {'image', 'video'}:
+                raise ProductionNeedsDecision('原媒体补审范围无法匹配，未新增生成', 'production_review_scope_changed')
+            saved_path = within(ROOT, item['path'])
+            if not saved_path.is_file():
+                raise ProductionNeedsDecision('原待补审媒体缺失，未重新生成', 'production_review_media_missing')
+            if item.get('review_kind') == 'first_frame':
+                from .production_handoffs import load, review_first_frame
+                image = shot.get('image') or {}
+                if (item['stage'] != 'image' or not image.get('path')
+                        or within(ROOT, image['path']).resolve() != saved_path.resolve()):
+                    raise ProductionNeedsDecision('原首帧补审归属已变化，未新增生成', 'production_review_scope_changed')
+                case = load(self, item.get('upstream_case_id'))
+                if case['document']['identity'].get('asset') != shot['id']:
+                    raise ProductionNeedsDecision('原首帧交接岗位范围不匹配', 'production_review_scope_changed')
+                review_first_frame(self, case, {'key': shot['id'], 'kind': 'video', 'shot': shot,
+                                               'references': [saved_path]})
+                wait['pending'] = [p for p in wait.get('pending', []) if p != item]
+                if not wait['pending']:
+                    wait['status'] = 'resolved'
+                self.emit('semantic_review_pending')
+                continue
+            if item['stage'] == 'video':
+                target = self._video_target(shot)
+            else:
+                self._characters_and_images(roles=[], shot_ids=[shot['id']])
+                continue
+            target['review_candidate'] = self._transport_candidate(target, item)
+            self._render_targets([target], 'semantic_review_pending')
+
+    def _transport_candidate(self, target, item):
+        path = within(ROOT, item['path'])
+        if not path.is_relative_to(target['folder']) or path.parent.name != item['take']:
+            raise ProductionNeedsDecision('待补审媒体归属不匹配，未新增生成', 'production_review_scope_changed')
+        record = read_json(path.parent / 'attempt.json')
+        receipt = read_json(path.parent / 'result.json')
+        if (record.get('take') != item['take'] or not _matching_source(receipt, target)
+                or _receipt_path(receipt).resolve() != path.resolve()):
+            raise ProductionNeedsDecision('原待补审媒体来源已变化，未提交新生成', 'production_review_scope_changed')
+        return record, receipt
 
     def _video(self, shot_ids=None):
         shots = [shot for shot in self.shots if shot_ids is None or shot["id"] in shot_ids]
@@ -1555,21 +1893,7 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                 team_control.after_unit(self.ident, "video", shot["id"])
                 team_control.after_unit(self.ident, "video_review", shot["id"])
             return
-        targets = []
-        for shot in shots:
-            image = _receipt_path(shot["image"])
-            prompt = shot["motion_prompt"] + " Preserve the reference character identities, clothing, lighting and composition. Restrained natural motion and a single readable action."
-            if self.creative_contract:
-                prompt = (style_prompt(self.project) + "\n" + prompt +
-                          " Animate the character performing the approved action over time. "
-                          "Character movement must be visible independently of camera movement; do not deliver a pan over a still image.")
-            if not shot.get("lip_sync"):
-                prompt += " Visible people keep relaxed closed lips; dialogue may be off-screen voiceover."
-            targets.append(self._target(shot["id"], self.folder / "renders" / shot["id"],
-                                        prompt, [image], kind="video", seconds=shot["seconds"],
-                                        shot=shot, review=True,
-                                        **({"asset_references": shot["image"]["asset_references"]}
-                                           if shot["image"].get("asset_references") else {})))
+        targets = [self._video_target(shot) for shot in shots]
         self._render_targets(targets, "diffusion_video")
 
     def _controlled_run(self):
@@ -1662,6 +1986,7 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                                           "semantic_unavailable", {"resume_action": "connect_evaluator_and_resume"})
         if self.mode != "motion_comic":
             validate_video_plan(self.video_connection, self.shots)
+        self._review_transport_pending()
         self._approved_preview_reference()
         episode = {**self.episode, "slug": self.slug, "factory_project_id": self.ident,
                    "cast": self.cast, "shots": self.shots, "fps": 24,

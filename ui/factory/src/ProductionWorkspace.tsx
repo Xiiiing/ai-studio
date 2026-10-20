@@ -347,6 +347,10 @@ export function ProductionWorkspace({
   const p = project;
   const state = p.automation_state || {};
   const automated = !!p.automation?.enabled;
+  const repairPolicy = p.automation?.production_recovery;
+  const autonomousRepairV2 =
+    !!repairPolicy?.enabled &&
+    repairPolicy.version === "ai-studio.production-recovery.v2";
   const episodes = rows(p.episodes);
   const nodes = rows(p.workflow?.graph?.nodes);
   const stages = rows(p.workflow?.stages);
@@ -433,9 +437,24 @@ export function ProductionWorkspace({
               ? `已授权${targetNumbers.length ? `第 ${targetNumbers.join("、")} 集` : "指定范围"}。AI 完成规划、剧本、素材与质检，成片由你验收。`
               : "保留已有成果和执行方式。开启后，AI 接续授权范围内尚未完成的工作。"}
           </p>
-          {automated && p.automation?.production_recovery?.enabled && (
+          {automated && autonomousRepairV2 && (
             <small>
-              自主返修已启用：系统在剩余次数和预算内定向修订、复核并继续。
+              自主返修 v2 已启用：原 GPU 与时限额度内至多 2
+              次不同方案机会，旧失败与用量保留。
+            </small>
+          )}
+          {automated && repairPolicy?.enabled && !autonomousRepairV2 && (
+            <small>
+              基础返修已启用，尚未启用方案调整与岗位交接；暂停后可显式升级。
+            </small>
+          )}
+          {state.recovery?.role && (
+            <small>
+              当前岗位：{roleName(state.recovery.role)}
+              {state.recovery.asset ? ` · 镜头 ${state.recovery.asset}` : ""}
+              {state.recovery.stage
+                ? ` · ${statusLabel(state.recovery.stage)}`
+                : ""}
             </small>
           )}
           <WorkProgress
@@ -450,17 +469,15 @@ export function ProductionWorkspace({
           </small>
         </div>
         <div className="production-command-actions">
-          {automated &&
-            paused &&
-            !p.automation?.production_recovery?.enabled && (
-              <button
-                className="button"
-                disabled={busy || p.status === "cancelled"}
-                onClick={() => invoke({ action: "enable_autonomous_repair" })}
-              >
-                启用自主返修
-              </button>
-            )}
+          {automated && paused && !autonomousRepairV2 && (
+            <button
+              className="button"
+              disabled={busy || p.status === "cancelled"}
+              onClick={() => invoke({ action: "enable_autonomous_repair" })}
+            >
+              {repairPolicy?.enabled ? "升级自主返修" : "启用自主返修"}
+            </button>
+          )}
           {(!automated || paused || state.status === "blocked") && (
             <button
               className="button primary"

@@ -3,7 +3,7 @@ import { mkdir } from "node:fs/promises";
 import { lifecycleFixture } from "./lifecycle-fixture.mjs";
 
 const id = "dd0330330330";
-function fixture() {
+function fixture(previousVersion) {
   return {
     id,
     title: "自主返修停止与恢复模拟",
@@ -22,6 +22,9 @@ function fixture() {
       suspended: true,
       episode_numbers: [1, 2],
       budget: { gpu_minutes: 120, wall_minutes: 180, max_attempts: 3 },
+      ...(previousVersion
+        ? { production_recovery: { version: previousVersion, enabled: true } }
+        : {}),
     },
     automation_state: {
       status: "paused",
@@ -37,6 +40,13 @@ function fixture() {
         duration_seconds: 120,
         status: "blocked",
         progress: 40,
+        budget: {
+          gpu_minutes: 200,
+          wall_minutes: 180,
+          max_attempts: 3,
+          spent_gpu_minutes: 131.28,
+        },
+        production: { gpu_seconds: 7876.8 },
         active_unit_id: "unit-033",
         error: "S02 视频已用完本次授权尝试，原片段和费用保留。",
         needs_decision: {
@@ -55,137 +65,192 @@ function fixture() {
   };
 }
 
-for (const width of [1440, 390])
-  for (const theme of ["light", "dark"]) {
-    test(`repair activation retains pause and requires explicit resume ${width} ${theme}`, async ({
-      page,
-      request,
-    }) => {
-      await request.post("/__test/reset");
-      await page.setViewportSize({ width, height: 1000 });
-      await page.emulateMedia({ colorScheme: theme, reducedMotion: "reduce" });
-      await page.addInitScript(
-        (t) => localStorage.setItem("studio.theme", t),
-        theme,
-      );
-      const drama = fixture(),
-        writes = [],
-        allMutations = [];
-      page.on("request", (request) => {
-        if (
-          request.url().includes("/api/factory/") &&
-          request.method() !== "GET"
-        )
-          allMutations.push({
-            url: request.url(),
-            body: request.postDataJSON(),
-          });
-      });
-      await page.route(`**/api/factory/projects/${id}/workspace`, (route) =>
-        route.fulfill({
-          json: {
-            project: { id, title: drama.title, record_kind: "drama" },
-            revision: drama.revision,
-            operator: {},
-            workflow: {},
-          },
-        }),
-      );
-      await page.route(`**/api/factory/dramas/${id}**`, async (route) => {
-        if (route.request().method() === "POST") {
-          const body = route.request().postDataJSON();
-          writes.push(body);
-          expect(route.request().url()).toMatch(/\/actions$/);
-          expect(body.expected_revision).toBe(drama.revision);
-          drama.revision++;
-          if (body.action === "enable_autonomous_repair") {
-            drama.automation.production_recovery = {
-              version: "ai-studio.production-recovery.v1",
-              enabled: true,
-            };
-            expect(drama.status).toBe("paused");
-            expect(drama.pause_requested).toBe(true);
-          } else if (body.action === "resume") {
-            drama.status = "queued";
-            drama.pause_requested = false;
-            drama.automation.suspended = false;
-            drama.automation_state = {
-              status: "blocked",
-              reason: drama.episodes[0].error,
-              episode_numbers: [1, 2],
-              attention: [],
-            };
-          } else throw new Error(`Unexpected production write: ${body.action}`);
+for (const previousVersion of [null, "ai-studio.production-recovery.v1"])
+  for (const width of [1440, 390])
+    for (const theme of ["light", "dark"]) {
+      test(`repair activation retains pause and requires explicit resume ${previousVersion || "legacy"} ${width} ${theme}`, async ({
+        page,
+        request,
+      }) => {
+        await request.post("/__test/reset");
+        await page.setViewportSize({ width, height: 1000 });
+        await page.emulateMedia({
+          colorScheme: theme,
+          reducedMotion: "reduce",
+        });
+        await page.addInitScript(
+          (t) => localStorage.setItem("studio.theme", t),
+          theme,
+        );
+        const drama = fixture(previousVersion),
+          writes = [],
+          allMutations = [];
+        const budgetBefore = structuredClone({
+          automation: drama.automation.budget,
+          episode: drama.episodes[0].budget,
+          production: drama.episodes[0].production,
+        });
+        const upgradeLabel = previousVersion ? "升级自主返修" : "启用自主返修";
+        page.on("request", (request) => {
+          if (
+            request.url().includes("/api/factory/") &&
+            request.method() !== "GET"
+          )
+            allMutations.push({
+              url: request.url(),
+              body: request.postDataJSON(),
+            });
+        });
+        await page.route(`**/api/factory/projects/${id}/workspace`, (route) =>
+          route.fulfill({
+            json: {
+              project: { id, title: drama.title, record_kind: "drama" },
+              revision: drama.revision,
+              operator: {},
+              workflow: {},
+            },
+          }),
+        );
+        await page.route(`**/api/factory/dramas/${id}**`, async (route) => {
+          if (route.request().method() === "POST") {
+            const body = route.request().postDataJSON();
+            writes.push(body);
+            expect(route.request().url()).toMatch(/\/actions$/);
+            expect(body.expected_revision).toBe(drama.revision);
+            drama.revision++;
+            if (body.action === "enable_autonomous_repair") {
+              drama.automation.production_recovery = {
+                version: "ai-studio.production-recovery.v2",
+                strategy_attempt_allowance: 2,
+                enabled: true,
+              };
+              expect(drama.status).toBe("paused");
+              expect(drama.pause_requested).toBe(true);
+            } else if (body.action === "resume") {
+              drama.status = "queued";
+              drama.pause_requested = false;
+              drama.automation.suspended = false;
+              drama.automation_state = {
+                status: "blocked",
+                reason: drama.episodes[0].error,
+                episode_numbers: [1, 2],
+                attention: [],
+              };
+              if (previousVersion) {
+                drama.episodes[0].status = "producing";
+                drama.episodes[0].error = null;
+                drama.episodes[0].needs_decision = null;
+                drama.automation_state = {
+                  status: "handing_off",
+                  reason: "分镜导演正在根据证据调整表演，交接完成后自动复审",
+                  episode_numbers: [1, 2],
+                  attention: [],
+                  recovery: {
+                    status: "handing_off",
+                    role: "storyboard_director",
+                    asset: "S02",
+                    stage: "video",
+                  },
+                };
+              }
+            } else
+              throw new Error(`Unexpected production write: ${body.action}`);
+          }
+          await route.fulfill({ json: drama });
+        });
+        await page.goto(`/#project=${id}&tab=production`);
+        await expect(
+          page.getByRole("heading", { name: drama.title }),
+        ).toBeVisible();
+        const command = page.getByRole("region", { name: "连续制作状态" });
+        await expect(
+          command.getByRole("button", { name: upgradeLabel }),
+        ).toBeVisible();
+        const attention = page.locator(".production-attention");
+        await expect(attention).toContainText(
+          "制作对象：S02 · 视频 · 已用尝试 3 / 3",
+        );
+        await expect(
+          attention.getByRole("button", { name: "继续此集", exact: true }),
+        ).toHaveCount(0);
+        expect(allMutations).toHaveLength(0);
+        if (previousVersion)
+          await expect(command).toContainText("尚未启用方案调整与岗位交接");
+        await command.getByRole("button", { name: upgradeLabel }).click();
+        await expect(command).toContainText("自主返修 v2 已启用");
+        await expect(command.getByRole("heading")).toContainText(
+          "全剧已在安全边界暂停",
+        );
+        await expect(
+          command.getByRole("button", { name: "继续制作", exact: true }),
+        ).toBeEnabled();
+        expect(writes.map((body) => body.action)).toEqual([
+          "enable_autonomous_repair",
+        ]);
+        expect(allMutations).toHaveLength(1);
+        expect({
+          automation: drama.automation.budget,
+          episode: drama.episodes[0].budget,
+          production: drama.episodes[0].production,
+        }).toEqual(budgetBefore);
+        await expect(command).toContainText(
+          "至多 2 次不同方案机会，旧失败与用量保留",
+        );
+        await expect(
+          command.getByRole("button", { name: upgradeLabel }),
+        ).toHaveCount(0);
+        expect(drama.automation.budget).toEqual({
+          gpu_minutes: 120,
+          wall_minutes: 180,
+          max_attempts: 3,
+        });
+        await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
+        expect(
+          await page.evaluate(
+            () => document.documentElement.scrollWidth <= innerWidth + 1,
+          ),
+        ).toBe(true);
+        await mkdir("runtime/autonomous-repair-browser/screenshots", {
+          recursive: true,
+        });
+        await command.screenshot({
+          path: `runtime/autonomous-repair-browser/screenshots/paused-${previousVersion ? "v1" : "legacy"}-${width}-${theme}.png`,
+        });
+        await attention.screenshot({
+          path: `runtime/autonomous-repair-browser/screenshots/stop-${previousVersion ? "v1" : "legacy"}-${width}-${theme}.png`,
+        });
+        await command
+          .getByRole("button", { name: "继续制作", exact: true })
+          .click();
+        await expect(
+          command.getByRole("button", { name: "暂停制作", exact: true }),
+        ).toBeVisible();
+        expect(writes.map((body) => body.action)).toEqual([
+          "enable_autonomous_repair",
+          "resume",
+        ]);
+        expect(allMutations).toHaveLength(2);
+        expect(
+          writes.every((body) => !body.episode_id && !body.automation),
+        ).toBe(true);
+        await expect(
+          attention.getByRole("button", { name: "继续此集", exact: true }),
+        ).toHaveCount(0);
+        expect({
+          automation: drama.automation.budget,
+          episode: drama.episodes[0].budget,
+          production: drama.episodes[0].production,
+        }).toEqual(budgetBefore);
+        if (previousVersion) {
+          await expect(command).toContainText("岗位交接中");
+          await expect(command).toContainText("当前岗位：分镜导演");
+          await expect(command.getByRole("heading")).toContainText(
+            "交接完成后自动复审",
+          );
+        } else {
+          await expect(attention).toContainText(
+            "核对材料与授权后，再使用顶部入口继续制作。",
+          );
         }
-        await route.fulfill({ json: drama });
       });
-      await page.goto(`/#project=${id}&tab=production`);
-      await expect(
-        page.getByRole("heading", { name: drama.title }),
-      ).toBeVisible();
-      const command = page.getByRole("region", { name: "连续制作状态" });
-      await expect(
-        command.getByRole("button", { name: "启用自主返修" }),
-      ).toBeVisible();
-      const attention = page.locator(".production-attention");
-      await expect(attention).toContainText(
-        "制作对象：S02 · 视频 · 已用尝试 3 / 3",
-      );
-      await expect(
-        attention.getByRole("button", { name: "继续此集", exact: true }),
-      ).toHaveCount(0);
-      expect(allMutations).toHaveLength(0);
-      await command.getByRole("button", { name: "启用自主返修" }).click();
-      await expect(command).toContainText("自主返修已启用");
-      await expect(command.getByRole("heading")).toContainText(
-        "全剧已在安全边界暂停",
-      );
-      await expect(
-        command.getByRole("button", { name: "继续制作", exact: true }),
-      ).toBeEnabled();
-      expect(writes.map((body) => body.action)).toEqual([
-        "enable_autonomous_repair",
-      ]);
-      expect(allMutations).toHaveLength(1);
-      expect(drama.automation.budget).toEqual({
-        gpu_minutes: 120,
-        wall_minutes: 180,
-        max_attempts: 3,
-      });
-      await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
-      expect(
-        await page.evaluate(
-          () => document.documentElement.scrollWidth <= innerWidth + 1,
-        ),
-      ).toBe(true);
-      await mkdir("runtime/autonomous-repair-browser/screenshots", {
-        recursive: true,
-      });
-      await command.screenshot({
-        path: `runtime/autonomous-repair-browser/screenshots/paused-${width}-${theme}.png`,
-      });
-      await attention.screenshot({
-        path: `runtime/autonomous-repair-browser/screenshots/stop-${width}-${theme}.png`,
-      });
-      await command
-        .getByRole("button", { name: "继续制作", exact: true })
-        .click();
-      await expect(
-        command.getByRole("button", { name: "暂停制作", exact: true }),
-      ).toBeVisible();
-      expect(writes.map((body) => body.action)).toEqual([
-        "enable_autonomous_repair",
-        "resume",
-      ]);
-      expect(allMutations).toHaveLength(2);
-      expect(writes.every((body) => !body.episode_id && !body.automation)).toBe(
-        true,
-      );
-      await expect(
-        attention.getByRole("button", { name: "继续此集", exact: true }),
-      ).toHaveCount(0);
-      await expect(attention).toContainText(
-        "核对材料与授权后，再使用顶部入口继续制作。",
-      );
-    });
-  }
+    }

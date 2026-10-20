@@ -53,8 +53,8 @@ def certified(assessment, path):
 
 
 def enabled(config):
-    policy = config.get('production', {}).get('production_recovery', {})
-    return isinstance(policy, dict) and policy.get('enabled') is True and policy.get('version') == 'ai-studio.production-recovery.v1'
+    from .production_execution import enabled as execution_enabled
+    return execution_enabled(config.get('production', {}))
 
 
 def verify(config, shot, path, samples, sampling, initial, output, expected_sha, request, image_url):
@@ -109,6 +109,10 @@ def verify(config, shot, path, samples, sampling, initial, output, expected_sha,
     except Exception as exc:
         audit.update(status='unavailable', reason=f'{type(exc).__name__}: {str(exc)[:240]}')
         result['_constraint_unavailable'] = True
+        from .quality import is_transient_transport
+        if is_transient_transport(exc):
+            write_json(target / 'evidence.json', audit)
+            raise
     result['explicit_constraint_verification'] = audit
     write_json(target / 'evidence.json', audit)
     return result

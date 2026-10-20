@@ -424,7 +424,7 @@ it.each(["paused", "producing"])(
         episode_numbers: [1, 2],
         budget: { gpu_minutes: 120, wall_minutes: 180, max_attempts: 3 },
         production_recovery: {
-          version: "ai-studio.production-recovery.v1",
+          version: "ai-studio.production-recovery.v2",
           enabled: true,
         },
       },
@@ -432,7 +432,7 @@ it.each(["paused", "producing"])(
     });
     expect(
       screen.getByText(
-        "自主返修已启用：系统在剩余次数和预算内定向修订、复核并继续。",
+        "自主返修 v2 已启用：原 GPU 与时限额度内至多 2 次不同方案机会，旧失败与用量保留。",
       ),
     ).toBeVisible();
     expect(
@@ -576,3 +576,106 @@ it.each(["semantic_unavailable", "unresolved_submission", "ordinary_error"])(
     });
   },
 );
+
+it.each([
+  ["diagnosing", "诊断制作问题"],
+  ["planning", "调整制作方案"],
+  ["handing_off", "岗位交接中"],
+  ["reviewing", "审核中"],
+])(
+  "shows the actual %s role and reason without triggering actions",
+  (phase, label) => {
+    const onOperation = vi.fn();
+    render(
+      <ProductionWorkspace
+        project={project({
+          automation_state: {
+            status: phase,
+            reason: "已交分镜导演调整镜头，完成后系统自动复审",
+            episode_numbers: [1, 2],
+            recovery: {
+              status: phase,
+              role: "storyboard_director",
+              asset: "S02",
+              stage: "video",
+            },
+          },
+        })}
+        busy={false}
+        onOperation={onOperation}
+        onReview={vi.fn()}
+        onTab={vi.fn()}
+      />,
+    );
+    const region = screen.getByRole("region", { name: "连续制作状态" });
+    expect(within(region).getByText(label)).toBeVisible();
+    expect(within(region).getByText(/当前岗位：分镜导演/)).toBeVisible();
+    expect(
+      within(region).getByRole("heading", { name: /系统自动复审/ }),
+    ).toBeVisible();
+    expect(onOperation).not.toHaveBeenCalled();
+  },
+);
+
+it.each([false, true])(
+  "shows an explicit v1 upgrade and keeps its existing pause and budget while busy=%s",
+  async (busy) => {
+    const snapshot = project({
+      status: "paused",
+      pause_requested: true,
+      automation: {
+        enabled: true,
+        suspended: true,
+        episode_numbers: [1, 2],
+        budget: { gpu_minutes: 120, wall_minutes: 180, max_attempts: 3 },
+        production_recovery: {
+          version: "ai-studio.production-recovery.v1",
+          enabled: true,
+        },
+      },
+      automation_state: { status: "paused", reason: "已在安全边界暂停" },
+    });
+    const before = structuredClone(snapshot);
+    const onOperation = vi.fn();
+    render(
+      <ProductionWorkspace
+        project={snapshot}
+        busy={busy}
+        onOperation={onOperation}
+        onReview={vi.fn()}
+        onTab={vi.fn()}
+      />,
+    );
+    expect(screen.getByText(/尚未启用方案调整与岗位交接/)).toBeVisible();
+    expect(screen.queryByText(/自主返修 v2 已启用/)).not.toBeInTheDocument();
+    const upgrade = screen.getByRole("button", { name: "升级自主返修" });
+    if (busy) expect(upgrade).toBeDisabled();
+    else expect(upgrade).toBeEnabled();
+    await userEvent.click(upgrade);
+    expect(onOperation.mock.calls).toEqual(
+      busy ? [] : [["actions", { action: "enable_autonomous_repair" }]],
+    );
+    expect(snapshot).toEqual(before);
+    expect(screen.getByRole("button", { name: "继续制作" })).toBeVisible();
+  },
+);
+
+it("does not turn a v1 continue operation into an implicit upgrade", async () => {
+  const { onOperation } = mount({
+    status: "paused",
+    pause_requested: true,
+    automation: {
+      enabled: true,
+      suspended: true,
+      episode_numbers: [1, 2],
+      budget: defaultAutomationBudget,
+      production_recovery: {
+        version: "ai-studio.production-recovery.v1",
+        enabled: true,
+      },
+    },
+    automation_state: { status: "paused" },
+  });
+  await userEvent.click(screen.getByRole("button", { name: "继续制作" }));
+  expect(onOperation.mock.calls).toEqual([["actions", { action: "resume" }]]);
+});

@@ -122,6 +122,19 @@ def inspect_video(path, expected_seconds=None, expected_size=None, fps=24, requi
         return {"status": "fail", "issues": [issue("decode", exc)], "scope": "technical_video"}
 
 
+def is_transient_transport(exc):
+    """Program-owned classification; model response fields cannot grant retries."""
+    import urllib.error
+    from .providers import ProviderError
+    if isinstance(exc, urllib.error.HTTPError):
+        return exc.code in {429, 502, 503, 504}
+    if isinstance(exc, urllib.error.URLError):
+        return isinstance(exc.reason, (TimeoutError, ConnectionError))
+    if isinstance(exc, ProviderError):
+        return exc.code in {'transport_failed', 'http_429', 'http_502', 'http_503', 'http_504'}
+    return isinstance(exc, (TimeoutError, ConnectionError))
+
+
 def semantic_review(evaluator, project, shot, path, references):
     if evaluator is None:
         return {"status": "unavailable", "score": None, "issues": [],
@@ -131,6 +144,7 @@ def semantic_review(evaluator, project, shot, path, references):
         if not isinstance(raw, dict):
             raise ValueError("Semantic evaluator did not return a structured assessment")
         raw = dict(raw)
+        raw.pop('retryable_transport', None)  # Only caught transport exceptions grant retry eligibility.
         status = raw.get("status")
         if status not in ("pass", "fail", "unavailable"):
             raw["status"] = "unavailable"
@@ -144,7 +158,9 @@ def semantic_review(evaluator, project, shot, path, references):
         raw["scope"] = "vlm_sampled_review_not_vbench_or_human_certification"
         return raw
     except Exception as exc:
+        transient = is_transient_transport(exc)
         return {"status": "unavailable", "score": None, "issues": [],
+                "retryable_transport": transient,
                 "detail": f"Semantic evaluator unavailable: {type(exc).__name__}: {str(exc)[:240]}"}
 
 

@@ -20,12 +20,14 @@ from .review_contracts import starting_frame
 from .scheduler import ProductionNeedsDecision
 
 VERSION = "ai-studio.production-recovery.v1"
+STRATEGY_VERSION = "ai-studio.production-recovery.v2"
 # Hard ceilings cannot be expanded by a model response or changing input hashes.
 MAX_ASSET_CYCLES, MAX_PROJECT_CYCLES = 2, 8
 _REPAIRABLE = {"action", "continuity", "identity", "composition", "black", "black_frame", "blur", "possible_blur"}
 _UPSTREAM = {"reference_conflict", "reference_missing", "reference_mismatch", "capability", "unsupported_motion"}
 _UNSAFE = {"unknown_submit", "unknown_submission", "unresolved_submission", "unsafe", "tampered", "unpriced", "cost_unknown", "budget_exceeded", "budget_exhausted", "paused"}
 _SHOT_FIELDS = ("id", "seconds", "prompt", "action", "motion_prompt", "continuity", "character_states", "characters", "camera_motion", "dialogue", "material_constraints", "reference_group")
+_STRATEGY_SHOT_FIELDS = _SHOT_FIELDS + ("camera", "camera_constraints", "hard_constraints", "requirements", "audio_requirements", "dramatic_beat", "location", "cast", "lip_sync", "render_style_prompt", "reference_shots", "render_revisions")
 _CLOSED = re.compile(r"visible mouths remain naturally closed|external voiceover; naturally closed mouths|(?:mouths? (?:stay|remain|stays|remains) (?:naturally )?closed)|(?:mouths? (?:are |is )?closed|closed[- ]mouths?|lips (?:stay |remain )?together).{0,30}(?:throughout|entire clip|all frames)|(?:throughout|entire clip|all frames).{0,30}(?:mouths? (?:are |is )?closed|closed[- ]mouths?|lips (?:stay |remain )?together)|(?:全程|始终|从头到尾).{0,12}(?:闭口|闭嘴|嘴唇闭合|嘴巴闭合|嘴部闭合)", re.I)
 
 
@@ -61,7 +63,12 @@ def _references(target, root):
 
 def _configuration(config):
     result = {k: copy.deepcopy(config[k]) for k in (
-        "max_gpu_seconds", "max_wall_seconds", "max_attempts", "production_recovery") if k in config}
+        "max_gpu_seconds", "max_wall_seconds", "max_attempts", "production_recovery", "generation_pipeline_config", "h3_prompt_config") if k in config}
+    for route in ("generation_pipeline_config", "h3_prompt_config"):
+        if route in result and (config.get("production_recovery") or {}).get("version") != STRATEGY_VERSION:
+            del result[route]
+        elif route in result:
+            result[route] = {"configuration_sha256": digest(result[route])}
     # Credentials are not prompt-repair evidence. Retain adapter semantics and a
     # pricing digest without copying secrets/headers into the recovery artifact.
     for name in ("image_connection", "video_connection", "audio_connection"):
@@ -89,10 +96,10 @@ def _source(project, config, target, assessment, previous, root):
     # Exclude mutable accounting: it is checked afresh before every application.
     # Include authorization maxima and provider/model identity: a changed grant or
     # adapter can never silently inherit an old application authorization.
-    return {"project_id": project["id"], "asset": key, "kind": target.get("kind"),
+    result = {"project_id": project["id"], "asset": key, "kind": target.get("kind"),
             "source_signature": signature,
             "production_revision": project.get("production_revision"),
-            "shot": {k: copy.deepcopy(shot[k]) for k in _SHOT_FIELDS if k in shot},
+            "shot": {k: copy.deepcopy(shot[k]) for k in (_STRATEGY_SHOT_FIELDS if (config.get("production_recovery") or {}).get("version") == STRATEGY_VERSION else _SHOT_FIELDS) if k in shot},
             "prompt": prompt, "seconds": target.get("seconds", shot.get("seconds")),
             "references": _references(target, root),
             "reference_roles": copy.deepcopy(list(target.get("reference_roles") or [])),
@@ -105,6 +112,47 @@ def _source(project, config, target, assessment, previous, root):
             "failed_take": {k: copy.deepcopy(previous[k]) for k in (
                 "take", "attempt", "source_signature", "state", "output", "remote_task") if k in previous},
             "assessment": copy.deepcopy(assessment)}
+    if (config.get("production_recovery") or {}).get("version") == STRATEGY_VERSION:
+        result["upstream_resolution"] = _upstream_resolution(project, target, previous, root)
+        if target.get("upstream_return"):
+            result["upstream_return"] = copy.deepcopy(target["upstream_return"])
+    return result
+
+
+def _upstream_resolution(project, target, previous, root):
+    value = target.get("upstream_resolution")
+    if not isinstance(value, dict) or value.get("status") != "resolved":
+        return None
+    try:
+        if value.get("operation") not in {"review_first_frame", "revise_first_frame", "revise_reference"}:
+            return None
+        frame = value.get("first_frame_assessment") or {}
+        if frame.get("status") != "pass" or frame.get("eligible_for_selection") is False:
+            return None
+        references = _references(target, root)
+        if not references or references[0]["sha256"] != value.get("frame_sha256"):
+            return None
+        path = Path(value["receipt_path"])
+        if not path.is_absolute():
+            path = Path(root or ROOT) / path
+        if any(p.is_symlink() for p in (path, *path.parents)) or not path.is_file():
+            return None
+        if not path.resolve().is_relative_to(_folder(project, root).resolve()):
+            return None
+        if sha256(path) != value.get("receipt_sha256"):
+            return None
+        receipt = read_json(path)
+        receipt = receipt.get("document", receipt)
+        fields = ("status", "operation", "previous_source_signature", "frame_sha256")
+        if not all(receipt.get(key) == value.get(key) for key in fields):
+            return None
+        if not isinstance(receipt.get("previous_source_signature"), str) or not receipt["previous_source_signature"]:
+            return None
+        if previous.get("source_signature") and receipt["previous_source_signature"] != previous["source_signature"]:
+            return None
+        return {key: copy.deepcopy(value[key]) for key in (*fields, "first_frame_assessment", "receipt_path", "receipt_sha256")}
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
 
 
 def _gate(project, config, previous):
@@ -121,9 +169,13 @@ def _gate(project, config, previous):
             return "unsafe_or_unresolved_submission"
     if previous.get("state") in {"rendering", "submitted", "waiting_remote", "prompt_preparing"}:
         return "unresolved_submission"
-    maximum_attempts = config.get("max_attempts", (project.get("budget") or {}).get("max_attempts", 3))
+    from .production_execution import attempt_limit
+    try:
+        maximum_attempts = attempt_limit(config if "max_attempts" in config else {**config, "max_attempts": (project.get("budget") or {}).get("max_attempts", 3)})
+    except (TypeError, ValueError):
+        return "attempt_budget_unverified"
     consumed = previous.get("attempt", 0)
-    if type(maximum_attempts) is not int or not 1 <= maximum_attempts <= 5 or type(consumed) is not int or consumed < 0:
+    if type(maximum_attempts) is not int or not 1 <= maximum_attempts <= 7 or type(consumed) is not int or consumed < 0:
         return "attempt_budget_unverified"
     if consumed >= maximum_attempts:
         return "retry_limit"
@@ -171,13 +223,30 @@ def _issues(assessment):
     return issues, None
 
 
-def _plan(source):
+def _plan(source, *, strategy_index=0):
     issues, stop = _issues(source["assessment"])
     if stop:
         return _stop(stop, source)
     codes = {str(issue.get("code", "")).lower() for issue in issues}
+    v2 = source["configuration"].get("production_recovery", {}).get("version") == STRATEGY_VERSION
+    def upstream(reason, handoff):
+        result = {**_stop(reason, source), "action": "request_upstream"}
+        if v2:
+            result.update(schema=STRATEGY_VERSION, assigned_role="storyboard_director",
+                          required_handoffs=[handoff], strategy="upstream_evidence_repair")
+        return result
+    if codes & {"capability", "unsupported_motion"}:
+        return upstream("approved_motion_exceeds_adapter_capability" if v2 else "approved_inputs_require_upstream_revision", "unsupported_capability")
+    if v2 and codes & {"hard_requirement_conflict", "requirement_conflict"}:
+        return upstream("approved_hard_requirements_conflict", "hard_requirement_conflict")
     if codes & _UPSTREAM:
-        return {**_stop("approved_inputs_require_upstream_revision", source), "action": "request_upstream"}
+        resolved = source.get("upstream_resolution")
+        frame = source.get("first_frame_assessment") or {}
+        if not (v2 and resolved and frame.get("status") == "pass" and frame.get("eligible_for_selection") is not False):
+            return upstream("approved_inputs_require_upstream_revision", "revise_reference")
+        # An immutable real role receipt resolves the old input defect, not its
+        # historic verdict. Recompile motion against the new actual frame.
+        codes = (codes - {"reference_conflict", "reference_missing", "reference_mismatch"}) | {"action"}
     if not codes <= _REPAIRABLE:
         return _stop("diagnosis_requires_operator_or_technical_repair", source)
     shot, kind = source["shot"], source["kind"]
@@ -186,13 +255,13 @@ def _plan(source):
     if kind == "video" and not shot:
         return _stop("approved_motion_contract_missing", source)
     if not source["references"] and codes & {"identity", "continuity"}:
-        return {**_stop("actual_reference_evidence_missing", source), "action": "request_upstream"}
+        return upstream("actual_reference_evidence_missing", "revise_reference")
     # A defect later in the generated video cannot revoke an approved frame.
     frame = source.get("first_frame_assessment") or {}
     if kind == "video" and frame.get("status") == "fail":
-        return {**_stop("first_frame_requires_independent_upstream_repair", source), "action": "request_upstream"}
+        return upstream("first_frame_requires_independent_upstream_repair", "revise_first_frame")
     if kind == "video" and (frame.get("status") != "pass" or frame.get("eligible_for_selection") is False):
-        return _stop("first_frame_review_unverified", source)
+        return upstream("first_frame_review_unverified", "review_first_frame") if v2 else _stop("first_frame_review_unverified", source)
     if kind == "video" and not any(shot.get(k) for k in ("action", "motion_prompt")):
         return _stop("approved_motion_contract_missing", source)
     facts = starting_frame(shot) if kind == "image" else shot
@@ -239,12 +308,19 @@ def _plan(source):
             if mouth_constraint:
                 required.append({"field": "approved_target.prompt.closed_mouth", "value": "lips together"})
             temporal.append({"phase": phase, "instruction": instruction, "required": required})
-    return {"schema": VERSION, "action": "refine_motion" if kind == "video" else "refine_start_frame",
+    result = {"schema": STRATEGY_VERSION if v2 else VERSION, "action": "refine_motion" if kind == "video" else "refine_start_frame",
             "reason": "approved_facts_reasserted_for_failed_" + "_".join(sorted(codes)),
             "source_signature": source["source_signature"], "prompt_appendix": "\n".join(lines),
             "constraints": constraints,
             "temporal_constraints": temporal,
             "first_frame_constraints": copy.deepcopy(constraints) if kind == "image" else []}
+    if v2:
+        strategies = ("silent_visual_action", "phase_isolated_action") if kind == "video" else ("grounded_single_instant", "spatial_state_isolation")
+        result.update(strategy=strategies[min(strategy_index, len(strategies) - 1)],
+                      assigned_role="storyboard_director", required_handoffs=["observe_first_frame", "compile_strategy", "generate_media", "independent_media_review"] if kind == "video" else ["compile_strategy", "generate_media", "independent_media_review"])
+        result["prompt_appendix"] = ""
+        result["reason"] = "new_execution_strategy_required_for_" + "_".join(sorted(codes))
+    return result
 
 
 def _load(path):
@@ -252,9 +328,9 @@ def _load(path):
     if value.get("sha256") != digest(value.get("record")):
         raise ValueError("Recovery record digest mismatch")
     record = value["record"]
-    if (record.get("schema") != VERSION or record.get("id") != path.stem
+    if (record.get("schema") not in {VERSION, STRATEGY_VERSION} or record.get("id") != path.stem
             or record.get("source_sha256") != digest(record.get("source"))
-            or record.get("id") != digest({"schema": VERSION, "source": record.get("source")})
+            or record.get("id") != digest({"schema": record.get("schema"), "source": record.get("source")})
             or record.get("action") not in {"stop", "request_upstream", "refine_motion", "refine_start_frame"}):
         raise ValueError("Recovery record identity mismatch")
     return record
@@ -273,7 +349,8 @@ def prepare_repair(project, config, target, last_assessment, *, previous_attempt
     if gate:
         return _stop(gate)
     source = _source(project, config, target, last_assessment, previous_attempt, root)
-    identity = digest({"schema": VERSION, "source": source})
+    schema = STRATEGY_VERSION if config.get("production_recovery", {}).get("version") == STRATEGY_VERSION else VERSION
+    identity = digest({"schema": schema, "source": source})
     base = _folder(project, root)
     base.mkdir(parents=True, exist_ok=True, mode=0o700)
     with (base / "planner.lock").open("a") as lock:
@@ -295,16 +372,23 @@ def prepare_repair(project, config, target, last_assessment, *, previous_attempt
                     if gate or digest(current_source) != digest(source):
                         return _stop(gate or "recovery_source_changed", source)
                 return copy.deepcopy(saved)
-            plan = _plan(source)
-            active = [r for r in records if r["action"] in {"refine_motion", "refine_start_frame"}]
+            active = [r for r in records if r["action"] in {"refine_motion", "refine_start_frame"} and (schema == VERSION or r.get("schema") == schema)]
+            if schema == STRATEGY_VERSION and source.get("upstream_resolution"):
+                # A verified upstream correction may supersede a plan that was
+                # rejected before any subsequent media attempt existed. Preserve
+                # its immutable history, while retaining the unused strategy slot.
+                active = [r for r in active if not (r["scope"]["asset"] == target["key"]
+                    and r["source"].get("failed_take") == source.get("failed_take"))]
             asset_count = sum(r["scope"]["asset"] == target["key"] and r["scope"]["stage"] == target["kind"] for r in active)
+            plan = _plan(source, strategy_index=asset_count)
+            plan["schema"] = schema
             setting = config.get("production_recovery") or {}
             asset_limit = min(MAX_ASSET_CYCLES, max(0, int(setting.get("max_asset_cycles", MAX_ASSET_CYCLES))))
             project_limit = min(MAX_PROJECT_CYCLES, max(0, int(setting.get("max_project_cycles", MAX_PROJECT_CYCLES))))
             if plan["action"] in {"refine_motion", "refine_start_frame"} and (asset_count >= asset_limit or len(active) >= project_limit):
                 return _stop("recovery_cycle_limit", source)
-            if any(r["scope"]["asset"] == target["key"] and r.get("prompt_appendix") == plan["prompt_appendix"]
-                   for r in active):
+            if any(r["scope"]["asset"] == target["key"] and ((schema == STRATEGY_VERSION and r.get("strategy") == plan.get("strategy")) or (schema == VERSION and r.get("prompt_appendix") == plan["prompt_appendix"]))
+                   for r in active) and plan["action"] in {"refine_motion", "refine_start_frame"}:
                 return _stop("recovery_has_no_new_directed_change", source)
             if current is not None:
                 fresh = current()
@@ -333,7 +417,10 @@ def prepare_repair(project, config, target, last_assessment, *, previous_attempt
 
 def applicable(record, project, config, target, last_assessment, *, previous_attempt=None, root=None):
     """Revalidate a saved plan against fresh authoritative state before applying."""
-    if (record.get("action") not in {"refine_motion", "refine_start_frame"}
+    allowed = {"refine_motion", "refine_start_frame"}
+    if record.get("schema") == STRATEGY_VERSION:
+        allowed.add("request_upstream")
+    if (record.get("action") not in allowed
             or _gate(project, config, previous_attempt) or _priced_boundary(config, target)):
         return False
     try:

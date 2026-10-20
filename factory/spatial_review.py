@@ -104,4 +104,10 @@ def verify_spatial(config, schema, context, references, initial, path, record):
         result['_spatial_unavailable'] = unresolved
         return result
     except Exception as exc:
-        return pending('spatial_review_unavailable:'+type(exc).__name__)
+        result = pending('spatial_review_unavailable:'+type(exc).__name__)
+        from .quality import is_transient_transport
+        if is_transient_transport(exc):
+            from studio.core import write_json
+            write_json(Path(record) / 'spatial' / 'transport_failure.json', result['spatial_verification'])
+            raise
+        return result

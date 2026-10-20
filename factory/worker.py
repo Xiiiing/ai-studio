@@ -25,6 +25,64 @@ _stop=threading.Event()
 _current=None
 
 
+def _defer_review_transport(job, exc):
+    """Retry saved-media review only for typed, proven transient transport errors."""
+    details = getattr(exc, 'details', None)
+    if (not isinstance(exc, ProductionNeedsDecision) or exc.reason != 'semantic_unavailable'
+            or not isinstance(details, dict) or details.get('resume_action') != 'review_existing_assets_only'):
+        return False
+    pending = details.get('pending')
+    if (not isinstance(pending, list) or not pending or any(
+            not isinstance(item, dict) or item.get('retryable_transport') is not True
+            or not item.get('path') or not item.get('take') for item in pending)):
+        return False
+    with store.connection() as db:
+        db.execute('BEGIN IMMEDIATE')
+        owner = db.execute('SELECT status,lease FROM jobs WHERE id=?', (job['id'],)).fetchone()
+        if not owner or owner['status'] != 'running' or owner['lease'] != job.get('lease'):
+            return False
+        project = store._read(db, job['project_id'])
+        from .production_execution import enabled
+        configuration = project.get('execution_config') or {}
+        if not isinstance(configuration, dict) or not enabled(configuration.get('production') or {}):
+            return False
+        from .config import resolve_llm
+        try:
+            reviewer = resolve_llm(configuration, 'visual_critic', require_vision=True)
+        except (TypeError, ValueError):
+            return False
+        # No retry submits to a possibly paid provider whose charge is unknown.
+        if reviewer.get('provider') not in {'llama_cpp', 'ollama'} or reviewer.get('enabled') is False:
+            return False
+        ancestors = [project]
+        if project.get('episode_id'):
+            ancestors.append(store._read(db, project['episode_id']))
+        if project.get('drama_id'):
+            ancestors.append(store._read(db, project['drama_id']))
+        if any(p.get('pause_requested') or p['status'] in {'paused','cancelled'}
+               or p.get('automation', {}).get('suspended') for p in ancestors):
+            return False
+        production = project.setdefault('production', {})
+        prior = production.get('review_transport_recovery') or {}
+        count = prior.get('count', 0)
+        if type(count) is not int or count >= 2:
+            return False
+        count += 1
+        due = time.time() + 30 * count
+        production['review_transport_recovery'] = {'status': 'waiting', 'count': count, 'max_deferrals': 2,
+            'job_id': job['id'], 'pending': pending, 'next_poll_at': due,
+            'message': '审核服务暂时连接失败，系统稍后仅复核已保存素材，不重新生成。'}
+        store._write(db, project)
+        if (project.get('record_kind') == 'episode' and project.get('active_unit_id') in project.get('unit_ids', [])):
+            unit = store._read(db, project['active_unit_id'])
+            import copy
+            unit.setdefault('production', {})['review_transport_recovery'] = copy.deepcopy(production['review_transport_recovery'])
+            store._write(db, unit)
+    return defer_job(job, ProductionDeferred(due, 'quality_review', {
+        'reason': 'review_transport_retry', 'attempt': count, 'max_attempts': 2,
+        'resume_action': 'review_existing_assets_only'}))
+
+
 def heartbeat():
     while not _stop.is_set():
         write_json(DATA/"worker.json",{"pid":os.getpid(),"heartbeat":time.time(),
@@ -90,6 +148,14 @@ def _handle(job):
         store.finish_job(job["id"], lease=job["lease"])
     except Exception as exc:
         if not owns_job(job):return  # Late workers retain private receipts only.
+        if _defer_review_transport(job, exc):
+            return
+        current = store.get(pid, False)
+        if (isinstance(exc, ProductionNeedsDecision) and exc.reason == 'semantic_unavailable'
+                and (current.get('pause_requested') or current['status'] in {'paused','cancelled'})):
+            store.update(pid, {'status': 'cancelled' if current['status'] == 'cancelled' else 'paused', 'error': None})
+            store.finish_job(job['id'], lease=job['lease'])
+            return
         from .team_control import TeamInterventionPending, process_pending
         if isinstance(exc, TeamInterventionPending):
             store.update(pid, {"status": "paused", "team_wait": "boundary", "error": None, "message": str(exc)})
@@ -150,18 +216,9 @@ def _handle(job):
         if job.get('kind') == 'drama_plan' and owner['status'] == 'completed':
             from .drama_automation import reconcile_project
             reconcile_project(pid)
-        if job.get('kind') in {'drama_episode','workflow'} and store.get(pid,False).get('record_kind') == 'episode':
-            from .dramas import after_episode
-            after_episode(pid)
-        if job.get('kind') == 'workflow' and store.get(pid,False).get('record_kind') == 'scene_unit':
-            unit = store.get(pid,False)
-            with store.connection() as db:
-                db.execute('BEGIN IMMEDIATE')
-                parent=store._read(db,unit['episode_id'])
-                if parent['status'] in {'awaiting_final','approved'}:
-                    parent.update(status='queued',pause_requested=False,production_revision=parent['production_revision']+1)
-                    store._write(db,parent)
-                    store._enqueue(db,parent['id'],'drama_episode')
+        if job.get('kind') in {'drama_episode','workflow'} and store.get(pid,False).get('record_kind') in {'episode','scene_unit'}:
+            from .dramas import settle_execution
+            settle_execution(pid, job)
 
 
 def main():
