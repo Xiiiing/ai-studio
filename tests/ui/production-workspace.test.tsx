@@ -148,7 +148,7 @@ it("offers explicit old-project takeover with the displayed per-unit budget", as
   });
   expect(onOperation).not.toHaveBeenCalled();
   await userEvent.click(screen.getByRole("button", { name: "设置连续制作" }));
-  expect(screen.getByText(/并非整剧总额/)).toBeVisible();
+  expect(screen.getByText(/这是每个单元的上限/)).toBeVisible();
   await userEvent.click(screen.getByRole("button", { name: "开启连续制作" }));
   expect(onOperation).toHaveBeenCalledWith("actions", {
     action: "enable_automation",

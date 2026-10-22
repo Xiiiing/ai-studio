@@ -4,6 +4,7 @@ This is a director task, not a new model role or a quality verdict. It performs
 no vision/model installation or video execution and must run before GPU leases.
 """
 from __future__ import annotations
+from .drama_intent import closed_mouths
 
 import copy
 import hashlib
@@ -213,7 +214,7 @@ def compile_prompt(project, shot, *, config, references, style, seconds,
                 candidate = read_json(cache)
                 if candidate.get("signature") == signature:
                     _check_plan(candidate["plan"], seconds)
-                    if candidate.get("prompt") == _render(candidate["plan"], seconds, closed_mouths=not project.get("production_mode") == "one_sentence"):
+                    if candidate.get("prompt") == _render(candidate["plan"], seconds, closed_mouths=closed_mouths(project)):
                         saved = candidate
             except (OSError, ValueError, KeyError, ValidationError):
                 pass
@@ -224,7 +225,7 @@ def compile_prompt(project, shot, *, config, references, style, seconds,
                 plan = json_call(config=routed, role=ROLE, system=system, payload=payload,
                                  schema=schema, output_dir=folder / "llm", max_tokens=2400, temperature=.25)
             _check_plan(plan, seconds)
-            saved = {"signature": signature, "plan": plan, "prompt": _render(plan, seconds, closed_mouths=not project.get("production_mode") == "one_sentence"),
+            saved = {"signature": signature, "plan": plan, "prompt": _render(plan, seconds, closed_mouths=closed_mouths(project)),
                      "origin": cache_origin(context, folder), "prompt_metadata": metadata}
             write_json(cache, saved)
         else:

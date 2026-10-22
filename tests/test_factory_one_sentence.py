@@ -32,6 +32,7 @@ def test_creation_freezes_and_inherits_capabilities_without_leaking_configuratio
     p = create()
     raw = store.get(p['id'], False)
     assert agent_loop.enabled(raw) and generation_pipeline.enabled(raw)
+    assert raw['execution_config']['production']['review_only_existing_videos'] is False
     assert 'execution_config' not in p and 'never-return-this' not in json.dumps(p)
     assert p['whole_drama_budget'] == {'gpu_minutes': 360, 'spent_gpu_minutes': 0, 'remaining_gpu_minutes': 360, 'scope': 'whole_drama'}
     assert dramas.create(input_payload(production_mode='one_sentence'))['id'] == p['id']
@@ -195,6 +196,7 @@ def test_series_return_is_atomic_and_preserves_costs_and_prior_media(isolated):
     assert returned['delivery_history'][-1] == episodes[0]['delivery']
     assert returned['budget'] == episodes[0]['budget']
     assert returned['script_feedback']['shot_ids'] == ['S01']
+    assert returned['episode_media_revisions'] == {'S01': {'image': 1, 'video': 1}}
     assert returned['script_generation'] == episodes[0]['script_generation'] + 1
     assert store.get(episodes[1]['id'], False)['delivery'] == episodes[1]['delivery']
 
@@ -286,3 +288,62 @@ def test_scene_endpoint_observes_actual_video_and_preserves_uncertainty(isolated
     saved = store.get(unit['id'], False)
     assert saved['delivery'] == unit['delivery'] and not saved.get('episode_repair_history')
     assert saved['episode_review']['evidence']['coverage'] == 'sampled_shot_endpoints_not_full_film_or_audio_observation'
+
+
+def test_approved_episodes_do_not_cancel_persistent_delivery_wait(isolated):
+    from factory.remote_tasks import defer_job
+    p = reviewed(create())
+    store.update(p['id'], {'status': 'approved'})
+    with store.connection() as db:
+        db.execute("UPDATE jobs SET status='completed'")
+        store._enqueue(db, p['id'], 'drama_delivery')
+    job = store.claim_job()
+    assert job['kind'] == 'drama_delivery'
+    assert defer_job(job, ProductionDeferred(time.time() + 300, 'remote_poll', {'wait_kind': 'resources'}))
+    with store.connection() as db:
+        row = db.execute('SELECT status,next_poll_at FROM jobs WHERE id=?', (job['id'],)).fetchone()
+    assert row['status'] == 'queued' and row['next_poll_at'] > time.time()
+
+
+def test_repaired_media_does_not_retain_human_approval_for_old_version(isolated):
+    p = reviewed(create())
+    episodes = delivery_records(p)
+    first = store.update(episodes[0]['id'], {'status': 'approved', 'accepted_by': 'producer', 'accepted_at': 'old'})
+    drama_delivery._return_series(store.get(p['id'], False), [first, *episodes[1:]], {
+        'summary': '实际承接不符', 'repairs': [{'episode_number': 1, 'shot_ids': ['S01'], 'reason': '实际持物矛盾'}]})
+    changed = store.get(first['id'], False)
+    assert 'accepted_by' not in changed and 'accepted_at' not in changed
+    assert changed['delivery_history'][-1] == first['delivery']
+
+
+def test_new_mode_waits_for_human_final_gate_without_optional_model(isolated, monkeypatch):
+    from factory import workflows, supervision
+    p = reviewed(create())
+    e = store.get(p['episodes'][0]['id'], False)
+    monkeypatch.setattr(supervision, 'supervise_gate', lambda *a, **kw: pytest.fail('final approval must wait directly for the human'))
+    class HumanGatePending(Exception): pass
+    def pending(gate):
+        assert gate['type'] == 'final'
+        raise HumanGatePending()
+    monkeypatch.setattr(workflows, 'interrupt', pending)
+    with pytest.raises(HumanGatePending):
+        workflows.final_decision({'project_id': e['id'], 'final_generation': e['production_revision']})
+    saved = store.get(e['id'], False)
+    assert saved['decisions'][-1]['status'] == 'pending' and not saved.get('accepted_by')
+
+
+@pytest.mark.parametrize('requirement,strict', [('所有人物全程闭口，使用画外音', True), ('不要求闭口，使用画外音', False), ('角色闭口不谈往事', False)])
+def test_user_global_visual_constraint_is_frozen_independently_of_model(isolated, requirement, strict):
+    p = store.get(create(brief='成年人寻找旧信，' + requirement)['id'], False)
+    assert intent.closed_mouths(p) is strict
+    assert intent.closed_mouths({'production_mode': None}) is True
+
+
+def test_scoped_return_preserves_unaffected_compiled_source_but_keeps_facts_fenced(isolated):
+    p = store.get(create()['id'], False)
+    shot = {'id': 'S02', 'seconds': 6, 'prompt': 'An adult beside a cup', 'action': 'turn toward camera'}
+    before = generation_pipeline.source(p, shot)
+    p['script_feedback'] = {'shot_ids': ['S01'], 'notes': '实际持物矛盾，定向修复'}
+    assert generation_pipeline.source(p, shot) == before
+    assert generation_pipeline.source(p, {**shot, 'id': 'S01'})['story_goal']['script_feedback'] == p['script_feedback']
+    assert generation_pipeline.source(p, {**shot, 'action': 'pick up the cup'}) != before

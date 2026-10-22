@@ -171,6 +171,8 @@ def _apply_return(db, current, review):
         raise ProductionNeedsDecision('检查未确定可安全返修的镜头范围', 'episode_review_failed', review)
     if current.get('unit_ids'):
         current.pop('dependency_context', None)
+        current.pop('accepted_by', None)
+        current.pop('accepted_at', None)
         samples = review['evidence']['samples']
         targets = {}
         for sample in samples:
@@ -190,6 +192,15 @@ def _apply_return(db, current, review):
 
 def _return_patch(current, review, shot_ids):
     current.pop('dependency_context', None)
+    current.pop('accepted_by', None)
+    current.pop('accepted_at', None)
+    revisions = current.setdefault('episode_media_revisions', {})
+    shots = {s['id']: s for s in current.get('shots', [])}
+    for sid in shot_ids:
+        previous = shots.get(sid, {}).get('render_revisions', {})
+        old = revisions.get(sid, {})
+        revisions[sid] = {kind: max(previous.get(kind, 0), old.get(kind, 0)) + 1 for kind in ('image', 'video')}
+        current.get('shot_selections', {}).pop(sid, None)
     history = current.get('episode_repair_history', [])
     current['delivery_history'] = [*current.get('delivery_history', []), current['delivery']]
     current.update(episode_repair_history=[*history, copy.deepcopy(review)],

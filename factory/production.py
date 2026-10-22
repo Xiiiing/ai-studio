@@ -282,6 +282,8 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
         self.project = copy.deepcopy(project)
         from .drama_intent import enabled as whole_drama
         self.one_sentence = whole_drama(project)
+        from .drama_intent import closed_mouths
+        self.closed_mouths = closed_mouths(project)
         from .drama_intent import bound_budget
         self.config = bound_budget(project, dict(config or {}))
         connection = self.config.get("video_connection", {"profile": "local_wan", **LOCAL_PROFILE})
@@ -421,6 +423,9 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                 from .production_handoffs import restore_media
                 shot.update(restore_media(self, raw, current.get(raw.get('id'), {})))
             shot["id"] = _safe_id(shot.get("id") or f"S{i + 1:02d}")
+            if self.one_sentence:
+                for kind, revision in self.project.get('episode_media_revisions', {}).get(shot['id'], {}).items():
+                    shot.setdefault('render_revisions', {})[kind] = max(shot.get('render_revisions', {}).get(kind, 0), revision)
             if shot["id"] in seen:
                 raise ValueError("Duplicate shot ID")
             seen.add(shot["id"])
@@ -538,7 +543,7 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
         if self.autonomous_recovery and target['kind'] == 'video':
             from .visual_constraints import required, certified
             expected = copy.deepcopy(target.get('shot') or {})
-            if not expected.get('lip_sync') and not self.one_sentence:
+            if not expected.get('lip_sync') and self.closed_mouths:
                 expected['execution_constraints'] = {'visible_mouths_closed': True}
             if required(expected) and not certified(receipt.get('qa', {}).get('semantic', {}), _receipt_path(receipt)):
                 return False
@@ -563,7 +568,7 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
         history = record.setdefault("semantic_attempts", [])
         expected = copy.deepcopy(target.get('shot') or target.get('review_context') or
                                  {'id': target['key'], 'prompt': target['prompt']})
-        if self.autonomous_recovery and target['kind'] == 'video' and not expected.get('lip_sync') and not self.one_sentence:
+        if self.autonomous_recovery and target['kind'] == 'video' and not expected.get('lip_sync') and self.closed_mouths:
             expected['execution_constraints'] = {'visible_mouths_closed': True,
                                                  'source': 'existing_external_voiceover_adapter_contract'}
         answer = None

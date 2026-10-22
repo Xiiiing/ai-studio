@@ -79,7 +79,7 @@ def model_value(schema, payload):
                     'evidence': 'Synthetic inference reads the actual CPU fixture frame; not model quality.'}],
                      observed_end='Synthetic CPU fixture ends with the same test pattern and no real actors.')
     elif 'action' in props and 'choice' in props:
-        value.update(action='select', choice=payload['candidates'][0]['id'])
+        value.update(action='select', choice=payload['candidates'][0]['id']) if payload['candidates'] else value.update(action='escalate', choice='')
     if 'scores' in props:
         value['scores'] = {k: 8 for k in props['scores']['properties']}
     validate(value, schema)
@@ -122,6 +122,7 @@ def test_three_episode_worker_delivery_uses_real_business_stages(monkeypatch, tm
         calls = []
         drift_injected = []
         review_returned = []
+        series_returned = []
 
         def transport(endpoint, route, request, **kw):
             schema = request['response_format'].get('schema') or request['response_format']['json_schema']['schema']
@@ -139,6 +140,10 @@ def test_three_episode_worker_delivery_uses_real_business_stages(monkeypatch, tm
                     value = {'tool': 'plan', 'arguments': {'steps': ['Complete the frozen role contract using synthetic inference.']}}
                 elif turn == 1:
                     artifact = model_value(artifact_schema, payload)
+                    if 'repairs' in artifact_schema.get('properties', {}) and payload.get('episodes') and not series_returned:
+                        artifact.update(status='fail', issues=['末集结局缺失'], repairs=[{
+                            'episode_number': 3, 'shot_ids': ['S01'], 'reason': '末集必要结局未兑现，请定向修复实际镜头。'}])
+                        series_returned.append(copy.deepcopy(artifact))
                     if actor['stage'].startswith('generation-image-') and not drift_injected:
                         artifact['approved_action'] = 'Synthetic compiler tried to change approved facts.'
                         drift_injected.append(actor['stage'])
@@ -155,12 +160,22 @@ def test_three_episode_worker_delivery_uses_real_business_stages(monkeypatch, tm
                     value.update(status='fail', issues=['实际持物与必要事件不符'])
                     value['checks'][0]['status'] = 'fail'
                     review_returned.append(copy.deepcopy(value))
+                if 'repairs' in schema.get('properties', {}) and payload.get('episodes') and not series_returned:
+                    value.update(status='fail', issues=['末集结局缺失'], repairs=[{
+                        'episode_number': 3, 'shot_ids': ['S01'], 'reason': '末集必要结局未兑现，请定向修复实际镜头。'}])
+                    series_returned.append(copy.deepcopy(value))
                 calls.append('direct_external_inference')
             validate(value, schema)
             return {'model': 'synthetic-qwen', 'choices': [{'finish_reason': 'stop', 'message': {'content': json.dumps(value, ensure_ascii=False)}}],
                     'usage': {'completion_tokens': 50}}
 
-        monkeypatch.setattr(llm, 'request_json', transport)
+        def checked_transport(*args, **kwargs):
+            try:
+                return transport(*args, **kwargs)
+            except Exception as exc:
+                print('SYNTHETIC_TRANSPORT_ERROR', type(exc).__name__, str(exc))
+                raise
+        monkeypatch.setattr(llm, 'request_json', checked_transport)
         original_execute = FixtureWorker.execute
 
         class MediaWorker(FixtureWorker):
@@ -219,6 +234,15 @@ def test_three_episode_worker_delivery_uses_real_business_stages(monkeypatch, tm
                     assert not calls  # Discovery failure never submitted inference or media.
 
             current = dramas.snapshot(p['id'])
+            if current['automation_state']['status'] == 'blocked':
+                from factory import agent_loop
+                for record in [store.get(p['id'], False), *[store.get(e['id'], False) for e in current['episodes']]]:
+                    for row in agent_loop._rows(record):
+                        if row.get('state') not in agent_loop.CLOSED:
+                            print('SYNTHETIC_PENDING_AGENT', record['id'], row.get('stage'), row.get('state'), row.get('pending'), row.get('reason'))
+                for receipt in root.glob('production/*/planning/**/receipt.json'):
+                    value = core.read_json(receipt)
+                    if value.get('status') == 'failed': print('SYNTHETIC_FAILED_RECEIPT', value.get('role'), value.get('error'))
             assert current['automation_state']['status'] != 'blocked', current.get('error') or current['automation_state']
         current = dramas.snapshot(p['id'])
         assert len(current['episodes']) == 3
@@ -231,9 +255,15 @@ def test_three_episode_worker_delivery_uses_real_business_stages(monkeypatch, tm
             assert 'series-review.json' in bundle.namelist()
             assert all(f'E{i:03d}/episode.mp4' in bundle.namelist() for i in (1, 2, 3))
         assert drift_injected and any('-repair-1' in stage for stage in calls)
-        assert resource_job and len(discovery) > 1 and review_returned
+        assert resource_job and len(discovery) > 1 and review_returned and series_returned
+        assert 'supervisor_final' not in calls
+        assert len(store.get(p['id'], False)['series_repair_history']) == 1
+        assert len(store.get(current['episodes'][2]['id'], False)['episode_repair_history']) == 1
         repaired = store.get(current['episodes'][0]['id'], False)
         assert len(repaired['episode_repair_history']) == 1 and repaired['delivery_history']
+        assert repaired['episode_media_revisions'] == {'S01': {'image': 1, 'video': 1}}
+        takes = {s['id']: s['video']['take'] for s in repaired['shots']}
+        assert takes['S01'] != takes['S02']  # Failed media is regenerated even when the writer keeps the same text.
         with store.connection() as db:
             assert db.execute('SELECT status FROM jobs WHERE id=?', (resource_job,)).fetchone()[0] == 'completed'
 

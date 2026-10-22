@@ -17,6 +17,7 @@ from . import store
 from .creative_evidence_io import digest, read_json
 from .prompt_registry import load_prompt, prompt_receipt
 from .scheduler import ProductionNeedsDecision
+from .drama_intent import closed_mouths
 from .reference_identity import generation_identity
 
 VERSION = 'ai-studio.generation-pipeline.v1'
@@ -77,6 +78,11 @@ def source(project, shot, references=(), *, style='', cast=None):
         refs.append(value)
     episode = project.get('episode') or project.get('script') or {}
     goal = {k: copy.deepcopy(project[k]) for k in ('brief', 'story_feedback', 'script_feedback', 'creative_contract', 'resolved_story_brief') if k in project}
+    from .drama_intent import enabled as whole_drama
+    if whole_drama(project):
+        feedback = goal.get('script_feedback')
+        if not feedback or (isinstance(feedback, dict) and 'shot_ids' in feedback and shot['id'] not in feedback['shot_ids']):
+            goal.pop('script_feedback', None)  # Scoped returns cannot invalidate unrelated approved media.
     goal['synopsis'] = episode.get('synopsis')
     goal['ending'] = episode.get('ending')
     return {'schema': VERSION, 'project_id': project['id'], 'shot_id': shot['id'], 'story_goal': goal,
@@ -337,7 +343,7 @@ def prepare(project, shot, references, *, config, phase, style='', cast=None, re
                 from .h3_prompting import _render
                 prompt = _render({'visual_description': candidate['image']['description'], 'initial_state': video['initial_state'],
                     'timeline': [{'start_seconds': 0, 'end_seconds': shot['seconds'], 'action': video['action'] + ' ' + action}],
-                    'end_state': video['end_state'], 'camera': video['camera'], 'continuity': base['approved_shot'].get('continuity', ''), 'audio': 'silent'}, shot['seconds'], closed_mouths=not whole_drama(project))
+                    'end_state': video['end_state'], 'camera': video['camera'], 'continuity': base['approved_shot'].get('continuity', ''), 'audio': 'silent'}, shot['seconds'], closed_mouths=closed_mouths(project))
             else:
                 prompt = (base['style'] + '\nInitial state: ' + video['initial_state'] + '\nAction: ' + video['action'] + '\n' + action +
                           '\nEnd state: ' + video['end_state'] + '\nCamera: ' + video['camera'] + ('\nExternal voiceover; no lip sync required; no generated speech, music, text or watermark.' if whole_drama(project) else '\nExternal voiceover; naturally closed mouths; no generated speech, music, text or watermark.'))

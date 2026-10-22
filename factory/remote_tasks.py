@@ -140,7 +140,10 @@ def defer_job(job, deferred):
             return False
         project = store._read(db, job["project_id"])
         delivery_job = job.get("kind") == "drama_delivery" and project.get("production_mode") == "one_sentence"
-        if project.get("pause_requested") or project["status"] in store.TERMINAL | {"paused", "blocked", "failed"} or project["status"].startswith("awaiting_") and not delivery_job:
+        closed = project["status"] in store.TERMINAL | {"paused", "blocked", "failed"}
+        if delivery_job and project["status"] == "approved":
+            closed = False  # Individual approval does not cancel an unfinished whole-drama check.
+        if project.get("pause_requested") or closed or project["status"].startswith("awaiting_") and not delivery_job:
             db.execute("UPDATE jobs SET status='cancelled',finished=? WHERE id=?", (timestamp, job["id"]))
             if project.get("pause_requested"):
                 project["status"] = "paused"

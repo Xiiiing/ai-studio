@@ -268,7 +268,8 @@ def final_decision(state):
         "完整初版已交付，请观看并决定最终版本。",version)
     from .supervision import supervise_gate
     answer=store.answer_for(p["id"],gate["id"])
-    if answer is None:
+    from .drama_intent import enabled as whole_drama
+    if answer is None and not whole_drama(p):
         answer=supervise_gate(p["id"],gate)
     if answer is None and p.get("team_mode") == "delegated":
         # A receipt may outlive a lost graph checkpoint, or a human may answer

@@ -8,6 +8,7 @@ from __future__ import annotations
 import copy
 import math
 import json
+import re
 
 from studio.core import fingerprint
 
@@ -35,6 +36,11 @@ def initialize(project, config, request_id):
         agent_loop={'version': AGENT_VERSION, 'selection_id': request_id,
                     'settings': {**DEFAULTS, 'protocol': 'structured'}},
         execution_config=apply_configuration(config, DEFAULT_POLICY))
+    # Freeze explicit global mouth constraints independently of model paraphrasing.
+    source = project['brief'] + '\n' + project.get('visual_style', '')
+    source = re.sub(r'(?:不要求|无需|不必|不要).{0,8}(?:闭口|闭嘴|嘴(?:巴|唇|部)?闭合)|闭口不谈', '', source)
+    if re.search(r'(?:全程|始终|所有|必须|要求).{0,12}(?:闭口|闭嘴|嘴(?:巴|唇|部)?闭合)|(?:mouths?|lips).{0,30}(?:closed|together).{0,20}(?:throughout|all frames)|closed[ -]mouth', source, re.I):
+        project['production_spec']['visible_mouths_closed'] = True
     frozen = project['execution_config']
     routes = frozen.setdefault('llm_roles', {})
     if 'executive_producer' not in routes:
@@ -48,6 +54,7 @@ def initialize(project, config, request_id):
         except ValueError:
             pass  # The worker's static preflight reports the missing configuration.
     project['execution_config'].setdefault('creative', {})['separate_storyboard'] = True
+    project['execution_config'].setdefault('production', {})['review_only_existing_videos'] = False
     project['production_spec']['config_signature'] = fingerprint(project['execution_config'])
 
 
@@ -68,6 +75,10 @@ def inherit(project, parent):
         'outline': copy.deepcopy(project.get('outline', {})),
     }
 
+
+
+def closed_mouths(project):
+    return not enabled(project) or project['production_spec'].get('visible_mouths_closed') is True
 
 def instructions(project):
     if not enabled(project):
