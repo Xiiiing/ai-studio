@@ -154,7 +154,7 @@ def _check_plan(value, seconds):
         raise ValueError("H3 action timeline must cover the complete shot")
 
 
-def _render(value, seconds):
+def _render(value, seconds, *, closed_mouths=True):
     timeline = "\n".join(f"{beat['start_seconds']:.2f}s-{beat['end_seconds']:.2f}s: {beat['action'].strip()}"
                         for beat in value["timeline"])
     audio = "Silent scene." if value["audio"] == "silent" else "Subtle diegetic scene ambience only."
@@ -165,7 +165,7 @@ def _render(value, seconds):
             f"Preserve the supplied first frame's approved cast, identities, wardrobe, props and spatial relationships. "
             f"One continuous {seconds:.2f}-second shot.\n{timeline}\n"
             f"End state: {value['end_state'].strip()}\nCamera: {value['camera'].strip()} "
-            f"Continuity: {value['continuity'].strip()} Visible mouths remain naturally closed; "
+            f"Continuity: {value['continuity'].strip()} " + ("Visible mouths remain naturally closed; " if closed_mouths else "External voice-over; lip sync is not required. ") +
             "clean unobstructed picture with naturally unmarked surfaces.\n\n"
             f"overall_soundscape: {audio}\n\n"
             "non_diegetic_music: None.")
@@ -213,7 +213,7 @@ def compile_prompt(project, shot, *, config, references, style, seconds,
                 candidate = read_json(cache)
                 if candidate.get("signature") == signature:
                     _check_plan(candidate["plan"], seconds)
-                    if candidate.get("prompt") == _render(candidate["plan"], seconds):
+                    if candidate.get("prompt") == _render(candidate["plan"], seconds, closed_mouths=not project.get("production_mode") == "one_sentence"):
                         saved = candidate
             except (OSError, ValueError, KeyError, ValidationError):
                 pass
@@ -224,7 +224,7 @@ def compile_prompt(project, shot, *, config, references, style, seconds,
                 plan = json_call(config=routed, role=ROLE, system=system, payload=payload,
                                  schema=schema, output_dir=folder / "llm", max_tokens=2400, temperature=.25)
             _check_plan(plan, seconds)
-            saved = {"signature": signature, "plan": plan, "prompt": _render(plan, seconds),
+            saved = {"signature": signature, "plan": plan, "prompt": _render(plan, seconds, closed_mouths=not project.get("production_mode") == "one_sentence"),
                      "origin": cache_origin(context, folder), "prompt_metadata": metadata}
             write_json(cache, saved)
         else:

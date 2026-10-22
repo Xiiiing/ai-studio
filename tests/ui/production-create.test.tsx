@@ -32,9 +32,7 @@ const submitted = () => JSON.parse(fetchMock.mock.calls[0][1].body);
 
 it("starts with a theme and authorizes the displayed full-drama defaults", async () => {
   create();
-  expect(
-    screen.getByRole("button", { name: "创建并开始制作" }),
-  ).toBeVisible();
+  expect(screen.getByRole("button", { name: "创建并开始制作" })).toBeVisible();
   await userEvent.type(
     screen.getByRole("textbox", { name: "创作方向" }),
     "成年修表师寻找家族真相，最终达成和解。",
@@ -45,6 +43,7 @@ it("starts with a theme and authorizes the displayed full-drama defaults", async
   await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
   expect(submitted()).toMatchObject({
     title: "成年修表师寻找家族真相，最终达成和解",
+    production_mode: "one_sentence",
     episode_count: 6,
     duration_seconds: 300,
     format: "animation",
@@ -182,3 +181,28 @@ it.each(["overview", "workflow", "production"])(
     ).not.toBeInTheDocument();
   },
 );
+
+it("can keep ordinary creation and does not grant the whole-drama mode for partial scope", async () => {
+  create();
+  await userEvent.type(
+    screen.getByRole("textbox", { name: "创作方向" }),
+    "成年人在车站寻找旧信并完成和解。",
+  );
+  await userEvent.click(
+    screen.getByRole("checkbox", { name: "启用整剧制作闭环" }),
+  );
+  await userEvent.click(screen.getByRole("button", { name: "创建并开始制作" }));
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+  expect(submitted()).not.toHaveProperty("production_mode");
+});
+
+it("shows a fixed whole-drama cap for the three-by-sixty acceptance specification", async () => {
+  create();
+  fireEvent.change(screen.getByRole("spinbutton", { name: "总集数" }), {
+    target: { value: "3" },
+  });
+  fireEvent.change(screen.getByRole("spinbutton", { name: "每集时长（秒）" }), {
+    target: { value: "60" },
+  });
+  expect(screen.getByText(/整剧固定额度：360 GPU 分钟/)).toBeVisible();
+});

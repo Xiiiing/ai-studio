@@ -262,6 +262,7 @@ def prepare(project, shot, references, *, config, phase, style='', cast=None, re
         raise ValueError('请先显式启用生成提示词流水线')
     if phase not in ('image', 'video'):
         raise ValueError('未知生成媒介')
+    from .drama_intent import enabled as whole_drama
     caps = capabilities(config, project, phase)
     if not caps['enabled'] or len(references) > caps['reference_limit'] or len(references) not in caps['reference_counts']:
         raise ProductionNeedsDecision('当前适配器未启用或参考图超过实际支持数量，请先准备组合参考', 'generation_capability')
@@ -310,10 +311,23 @@ def prepare(project, shot, references, *, config, phase, style='', cast=None, re
                 'implementation': sha256(Path(__file__))}
     def compile_plan():
         payload = {'project': base, 'capabilities': caps, 'frame_evidence': evidence, 'phase': phase}
-        candidate = cached_json_call(project, llm_config, ROLE, 'generation-' + phase + '-' + shot['id'],
-                                     load_prompt(ROLE, PROMPT_VERSION), payload, PLAN_SCHEMA, max_tokens=4200, temperature=.2)
-        # Image compilation does not assert that its future video is executable.
-        _check(candidate, base, caps if phase == 'video' else {'continuous_action': True})
+        # Repair known candidate-contract mistakes before submitting any media.
+        # Each round is cached and bounded; unknown requests never reach here.
+        rounds = min(3, project.get('budget', {}).get('max_attempts', 3)) if whole_drama(project) else 1
+        for index in range(rounds):
+            stage = 'generation-' + phase + '-' + shot['id'] + (('-repair-' + str(index)) if index else '')
+            candidate = cached_json_call(project, llm_config, ROLE, stage,
+                                         load_prompt(ROLE, PROMPT_VERSION), payload, PLAN_SCHEMA, max_tokens=4200, temperature=.2)
+            try:
+                _check(candidate, base, caps if phase == 'video' else {'continuous_action': True})
+                break
+            except ProductionNeedsDecision as exc:
+                if index + 1 == rounds or exc.reason not in {'generation_plan_blocked', 'generation_plan_changed_facts',
+                        'generation_image_not_instant', 'generation_missing_action'}:
+                    raise
+                payload = {**payload, 'project': {**base, 'compile_feedback': {
+                    'previous_candidate': candidate, 'code': exc.reason, 'message': str(exc),
+                    'rule': '仅修正编译候选，逐字保留批准动作、相机和参考；不得改变剧情、身份、时长或权限'}}}
         if phase == 'image':
             prompt = base['style'] + '\nSingle starting instant: ' + candidate['image']['description']
         else:
@@ -323,10 +337,10 @@ def prepare(project, shot, references, *, config, phase, style='', cast=None, re
                 from .h3_prompting import _render
                 prompt = _render({'visual_description': candidate['image']['description'], 'initial_state': video['initial_state'],
                     'timeline': [{'start_seconds': 0, 'end_seconds': shot['seconds'], 'action': video['action'] + ' ' + action}],
-                    'end_state': video['end_state'], 'camera': video['camera'], 'continuity': base['approved_shot'].get('continuity', ''), 'audio': 'silent'}, shot['seconds'])
+                    'end_state': video['end_state'], 'camera': video['camera'], 'continuity': base['approved_shot'].get('continuity', ''), 'audio': 'silent'}, shot['seconds'], closed_mouths=not whole_drama(project))
             else:
                 prompt = (base['style'] + '\nInitial state: ' + video['initial_state'] + '\nAction: ' + video['action'] + '\n' + action +
-                          '\nEnd state: ' + video['end_state'] + '\nCamera: ' + video['camera'] + '\nExternal voiceover; naturally closed mouths; no generated speech, music, text or watermark.')
+                          '\nEnd state: ' + video['end_state'] + '\nCamera: ' + video['camera'] + ('\nExternal voiceover; no lip sync required; no generated speech, music, text or watermark.' if whole_drama(project) else '\nExternal voiceover; naturally closed mouths; no generated speech, music, text or watermark.'))
         prompt += '\nKeep the approved identities, wardrobe, props and reference correspondence. '
         if phase == 'image':
             prompt += '\nActual reference correspondence (1-based image order): ' + json.dumps(_image_reference_projection(base['reference_map']), ensure_ascii=False)

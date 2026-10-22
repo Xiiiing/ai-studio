@@ -22,13 +22,14 @@ from .agent_policy import VERSION, DEFAULTS, POLICY, ACTION_SCHEMA, settings, to
 from .creative_evidence_io import canonical, digest, read_json
 from .scheduler import ProductionNeedsDecision, ProductionPaused
 
-HARD_FACTS = ('brief','story_feedback','script_feedback','producer_feedback','creative_contract','resolved_story_brief',
+HARD_FACTS = ('previous_unit_state','dependency_context','production_spec','narrative_scope','outline','brief','story_feedback','script_feedback','producer_feedback','creative_contract','resolved_story_brief',
               'series_bible','material_package','selected_story','production_profile')
-MATERIALS = ('brief','story_feedback','script_feedback','producer_feedback','creative_contract','resolved_story_brief',
+MATERIALS = ('previous_unit_state','dependency_context','production_spec','narrative_scope','outline','brief','story_feedback','script_feedback','producer_feedback','creative_contract','resolved_story_brief',
  'selected_story','proposals','research','sources','submitted_sources','series_bible','material_package','script',
  'episode','screenplay_draft','draft_review','storyboard_receipt','storyboard_issues','styles','selected_style','shots','assets')
-FENCE_FIELDS = ('workflow_version','script_generation','proposal_generation','production_revision','style_generation',
+FENCE_FIELDS = ('previous_unit_state','dependency_context','production_spec','narrative_scope','outline','execution_config','workflow_version','script_generation','proposal_generation','production_revision','style_generation',
                 'plan_version','plan_cycle','asset_version','prompt_snapshot','generation_pipeline','agent_loop')
+NEW_DRAMA_FIELDS = {'previous_unit_state', 'dependency_context', 'production_spec', 'narrative_scope', 'outline', 'execution_config'}
 CLOSED = {'completed','closed','superseded','blocked','handoff','exhausted'}
 
 
@@ -88,7 +89,9 @@ def _rows(project):
 
 
 def _fence(project):
-    return digest({k:project.get(k) for k in (*FENCE_FIELDS,*MATERIALS)})
+    from .drama_intent import enabled as whole_drama
+    return digest({k:project.get(k) for k in (*FENCE_FIELDS,*MATERIALS)
+                   if whole_drama(project) or k not in NEW_DRAMA_FIELDS})
 
 
 def _guard(project, fence):
@@ -231,7 +234,7 @@ class Loop:
         self.system,self.payload,self.schema,self.signature=system,payload,schema,signature
         self.max_tokens,self.temperature=max_tokens,temperature
         self.settings=settings(project['agent_loop']['settings']);self.fence=_fence(project)
-        self.materials={'project:'+k:copy.deepcopy(project[k]) for k in MATERIALS if k in project}
+        self.materials={'project:'+k:copy.deepcopy(project[k]) for k in MATERIALS if k in project and (k not in NEW_DRAMA_FIELDS or project.get('production_mode') == 'one_sentence')}
         self.materials.update({'task:'+k:copy.deepcopy(v) for k,v in payload.items()})
         self.definitions=tools(schema,list(self.materials));self.specs={t['function']['name']:t['function']['parameters'] for t in self.definitions}
         self.directory=root(project)/signature
@@ -287,7 +290,7 @@ class Loop:
             self.event('turn_start',summary='请求下一组受控动作')
         else:cap=pending['cap']
         adapted=derive_prompt(self.system,str(self.system)+'\n'+POLICY,'agent_loop')
-        constraints={k:copy.deepcopy(self.project[k]) for k in HARD_FACTS if k in self.project}
+        constraints={k:copy.deepcopy(self.project[k]) for k in HARD_FACTS if k in self.project and (k not in NEW_DRAMA_FIELDS or self.project.get('production_mode') == 'one_sentence')}
         base_payload={**self.payload,'_agent_constraints':constraints}
         context={**base_payload,'_agent':{'role':self.role,'stage':self.stage,'tools':self.definitions,
             'materials':self.row['materials'],'current_candidate_sha256':self.row.get('candidate_sha256'),

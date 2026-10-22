@@ -183,6 +183,11 @@ def state(p, episodes, *, db=None):
         return {**result, 'status': 'cancelled', 'reason': '项目已取消'}
     if p.get('pause_requested') or config.get('suspended'):
         return {**result, 'status': 'paused', 'reason': '连续制作已暂停，可修改要求或继续'}
+    from .drama_intent import enabled as whole_drama
+    if whole_drama(p):
+        waiting = next((e for e in [p, *episodes] if e.get('status') == 'waiting_remote' and e.get('production', {}).get('remote_wait', {}).get('wait_kind') == 'resources' and e.get('production', {}).get('next_poll_at')), None)
+        if waiting:
+            return {**result, 'status': 'waiting_resources', 'stage': 'planning' if not p.get('plan_version') else 'production', 'reason': '等待当前阶段所需资源，恢复后后台自动继续', 'recovery': copy.deepcopy(waiting['production']['remote_wait'])}
     if config.get('last_error'):
         return {**result, 'status': 'blocked', 'reason': config['last_error'],
             'attention': [{'code': 'automation_error', 'message': config['last_error']}]}
@@ -219,6 +224,9 @@ def state(p, episodes, *, db=None):
     if states == {'approved'}:
         return {**result, 'status': 'completed', 'stage': 'final_review', 'reason': '所选剧集已全部人工验收'}
     if selected and states <= FINAL:
+        from .drama_intent import enabled as whole_drama
+        if whole_drama(p) and (p.get('delivery_bundle') or {}).get('source_signature') != fingerprint([(e.get('episode_review') or {}).get('signature') for e in selected]):
+            return {**result, 'status': 'reviewing', 'stage': 'final_review', 'reason': '正在核对整剧证据并生成固定版本交付包'}
         return {**result, 'status': 'awaiting_final', 'stage': 'final_review', 'reason': '成片已就绪，等待人工验收'}
     if attention:
         return {**result, 'status': 'paused' if all(item['code'] == 'episode_paused' for item in attention) else 'blocked',
@@ -292,6 +300,8 @@ def reconcile(db, p):
         if p != previous:
             store._write(db, p)
     dramas.dispatch(db, p)
+    from .drama_delivery import maybe_enqueue
+    maybe_enqueue(db, p)
 
 
 def reconcile_project(pid):

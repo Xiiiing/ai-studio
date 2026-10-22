@@ -72,6 +72,9 @@ def insert(db, project):
     from .prompt_workbench import pin_defaults
     parent_id = project.get("episode_id") or project.get("drama_id")
     parent = store._read(db, parent_id) if parent_id else None
+    from .drama_intent import inherit
+    if parent:
+        inherit(project, parent)
     if parent and "agent_loop" in parent:
         project.setdefault("agent_loop", copy.deepcopy(parent["agent_loop"]))
     if parent and "generation_pipeline" in parent:
@@ -119,8 +122,18 @@ def replay(project, payload):
 
 
 def create(payload):
-    allowed = {'title', 'brief', 'source_text', 'source_name', 'episode_count', 'duration_seconds', 'format', 'genre', 'visual_style', 'request_id', 'automation'}
+    allowed = {'title', 'brief', 'source_text', 'source_name', 'episode_count', 'duration_seconds', 'format', 'genre', 'visual_style', 'request_id', 'automation', 'production_mode'}
     if set(payload) - allowed: raise ValueError('整剧输入包含未知字段')
+    mode = payload.get('production_mode')
+    if mode not in (None, 'one_sentence'):
+        raise ValueError('未知制作模式')
+    payload = copy.deepcopy(payload)
+    if mode == 'one_sentence':
+        payload.setdefault('episode_count', 3)
+        payload.setdefault('duration_seconds', 60)
+        payload.setdefault('format', 'animation')
+        payload.setdefault('title', str(payload.get('brief', '')).strip()[:24] or '新建剧集')
+        payload.setdefault('automation', {'enabled': True, 'episode_numbers': list(range(1, integer(payload['episode_count'], '总集数', 1, 100) + 1))})
     source = payload.get('source_text', '')
     if source:
         source = text(source, '剧本', 5, 60000)
@@ -136,6 +149,8 @@ def create(payload):
     if not isinstance(fmt,str) or fmt not in {'motion_comic', 'animation', 'live_action'}: raise ValueError('请选择动态漫或H3视频路线')
     from .drama_automation import normalize, authorize
     automation = normalize(payload.get('automation'), count)
+    if mode and (not automation['enabled'] or automation['episode_numbers'] != list(range(1, count + 1))):
+        raise ValueError('一句话整剧模式需要授权全部剧集连续制作')
     key = 'drama:' + text(payload.get('request_id'), '请求标识', 1, 80)
     signature = fingerprint(payload)
     with store.connection() as db:
@@ -150,6 +165,10 @@ def create(payload):
             visual_style=text(payload.get('visual_style') or '统一人物与场景画风', '画风', 1, 2000),
             plan_version=0, plans=[], episodes=[], batches=[], series_key='')
         p['automation'] = authorize(automation, payload['request_id'])
+        if mode:
+            from .drama_intent import initialize
+            from .config import load_config
+            initialize(p, load_config(), payload['request_id'])
         p['series_key'] = 'drama_' + p['id']
         insert(db, p)
         db.execute('INSERT INTO idempotency VALUES(?,?,?)', (key, p['id'], signature))
@@ -177,10 +196,18 @@ def snapshot(pid, *, db=None, details=True):
             episode.pop(field,None)
         if episode.get('delivery'):
             episode['delivery']={k:v for k,v in episode['delivery'].items() if k not in {'sources','artifacts','scenes'}}
-    result = {k: copy.deepcopy(v) for k, v in p.items() if k not in {'operation_requests', 'source_text', 'planning_cache', 'plan_repair_basis', 'plan_history'}}
+    result = {k: copy.deepcopy(v) for k, v in p.items() if k not in {'operation_requests', 'source_text', 'planning_cache', 'plan_repair_basis', 'plan_history', 'execution_config'}}
     from .drama_automation import state
     result['automation'] = copy.deepcopy(p.get('automation', {'enabled': False}))
     result['automation_state'] = state(p, episodes, db=db)
+    from .drama_intent import enabled, budget_snapshot
+    if enabled(p):
+        result['whole_drama_budget'] = budget_snapshot(db, p)
+        signature = fingerprint([(e.get('episode_review') or {}).get('signature') for e in episodes])
+        if result.get('delivery_bundle'):
+            result['delivery_bundle']['current'] = result['delivery_bundle'].get('source_signature') == signature and all(e['status'] in {'approved', 'awaiting_final'} for e in episodes)
+            from .drama_delivery import review_current
+            result['delivery_bundle']['current'] = result['delivery_bundle']['current'] and all(review_current(e) for e in episodes)
     result['episodes'] = episodes
     result['batches'] = [{**b, 'members': [{'id': e['id'], 'number': e['episode_number'], 'status': e['status'],
         'progress': e['progress'], 'error': e.get('error')} for e in episodes if e['id'] in b['episode_ids']]}
@@ -245,6 +272,11 @@ def validate_plan(plan, project):
         if e['synopsis'].strip() == e['opening_state'].strip() == e['ending_state'].strip():
             raise PlanValidationError(f"第{e['number']}集仅重复起止状态，没有本集新事件。"
                 '请从前集结尾继续发展本集剧情，不要把收尾状态作为整集大纲。', **target)
+        from .drama_intent import enabled
+        if enabled(project):
+            beats = e.get('beats', [])
+            if not 2 <= len(beats) <= 8 or len({b['id'] for b in beats}) != len(beats):
+                raise PlanValidationError('一句话模式每集需要2至8个唯一必要事件', **target)
         content = fingerprint({k: e[k] for k in ('title','synopsis','opening_state','ending_state','characters')})
         if content in seen:
             raise PlanValidationError(f"第{e['number']}集与第{seen[content]}集的大纲内容完全重复。"
@@ -321,7 +353,7 @@ def confirm(pid, payload):
 
 
 def _generate_batch(db, p, numbers, budget, config):
-    config=copy.deepcopy(config)
+    config=copy.deepcopy(p.get('execution_config') or config)
     policy = p.get('automation', {}).get('production_recovery')
     if policy:
         from .production_execution import apply_configuration
@@ -401,6 +433,8 @@ def after_episode(pid, job=None):
         aggregate(db,p)
         store._write(db, p)
         dispatch(db, p)
+        from .drama_delivery import maybe_enqueue
+        maybe_enqueue(db, p)
 
 
 def aggregate(db,drama):
@@ -496,6 +530,8 @@ def settle_execution(pid, job):
         aggregate(db, root)
         store._write(db, root)
         dispatch(db, root)
+        from .drama_delivery import maybe_enqueue
+        maybe_enqueue(db, root)
 
 
 def _wait_for_resources(db, drama, request_id):

@@ -7,6 +7,7 @@ import math
 from . import store, dramas
 from .drama_planning import call, obj, txt, arr
 from .scheduler import ProductionPaused
+from .drama_intent import enabled as whole_drama
 
 
 def unit_durations(seconds):
@@ -34,6 +35,10 @@ def plan_units(episode, config):
     seconds = episode['duration_seconds']
     generation = episode.get('scene_generation', 1)
     schema = scene_schema(ids, seconds)
+    if whole_drama(episode):
+        scene = schema['properties']['scenes']['items']
+        scene['properties']['beats'] = arr(obj({'id': {'type': 'string', 'enum': [b['id'] for b in episode['outline']['beats']]}, 'description': txt(4, 800)}), 0, 8)
+        scene['required'].append('beats')
     duration_contract = {'scope': 'single_episode', 'episode_number': episode['episode_number'],
         'series_episode_count': len(plan.get('episodes', [])), 'target_seconds': seconds,
         'minimum_scene_seconds': 15, 'maximum_scene_count': min(60, seconds // 15),
@@ -90,6 +95,11 @@ def plan_units(episode, config):
         scenes = result['scenes']
         actual = sum(s['seconds'] for s in scenes)
         technical_feedback = []
+        if whole_drama(episode):
+            assigned = [b['id'] for scene in scenes for b in scene.get('beats', [])]
+            expected = [b['id'] for b in episode['outline']['beats']]
+            if sorted(assigned) != sorted(expected):
+                technical_feedback.append({'code': 'beat_allocation', 'message': '各场景须完整且不重复地分配本集必要事件'})
         if actual != seconds:
             technical_feedback.append({'code': 'duration_total', 'expected_seconds': seconds,
                 'actual_seconds': actual, 'difference_seconds': actual - seconds,
@@ -154,7 +164,10 @@ def plan_units(episode, config):
                     prefix=f"E{e['episode_number']:03d}-{scene['scene_id']}-U{index:03d}"
                     outline={'number':e['episode_number'],'title':scene['title'],
                         'synopsis':scene['synopsis'], 'characters':scene['characters'], 'depends_on':[],
-                        'opening_state':scene['opening_state'],'ending_state':scene['ending_state']}
+                        'opening_state':scene['opening_state'],'ending_state':scene['ending_state'], **({'beats': scene['beats']} if 'beats' in scene else {})}
+                    if whole_drama(episode):
+                        beats = scene['beats']
+                        outline['beats'] = beats[(index-1)*len(beats)//len(durations):index*len(beats)//len(durations)]
                     unit=dramas.record('scene_unit',prefix+' · '+scene['title'], scene['synopsis'],
                         drama_id=e['drama_id'],episode_id=e['id'],parent_id=e['id'],scene_id=scene['scene_id'],
                         unit_index=index,sequence=sequence,global_prefix=prefix, location_id=scene['location_id'],prop_ids=scene['prop_ids'],
@@ -167,7 +180,7 @@ def plan_units(episode, config):
                     dramas.insert(db,unit)
                     e['unit_ids'].append(unit['id'])
             e.update(scene_plan=scenes,scene_review=review,status='producing',stage='scene_units',progress=10,
-                budget_scope='per_unit',total_authorized_gpu_minutes=e['budget']['gpu_minutes']*sequence,
+                budget_scope='per_unit',total_authorized_gpu_minutes=e['production_spec']['gpu_minutes'] if whole_drama(e) else e['budget']['gpu_minutes']*sequence,
                 total_authorized_wall_minutes=e['budget']['wall_minutes']*sequence)
             store._write(db,e)
         return
@@ -351,15 +364,25 @@ def run(episode, config):
         for i, uid in enumerate(episode['unit_ids']):
             check_parent(episode['id'])
             unit=store.get(uid,False)
-            if unit['status']=='unit_ready': continue
+            if unit['status']=='unit_ready':
+                if whole_drama(unit):
+                    from .drama_delivery import review_episode
+                    review_episode(unit, config)
+                continue
+            if whole_drama(unit) and unit.get('dependency_context') != episode.get('dependency_context', []):
+                unit = store.update(uid, {'dependency_context': copy.deepcopy(episode.get('dependency_context', []))})
             if unit.get('pause_requested') or unit['status'] in {'paused','cancelled'}:
                 raise ProductionPaused('已在制作单元边界暂停')
             if unit['status'] in {'blocked','failed'}:
                 store.update(uid,{'status':'queued','pause_requested':False,'error':None})
-            if i and not unit.get('production_profile'):
+            if i and (not unit.get('production_profile') or whole_drama(unit)):
                 previous=store.get(episode['unit_ids'][i-1],False)
                 script=previous.get('script') or {}
-                store.update(uid,{'previous_unit_state':{'unit':previous['global_prefix'],'ending':script.get('ending'),
+                actual = {}
+                if whole_drama(unit):
+                    from .drama_delivery import adopted_end
+                    actual = {'observed_end': adopted_end(previous)}
+                store.update(uid,{'previous_unit_state':{**actual, 'unit':previous['global_prefix'],'ending':script.get('ending'),
                     'last_shot_continuity':(script.get('shots') or [{}])[-1].get('continuity')}})
             setup_episode(store.get(uid,False))
             from .drama_assets import prepare
@@ -378,6 +401,9 @@ def run(episode, config):
             unit=store.get(uid,False)
             if unit['status']!='unit_ready':
                 raise ReviewBlocked('制作单元尚未自动完成，已保留审核与交接记录',{'unit_id':uid,'status':unit['status']})
+            if whole_drama(unit):
+                from .drama_delivery import review_episode
+                review_episode(unit, config)
             units=[store.get(value,False) for value in episode['unit_ids']]
             store.update(episode['id'],{'active_unit_id':uid,'progress':10+math.floor(75*(i+1)/len(units)),
                 'production':{'gpu_seconds':sum(u.get('production',{}).get('gpu_seconds',0) for u in units)}})
@@ -404,5 +430,9 @@ def run(episode, config):
     history=episode.get('delivery_history',[])
     if episode.get('delivery') and episode['delivery'].get('source_signature')!=delivery['source_signature']:
         history=[*history,episode['delivery']]
+    if whole_drama(episode):
+        from .drama_delivery import review_episode
+        current = store.update(episode['id'], {'delivery': delivery, 'status': 'producing'})
+        review_episode(current, config)
     store.update(episode['id'],{'delivery':delivery,'delivery_history':history,'delivery_complete_revision':episode['production_revision'],
         'status':'awaiting_final','stage':'final_decision','progress':95,'error':None,'needs_decision':None})

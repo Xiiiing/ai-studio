@@ -71,6 +71,8 @@ export function CreateDrama({
     [source, setSource] = useState(""),
     [sourceName, setSourceName] = useState(""),
     [mode, setMode] = useState("brief"),
+    [closedLoop, setClosedLoop] = useState(true),
+    [episodeSeconds, setEpisodeSeconds] = useState(dramaDefaults.seconds),
     [count, setCount] = useState(6);
   const [automation, setAutomation] = useState<AutomationConfig>({
     enabled: true,
@@ -118,6 +120,13 @@ export function CreateDrama({
             const p = await request("/dramas", {
               title,
               brief,
+              ...(closedLoop &&
+              mode === "brief" &&
+              automation.enabled &&
+              automation.episode_numbers.filter((n) => n <= count).length ===
+                count
+                ? { production_mode: "one_sentence" }
+                : {}),
               genre: data.get("genre"),
               visual_style: data.get("style"),
               episode_count: count,
@@ -193,6 +202,45 @@ export function CreateDrama({
             </Field>
           </>
         )}
+        {mode === "brief" && (
+          <Field
+            label="一句话整剧制作"
+            hint="自动规划、制作全部剧集并检查整剧交付，最后由你观看验收。所选服务与额度固定，不自动切换付费供应商。"
+          >
+            <label>
+              <input
+                type="checkbox"
+                checked={closedLoop}
+                onChange={(event) => setClosedLoop(event.target.checked)}
+              />
+              启用整剧制作闭环
+            </label>
+            {closedLoop && (
+              <button
+                type="button"
+                className="button"
+                onClick={() => {
+                  setCount(3);
+                  setEpisodeSeconds(60);
+                }}
+              >
+                使用 3 集 × 60 秒预设
+              </button>
+            )}
+            {closedLoop && automation.enabled && (
+              <p>
+                整剧固定额度：
+                {automation.budget.gpu_minutes *
+                  count *
+                  Math.ceil(episodeSeconds / 90)}{" "}
+                GPU 分钟（{count} 集，每集 {episodeSeconds}{" "}
+                秒）；实际拆分不会增加授权。每单元上限{" "}
+                {automation.budget.gpu_minutes} GPU
+                分钟。选择部分剧集时使用普通连续制作。
+              </p>
+            )}
+          </Field>
+        )}
         <Field label="剧名" hint="可选，留空时按创作方向或剧本自动命名。">
           <input name="title" maxLength={100} />
         </Field>
@@ -224,7 +272,10 @@ export function CreateDrama({
               required
               min={15}
               max={dramaDefaults.maxSeconds}
-              defaultValue={dramaDefaults.seconds}
+              value={episodeSeconds}
+              onChange={(event) =>
+                setEpisodeSeconds(Number(event.target.value))
+              }
             />
           </Field>
           <Field label="制作路线">

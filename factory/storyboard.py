@@ -59,7 +59,7 @@ def model_capabilities(project, config, episode):
                        production.get("image_height", episode.get("generation", {}).get("height", 1312))],
         "aspect_ratio": "9:16",
         "camera_motions": ["push_in", "pull_out", "pan_left", "pan_right", "hold"],
-        "dialogue_delivery": "off-screen voice-over; visible mouths stay closed",
+        "dialogue_delivery": "off-screen voice-over; no lip sync required" if project.get("production_mode") == "one_sentence" else "off-screen voice-over; visible mouths stay closed",
         "synchronized_lip_motion": False,
         "continuous_character_action_in_motion_comic": False,
         "constraints": [
@@ -195,7 +195,8 @@ def direct_storyboard(project, config, episode, checkpoint=None, *,
                 motion_prompt += motion_suffix
             shot["motion_prompt"] = motion_prompt
         else:
-            suffix += " All dialogue is off-screen voice-over; visible mouths stay closed."
+            from .drama_intent import enabled
+            suffix += " All dialogue is off-screen voice-over; no lip sync is required." if enabled(project) else " All dialogue is off-screen voice-over; visible mouths stay closed."
         if not shot["prompt"].rstrip().endswith(suffix.strip()):
             shot["prompt"] = shot["prompt"].rstrip() + suffix
         applied.append(sid)

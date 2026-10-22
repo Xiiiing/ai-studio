@@ -154,7 +154,7 @@ export function AutomationSettings({
           </Field>
         </div>
         <p className="muted">
-          预算按制作单元计量，并非整剧总额。长集拆分后显示累计授权上限；达到上限会暂停等待处理。
+          这是每个单元的上限。启用整剧闭环时，还受创建时固定的整剧总额约束；达到任一上限都会暂停等待处理。
         </p>
       </fieldset>
     </div>
@@ -524,6 +524,28 @@ export function ProductionWorkspace({
           />
         </div>
       </section>
+      {p.whole_drama_budget && (
+        <Panel title="整剧额度与交付">
+          <p>
+            已用 {p.whole_drama_budget.spent_gpu_minutes} /{" "}
+            {p.whole_drama_budget.gpu_minutes} GPU 分钟，剩余{" "}
+            {p.whole_drama_budget.remaining_gpu_minutes} 分钟。每单元上限{" "}
+            {p.automation?.budget?.gpu_minutes} 分钟；拆分单元不增加整剧额度。
+          </p>
+          {p.delivery_bundle?.current ? (
+            <>
+              <p>完整整剧交付包已生成，等待人工观看验收。</p>
+              <a className="button" href={p.delivery_bundle.download_url}>
+                下载完整整剧交付包
+              </a>
+            </>
+          ) : (
+            <p>
+              完整交付包尚未就绪。已生成的逐集成果可预览，部分成果不代表整剧完成。
+            </p>
+          )}
+        </Panel>
+      )}
       {configure && (
         <Panel title={automated ? "调整连续制作授权" : "授权 AI 接续制作"}>
           <form

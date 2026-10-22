@@ -280,7 +280,10 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
 
     def __init__(self, project, config, checkpoint, control, evaluator=None, dialogue_rewriter=None):
         self.project = copy.deepcopy(project)
-        self.config = dict(config or {})
+        from .drama_intent import enabled as whole_drama
+        self.one_sentence = whole_drama(project)
+        from .drama_intent import bound_budget
+        self.config = bound_budget(project, dict(config or {}))
         connection = self.config.get("video_connection", {"profile": "local_wan", **LOCAL_PROFILE})
         self.video_connection = {"profile": connection.get("profile", "local_wan"),
                                  **normalize_video_profile({k: v for k, v in connection.items() if k != "profile"})}
@@ -499,6 +502,8 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
 
     def boundary(self, gpu=False):
         self.emit()
+        from .drama_intent import bound_budget
+        self.budget.max_gpu = min(self.budget.max_gpu, bound_budget(self.project, self.config).get("max_gpu_seconds", self.budget.max_gpu))
         self.budget.check(self.control, require_gpu=gpu)
 
     def _valid_selection(self, target):
@@ -533,7 +538,7 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
         if self.autonomous_recovery and target['kind'] == 'video':
             from .visual_constraints import required, certified
             expected = copy.deepcopy(target.get('shot') or {})
-            if not expected.get('lip_sync'):
+            if not expected.get('lip_sync') and not self.one_sentence:
                 expected['execution_constraints'] = {'visible_mouths_closed': True}
             if required(expected) and not certified(receipt.get('qa', {}).get('semantic', {}), _receipt_path(receipt)):
                 return False
@@ -558,7 +563,7 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
         history = record.setdefault("semantic_attempts", [])
         expected = copy.deepcopy(target.get('shot') or target.get('review_context') or
                                  {'id': target['key'], 'prompt': target['prompt']})
-        if self.autonomous_recovery and target['kind'] == 'video' and not expected.get('lip_sync'):
+        if self.autonomous_recovery and target['kind'] == 'video' and not expected.get('lip_sync') and not self.one_sentence:
             expected['execution_constraints'] = {'visible_mouths_closed': True,
                                                  'source': 'existing_external_voiceover_adapter_contract'}
         answer = None
@@ -818,7 +823,7 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                 "kind": kind, "signature": signature, "review_signature": review_signature,
                 "compatible_source_signatures": compatible_sources, **extra}
         from .generation_pipeline import enabled, prepare, source, capabilities
-        if enabled(self.project) and shot.get("id") == key and kind in {"image", "video"}:
+        if enabled(self.project) and shot.get("id") == key and re.fullmatch(r"S[0-9]{2,3}", key) and kind in {"image", "video"}:
             # Reuse valid approved legacy results before introducing any new
             # model request. An opt-in configuration is not a remake command.
             if self._valid_selection(target):
@@ -1156,6 +1161,8 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
         target['_system_repair_context'] = (directed, case)
 
     def _new_attempt(self, target):
+        from .drama_resources import ensure
+        ensure(self.project, self.config, media=target["kind"])
         if self._review_only_video(target):
             self._stop_existing_video(target)
         self._team_admit_target(target)
@@ -1656,6 +1663,7 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
         return [target["selected"] for target in targets]
 
     def previews(self):
+        from .drama_intent import enabled as whole_drama
         from .material_production import preview as material_preview
         prepared = material_preview(self)
         if prepared is not None:
@@ -1682,7 +1690,7 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                                             "review_purpose": "visual_direction_preview",
                                             "visual_direction": {key: style[key] for key in
                                                 ("id", "name", "description", "prompt", "palette") if key in style}}}
-                                           if self.creative_contract else {})))
+                                           if self.creative_contract or whole_drama(self.project) else {})))
         self._render_targets(targets, "visual_previews")
         self.emit("visual_previews_complete", styles=self.styles)
         return self.styles

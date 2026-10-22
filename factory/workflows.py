@@ -164,8 +164,9 @@ def visual_development(state):
                              "message":"美术正在准备并审核视觉预览，已定稿的素材画风直接复用。"})
         config=load_config()
         from .creative_contract import resolve as resolve_contract
+        from .drama_intent import enabled as whole_drama
         review_options=({"semantic_evaluator":lambda proj,shot,path,refs:review_media(proj,shot,path,refs,config)}
-                        if resolve_contract(p) else {})
+                        if resolve_contract(p) or whole_drama(p) else {})
         styles=generate_style_previews(p,production_config(p,config),_checkpoint(p["id"]),
                                       lambda:store.get(p["id"],False).get("pause_requested",False), **review_options)
         patch={"style_previews_generation":p.get("style_generation",p["script_generation"]),"progress":45}
@@ -248,6 +249,11 @@ def production(state):
                               lambda:store.get(p["id"],False).get("pause_requested",False),
                               semantic_evaluator=lambda proj,shot,path,refs:review_media(proj,shot,path,refs,config),
                               dialogue_rewriter=compress_dialogue)
+    from .drama_intent import enabled as whole_drama
+    if whole_drama(p) and p.get("record_kind") == "episode":
+        from .drama_delivery import review_episode
+        current = store.update(p["id"], {"delivery": delivery, "status": "producing"})
+        review_episode(current, config)
     store.update(p["id"],{"delivery":delivery,"delivery_complete_revision":p["production_revision"],
                          "progress":95,"error":None,"needs_decision":None,
                          "message":"完整初版已导出并完成自动检查，请查看成片后决定通过或修改。"})
@@ -401,7 +407,19 @@ def advance(pid):
     # One invocation can cross several automatic nodes, but stops at an
     # interrupt. All of those nodes share the same connection/role snapshot.
     with config_snapshot():
-        return _advance(pid)
+        result = _advance(pid)
+        from .drama_intent import enabled as whole_drama
+        if whole_drama(store.get(pid, False)):
+            # A fresh graph invocation can first arrive at an intermediate
+            # interrupt; consume delegated choices in the same owned job.
+            for _ in range(2):
+                current = store.get(pid, False)
+                if current['status'] not in {'awaiting_story', 'awaiting_style'}:
+                    break
+                result = _advance(pid)
+                if store.get(pid, False)['status'] == current['status']:
+                    break  # An explicit escalation remains a real decision.
+        return result
 
 
 def _advance(pid):

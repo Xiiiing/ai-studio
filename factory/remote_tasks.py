@@ -103,9 +103,10 @@ def claim_job(project_id=None):
             project = store._read(db, row["project_id"])
             from .review_advice import eligible as advice_eligible
             advice = row["kind"] == "review_advice" and advice_eligible(project)
+            delivery_job = row["kind"] == "drama_delivery" and project.get("production_mode") == "one_sentence" and project["status"] not in {"cancelled", "blocked", "failed", "paused"}
             team_command = row["kind"] == "team_instruction" and project.get("team_control_version") == 1 and project["status"] != "cancelled"
-            if not team_command and ((row["kind"] == "review_advice" and not advice) or project.get("pause_requested") or (project["status"] in store.TERMINAL | {"paused", "blocked", "failed"} and not advice)
-                    or project["status"].startswith("awaiting_")):
+            if not team_command and ((row["kind"] == "review_advice" and not advice) or project.get("pause_requested") or (project["status"] in store.TERMINAL | {"paused", "blocked", "failed"} and not (advice or delivery_job))
+                    or project["status"].startswith("awaiting_") and not delivery_job):
                 db.execute("UPDATE jobs SET status='cancelled',finished=? WHERE id=?", (timestamp, row["id"]))
                 continue
             if project.get("production", {}).get("remote_wait_started_at") is not None:
@@ -138,7 +139,8 @@ def defer_job(job, deferred):
         if not current or current["status"] != "running" or current["lease"] != job.get("lease"):
             return False
         project = store._read(db, job["project_id"])
-        if project.get("pause_requested") or project["status"] in store.TERMINAL | {"paused", "blocked", "failed"} or project["status"].startswith("awaiting_"):
+        delivery_job = job.get("kind") == "drama_delivery" and project.get("production_mode") == "one_sentence"
+        if project.get("pause_requested") or project["status"] in store.TERMINAL | {"paused", "blocked", "failed"} or project["status"].startswith("awaiting_") and not delivery_job:
             db.execute("UPDATE jobs SET status='cancelled',finished=? WHERE id=?", (timestamp, job["id"]))
             if project.get("pause_requested"):
                 project["status"] = "paused"

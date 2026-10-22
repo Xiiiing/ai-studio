@@ -22,10 +22,14 @@ OUTLINE = obj({'number': {'type': 'integer', 'minimum': 1, 'maximum': 100}, 'tit
 REVIEW = obj({'passed': {'type': 'boolean'}, 'issues': arr(txt(1, 1500), 0, 30)})
 
 
-def outline_schema(number, world):
+def outline_schema(number, world, project=None):
     schema = copy.deepcopy(OUTLINE)
     schema['properties']['number'] = {'type': 'integer', 'const': number}
     schema['properties']['characters']['items'] = {'type': 'string', 'enum': [c['character_id'] for c in world['characters']]}
+    from .drama_intent import enabled
+    if enabled(project or {}):
+        schema['properties']['beats'] = arr(obj({'id': {'type': 'string', 'pattern': '^[A-Za-z][A-Za-z0-9_-]{0,63}$'}, 'description': txt(4, 800)}), 2, 8)
+        schema['required'].append('beats')
     dependencies = schema['properties']['depends_on']
     dependencies.update(maxItems=number - 1, uniqueItems=True)
     if number > 1:
@@ -35,7 +39,9 @@ def outline_schema(number, world):
 
 def plan_schema(count):
     # Earlier v3 plans remain readable; newly generated plans include relationships.
-    properties={**copy.deepcopy(GLOBAL['properties']), 'episodes': arr(OUTLINE, count, count)}
+    outline = copy.deepcopy(OUTLINE)
+    outline['properties']['beats'] = arr(obj({'id': {'type': 'string', 'pattern': '^[A-Za-z][A-Za-z0-9_-]{0,63}$'}, 'description': txt(4, 800)}), 2, 8)
+    properties={**copy.deepcopy(GLOBAL['properties']), 'episodes': arr(outline, count, count)}
     return obj(properties,required=[key for key in properties if key!='relationships'])
 
 
@@ -224,7 +230,7 @@ def run(pid, config):
                      'source_excerpt': source_excerpt(source, number, p['episode_count']),
                      'current_task': {'episode_number': number, 'episode_seconds': p['duration_seconds'],
                          'previous_ending': outlines[-1]['ending_state'] if outlines else None,
-                         'requirement': '从前集结尾继续，写本集新发生的事件和结果；不要把前集结尾抄作整集剧情。'}}, outline_schema(number, base), 3000)
+                         'requirement': '从前集结尾继续，写本集新发生的事件和结果；不要把前集结尾抄作整集剧情。'}}, outline_schema(number, base, p), 4500)
                 outlines.append(outline)
             plan = {**base, 'episodes': outlines}
             p = _save(pid, {'draft_plan': plan, 'plan_attempt': attempt, 'plan_phase': 'reviewing', 'plan_reused': reused,
