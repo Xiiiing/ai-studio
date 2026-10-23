@@ -364,6 +364,17 @@ def review_media(project, shot, path, references, config=None, *, output_dir=Non
         context["temporal_rule"] = RULE
         from .review_contracts import APPROVED_ACTION_RULE
         context["approved_action_rule"] = APPROVED_ACTION_RULE
+    from .visual_constraints import enabled as constraint_review_enabled
+    from .review_contracts import CAMERA_EXECUTION, CAMERA_REVIEW_RULE, camera_observation_schema
+    camera_check = is_video and constraint_review_enabled(config) and shot.get('camera_motion') in CAMERA_EXECUTION
+    if camera_check:
+        schema = copy.deepcopy(schema)
+        schema['properties']['camera_observation'] = camera_observation_schema()
+        context['camera_review_rule'] = CAMERA_REVIEW_RULE
+        context['visible_cast_rule'] = (
+            '逐一检查所有可见人物，包括背景人物。首帧参考也可能存在错误，不能因为参考中出现就批准额外人物。'
+            '本镜明确的人物身份、衣装和关系必须满足；不得把明显男性当成批准的女性角色，'
+            '也不得把人物旁的任意背景角色当成指定的同伴。清晰可见的错误身份或多余剧情人物须指出。')
     if shot.get("material_constraints"):
         schema = copy.deepcopy(schema)
         checks = {key: {"type": "string", "enum": ["match", "mismatch", "uncertain", "not_applicable"]} for key in ("identity", "style", "scene", "correspondence")}
@@ -500,6 +511,10 @@ def review_media(project, shot, path, references, config=None, *, output_dir=Non
             from .visual_constraints import verify as verify_constraints
             result = verify_constraints(config, shot, path, samples, sampling, result,
                                         record, constraint_media_sha, _request, _image_url)
+        if camera_check:
+            from .camera_review import verify as verify_camera
+            result = verify_camera(config, shot, path, samples, sampling, result,
+                                   record, constraint_media_sha, _request, _image_url)
     elif contract and contract["motion"] == "generated_video" and not reference_purpose and shot.get("review_purpose") != "visual_direction_preview":
         from .spatial_review import verify_spatial
         result = verify_spatial(config, schema, context, reference_content, result, path, record)
@@ -561,6 +576,8 @@ def review_media(project, shot, path, references, config=None, *, output_dir=Non
         result['status'] = 'unavailable'
         result['detail'] = '明确视觉要求尚缺逐样本可验证证据；保留已有视频，等待补审，不据此重新生成。'
     if result.get('explicit_constraint_verification', {}).get('status') == 'fail':
+        result['status'] = 'fail'
+    if result.get('camera_verification', {}).get('status') == 'fail':
         result['status'] = 'fail'
     selected_model = resolve_llm(config, "visual_critic", require_vision=True)
     result.update(evaluator="vlm_sampled_frames",model=selected_model["model"],

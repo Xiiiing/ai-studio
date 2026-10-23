@@ -336,10 +336,11 @@ def _prompt(candidate, source, caps, strategy):
                          'action': 'Silent visual performance: ' + phases['middle'] + '\n' + complete_action}]
         # Camera behavior comes from the approved contract, not a model's camera
         # paraphrase. It cannot become a substitute for subject performance.
+        from .review_contracts import camera_execution
         compiled = {'visual_description': plan['image']['description'],
                     'initial_state': plan['video']['initial_state'] + ' ' + phases['start'],
                     'timeline': timeline, 'end_state': plan['video']['end_state'] + ' ' + phases['end'],
-                    'camera': 'Approved camera behavior: ' + shot.get('camera_motion', 'hold'),
+                    'camera': 'Approved camera behavior: ' + camera_execution(shot.get('camera_motion', 'hold')),
                     'continuity': plan['video']['end_state'] if physical else shot.get('continuity', ''), 'audio': 'silent'}
         if physical:
             compiled['visual_description'] = ('A silent physical performance. The visible lips touch continuously, '

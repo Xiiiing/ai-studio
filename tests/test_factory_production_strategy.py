@@ -54,6 +54,19 @@ def compile_(case, record=None, **kwargs):
     return strategy.compile_strategy(project, config, target, record or prepare(case), root=root, **kwargs)
 
 
+def test_repair_translates_approved_pan_instead_of_untrusted_camera_or_dramatic_beat(case):
+    project, config, target, qa, previous, root = case
+    target['shot']['camera_motion'] = 'pan_right'
+    target['shot']['dramatic_beat'] = '推进：情报补充'
+    record = prepare(case)
+    plan = candidate(target['shot'])
+    plan['plan']['video']['camera'] = 'Push in because the story advances.'
+    prompt = strategy._prompt(plan, record['source'], {'provider': 'comfyui_h3'}, 'silent_visual_action')
+    assert 'camera pans horizontally to the right' in prompt
+    assert 'background landmarks travel left' in prompt
+    assert 'Push in because' not in prompt
+
+
 @pytest.mark.parametrize('name', ['grounded_single_instant', 'spatial_state_isolation'])
 def test_image_prompt_cannot_rewind_approved_state_to_previous_shot(case, name):
     project, config, target, qa, previous, root = case

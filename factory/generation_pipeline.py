@@ -321,15 +321,17 @@ def prepare(project, shot, references, *, config, phase, style='', cast=None, re
             prompt = base['style'] + '\nSingle starting instant: ' + candidate['image']['description']
         else:
             video = candidate['video']
+            from .review_contracts import camera_execution
+            camera = camera_execution(shot.get('camera_motion'), video['camera'])
             action = 'Approved action (must remain intact): ' + base['approved_shot']['action']
             if caps['provider'] == 'comfyui_h3':
                 from .h3_prompting import _render
                 prompt = _render({'visual_description': candidate['image']['description'], 'initial_state': video['initial_state'],
                     'timeline': [{'start_seconds': 0, 'end_seconds': shot['seconds'], 'action': video['action'] + ' ' + action}],
-                    'end_state': video['end_state'], 'camera': video['camera'], 'continuity': base['approved_shot'].get('continuity', ''), 'audio': 'silent'}, shot['seconds'])
+                    'end_state': video['end_state'], 'camera': camera, 'continuity': base['approved_shot'].get('continuity', ''), 'audio': 'silent'}, shot['seconds'])
             else:
                 prompt = (base['style'] + '\nInitial state: ' + video['initial_state'] + '\nAction: ' + video['action'] + '\n' + action +
-                          '\nEnd state: ' + video['end_state'] + '\nCamera: ' + video['camera'] + '\nExternal voiceover; naturally closed mouths; no generated speech, music, text or watermark.')
+                          '\nEnd state: ' + video['end_state'] + '\nCamera: ' + camera + '\nExternal voiceover; naturally closed mouths; no generated speech, music, text or watermark.')
         prompt += '\nKeep the approved identities, wardrobe, props and reference correspondence. '
         if phase == 'image':
             prompt += '\nActual reference correspondence (1-based image order): ' + json.dumps(_image_reference_projection(base['reference_map']), ensure_ascii=False)

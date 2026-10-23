@@ -119,6 +119,18 @@ def test_real_pixel_delivery_precedes_director_and_h3_request(production, monkey
     assert json.loads(receipt.read_text())['prompt']['version']=='1.0.0'
 
 
+def test_initial_video_translates_approved_pan_without_reinterpreting_story_progress(production, monkeypatch):
+    p, frame, config = production
+    approved = {**shot(), 'camera_motion': 'pan_right', 'dramatic_beat': '推进：补充情报'}
+    transport(monkeypatch, approved)  # director's camera description still says "Locked camera"
+    result = g.prepare(p, approved, [frame], config=config, phase='video')
+    assert result['source']['approved_shot']['camera_motion'] == 'pan_right'
+    assert result['parameters']['camera_motion'] == 'pan_right'
+    assert 'camera pans horizontally to the right' in result['parameters']['prompt']
+    assert 'background landmarks travel left' in result['parameters']['prompt']
+    assert 'Locked camera' not in result['parameters']['prompt']
+
+
 @pytest.mark.parametrize('alignment',['conflict','uncertain'])
 def test_conflicting_or_uncertain_first_frame_prevents_video_and_director_calls(production,monkeypatch,alignment):
     p,frame,config=production;calls=transport(monkeypatch,alignment=alignment)
