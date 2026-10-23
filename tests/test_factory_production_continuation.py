@@ -107,6 +107,7 @@ def test_two_new_strategies_keep_contract_and_stop_at_seven(case, monkeypatch, a
     p, cfg, target, qa, previous, root = case
     p['brief'] = 'Keep the original narrative and voice.'
     target['shot']['action'] = 'Lean forward slightly, conveying urgent intelligence.'
+    target['shot']['prompt'] += ' Her expression conveys urgent news. All dialogue is off-screen voice-over.'
     target['shot']['continuity'] = 'She reports the message.'
     calls = []
     def respond(request):
@@ -134,6 +135,8 @@ def test_two_new_strategies_keep_contract_and_stop_at_seven(case, monkeypatch, a
         return
     compiled = compile_(case, record)
     assert 'conveying urgent intelligence' not in compiled['parameters']['prompt']
+    assert 'urgent news' not in compiled['parameters']['prompt']
+    assert calls[-1]['approved_contract']['prompt'] == target['shot']['prompt']
     assert calls[-1]['approved_contract']['action'] == target['shot']['action']
     assert compiled['plan']['plan']['approved_action'] == target['shot']['action']
     assert compiled['visual_contract_verification']['passed']

@@ -255,7 +255,10 @@ def _prompt(candidate, source, caps, strategy):
     prompt += '\nApproved visible states: ' + json.dumps(visible.get('character_states', {}), ensure_ascii=False, sort_keys=True)
     prompt += '\nApproved prop/material correspondence: ' + json.dumps(visible.get('material_constraints', {}), ensure_ascii=False, sort_keys=True)
     start = starting_frame(shot)
-    if start.get('prompt'):
+    # The separately verified physical translation already contains the full
+    # starting composition. Re-appending the narrative source here reintroduces
+    # speech cues that those strategies intentionally route to the voice track.
+    if start.get('prompt') and strategy not in {'physical_action_only', 'closed_lip_body_sequence'}:
         prompt += '\nRequired approved starting composition: ' + start['prompt']
     for field in ('camera_constraints', 'hard_constraints', 'requirements', 'audio_requirements'):
         if shot.get(field):
