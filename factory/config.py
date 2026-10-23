@@ -190,6 +190,8 @@ def production_config(project, config):
     count = config.get("quality", {}).get("temporal_samples", 8)
     sample_times(1, count)
     result["temporal_sampling"] = {"policy": POLICY, "count": count}
+    from .production_completion import authorization
+    result["unrestricted_production"] = bool(authorization(project))
     budget = project["budget"]
     result.update(
         max_gpu_seconds=float(budget["gpu_minutes"]) * 60,

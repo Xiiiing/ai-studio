@@ -118,6 +118,7 @@ class Budget:
         self.max_gpu = float(config.get("max_gpu_seconds", 7200))
         if not 0 < self.max_wall <= 604800 or not 0 < self.max_gpu <= 604800 * 8:
             raise ValueError("Production budgets must be positive and bounded")
+        self.unrestricted = config.get("unrestricted_production") is True
         self.base_wall = max(0.0, float(previous.get("elapsed_seconds", 0)))
         self.base_gpu = max(0.0, float(previous.get("gpu_seconds", 0)))
         self.remote_gpu_receipts = dict(previous.get("remote_gpu_receipts") or {})
@@ -133,6 +134,7 @@ class Budget:
             return {"elapsed_seconds": round(self.base_wall + now - self.started, 3),
                     "gpu_seconds": round(gpu, 3), "gpu_minutes": round(gpu / 60, 3),
                     "max_wall_seconds": self.max_wall, "max_gpu_seconds": self.max_gpu,
+                    "cumulative_limits_enforced": not self.unrestricted,
                     "accounting": "verified_remote_gpu_seconds_excluding_network_wait" if self.remote_mode else "local_leased_seconds_plus_verified_remote_receipts" if self.remote_gpu_receipts else "leased_device_wall_seconds_including_service_startup",
                     "remote_gpu_receipts": dict(self.remote_gpu_receipts),
                     "active_gpu_leases": sum(count for _, count in self.active.values())}
@@ -151,6 +153,8 @@ class Budget:
             self.remote_gpu_receipts[job_id]=float(gpu_seconds)
 
     def remaining(self, gpu_count=0):
+        if self.unrestricted:
+            return float("inf")
         state = self.snapshot()
         wall = self.max_wall - state["elapsed_seconds"]
         gpu = self.max_gpu - state["gpu_seconds"]
@@ -168,7 +172,7 @@ class Budget:
             if pause:
                 raise ProductionPaused()
         state = self.snapshot()
-        if state["elapsed_seconds"] >= self.max_wall or (require_gpu and state["gpu_seconds"] >= self.max_gpu):
+        if not self.unrestricted and (state["elapsed_seconds"] >= self.max_wall or (require_gpu and state["gpu_seconds"] >= self.max_gpu)):
             raise ProductionBudgetExceeded(details=state)
 
     def timeout(self, limit=1800, gpu_count=0):

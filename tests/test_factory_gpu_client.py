@@ -519,3 +519,15 @@ def test_legacy_voice_map_aliases_are_not_sent_to_real_http_speech_contract(serv
         assert session.budget.snapshot()["gpu_seconds"]==7.25
     finally:
         server.shutdown();server.server_close();thread.join(timeout=2);store.close()
+
+
+def test_unrestricted_cumulative_budget_still_bounds_each_remote_request(service):
+    root, config, state = service
+    config['unrestricted_production'] = True
+    budget = Budget(config, {'gpu_seconds': 1000, 'elapsed_seconds': 1000})
+    with Scheduler(config, budget).worker('image') as worker:
+        output = worker.execute(graph(), root / 'production/take_unrestricted', 'image')
+    assert output.read_bytes() == b'verified image bytes'
+    assert state['posts'][0]['max_gpu_seconds'] == 21600
+    assert 0 < state['posts'][0]['timeout_seconds'] <= 21600
+    assert budget.snapshot()['gpu_seconds'] == 1007.25

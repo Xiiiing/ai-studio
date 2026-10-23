@@ -33,6 +33,9 @@ def grant(project, config, target):
 
 
 def ceiling(project, config, target):
+    from .production_completion import authorization
+    if authorization(project):
+        return None
     authorized = grant(project, config, target)
     return authorized['lifetime_attempt_limit'] if authorized else attempt_limit(config)
 

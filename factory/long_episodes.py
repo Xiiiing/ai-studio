@@ -164,6 +164,8 @@ def plan_units(episode, config):
                         series_key=e['series_key'], budget=copy.deepcopy(e['budget']),execution_config=copy.deepcopy(config),
                         unit_brief={'scene':scene,'unit_index':index,'unit_count':len(durations),'seconds':seconds,
                                     'allocation':'按顺序连续展开场景，勿在每个单元重复整个场景；最后单元才到达场景结尾'})
+                    from .production_completion import inherit
+                    inherit(e, unit)
                     dramas.insert(db,unit)
                     e['unit_ids'].append(unit['id'])
             e.update(scene_plan=scenes,scene_review=review,status='producing',stage='scene_units',progress=10,
@@ -253,11 +255,12 @@ def return_continuity_issue(episode, failure):
         cycle = current.get('continuity_repair_cycle', 1)
         prior = [entry for entry in history if entry['cycle'] == cycle
             and entry['from_unit'] == previous_id and entry['unit_id'] == uid]
-        maximum = current.get('budget', {}).get('max_attempts', 3)
-        round_index = min(len(prior)+1, maximum)
+        from .production_completion import authorization
+        maximum = None if authorization(current) else current.get('budget', {}).get('max_attempts', 3)
+        round_index = len(prior)+1 if maximum is None else min(len(prior)+1, maximum)
         state = {'unit_id': uid, 'from_unit': previous_id, 'round': round_index,
             'max_rounds': maximum, 'status': 'repairing', 'issues': review.get('issues', []), 'cycle': cycle}
-        if round_index >= maximum:
+        if maximum is not None and round_index >= maximum:
             state['status'] = 'exhausted'
             if not prior or prior[-1].get('status') != 'exhausted':
                 history = [*history, {**state, 'at': store.now(), 'review': copy.deepcopy(review), 'returned_to': []}]

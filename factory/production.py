@@ -357,7 +357,8 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
         self.autonomous_recovery = recovery_enabled(self.config)
         from .production_execution import strategy_enabled, attempt_limit
         self.strategy_recovery = strategy_enabled(self.config)
-        self.attempt_ceiling = attempt_limit({**self.config, 'max_attempts': self.max_attempts})
+        from .production_completion import authorization
+        self.attempt_ceiling = None if authorization(self.project) else attempt_limit({**self.config, 'max_attempts': self.max_attempts})
         if self.autonomous_recovery and (not self.semantic_enabled or not callable(self.evaluator)):
             raise ProductionNeedsDecision('系统自主返修需要可用的独立画面审核；未新增生成', 'semantic_unavailable')
         self.mode = self.project.get("format", self.project.get("mode", "motion_comic"))
@@ -1061,7 +1062,7 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
             return
         previous = previous if previous is not None else self._quota_attempts(target)
         previous = [r for r in previous if r.get('state') != 'prompt_preparing']
-        if not previous or len(previous) >= self._asset_attempt_ceiling(target):
+        if not previous or (self._asset_attempt_ceiling(target) is not None and len(previous) >= self._asset_attempt_ceiling(target)):
             return
         from .production_recovery import prepare_repair
         from .production_handoffs import start, advance, role, upstream_receipt
@@ -1178,7 +1179,7 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
             self._stop_existing_video(target)
         self._team_admit_target(target)
         previous = [record for record in self._quota_attempts(target) if record.get("state") != "prompt_preparing"]
-        if len(previous) >= self._asset_attempt_ceiling(target):
+        if self._asset_attempt_ceiling(target) is not None and len(previous) >= self._asset_attempt_ceiling(target):
             if target.get("shot") is not None:
                 target["shot"]["status"] = "failed"
             self.emit("needs_attention")

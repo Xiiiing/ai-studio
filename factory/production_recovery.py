@@ -120,6 +120,10 @@ def _source(project, config, target, assessment, previous, root):
             "failed_take": {k: copy.deepcopy(previous[k]) for k in (
                 "take", "attempt", "source_signature", "state", "output", "remote_task") if k in previous},
             "assessment": copy.deepcopy(assessment)}
+    from .production_completion import authorization
+    completion = authorization(project)
+    if completion:
+        result["completion_authorization"] = completion
     from .production_continuation import grant
     continuation = grant(project, config, target)
     if continuation:
@@ -172,10 +176,15 @@ def _gate(project, config, previous, target=None):
         return "recovery_disabled"
     if project.get("pause_requested") or project.get("status") == "paused":
         return "paused"
+    from .production_completion import authorization
+    try:
+        unrestricted = bool(authorization(project))
+    except (TypeError, ValueError):
+        return "completion_authorization_unverified"
     previous = previous or {}
     for value in (project, project.get("production") or {}, previous):
         for field in ("reason", "code", "stop_reason", "diagnostic_code"):
-            if value.get(field) in _UNSAFE:
+            if value.get(field) in _UNSAFE and not (unrestricted and value.get(field) in {"budget_exceeded", "budget_exhausted"}):
                 return value[field]
         if any(value.get(flag) is True for flag in ("unknown_submit", "unsafe", "tampered", "unpriced", "cost_unknown")):
             return "unsafe_or_unresolved_submission"
@@ -187,9 +196,9 @@ def _gate(project, config, previous, target=None):
     except (TypeError, ValueError):
         return "attempt_budget_unverified"
     consumed = previous.get("attempt", 0)
-    if type(maximum_attempts) is not int or not 1 <= maximum_attempts <= 7 or type(consumed) is not int or consumed < 0:
+    if (not unrestricted and (type(maximum_attempts) is not int or not 1 <= maximum_attempts <= 7)) or type(consumed) is not int or consumed < 0:
         return "attempt_budget_unverified"
-    if consumed >= maximum_attempts:
+    if maximum_attempts is not None and consumed >= maximum_attempts:
         return "retry_limit"
     state = project.get("production") or {}
     budget = project.get("budget") or {}
@@ -198,7 +207,7 @@ def _gate(project, config, previous, target=None):
         used = state.get(used_key, 0)
         if any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) or v < 0 for v in (used, maximum)) or maximum <= 0:
             return "budget_unverified"
-        if used >= maximum:
+        if not unrestricted and used >= maximum:
             return "budget_exhausted"
     return None
 
@@ -328,9 +337,12 @@ def _plan(source, *, strategy_index=0):
             "first_frame_constraints": copy.deepcopy(constraints) if kind == "image" else []}
     if v2:
         strategies = ("silent_visual_action", "phase_isolated_action") if kind == "video" else ("grounded_single_instant", "spatial_state_isolation")
-        if kind == 'video' and source.get('continuation_authorization'):
+        if kind == 'video' and (source.get('continuation_authorization') or source.get('completion_authorization')):
             strategies += ('physical_action_only', 'closed_lip_body_sequence')
-        result.update(strategy=strategies[min(strategy_index, len(strategies) - 1)],
+        selected = strategies[min(strategy_index, len(strategies) - 1)]
+        if source.get("completion_authorization") and strategy_index >= len(strategies):
+            selected = "evidence_directed_revision"
+        result.update(strategy=selected,
                       assigned_role="storyboard_director", required_handoffs=["observe_first_frame", "compile_strategy", "generate_media", "independent_media_review"] if kind == "video" else ["compile_strategy", "generate_media", "independent_media_review"])
         result["prompt_appendix"] = ""
         result["reason"] = "new_execution_strategy_required_for_" + "_".join(sorted(codes))
@@ -446,7 +458,7 @@ def prepare_repair(project, config, target, last_assessment, *, previous_attempt
                     and r["source"].get("failed_take") == source.get("failed_take"))]
             asset_count = sum(r["scope"]["asset"] == target["key"] and r["scope"]["stage"] == target["kind"] for r in active)
             plan = _plan(source, strategy_index=asset_count)
-            if superseded:
+            if superseded and not source.get("completion_authorization"):
                 used = {r.get('strategy') for r in active if r['scope']['asset'] == target['key'] and r['scope']['stage'] == target['kind']}
                 # A legacy budget change may have selected strategy #2 while
                 # #1 never reached generation. Use that still-unspent strategy.
@@ -461,9 +473,11 @@ def prepare_repair(project, config, target, last_assessment, *, previous_attempt
             if source.get('continuation_authorization'):
                 asset_limit += source['continuation_authorization']['extra_attempts']
             project_limit = min(MAX_PROJECT_CYCLES, max(0, int(setting.get("max_project_cycles", MAX_PROJECT_CYCLES))))
-            if plan["action"] in {"refine_motion", "refine_start_frame"} and (asset_count >= asset_limit or len(active) >= project_limit):
+            if source.get("completion_authorization"):
+                asset_limit = project_limit = None
+            if asset_limit is not None and plan["action"] in {"refine_motion", "refine_start_frame"} and (asset_count >= asset_limit or len(active) >= project_limit):
                 return _stop("recovery_cycle_limit", source)
-            if any(r["scope"]["asset"] == target["key"] and ((schema == STRATEGY_VERSION and r.get("strategy") == plan.get("strategy")) or (schema == VERSION and r.get("prompt_appendix") == plan["prompt_appendix"]))
+            if plan.get("strategy") != "evidence_directed_revision" and any(r["scope"]["asset"] == target["key"] and ((schema == STRATEGY_VERSION and r.get("strategy") == plan.get("strategy")) or (schema == VERSION and r.get("prompt_appendix") == plan["prompt_appendix"]))
                    for r in active) and plan["action"] in {"refine_motion", "refine_start_frame"}:
                 return _stop("recovery_has_no_new_directed_change", source)
             if current is not None:

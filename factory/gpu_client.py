@@ -152,7 +152,7 @@ class GPUClient:
             self._fence_project_submission(destination,budget,control,event_callback)
             budget.check(control, require_gpu=True)
             wall_limit=min(21600,float(timeout),budget.timeout(timeout))
-            gpu_limit=min(21600,budget.max_gpu-budget.snapshot()["gpu_seconds"])
+            gpu_limit=21600 if budget.unrestricted else min(21600,budget.max_gpu-budget.snapshot()["gpu_seconds"])
             if wall_limit<1 or gpu_limit<1:
                 raise ProductionBudgetExceeded(details=budget.snapshot())
             payload = {**copy.deepcopy(workload), "request_id": identity,

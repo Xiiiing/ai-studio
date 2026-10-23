@@ -551,6 +551,14 @@ def control(pid, payload):
         if saved: return snapshot(pid, db=db)
         cas(p, payload)
         action = payload.get('action')
+        if action == 'authorize_completion':
+            if set(payload) - {'action', 'request_id', 'expected_revision'}:
+                raise ValueError('持续制作授权包含未知字段')
+            from .production_completion import authorize
+            authorize(db, p, key)
+            p['operation_requests'][key] = {'signature': signature}
+            store._write(db, p)
+            return snapshot(pid, db=db)
         if action == 'authorize_unit_budget':
             from .drama_automation import authorize_unit_budget
             authorize_unit_budget(db, p, payload, key)
