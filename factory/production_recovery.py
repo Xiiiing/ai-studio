@@ -120,6 +120,17 @@ def _source(project, config, target, assessment, previous, root):
             "failed_take": {k: copy.deepcopy(previous[k]) for k in (
                 "take", "attempt", "source_signature", "state", "output", "remote_task") if k in previous},
             "assessment": copy.deepcopy(assessment)}
+    if target.get("kind") == "image":
+        bindings = []
+        assets = target.get("asset_references") or []
+        roles = result["reference_roles"]
+        for index, ref in enumerate(result["references"]):
+            match = next((a for a in assets if isinstance(a, dict) and a.get("sha256") == ref["sha256"]
+                          and a.get("kind") in {"character", "scene", "prop", "composition"}), None)
+            kind = match["kind"] if match else "character" if index < len(roles) else "reference"
+            entity = match.get("entity_id") if match else roles[index] if index < len(roles) else None
+            bindings.append({"reference_index": index + 1, "sha256": ref["sha256"], "kind": kind, "entity_id": entity})
+        result["reference_bindings"] = bindings
     from .production_completion import authorization
     completion = authorization(project)
     if completion:

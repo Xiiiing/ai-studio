@@ -99,6 +99,30 @@ def test_unrestricted_recovery_keeps_counts_and_unknown_submission_fence(case):
     assert prepare(case)['reason'] == 'paused'
 
 
+def test_actual_reference_roles_survive_strategy_compilation(case):
+    from factory import production_strategy as strategy
+    p, cfg, target, qa, previous, root = case
+    target['kind'] = 'image'
+    scene, prop = root / 'production/scene.png', root / 'production/prop.png'
+    scene.write_bytes(b'isolated scene reference fixture')
+    prop.write_bytes(b'isolated prop reference fixture')
+    target['references'] += [scene, prop]
+    target['reference_roles'] = ['woman']
+    target['asset_references'] = [
+        {'kind': 'scene', 'entity_id': 'room', 'sha256': core.sha256(scene)},
+        {'kind': 'prop', 'entity_id': 'cup', 'sha256': core.sha256(prop)}]
+    record = prepare(case)
+    bindings = record['source']['reference_bindings']
+    assert [(b['reference_index'], b['kind'], b['entity_id']) for b in bindings] == [
+        (1, 'character', 'woman'), (2, 'scene', 'room'), (3, 'prop', 'cup')]
+    prompt = strategy._prompt(candidate(target['shot']), record['source'], {}, record['strategy'])
+    assert 'Reference image 1 (woman) supplies facial identity' in prompt
+    assert 'Reference image 2 (room) supplies the approved environment' in prompt
+    assert 'Reference image 3 (cup) supplies the complete standalone prop' in prompt
+    target['asset_references'][1]['entity_id'] = 'another-prop'
+    assert not recovery.applicable(record, p, cfg, target, qa, previous_attempt=previous, root=root)
+
+
 def test_authorized_continuity_repairs_pass_old_limit_without_resetting_history(isolated, monkeypatch):
     from test_factory_continuity_return import setup_runtime, rejection
     from factory import drama_continuity, drama_runtime
@@ -164,7 +188,9 @@ def test_adaptive_image_requires_independent_contract_check_before_media(case, m
     else:
         with pytest.raises(ProductionNeedsDecision, match='重复返回'): compile_(case)
     assert len(calls) == (4 if approved == 'recover' else 2 if approved else 3)
-    assert calls[0]['project']['failed_visual_prompt'] == 'A woman holds a cup.'
+    assert 'failed_visual_prompt' not in calls[0]['project']
+    assert calls[0]['project']['failed_visual_prompt_sha256'] == digest('A woman holds a cup.')
+    assert calls[1]['failed_visual_prompt'] == 'A woman holds a cup.'
     assert calls[1]['approved_contract'] == target['shot']
     assert 'episode' not in calls[0]['project']['project_requirements']
     assert calls[0]['project']['approved_starting_frame']['prompt'] == target['shot']['prompt']
