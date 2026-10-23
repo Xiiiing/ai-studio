@@ -104,6 +104,10 @@ def test_real_pixel_delivery_precedes_director_and_h3_request(production, monkey
     assert len(calls)==2
     content=calls[0]['request']['messages'][-1]['content']
     assert content[1]['image_url']['url'].startswith('data:image/jpeg;base64,')
+    frame_context=json.loads(content[0]['text'])
+    assert 'approved_action' not in frame_context and 'action' not in frame_context['approved_shot']
+    assert frame_context['approved_shot']['characters']==shot()['characters']
+    assert result['source']['approved_shot']['action']==shot()['action']
     assert 'first_frame_pixels_only' in calls[1]['request']['messages'][-1]['content']
     assert result['first_frame']['sha256']==g.sha256(frame)
     assert result['parameters']['prompt'].startswith('For the target video, at 0.00 seconds')
@@ -311,3 +315,28 @@ def test_unpriced_compiler_models_stop_before_any_model_or_paid_media_request(pr
     with pytest.raises(ProductionNeedsDecision) as exc:g.prepare(p,shot(),[frame],config=config,phase='video' if role=='visual_critic' else 'image')
     assert exc.value.reason=='generation_model_budget_required'
     assert g.inventory(p)==[]
+
+
+def test_starting_pixel_observer_does_not_expand_cast_from_scene_narration(production, monkeypatch):
+    p, frame, config = production
+    current = shot()
+    current['action'] = 'The woman stands beside OFFSCREEN_PARTNER and turns toward camera.'
+    calls = transport(monkeypatch, current)
+    result = g.prepare(p, current, [frame], config=config, phase='video', style='Approved 3D style')
+    visible_context = json.loads(calls[0]['request']['messages'][-1]['content'][0]['text'])
+    assert 'OFFSCREEN_PARTNER' not in json.dumps(visible_context)
+    assert visible_context['project']['approved_render_style'] == 'Approved 3D style'
+    assert visible_context['approved_shot']['characters'] == ['female']
+    assert result['source']['approved_shot']['action'] == current['action']
+    assert 'OFFSCREEN_PARTNER' in calls[1]['request']['messages'][-1]['content']
+
+
+def test_explicitly_visible_companion_still_requires_actual_pixel_evidence(production, monkeypatch):
+    p, frame, config = production
+    current = shot()
+    current['characters'] = ['female', 'male']
+    current['prompt'] = 'Both woman and man are visible side by side, holding the cup.'
+    calls = transport(monkeypatch, current)  # Only the woman is observed.
+    with pytest.raises(ProductionNeedsDecision) as failure:
+        g.prepare(p, current, [frame], config=config, phase='video')
+    assert failure.value.reason == 'generation_frame_conflict' and len(calls) == 1
