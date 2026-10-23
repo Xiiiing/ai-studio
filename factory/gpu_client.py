@@ -149,12 +149,22 @@ class GPUClient:
             payload = submission["request"]
             request_id = submission["gpu_service_job_id"]
         else:
-            self._fence_project_submission(destination,budget,control,event_callback)
-            budget.check(control, require_gpu=True)
-            wall_limit=min(21600,float(timeout),budget.timeout(timeout))
-            gpu_limit=21600 if budget.unrestricted else min(21600,budget.max_gpu-budget.snapshot()["gpu_seconds"])
-            if wall_limit<1 or gpu_limit<1:
-                raise ProductionBudgetExceeded(details=budget.snapshot())
+            try:
+                self._fence_project_submission(destination,budget,control,event_callback)
+                budget.check(control, require_gpu=True)
+                wall_limit=min(21600,float(timeout),budget.timeout(timeout))
+                gpu_limit=21600 if budget.unrestricted else min(21600,budget.max_gpu-budget.snapshot()["gpu_seconds"])
+                if wall_limit<1 or gpu_limit<1:
+                    raise ProductionBudgetExceeded(details=budget.snapshot())
+            except (ProductionPaused, ProductionNeedsDecision) as exc:
+                # No intent or generation POST exists for this request yet.
+                # The caller may retain the same prepared take across a pause;
+                # once an intent exists, the normal reconciliation fence wins.
+                exc.details['gpu_not_submitted'] = {
+                    'stage': 'before_submission_intent', 'request_identity': identity,
+                    'workload_sha256': fingerprint(workload), 'destination': str(destination.resolve()),
+                    'service': self.base, 'at': time.time()}
+                raise
             payload = {**copy.deepcopy(workload), "request_id": identity,
                        "timeout_seconds": wall_limit, "max_gpu_seconds": gpu_limit}
             request_id = identity

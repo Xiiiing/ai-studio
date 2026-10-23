@@ -950,6 +950,22 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
     def _reject_upstream_media(self, target, receipt):
         return receipt.get("sha256") in target.get("_rejected_media_sha256", ())
 
+    def _remember_pre_submit_stop(self, worker, target, record, error):
+        from .gpu_client import RemoteComfyWorker
+        proof = error.details.get('gpu_not_submitted') or {}
+        folder = target['folder'] / record['take']
+        if (not isinstance(proof, dict) or not isinstance(worker, RemoteComfyWorker)
+                or proof.get('stage') != 'before_submission_intent'
+                or proof.get('destination') != str(folder.resolve())
+                or proof.get('service') != worker.client.base
+                or not re.fullmatch(r'[a-f0-9]{64}', str(proof.get('request_identity', '')))
+                or not re.fullmatch(r'[a-f0-9]{64}', str(proof.get('workload_sha256', '')))
+                or (folder / 'submission.json').exists() or (folder / 'result.json').exists()):
+            return False
+        record['prepared_only'] = True
+        record.setdefault('pre_submit_stops', []).append(copy.deepcopy(proof))
+        return True
+
     def _unfinished_candidate(self, target):
         self._guard_remote_submissions(target)
         for record in reversed(self._attempts(target)):
@@ -1554,7 +1570,9 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                             receipt = read_json(path.parent / "result.json")
                             record.update(state="generated", output=receipt, elapsed_seconds=round(time.monotonic() - started, 3))
                             ready.append((target, record, receipt))
-                        except (ProductionPaused, ProductionNeedsDecision):
+                        except (ProductionPaused, ProductionNeedsDecision) as exc:
+                            if self.strategy_recovery:
+                                self._remember_pre_submit_stop(worker, target, record, exc)
                             raise
                         except Exception as exc:
                             record.update(state="failed", error=f"{type(exc).__name__}: {str(exc)[:1500]}",

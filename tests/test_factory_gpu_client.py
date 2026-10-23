@@ -114,6 +114,47 @@ def graph(name=None):
     return {"1":{"class_type":"LoadImage","inputs":{"image":name}}} if name else {"1":{"class_type":"SaveImage","inputs":{}}}
 
 
+def test_pause_before_intent_restores_same_prepared_take_without_unknown_post(service):
+    from factory.production import _Run
+    root, config, state = service
+    worker = gc.RemoteComfyWorker(config['gpu_service'], Budget(config), 'fixture', control=lambda: True)
+    target = {'folder': root / 'shots/S01'}
+    record = {'take': 'take_007', 'attempt': 7, 'state': 'rendering', 'prepared_only': False}
+    folder = target['folder'] / record['take']
+    with pytest.raises(ProductionPaused) as failure:
+        worker.execute(graph(), folder, 'image')
+    assert not state['posts'] and not (folder / 'submission.json').exists()
+    session = object.__new__(_Run)
+    assert session._remember_pre_submit_stop(worker, target, record, failure.value)
+    assert record['prepared_only'] and record['attempt'] == 7
+    proof = record['pre_submit_stops'][0]
+    assert proof['stage'] == 'before_submission_intent'
+    worker.control = None
+    worker.execute(graph(), folder, 'image')
+    assert len(state['posts']) == 1
+    assert state['posts'][0]['request_id'] == proof['request_identity']
+
+
+@pytest.mark.parametrize('mutation', ['after_intent', 'unknown', 'wrong_destination'])
+def test_only_proven_pre_intent_stop_can_restore_prepared_state(service, mutation):
+    from factory.production import _Run
+    root, config, state = service
+    signals = iter([False, True]) if mutation == 'after_intent' else iter([True])
+    worker = gc.RemoteComfyWorker(config['gpu_service'], Budget(config), 'fixture', control=lambda: next(signals))
+    target = {'folder': root / 'shots/S01'}
+    record = {'take': 'take_007', 'attempt': 7, 'state': 'rendering', 'prepared_only': False}
+    folder = target['folder'] / record['take']
+    with pytest.raises(ProductionPaused) as failure:
+        worker.execute(graph(), folder, 'image')
+    error = failure.value
+    if mutation == 'after_intent':
+        assert (folder / 'submission.json').exists() and not error.details.get('gpu_not_submitted')
+    elif mutation == 'unknown': error = ProductionPaused('Unknown call state')
+    else: error.details['gpu_not_submitted']['destination'] = str(root / 'another-take')
+    assert not object.__new__(_Run)._remember_pre_submit_stop(worker, target, record, error)
+    assert not record['prepared_only'] and record['attempt'] == 7
+
+
 def test_scheduler_remote_worker_never_probes_or_leases_local_gpu_and_only_charges_receipt(service):
     root,config,state=service
     budget=Budget(config)
