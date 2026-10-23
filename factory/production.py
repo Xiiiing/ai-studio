@@ -1058,12 +1058,32 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
         path = base / ('frame-' + digest(identity) + '.json')
         return {**evidence, 'receipt_path': str(path), 'receipt_sha256': sha256(path)}
 
+    def _producer_retake(self, target, previous):
+        """A new explicit render revision is not a failure of the old approval.
+
+        Lifetime quota/history still uses all previous attempts. Only the first
+        request for a newer revision skips a diagnosis that does not exist.
+        """
+        if (not previous or target.get('upstream_return') or target.get('_upstream_assessment')
+                or target.get('_frame_observation_assessment')
+                or (self.production.get('upstream_returns') or {}).get((target.get('shot') or {}).get('id'))):
+            return False
+        last = previous[-1]
+        revision = (target.get('shot') or {}).get('render_revisions', {}).get(target['kind'], 0)
+        old_revision = last.get('render_revision', (last.get('generation_plan') or {}).get(
+            'source', {}).get('approved_shot', {}).get('render_revisions', {}).get(target['kind'], 0))
+        return (type(revision) is int and type(old_revision) is int and revision > old_revision >= 0
+                and last.get('state') == 'passed' and last.get('qa', {}).get('status') == 'pass'
+                and not _matching_source(last, target))
+
     def _prepare_system_repair(self, target, previous=None):
         """Execute upstream handoffs before acquiring the next media worker."""
         if not self.strategy_recovery or target.get('_system_repair_context'):
             return
         previous = previous if previous is not None else self._quota_attempts(target)
         previous = [r for r in previous if r.get('state') != 'prompt_preparing']
+        if self._producer_retake(target, previous):
+            return
         if not previous or (self._asset_attempt_ceiling(target) is not None and len(previous) >= self._asset_attempt_ceiling(target)):
             return
         from .production_recovery import prepare_repair
@@ -1201,12 +1221,13 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
         take = f"take_{max(indexes, default=0) + 1:03d}"
         folder = target["folder"] / take
         number = len(previous) + 1
+        producer_retake = self._producer_retake(target, previous)
         repair = _grounded_repair_plan(
             previous[-1].get("qa", {"issues": [{"code": "generation", "detail": previous[-1].get("error", "")}]}),
             target["kind"], number, target.get("shot"), target.get("reference_roles", ()),
-            target_prompt=target["prompt"], review_context=target.get("review_context")) if previous else {}
+            target_prompt=target["prompt"], review_context=target.get("review_context")) if previous and not producer_retake else {}
         directed, case, compiled_strategy = None, None, None
-        if (previous or target.get("upstream_return")) and self.autonomous_recovery:
+        if ((previous and not producer_retake) or target.get("upstream_return")) and self.autonomous_recovery:
             from .production_recovery import prepare_repair, applicable
             self.boundary()
             checked_target = {**target, 'first_frame_assessment': copy.deepcopy(
@@ -1305,8 +1326,18 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
             record["production_profile_signature"] = profile_signature(self.project)
         if target.get("shot"):
             record.update(plan_signature=plan_signature(self.project, target["shot"], target["kind"]),
+                          render_revision=target['shot'].get('render_revisions', {}).get(target['kind'], 0),
                           shot_revision=target["shot"].get("shot_revision", 1),
                           production_revision=self.project.get("production_revision", 1))
+        if producer_retake:
+            record['producer_retake'] = {'previous_take': previous[-1]['take'],
+                'previous_source_signature': previous[-1].get('source_signature'),
+                'render_revision': record['render_revision'], 'attempts_used_before': len(previous),
+                'reason': 'explicit_new_render_revision_after_approved_take'}
+            self.production['recovery'] = {'status': 'repairing', 'asset': target['key'],
+                'stage': target['kind'], 'owner': 'image_generator' if target['kind'] == 'image' else 'video_generator',
+                'reason': 'producer_requested_new_render_revision',
+                'message': '按出品人明确的新版本要求制作，原审核、素材和尝试历史保留。'}
         if target.get("asset_references"):
             record["asset_references"] = copy.deepcopy(target["asset_references"])
         if self._remote_video(target):
