@@ -129,7 +129,14 @@ def _source(project, config, target, assessment, previous, root):
                           and a.get("kind") in {"character", "scene", "prop", "composition"}), None)
             kind = match["kind"] if match else "character" if index < len(roles) else "reference"
             entity = match.get("entity_id") if match else roles[index] if index < len(roles) else None
-            bindings.append({"reference_index": index + 1, "sha256": ref["sha256"], "kind": kind, "entity_id": entity})
+            binding = {"reference_index": index + 1, "sha256": ref["sha256"], "kind": kind, "entity_id": entity}
+            if kind == "character":
+                person = next((c for c in (project.get("plan") or {}).get("characters", [])
+                               if isinstance(c, dict) and c.get("character_id") == entity), None)
+                if person:
+                    binding["approved_identity"] = {k: copy.deepcopy(person[k]) for k in
+                        ("name", "identity_constraints", "default_wardrobe") if k in person}
+            bindings.append(binding)
         result["reference_bindings"] = bindings
     from .production_completion import authorization
     completion = authorization(project)

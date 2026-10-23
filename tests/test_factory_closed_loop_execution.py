@@ -33,8 +33,12 @@ def role_transport(monkeypatch):
             if 'compiled_visual_prompt' in payload:
                 result = {'passed': True, 'reason': 'Synthetic physical-contract verification.'}
             else:
+                phase = payload.get('phase')
                 payload = payload['project']
                 result = candidate(payload['approved_contract'], payload['strategy'])
+                if phase == 'image':
+                    result.pop('performance', None)
+                    result['plan'] = {k: v for k, v in result['plan'].items() if k in {'approved_action', 'camera_motion', 'image'}}
         return {'model': request['model'], 'choices': [{'finish_reason': 'stop',
                 'message': {'content': json.dumps(result)}}]}
     return mock_transport(monkeypatch, respond)[0]

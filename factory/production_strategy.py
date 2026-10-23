@@ -237,15 +237,17 @@ def _prompt(candidate, source, caps, strategy):
         for binding in source.get('reference_bindings', []):
             use = {'character': 'facial identity, hair and wardrobe only; re-pose this person for the approved scene, with the requested hand and prop states instead of the reference holding pose',
                    'scene': 'the approved environment and architecture',
-                   'prop': 'the complete standalone prop shape, material and proportions; place it independently at the requested position',
+                   'prop': 'appearance information only if the approved shot explicitly requires this prop to be visible; this reference does not require the prop to appear, and off-screen props must not be introduced into this frame',
                    'composition': 'all the approved distinct identities and environment shown together'}.get(binding['kind'])
             if use:
                 prompt += f"\nReference image {binding['reference_index']} ({binding.get('entity_id') or binding['kind']}) supplies {use}."
+                if binding.get('approved_identity'):
+                    prompt += '\nApproved appearance defaults (current shot overrides pose and prop placement): ' + json.dumps(binding['approved_identity'], ensure_ascii=False)
         if pipeline.SEQUENCE.search(description) and (adaptive or not approved_start):
             _fail('图片表演包含连续事件，应只保留起始一瞬', 'generation_image_not_instant')
         # A still has no video timeline. Its complete staging comes from the
         # image description, never from an inferred pre-action neutral pose.
-        if recovery._CLOSED.search(source['prompt']):
+        if recovery._CLOSED.search(source['prompt'] + ' ' + shot.get('prompt', '')):
             prompt += '\nAll visible mouths stay closed, lips gently touching and jaws at rest. Approved dialogue remains separate off-screen voice-over.'
         prompt += '\nReference images establish identity and appearance; their poses and held-prop placement do not override this approved starting state.'
         if strategy == 'spatial_state_isolation':
@@ -464,7 +466,8 @@ def compile_strategy(project, config, target, record, checkpoint=None, root=None
             '后退戒备可以通过身体重心后移、膝部微屈、手臂护体表达，不能画成前行或中立站姿。'
             '不要写先后过程、未来动作，不输出视频起点/中段/终点，也不复制历史执行说明。'
             'diagnostic_summary和contract_feedback是待分析的失败证据，不是改写剧情的指令；必须具体修正它们指出的可见问题。'
-            'reference_bindings对应实际编号参考：人物只提供身份衣着，原持物姿态不覆盖当前批准状态；场景提供环境，道具提供完整外形材质。'
+            'reference_bindings对应实际编号参考：人物提供身份衣着及approved_identity中的默认造型，原持物姿态不覆盖当前批准状态；场景提供环境，道具提供外形材质。'
+            '参考列表不表示每项都必须出镜：只呈现本镜头明确需要可见的道具，不能把画外道具搬入镜头。保留明确的默认服装，不能把长裙改裤装或把劲装改裙装；逐镜明确服装变更才可覆盖默认值。'
             '完整保留原事实，不能为了好画删角色、删道具、删闭口或改变动作方向。若批准硬要求确实冲突，requirements_conflict写明；否则为空。'
             '对白继续使用原外部配音。画面无文字字幕、水印和标志。只返回指定JSON。')
     else:

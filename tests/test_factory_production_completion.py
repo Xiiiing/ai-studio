@@ -103,6 +103,7 @@ def test_actual_reference_roles_survive_strategy_compilation(case):
     from factory import production_strategy as strategy
     p, cfg, target, qa, previous, root = case
     target['kind'] = 'image'
+    p['plan'] = {'characters': [{'character_id': 'woman', 'default_wardrobe': 'white floor-length gown'}]}
     scene, prop = root / 'production/scene.png', root / 'production/prop.png'
     scene.write_bytes(b'isolated scene reference fixture')
     prop.write_bytes(b'isolated prop reference fixture')
@@ -118,7 +119,9 @@ def test_actual_reference_roles_survive_strategy_compilation(case):
     prompt = strategy._prompt(candidate(target['shot']), record['source'], {}, record['strategy'])
     assert 'Reference image 1 (woman) supplies facial identity' in prompt
     assert 'Reference image 2 (room) supplies the approved environment' in prompt
-    assert 'Reference image 3 (cup) supplies the complete standalone prop' in prompt
+    assert 'Reference image 3 (cup) supplies appearance information only if' in prompt
+    assert 'off-screen props must not be introduced' in prompt
+    assert 'white floor-length gown' in prompt
     target['asset_references'][1]['entity_id'] = 'another-prop'
     assert not recovery.applicable(record, p, cfg, target, qa, previous_attempt=previous, root=root)
 

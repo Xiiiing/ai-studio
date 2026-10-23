@@ -59,7 +59,11 @@ def returned_frame(autonomous, monkeypatch):
                                       'image_region': 'center', 'certainty': 'visible'}],
                     'conflicts': ['Synthetic old frame violates the approved starting state.'] if old else []}
         approved = payload['project']['approved_contract']
-        return candidate(approved, payload['project']['strategy'])
+        result = candidate(approved, payload['project']['strategy'])
+        if payload.get('phase') == 'image':
+            result.pop('performance', None)
+            result['plan'] = {k: v for k, v in result['plan'].items() if k in {'approved_action', 'camera_motion', 'image'}}
+        return result
     monkeypatch.setattr(llm, '_request', model)
     return run, target, old_image, calls, image_reviews, video_reviews, executions, frame
 
