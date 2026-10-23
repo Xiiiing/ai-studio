@@ -174,6 +174,9 @@ def test_adaptive_image_requires_independent_contract_check_before_media(case, m
             result['performance']['start'] = 'She is seated and holds the cup before standing up.'
             if approved == 'recover' and 'contract_feedback' in payload['project']:
                 result['plan']['image']['description'] += ' The cup is suspended at chest height.'
+        if 'project' in payload and payload.get('phase') == 'image':
+            result.pop('performance', None)
+            result['plan'] = {k: v for k, v in result['plan'].items() if k in {'approved_action', 'camera_motion', 'image'}}
         return {'model': request['model'], 'choices': [{'finish_reason': 'stop', 'message': {'content': json.dumps(result)}}]}
     mock_transport(monkeypatch, respond)
     if approved:

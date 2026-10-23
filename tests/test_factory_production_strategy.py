@@ -151,6 +151,9 @@ def transport(monkeypatch, case, mutate=None):
             result = candidate(case[2]['shot'], payload['project']['strategy'])
             if mutate:
                 mutate(result)
+            if payload.get('phase') == 'image':
+                result.pop('performance', None)
+                result['plan'] = {k: v for k, v in result['plan'].items() if k in {'approved_action', 'camera_motion', 'image'}}
         return {'model': request['model'], 'choices': [{'finish_reason': 'stop', 'message': {'content': json.dumps(result)}}]}
     return mock_transport(monkeypatch, responder)[0]
 
