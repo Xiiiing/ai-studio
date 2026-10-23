@@ -14,6 +14,7 @@ from tests.test_factory_production_strategy import case, prepare, compile_, cand
 def props(case):
     project, config, target, qa, previous, root = case
     target['kind'] = 'image'
+    target['approved_render_style'] = 'Unified 3D cinematic animation with volumetric lighting.'
     target['reference_roles'] = ['woman']
     prop, scene = root / 'production/prop.png', root / 'production/scene.png'
     Image.new('RGB', (64, 64), 'red').save(prop)
@@ -29,13 +30,16 @@ def props(case):
 def test_prop_omission_requires_independent_contract_and_keeps_original_source(props, monkeypatch, approved):
     project, config, target, qa, previous, root = props
     before = copy.deepcopy(target)
+    qa['issues'].append({'code': 'action', 'severity': 'minor', 'detail': 'Optional fixture motion suggestion.'})
     calls = []
     def request(config, role, system, payload, schema, output, **kwargs):
         calls.append(copy.deepcopy(payload))
         if 'compiled_visual_prompt' in payload:
+            assert payload['approved_render_style'] == target['approved_render_style']
             assert payload['excluded_prop_references'][0]['entity_id'] == 'cup'
             assert len(payload['approved_reference_bindings']) == 3
             return {'passed': approved, 'reason': 'Fixture: off-screen prop.' if approved else 'Approved shot requires the cup.'}
+        assert all(i['severity'] != 'minor' for i in payload['project']['diagnostic_summary']['issues'])
         result = candidate(target['shot'], payload['project']['strategy'])
         result.pop('performance')
         result['plan'] = {k: v for k, v in result['plan'].items() if k in {'approved_action', 'camera_motion', 'image'}}
@@ -49,6 +53,7 @@ def test_prop_omission_requires_independent_contract_and_keeps_original_source(p
         assert failure.value.reason == 'production_strategy_contract_conflict'
     else:
         result = compile_(props, record)
+        assert result['parameters']['prompt'].startswith('Approved rendering style for every person and the environment: ' + target['approved_render_style'])
         assert result['parameters']['reference_indices'] == [1, 3]
         assert result['parameters']['reference_sha256'] == [core.sha256(target['references'][i]) for i in (0, 2)]
         assert 'Reference image 2 (room)' in result['parameters']['prompt']
@@ -130,4 +135,14 @@ def test_renderer_submits_subset_but_independent_reviewer_gets_all_references(au
     assert len(loads) == 2 and not any('prop.png' in name for name in loads)
     saved = core.read_json(target['folder'] / 'take_002/attempt.json')
     assert len(saved['references']) == 3 and len(saved['render_references']) == 2
+    assert saved['prompt'].startswith('Approved rendering style for every person and the environment: ' + run.style_prompt)
     assert reviewed == [[str(frame), str(prop), str(scene)]]
+
+
+def test_changed_approved_style_invalidates_frozen_repair_source(props):
+    from factory import production_recovery as recovery
+    project, config, target, qa, previous, root = props
+    record = prepare(props)
+    assert record['source']['approved_render_style'] == target['approved_render_style']
+    target['approved_render_style'] = 'A newly approved watercolor style.'
+    assert not recovery.applicable(record, project, config, target, qa, previous_attempt=previous, root=root)

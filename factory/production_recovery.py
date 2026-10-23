@@ -120,6 +120,8 @@ def _source(project, config, target, assessment, previous, root):
             "failed_take": {k: copy.deepcopy(previous[k]) for k in (
                 "take", "attempt", "source_signature", "state", "output", "remote_task") if k in previous},
             "assessment": copy.deepcopy(assessment)}
+    if target.get('approved_render_style'):
+        result['approved_render_style'] = copy.deepcopy(target['approved_render_style'])
     if target.get("kind") == "image":
         bindings = []
         assets = target.get("asset_references") or []

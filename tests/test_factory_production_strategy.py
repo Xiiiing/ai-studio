@@ -550,3 +550,29 @@ def test_h3_valid_strategy_has_actual_adapter_validation_evidence(case, monkeypa
         'provider': 'comfyui_h3', 'status': 'validated_request_parameters',
         'validation': 'canonical_h3_graph_and_service_bounds',
         'scope': 'pure_adapter_schema_only_not_model_quality'}
+
+
+@pytest.mark.parametrize('uncertain', [None, 'pending', 'missing_response', 'later_director', 'approved'])
+def test_interrupted_rejection_settles_only_complete_known_role_pairs(tmp_path, uncertain):
+    from studio.core import write_json
+    base = tmp_path / 'strategy'
+    intent = base / 'director-old.intent.json'
+    write_json(intent, {'phase': 'director', 'submitted_at': 1, 'identity_sha256': 'old'})
+    for index, role in enumerate(['director', 'contract'] + (['director'] if uncertain == 'later_director' else [])):
+        folder = base / role / 'calls' / f'call-{index}'
+        write_json(folder / 'receipt.json', {'role': strategy.ROLE, 'call_id': folder.name,
+            'status': 'starting' if uncertain == 'pending' and index == 1 else 'succeeded',
+            'started_at': 2 + 2 * index, 'finished_at': 3 + 2 * index,
+            'attempts': [{'attempt': 1}]})
+        write_json(folder / 'request-01.json', {'messages': []})
+        if not (uncertain == 'missing_response' and index == 1):
+            document = {'passed': uncertain == 'approved', 'reason': 'Synthetic rejection.'} if role == 'contract' else {'plan': {}}
+            write_json(folder / 'response-01.json', {'choices': [{'message': {'content': json.dumps(document)}}]})
+    strategy._settle_completed_rejection(base, intent)
+    error = intent.with_name('director-old.error.json')
+    assert error.exists() == (uncertain is None)
+    if error.exists():
+        saved = json.loads(error.read_text())
+        assert saved['reason'] == 'production_strategy_interrupted_after_rejection'
+        assert saved['details']['role_calls'] == 2
+        assert len(saved['details']['evidence']) == 6

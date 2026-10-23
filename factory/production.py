@@ -819,6 +819,8 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
         target = {"key": key, "folder": folder, "prompt": prompt, "references": refs,
                 "kind": kind, "signature": signature, "review_signature": review_signature,
                 "compatible_source_signatures": compatible_sources, **extra}
+        if shot.get('id') == key:
+            target['approved_render_style'] = shot.get('render_style_prompt', self.style_prompt)
         from .generation_pipeline import enabled, prepare, source, capabilities
         if enabled(self.project) and shot.get("id") == key and kind in {"image", "video"}:
             # Reuse valid approved legacy results before introducing any new
