@@ -219,10 +219,12 @@ def _prompt(candidate, source, caps, strategy):
         spatial = ''
         if adaptive and len(shot.get('characters') or []) == 1 and re.search(
                 r'\b(?:floating|levitating) in front of (?:him|her|them)\b', approved_start or '', re.I):
-            spatial = ("Both of the subject's empty hands are fully visible, relaxed beside the hips. "
-                       'The approved floating prop hangs unsupported in clear air in front of the subject, '
-                       'well separated from both hands and forearms. A broad visible gap of background '
-                       'surrounds the prop and separates it from the fingers; the prop is freely suspended. ')
+            spatial = ("Both of the subject's empty hands are fully visible at upper-thigh level. "
+                       'The arms hang straight down, palms open toward the camera, fingertips pointing at the floor. '
+                       'The complete full-size approved prop floats horizontally at chest height, '
+                       'one forearm-length in front of the torso, far above the lowered hands. '
+                       'A wide visible band of background separates the prop from every finger and forearm. '
+                       'The prop is freely suspended without hand support. ')
         prompt = 'Single approved starting instant: ' + spatial + description
         for binding in source.get('reference_bindings', []):
             use = {'character': 'facial identity, hair and wardrobe only; re-pose this person for the approved scene, with the requested hand and prop states instead of the reference holding pose',
@@ -238,6 +240,8 @@ def _prompt(candidate, source, caps, strategy):
         # adaptive still staging; never merge a contradictory temporal pose.
         if not adaptive and not approved_start:
             prompt += '\nSpatial staging: ' + phases['start']
+        if recovery._CLOSED.search(source['prompt']):
+            prompt += '\nAll visible mouths stay closed, lips gently touching and jaws at rest. Approved dialogue remains separate off-screen voice-over.'
         prompt += '\nReference images establish identity and appearance; their poses and held-prop placement do not override this approved starting state.'
         if strategy == 'spatial_state_isolation':
             prompt += '\nOne readable visual state; each approved subject and prop occupies its specified position.'
