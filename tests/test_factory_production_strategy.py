@@ -49,6 +49,42 @@ def prepare(case):
     return recovery.prepare_repair(project, config, target, qa, previous_attempt=previous, root=root)
 
 
+@pytest.mark.parametrize('code', ['anatomy', 'off_prompt', 'low_quality'])
+@pytest.mark.parametrize('kind', ['image', 'video'])
+def test_critic_candidate_defects_reach_director_without_changing_verdict(case, code, kind):
+    project, config, target, qa, previous, root = case
+    target['kind'] = kind
+    qa['issues'].append({'code': code, 'severity': 'blocking', 'detail': 'Visible candidate defect.'})
+    original = copy.deepcopy((target, qa))
+    result = prepare(case)
+    assert result['action'] == ('refine_start_frame' if kind == 'image' else 'refine_motion')
+    assert result['source']['assessment'] == qa
+    assert result['source']['diagnosis_policy'] == 'candidate-media-defects.v1'
+    assert 'independent_media_review' in result['required_handoffs']
+    assert (target, qa) == original
+    assert prepare(case) == result
+
+
+@pytest.mark.parametrize('code', ['unknown_decoder_failure', 'cost_unknown', 'unknown_submission'])
+def test_candidate_defect_does_not_hide_technical_or_unresolved_failure(case, code):
+    case[3]['issues'] = [{'code': c, 'severity': 'blocking', 'detail': 'Fixture'}
+                         for c in ['anatomy', code]]
+    assert prepare(case)['action'] == 'stop'
+
+
+def test_new_diagnosis_policy_preserves_old_stop_and_replays_new_plan(case, monkeypatch):
+    case[2]['kind'] = 'image'
+    case[3]['issues'] = [{'code': 'anatomy', 'severity': 'blocking', 'detail': 'Visible hand defect.'}]
+    with monkeypatch.context() as legacy:
+        legacy.setattr(recovery, '_V2_MEDIA_DEFECTS', set())
+        old = prepare(case)
+    assert old['reason'] == 'diagnosis_requires_operator_or_technical_repair'
+    new = prepare(case)
+    assert new['action'] == 'refine_start_frame' and new['id'] != old['id']
+    assert recovery._load(case[-1] / 'production/factory-abc123/recovery' / (old['id'] + '.json')) == old
+    assert prepare(case) == new
+
+
 def compile_(case, record=None, **kwargs):
     project, config, target, _, _, root = case
     return strategy.compile_strategy(project, config, target, record or prepare(case), root=root, **kwargs)

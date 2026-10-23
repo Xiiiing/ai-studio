@@ -24,6 +24,10 @@ STRATEGY_VERSION = "ai-studio.production-recovery.v2"
 # Hard ceilings cannot be expanded by a model response or changing input hashes.
 MAX_ASSET_CYCLES, MAX_PROJECT_CYCLES = 2, 8
 _REPAIRABLE = {"action", "continuity", "identity", "composition", "black", "black_frame", "blur", "possible_blur"}
+# These are candidate defects emitted by the media critic, not infrastructure
+# failures. V2 can give their evidence to the director and independently review
+# the replacement without changing the failed verdict or approved contract.
+_V2_MEDIA_DEFECTS = {"anatomy", "off_prompt", "low_quality"}
 _UPSTREAM = {"reference_conflict", "reference_missing", "reference_mismatch", "capability", "unsupported_motion"}
 _UNSAFE = {"unknown_submit", "unknown_submission", "unresolved_submission", "unsafe", "tampered", "unpriced", "cost_unknown", "budget_exceeded", "budget_exhausted", "paused"}
 _SHOT_FIELDS = ("id", "seconds", "prompt", "action", "motion_prompt", "continuity", "character_states", "characters", "camera_motion", "dialogue", "material_constraints", "reference_group")
@@ -149,6 +153,11 @@ def _source(project, config, target, assessment, previous, root):
     if continuation:
         result['continuation_authorization'] = continuation
     if (config.get("production_recovery") or {}).get("version") == STRATEGY_VERSION:
+        if isinstance(assessment, dict) and any(str(i.get("code", "")).lower() in _V2_MEDIA_DEFECTS
+               for i in assessment.get("issues", []) if isinstance(i, dict)):
+            # Preserve old immutable stop records; the expanded classification
+            # gets a distinct identity even when the same verdict is replayed.
+            result["diagnosis_policy"] = "candidate-media-defects.v1"
         result["upstream_resolution"] = _upstream_resolution(project, target, previous, root)
         if target.get("upstream_return"):
             result["upstream_return"] = copy.deepcopy(target["upstream_return"])
@@ -288,7 +297,7 @@ def _plan(source, *, strategy_index=0):
         # An immutable real role receipt resolves the old input defect, not its
         # historic verdict. Recompile motion against the new actual frame.
         codes = (codes - {"reference_conflict", "reference_missing", "reference_mismatch"}) | {"action"}
-    if not codes <= _REPAIRABLE:
+    if not codes <= (_REPAIRABLE | _V2_MEDIA_DEFECTS if v2 else _REPAIRABLE):
         return _stop("diagnosis_requires_operator_or_technical_repair", source)
     shot, kind = source["shot"], source["kind"]
     if kind not in {"image", "video"}:

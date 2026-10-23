@@ -117,7 +117,8 @@ def test_actual_reference_roles_survive_strategy_compilation(case):
     assert [(b['reference_index'], b['kind'], b['entity_id']) for b in bindings] == [
         (1, 'character', 'woman'), (2, 'scene', 'room'), (3, 'prop', 'cup')]
     prompt = strategy._prompt(candidate(target['shot']), record['source'], {}, record['strategy'])
-    assert 'Reference image 1 (woman) supplies facial identity' in prompt
+    assert 'Reference image 1 (woman) supplies identity and appearance only for the body regions visible' in prompt
+    assert 'Preserve the approved crop' in prompt
     assert 'Reference image 2 (room) supplies the approved environment' in prompt
     assert 'Reference image 3 (cup) supplies appearance information only if' in prompt
     assert 'off-screen props must not be introduced' in prompt

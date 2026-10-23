@@ -208,6 +208,8 @@ def test_legacy_first_frame_keeps_selected_style_and_static_scope(tmp_path, monk
     assert context['approved_visual_style'] == {'id': 'chosen', 'prompt': project['styles'][0]['prompt']}
     assert '本身不等于二维' in context['approved_render_style_rule']
     assert '单帧无法证明' in context['keyframe_rule']
+    assert '不得以动作完成度过高' in context['keyframe_rule']
+    assert '真实位移方向留给视频' in context['keyframe_rule']
     assert 'FUTURE_' not in json.dumps(context) and 'OLD_REFERENCE_VERDICT' not in json.dumps(context)
     assert context['shot']['prompt'] == shot['prompt']
     assert result['status'] == 'fail' and result['issues'] == answer['issues']
