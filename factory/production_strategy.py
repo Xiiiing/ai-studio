@@ -167,16 +167,17 @@ def _models(config, phase):
     return model_config, models
 
 
-def _observe(project, config, source, frame, output_dir):
+def _observe(project, config, target, frame, output_dir):
     from . import llm
     from .prompt_registry import load_prompt
     from .profile_creative import adapt_system
     from .review_contracts import starting_frame
-    context = {'project': {'id': project['id']}, 'approved_shot': starting_frame(source['shot']),
+    context = {'project': {'id': project['id']},
+               'approved_shot': starting_frame(recovery.approved_shot(target['shot'], strategy=True)),
                'reference_sha256': frame['sha256'],
                'rule': '独立读取真实首帧像素，确认角色、道具位置、姿态和闭口状态；不能把历史审核文字当作可见证据。这里只检查起始状态，不要求首帧提前完成未来动作。'}
     content = [{'type': 'text', 'text': json.dumps(context, ensure_ascii=False)},
-               {'type': 'image_url', 'image_url': {'url': llm._image_url(source['references'][0]['path'])}}]
+               {'type': 'image_url', 'image_url': {'url': llm._image_url(target['references'][0])}}]
     result = llm._request(config, 'visual_critic', adapt_system(load_prompt('visual_critic', '1.0.0'), project),
                           context, pipeline.FRAME_SCHEMA, output_dir, max_tokens=2200, temperature=.1, content=content)
     validate(result, pipeline.FRAME_SCHEMA)
@@ -362,7 +363,7 @@ def compile_strategy(project, config, target, record, checkpoint=None, root=None
         if frame['sha256'] != source['references'][0]['sha256']:
             _fail('返修首帧像素变化', 'production_strategy_source_changed')
         evidence = _once(base, 'frame', identity,
-                         lambda: _observe(project, model_config, source, frame, base / 'vision'), check)
+                         lambda: _observe(project, model_config, target, frame, base / 'vision'), check)
         _check_observation(evidence, source['shot'])
     schema = _schema(source['shot'], strategy)
     instructions = ('\n你现在执行系统交接的定向返修分镜职责。approved_contract_sha256必须原样返回。'

@@ -82,6 +82,14 @@ def _configuration(config):
     return result
 
 
+def approved_shot(shot, *, strategy=False):
+    """Keep the approved contract separate from mutable media and attempt history."""
+    if not isinstance(shot, dict):
+        raise ValueError("Invalid approved shot")
+    fields = _STRATEGY_SHOT_FIELDS if strategy else _SHOT_FIELDS
+    return {key: copy.deepcopy(shot[key]) for key in fields if key in shot}
+
+
 def _source(project, config, target, assessment, previous, root):
     key, signature = target.get("key"), target.get("signature")
     if not isinstance(key, str) or not key or len(key) > 200 or not isinstance(signature, str) or not signature:
@@ -99,7 +107,7 @@ def _source(project, config, target, assessment, previous, root):
     result = {"project_id": project["id"], "asset": key, "kind": target.get("kind"),
             "source_signature": signature,
             "production_revision": project.get("production_revision"),
-            "shot": {k: copy.deepcopy(shot[k]) for k in (_STRATEGY_SHOT_FIELDS if (config.get("production_recovery") or {}).get("version") == STRATEGY_VERSION else _SHOT_FIELDS) if k in shot},
+            "shot": approved_shot(shot, strategy=(config.get("production_recovery") or {}).get("version") == STRATEGY_VERSION),
             "prompt": prompt, "seconds": target.get("seconds", shot.get("seconds")),
             "references": _references(target, root),
             "reference_roles": copy.deepcopy(list(target.get("reference_roles") or [])),
