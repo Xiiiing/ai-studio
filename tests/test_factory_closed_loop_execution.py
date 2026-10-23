@@ -29,8 +29,12 @@ def role_transport(monkeypatch):
         if isinstance(content, list):
             result = observe()
         else:
-            payload = json.loads(content)['project']
-            result = candidate(payload['approved_contract'], payload['strategy'])
+            payload = json.loads(content)
+            if 'compiled_visual_prompt' in payload:
+                result = {'passed': True, 'reason': 'Synthetic physical-contract verification.'}
+            else:
+                payload = payload['project']
+                result = candidate(payload['approved_contract'], payload['strategy'])
         return {'model': request['model'], 'choices': [{'finish_reason': 'stop',
                 'message': {'content': json.dumps(result)}}]}
     return mock_transport(monkeypatch, respond)[0]
@@ -127,6 +131,35 @@ def test_failed_first_strategy_uses_phase_isolated_fifth_take_then_no_sixth(hist
     assert error.value.reason == 'retry_limit'
     assert len(executions) == 5 and len(calls) == 4
     assert not (target['folder'] / 'take_006').exists()
+
+
+@pytest.mark.parametrize('accepted', [True, False])
+def test_explicit_asset_continuation_executes_sixth_and_seventh_without_reset(historical, accepted):
+    from tests.test_factory_production_continuation import add_grant
+    p, config, _, old, calls, executions, compiles, frame = historical
+    accept = reviewer(False)[0]
+    def check(project, shot, path, refs):
+        return accept(project, shot, path, refs) if accepted and int(Path(path).parent.name[5:]) >= 6 else failed_review()
+    run = production._Run(p, config, None, None, evaluator=check)
+    target = run._video_target(run.shots[0])
+    with pytest.raises(ProductionNeedsDecision) as failure:
+        run._render_targets([target], 'diffusion_video')
+    assert failure.value.reason == 'retry_limit' and len(executions) == 5
+    history = {f: f.read_bytes() for f in target['folder'].glob('take_*/attempt.json')}
+    add_grant(run.project, config, target)
+    resumed = production._Run(run.project, config, None, None, evaluator=check)
+    current = resumed._video_target(resumed.shots[0])
+    if accepted:
+        result = resumed._render_targets([current], 'diffusion_video')[0]
+        assert result['take'] == 'take_006' and len(executions) == 6
+    else:
+        with pytest.raises(ProductionNeedsDecision) as failure:
+            resumed._render_targets([current], 'diffusion_video')
+        assert failure.value.reason == 'retry_limit' and len(executions) == 7
+        assert not (current['folder'] / 'take_008').exists()
+    assert all(f.read_bytes() == content for f, content in history.items())
+    assert resumed.project['budget'] == run.project['budget']
+    assert resumed._asset_attempt_ceiling({**current, 'key': 'other'}) == 5
 
 
 def test_pause_before_strategy_submits_no_role_or_gpu(historical):

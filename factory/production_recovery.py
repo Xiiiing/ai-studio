@@ -120,6 +120,10 @@ def _source(project, config, target, assessment, previous, root):
             "failed_take": {k: copy.deepcopy(previous[k]) for k in (
                 "take", "attempt", "source_signature", "state", "output", "remote_task") if k in previous},
             "assessment": copy.deepcopy(assessment)}
+    from .production_continuation import grant
+    continuation = grant(project, config, target)
+    if continuation:
+        result['continuation_authorization'] = continuation
     if (config.get("production_recovery") or {}).get("version") == STRATEGY_VERSION:
         result["upstream_resolution"] = _upstream_resolution(project, target, previous, root)
         if target.get("upstream_return"):
@@ -163,7 +167,7 @@ def _upstream_resolution(project, target, previous, root):
         return None
 
 
-def _gate(project, config, previous):
+def _gate(project, config, previous, target=None):
     if (config.get("production_recovery") or {}).get("enabled") is False:
         return "recovery_disabled"
     if project.get("pause_requested") or project.get("status") == "paused":
@@ -177,9 +181,9 @@ def _gate(project, config, previous):
             return "unsafe_or_unresolved_submission"
     if previous.get("state") in {"rendering", "submitted", "waiting_remote", "prompt_preparing"}:
         return "unresolved_submission"
-    from .production_execution import attempt_limit
     try:
-        maximum_attempts = attempt_limit(config if "max_attempts" in config else {**config, "max_attempts": (project.get("budget") or {}).get("max_attempts", 3)})
+        from .production_continuation import ceiling
+        maximum_attempts = ceiling(project, config if "max_attempts" in config else {**config, "max_attempts": (project.get("budget") or {}).get("max_attempts", 3)}, target)
     except (TypeError, ValueError):
         return "attempt_budget_unverified"
     consumed = previous.get("attempt", 0)
@@ -324,6 +328,8 @@ def _plan(source, *, strategy_index=0):
             "first_frame_constraints": copy.deepcopy(constraints) if kind == "image" else []}
     if v2:
         strategies = ("silent_visual_action", "phase_isolated_action") if kind == "video" else ("grounded_single_instant", "spatial_state_isolation")
+        if kind == 'video' and source.get('continuation_authorization'):
+            strategies += ('physical_action_only', 'closed_lip_body_sequence')
         result.update(strategy=strategies[min(strategy_index, len(strategies) - 1)],
                       assigned_role="storyboard_director", required_handoffs=["observe_first_frame", "compile_strategy", "generate_media", "independent_media_review"] if kind == "video" else ["compile_strategy", "generate_media", "independent_media_review"])
         result["prompt_appendix"] = ""
@@ -353,7 +359,7 @@ def prepare_repair(project, config, target, last_assessment, *, previous_attempt
     committed. ``checkpoint`` is called only after the immutable result exists.
     No retry allowance, budget, review verdict or media bytes are changed here.
     """
-    gate = _gate(project, config, previous_attempt) or _priced_boundary(config, target)
+    gate = _gate(project, config, previous_attempt, target) or _priced_boundary(config, target)
     if gate:
         return _stop(gate)
     source = _source(project, config, target, last_assessment, previous_attempt, root)
@@ -376,7 +382,7 @@ def prepare_repair(project, config, target, last_assessment, *, previous_attempt
                 if current is not None:
                     fresh = current()
                     current_source = _source(fresh["project"], fresh["config"], fresh["target"], fresh["last_assessment"], fresh.get("previous_attempt"), root)
-                    gate = _gate(fresh["project"], fresh["config"], fresh.get("previous_attempt"))
+                    gate = _gate(fresh["project"], fresh["config"], fresh.get("previous_attempt"), fresh['target'])
                     if gate or digest(current_source) != digest(source):
                         return _stop(gate or "recovery_source_changed", source)
                 return copy.deepcopy(saved)
@@ -392,6 +398,8 @@ def prepare_repair(project, config, target, last_assessment, *, previous_attempt
             plan["schema"] = schema
             setting = config.get("production_recovery") or {}
             asset_limit = min(MAX_ASSET_CYCLES, max(0, int(setting.get("max_asset_cycles", MAX_ASSET_CYCLES))))
+            if source.get('continuation_authorization'):
+                asset_limit += source['continuation_authorization']['extra_attempts']
             project_limit = min(MAX_PROJECT_CYCLES, max(0, int(setting.get("max_project_cycles", MAX_PROJECT_CYCLES))))
             if plan["action"] in {"refine_motion", "refine_start_frame"} and (asset_count >= asset_limit or len(active) >= project_limit):
                 return _stop("recovery_cycle_limit", source)
@@ -401,7 +409,7 @@ def prepare_repair(project, config, target, last_assessment, *, previous_attempt
             if current is not None:
                 fresh = current()
                 fresh_source = _source(fresh["project"], fresh["config"], fresh["target"], fresh["last_assessment"], fresh.get("previous_attempt"), root)
-                gate = _gate(fresh["project"], fresh["config"], fresh.get("previous_attempt"))
+                gate = _gate(fresh["project"], fresh["config"], fresh.get("previous_attempt"), fresh['target'])
                 if gate or digest(fresh_source) != digest(source):
                     return _stop(gate or "recovery_source_changed", source)
             intent = base / (identity + ".intent.json")
@@ -429,7 +437,7 @@ def applicable(record, project, config, target, last_assessment, *, previous_att
     if record.get("schema") == STRATEGY_VERSION:
         allowed.add("request_upstream")
     if (record.get("action") not in allowed
-            or _gate(project, config, previous_attempt) or _priced_boundary(config, target)):
+            or _gate(project, config, previous_attempt, target) or _priced_boundary(config, target)):
         return False
     try:
         saved = _load(_folder(project, root) / (record["id"] + ".json"))

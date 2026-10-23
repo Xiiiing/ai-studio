@@ -1000,6 +1000,10 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                 return None
         return None
 
+    def _asset_attempt_ceiling(self, target):
+        from .production_continuation import ceiling
+        return ceiling(self.project, {**self.config, 'max_attempts': self.max_attempts}, target)
+
     def _quota_attempts(self, target):
         if not self.strategy_recovery:
             return self._attempts(target)
@@ -1043,7 +1047,7 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
             return
         previous = previous if previous is not None else self._quota_attempts(target)
         previous = [r for r in previous if r.get('state') != 'prompt_preparing']
-        if not previous or len(previous) >= self.attempt_ceiling:
+        if not previous or len(previous) >= self._asset_attempt_ceiling(target):
             return
         from .production_recovery import prepare_repair
         from .production_handoffs import start, advance, role, upstream_receipt
@@ -1160,20 +1164,20 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
             self._stop_existing_video(target)
         self._team_admit_target(target)
         previous = [record for record in self._quota_attempts(target) if record.get("state") != "prompt_preparing"]
-        if len(previous) >= self.attempt_ceiling:
+        if len(previous) >= self._asset_attempt_ceiling(target):
             if target.get("shot") is not None:
                 target["shot"]["status"] = "failed"
             self.emit("needs_attention")
             if self.autonomous_recovery:
                 self.production['recovery'] = {'status': 'stopped', 'reason': 'retry_limit',
                     'asset': target['key'], 'stage': target['kind'], 'attempts_used': len(previous),
-                    'attempts_limit': self.attempt_ceiling, 'message': '本制作对象的授权尝试次数已用尽；保留结果与费用，系统已停止新增生成。'}
+                    'attempts_limit': self._asset_attempt_ceiling(target), 'message': '本制作对象的授权尝试次数已用尽；保留结果与费用，系统已停止新增生成。'}
                 self.emit('needs_attention')
-            raise ProductionNeedsDecision(f"{target['key']} 的 {target['kind']} 已用完 {self.attempt_ceiling} 次授权尝试；已有成果和费用已保留。需调整尝试次数授权，直接继续不会获得新额度。" if self.autonomous_recovery else "A production asset exhausted its authorized retry limit",
+            raise ProductionNeedsDecision(f"{target['key']} 的 {target['kind']} 已用完 {self._asset_attempt_ceiling(target)} 次授权尝试；已有成果和费用已保留。需调整尝试次数授权，直接继续不会获得新额度。" if self.autonomous_recovery else "A production asset exhausted its authorized retry limit",
                                           "retry_limit",
                                           {"asset": target["key"], "stage": target["kind"],
                                            "attempts": len(previous),
-                                           **({'attempts_used': len(previous), 'attempts_limit': self.attempt_ceiling}
+                                           **({'attempts_used': len(previous), 'attempts_limit': self._asset_attempt_ceiling(target)}
                                               if self.autonomous_recovery else {})})
         indexes = [int(p.name[5:]) for p in target["folder"].glob("take_*")
                    if p.is_dir() and p.name[5:].isdigit()]
@@ -1208,7 +1212,7 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
             state = {'status': 'repairing', 'asset': target['key'], 'stage': target['kind'],
                      'action': directed['action'], 'reason': directed['reason'],
                      'record_id': directed.get('id'), 'attempts_used': len(previous),
-                     'attempts_limit': self.attempt_ceiling}
+                     'attempts_limit': self._asset_attempt_ceiling(target)}
             if directed['action'] in {'stop', 'request_upstream'}:
                 explanations = {
                     'approved_inputs_require_upstream_revision': '批准材料存在矛盾或模型能力不足，需要核对上游材料或执行能力。',
@@ -1273,7 +1277,7 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
             record['prepared_only'] = True
         if directed:
             record['production_recovery'] = {'record_id': directed['id'], 'action': directed['action'],
-                                             'attempts_used_before': len(previous), 'attempt_limit': self.attempt_ceiling}
+                                             'attempts_used_before': len(previous), 'attempt_limit': self._asset_attempt_ceiling(target)}
         if target["kind"] == "video" and self.video_connection["provider"] == "comfyui_h3":
             from studio.h3 import frame_count, recipe
             selected = recipe(self.video_connection)

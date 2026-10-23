@@ -551,6 +551,14 @@ def control(pid, payload):
         if saved: return snapshot(pid, db=db)
         cas(p, payload)
         action = payload.get('action')
+        if action == 'authorize_asset_continuation':
+            if set(payload) - {'action', 'request_id', 'expected_revision', 'unit_id', 'shot_ids'}:
+                raise ValueError('追加返修授权包含未知字段')
+            from .production_continuation import authorize
+            authorize(db, p, payload, key)
+            p['operation_requests'][key] = {'signature': signature}
+            store._write(db, p)
+            return snapshot(pid, db=db)
         if action == 'wait_for_resources':
             if set(payload) - {'action', 'request_id', 'expected_revision'}:
                 raise ValueError('资源等待请求包含未知字段')
