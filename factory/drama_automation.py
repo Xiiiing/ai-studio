@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import copy
 import math
+import re
 
 from studio.core import fingerprint
 from . import store
@@ -71,7 +72,7 @@ def _plan_changed(p):
     return not p.get('plans') or fingerprint(p.get('draft_plan')) != p['plans'][-1]['sha256']
 
 
-def _reauthorize_budget(db, p, normalized, request_id, *, suspended):
+def _reauthorize_budget(db, p, normalized, request_id, *, suspended, unit_id=None):
     """Explicit per-unit cap increases at a global safe boundary, never a retry."""
     budget = normalized['budget']
     selected = [store._read(db, eid) for eid in p['episodes']]
@@ -82,6 +83,10 @@ def _reauthorize_budget(db, p, normalized, request_id, *, suspended):
         units = [store._read(db, uid) for uid in episode.get('unit_ids', [])]
         targets.append((episode, bool(units)))
         targets.extend((unit, False) for unit in units if unit['status'] not in FINAL | {'unit_ready', 'cancelled'})
+    if unit_id is not None:
+        targets = [(item, aggregate) for item, aggregate in targets if item['id'] == unit_id and not aggregate]
+        if len(targets) != 1:
+            raise ValueError('制作单元不在已授权且未完成的整剧范围内')
     changed = [(item, aggregate) for item, aggregate in targets
         if any(item.get('budget', {}).get(field) != budget[field] for field in DEFAULT_BUDGET)]
     if not changed:
@@ -91,6 +96,16 @@ def _reauthorize_budget(db, p, normalized, request_id, *, suspended):
     # The parent episode drives units in its own job; also fence independently
     # queued unit work and a planning review before altering captured limits.
     ids = {p['id'], *(item['id'] for item, _ in targets)}
+    if unit_id is not None:
+        from .production_execution import _guard_remote_evidence
+        ids.update(e['id'] for e in selected)
+        for ident in ids:
+            if db.execute("SELECT 1 FROM jobs WHERE project_id=? AND status IN ('queued','running','waiting_remote')", (ident,)).fetchone():
+                raise ValueError('请等待当前制作任务到达安全边界，再调整预算')
+            item = store._read(db, ident)
+            if (item.get('production') or {}).get('active_gpu_leases', 0):
+                raise ValueError('请先结算现有 GPU 执行')
+            _guard_remote_evidence(db, item)
     if any(db.execute("SELECT 1 FROM jobs WHERE project_id=? AND status='running'", (pid,)).fetchone() for pid in ids):
         raise ValueError('请等待当前制作任务到达安全边界，再调整预算')
     for item, aggregate in changed:
@@ -108,8 +123,23 @@ def _reauthorize_budget(db, p, normalized, request_id, *, suspended):
             if budget['gpu_minutes'] * 60 <= gpu or budget['wall_minutes'] * 60 <= wall:
                 raise ValueError('新的预算上限必须大于累计已用时间；不能清零或覆盖已发生用量')
     authorization = {'request_id': request_id, 'actor': 'producer', 'at': store.now(),
-        'budget': copy.deepcopy(budget), 'budget_scope': 'per_unit'}
+        'budget': copy.deepcopy(budget), 'budget_scope': 'single_unit' if unit_id else 'per_unit',
+        **({'unit_id': unit_id} if unit_id else {})}
     for item, _ in changed:
+        # Explicit budget changes may rebind an existing grant but can never
+        # add attempts. Retain its exact prior signed authorization for audit.
+        from .production_continuation import grant
+        from .config import production_config
+        from .creative_evidence_io import digest
+        for key, saved in (item.get('production_continuations') or {}).items():
+            row = saved.get('authorization', {})
+            checked = grant(item, production_config(item, item.get('execution_config') or {}),
+                {'kind': row.get('stage'), 'key': row.get('asset'), 'signature': row.get('source_signature')})
+            if checked is None or budget['max_attempts'] != item['budget']['max_attempts']:
+                raise ValueError('已有镜头授权不能随预算修改增加尝试次数')
+            item.setdefault('production_continuation_history', []).append(copy.deepcopy(saved))
+            row = {**checked, 'budget': copy.deepcopy(budget), 'budget_authorization_id': request_id}
+            item['production_continuations'][key] = {'authorization': row, 'sha256': digest(row)}
         item.setdefault('budget', {}).update(copy.deepcopy(budget))
         limits = {'max_gpu_seconds': budget['gpu_minutes'] * 60,
             'max_wall_seconds': budget['wall_minutes'] * 60, 'max_attempts': budget['max_attempts']}
@@ -129,6 +159,21 @@ def _reauthorize_budget(db, p, normalized, request_id, *, suspended):
             store._write(db, episode)
     store._event(db, p['id'], '已重新授权未完成制作单元的有界预算，保留累计用量和成功素材，等待明确恢复。',
         'budget_authorization', {'authorization': authorization, 'project_ids': [item['id'] for item, _ in changed]})
+
+
+def authorize_unit_budget(db, p, payload, request_id):
+    if set(payload) != {'action', 'request_id', 'expected_revision', 'unit_id', 'gpu_minutes', 'wall_minutes'}:
+        raise ValueError('单元预算授权字段无效')
+    if not isinstance(payload['unit_id'], str) or not re.fullmatch(r'[a-f0-9]{12}', payload['unit_id']):
+        raise ValueError('请指定有效制作单元')
+    automation = p.get('automation') or {}
+    if not automation.get('enabled') or not automation.get('suspended') or p['status'] not in {'paused', 'blocked'}:
+        raise ValueError('请先暂停已授权的全剧连续制作')
+    unit = store._read(db, payload['unit_id'])
+    budget = validate_budget({'gpu_minutes': payload['gpu_minutes'], 'wall_minutes': payload['wall_minutes'],
+                              'max_attempts': unit['budget']['max_attempts']})
+    _reauthorize_budget(db, p, {**automation, 'budget': budget}, request_id,
+                       suspended=True, unit_id=unit['id'])
 
 
 def enable(db, p, config, request_id):

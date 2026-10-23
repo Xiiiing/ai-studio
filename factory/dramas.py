@@ -542,7 +542,7 @@ def _wait_for_resources(db, drama, request_id):
 
 
 def control(pid, payload):
-    allowed = {'expected_revision', 'expected_episode_revision', 'request_id', 'action', 'episode_id', 'batch_id', 'feedback', 'unit_id', 'shot_ids', 'automation'}
+    allowed = {'expected_revision', 'expected_episode_revision', 'request_id', 'action', 'episode_id', 'batch_id', 'feedback', 'unit_id', 'shot_ids', 'automation', 'gpu_minutes', 'wall_minutes'}
     if set(payload) - allowed: raise ValueError('控制请求包含未知字段')
     with store.connection() as db:
         db.execute('BEGIN IMMEDIATE')
@@ -551,6 +551,14 @@ def control(pid, payload):
         if saved: return snapshot(pid, db=db)
         cas(p, payload)
         action = payload.get('action')
+        if action == 'authorize_unit_budget':
+            from .drama_automation import authorize_unit_budget
+            authorize_unit_budget(db, p, payload, key)
+            p['operation_requests'][key] = {'signature': signature}
+            store._write(db, p)
+            return snapshot(pid, db=db)
+        if 'gpu_minutes' in payload or 'wall_minutes' in payload:
+            raise ValueError('仅单元预算授权可包含 GPU 和制作时长上限')
         if action == 'authorize_asset_continuation':
             if set(payload) - {'action', 'request_id', 'expected_revision', 'unit_id', 'shot_ids'}:
                 raise ValueError('追加返修授权包含未知字段')

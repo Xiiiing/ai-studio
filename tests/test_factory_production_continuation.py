@@ -70,6 +70,84 @@ def test_authorization_is_atomic_scoped_idempotent_and_preserves_every_existing_
         assert db.execute("SELECT count(*) FROM jobs WHERE status IN ('queued','running','waiting_remote')").fetchone()[0] == 0
 
 
+def test_explicit_unit_budget_preserves_grant_quota_usage_other_units_and_history(stopped, isolated):
+    p, eid, payload, cfg = stopped
+    dramas.control(p['id'], payload)
+    original = store.get(eid, False)
+    other = store.get(p['episodes'][1]['id'], False)
+    store.update(p['id'], {'status': 'paused', 'automation': {
+        'enabled': True, 'episode_numbers': [1], 'suspended': True}})
+    p = dramas.snapshot(p['id'])
+    body = {'action': 'authorize_unit_budget', 'request_id': 'only-first-unit-budget',
+            'expected_revision': p['revision'], 'unit_id': eid, 'gpu_minutes': 300, 'wall_minutes': 270}
+    evidence = {f: f.read_bytes() for f in isolated.rglob('attempt.json')}
+    result = dramas.control(p['id'], body)
+    updated = store.get(eid, False)
+    assert updated['budget'] == {**original['budget'], 'gpu_minutes': 300, 'wall_minutes': 270}
+    assert updated['production']['gpu_seconds'] == original['production']['gpu_seconds']
+    assert updated['production']['elapsed_seconds'] == original['production']['elapsed_seconds']
+    assert updated['production_continuation_history'] == [original['production_continuations']['video:S02']]
+    assert continuation.ceiling(updated, cfg, {'kind': 'video', 'key': 'S02', 'signature': 'original'}) == 7
+    assert continuation.ceiling(updated, cfg, {'kind': 'video', 'key': 'S03', 'signature': 'other'}) == 5
+    assert updated['status'] == original['status'] and result['status'] == 'paused'
+    assert store.get(other['id'], False) == other
+    assert all(f.read_bytes() == data for f, data in evidence.items())
+    assert dramas.control(p['id'], body)['revision'] == result['revision']
+    with store.connection() as db:
+        assert db.execute("SELECT count(*) FROM jobs WHERE status IN ('queued','running','waiting_remote')").fetchone()[0] == 0
+
+
+@pytest.mark.parametrize('change', ['running', 'remote', 'wrong_unit', 'decrease', 'nan', 'attempts', 'not_paused', 'grant_tampered'])
+def test_unit_budget_rejects_unsafe_or_expanded_scope_atomically(stopped, isolated, change):
+    p, eid, payload, cfg = stopped
+    dramas.control(p['id'], payload)
+    store.update(p['id'], {'status': 'paused', 'automation': {
+        'enabled': True, 'episode_numbers': [1], 'suspended': True}})
+    body = {'action': 'authorize_unit_budget', 'request_id': 'budget-check',
+            'unit_id': eid, 'gpu_minutes': 300, 'wall_minutes': 270}
+    if change == 'running':
+        with store.connection() as db: store._enqueue(db, eid, 'workflow')
+    elif change == 'remote':
+        core.write_json(isolated / 'production' / ('factory-' + eid) / 'renders/S02/take_005/submission.json',
+                        {'state': 'running', 'gpu_service_job_id': 'a' * 64})
+    elif change == 'wrong_unit': body['unit_id'] = p['episodes'][1]['id']
+    elif change == 'decrease': body['gpu_minutes'] = 199
+    elif change == 'nan': body['gpu_minutes'] = float('nan')
+    elif change == 'attempts': body['max_attempts'] = 5
+    elif change == 'not_paused': store.update(p['id'], {'status': 'producing'})
+    elif change == 'grant_tampered':
+        grants = copy.deepcopy(store.get(eid, False)['production_continuations'])
+        grants['video:S02']['sha256'] = 'broken'
+        store.update(eid, {'production_continuations': grants})
+    body['expected_revision'] = dramas.snapshot(p['id'])['revision']
+    with store.connection() as db: before = tuple(db.iterdump())
+    with pytest.raises(ValueError): dramas.control(p['id'], body)
+    with store.connection() as db: assert tuple(db.iterdump()) == before
+
+
+def test_single_scene_budget_does_not_expand_sibling_or_future_batch(stopped):
+    p, eid, _, _ = stopped
+    units = [store.create({'brief': 'Offline scene-unit budget fixture.'}) for _ in range(2)]
+    with store.connection() as db:
+        db.execute("UPDATE jobs SET status='cancelled' WHERE project_id IN (?,?)", tuple(u['id'] for u in units))
+    for unit in units:
+        store.update(unit['id'], {'record_kind': 'scene_unit', 'episode_id': eid, 'status': 'paused',
+            'budget': {'gpu_minutes': 200, 'wall_minutes': 180, 'max_attempts': 3},
+            'production': {'gpu_seconds': 100, 'elapsed_seconds': 200}})
+    store.update(eid, {'unit_ids': [u['id'] for u in units]})
+    automation = {'enabled': True, 'episode_numbers': [1], 'suspended': True,
+                  'budget': {'gpu_minutes': 120, 'wall_minutes': 180, 'max_attempts': 3}}
+    store.update(p['id'], {'status': 'paused', 'automation': automation})
+    other = store.get(units[1]['id'], False)
+    result = dramas.control(p['id'], {'action': 'authorize_unit_budget', 'request_id': 'scene-only',
+        'unit_id': units[0]['id'], 'gpu_minutes': 300, 'wall_minutes': 270,
+        'expected_revision': dramas.snapshot(p['id'])['revision']})
+    assert store.get(units[1]['id'], False) == other
+    assert store.get(units[0]['id'], False)['budget']['gpu_minutes'] == 300
+    assert store.get(eid, False)['total_authorized_gpu_minutes'] == 500
+    assert result['automation'] == automation
+
+
 @pytest.mark.parametrize('change', ['running', 'wrong_unit', 'wrong_shot', 'missing_attempt', 'unknown_remote', 'budget', 'six_attempts'])
 def test_authorization_refuses_unsafe_or_unverified_boundaries(stopped, isolated, change):
     p, eid, payload, cfg = stopped
