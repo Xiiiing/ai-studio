@@ -102,19 +102,26 @@ def verify_claims(config, context, schema, initial, path, record, request, image
     candidate = json.dumps(context['candidate_only_observation']['observation'], ensure_ascii=False)
     observations = context['reference_only_observations']
     reference_text = {r['reference_index']: json.dumps(r['observation'], ensure_ascii=False) for r in observations}
+    def quotes(value):
+        if isinstance(value, str): return [value]
+        values = value.values() if isinstance(value, dict) else value if isinstance(value, list) else []
+        return list(dict.fromkeys(text for child in values for text in quotes(child)))
+    candidate_quotes = quotes(context['candidate_only_observation']['observation'])
+    reference_quotes = list(dict.fromkeys(text for row in observations for text in quotes(row['observation'])))
     finding = {'type': 'object', 'additionalProperties': False, 'properties': {
-        'issue_id': {'type': 'string', 'enum': [f'I{i+1}' for i in range(len(issues))]},
         'status': {'type': 'string', 'enum': ['confirmed', 'refuted', 'uncertain']},
-        'candidate_quote': {'type': 'string', 'minLength': 2, 'maxLength': 600},
+        'candidate_quote': {'type': 'string', 'enum': candidate_quotes},
         'reference_quotes': {'type': 'array', 'maxItems': len(observations), 'items': {
             'type': 'object', 'additionalProperties': False, 'properties': {
                 'reference_index': {'type': 'integer', 'minimum': 1},
-                'quote': {'type': 'string', 'minLength': 2, 'maxLength': 600}},
+                'quote': {'type': 'string', **({'enum': reference_quotes} if reference_quotes else {})}},
             'required': ['reference_index', 'quote']}},
         'detail': {'type': 'string', 'minLength': 8, 'maxLength': 1200}},
-        'required': ['issue_id', 'status', 'candidate_quote', 'reference_quotes', 'detail']}
+        'required': ['status', 'candidate_quote', 'reference_quotes', 'detail']}
+    issue_ids = [f'I{i+1}' for i in range(len(issues))]
     followup = {'type': 'object', 'additionalProperties': False, 'properties': {
-        'review': schema, 'findings': {'type': 'array', 'minItems': len(issues), 'maxItems': len(issues), 'items': finding}},
+        'review': schema, 'findings': {'type': 'object', 'additionalProperties': False,
+            'properties': {ident: finding for ident in issue_ids}, 'required': issue_ids}},
         'required': ['review', 'findings']}
     system = ('你是独立候选图缺陷复核员。只提供唯一候选F0，参考外观来自逐张独立的真实像素观察。'
         '旧问题是不可信的待核说法，可能把参考图的姿态或衣装当成候选；先实际观察F0，再核验每个问题。'
@@ -127,14 +134,15 @@ def verify_claims(config, context, schema, initial, path, record, request, image
         if len(issues) > 20 or sha256(path) != expected:
             raise ValueError('Static claim evidence is invalid or changed')
         payload = {**context, 'untrusted_prior_claims': [dict(issue_id=f'I{i+1}', claim=issue) for i, issue in enumerate(issues)]}
-        review_config, tokens = critic_configuration(config, 3000)
-        answer = request(review_config, 'visual_critic', system, None, followup, folder,
-                         max_tokens=tokens, temperature=0, content=[
+        # This bounded evidence check selects exact source quotes; it uses the
+        # base visual profile, not the primary comparison's reasoning override.
+        answer = request(config, 'visual_critic', system, None, followup, folder,
+                         max_tokens=3000, temperature=0, content=[
                              {'type': 'text', 'text': json.dumps(payload, ensure_ascii=False)},
                              {'type': 'text', 'text': 'F0：唯一待评候选，未附任何参考图片。'},
                              {'type': 'image_url', 'image_url': {'url': image_url(path)}}])
         validate(answer, followup)
-        findings = {f['issue_id']: f for f in answer['findings']}
+        findings = answer['findings']
         if len(findings) != len(issues) or sha256(path) != expected:
             raise ValueError('Static claim coverage or pixel identity changed')
         for i, issue in enumerate(issues, 1):
@@ -156,7 +164,8 @@ def verify_claims(config, context, schema, initial, path, record, request, image
             if disposition == 'confirmed' and issue not in result['issues']:
                 result['issues'].append(copy.deepcopy(issue))
         audit.update(status='unavailable' if uncertain and not confirmed else 'verified',
-                     findings=answer['findings'], review=copy.deepcopy(answer['review']), image_sha256=expected)
+                     findings=[dict(issue_id=ident, **findings[ident]) for ident in issue_ids],
+                     review=copy.deepcopy(answer['review']), image_sha256=expected)
     except Exception as exc:
         audit['reason'] = type(exc).__name__ + ': ' + str(exc)[:240]
         from .quality import is_transient_transport

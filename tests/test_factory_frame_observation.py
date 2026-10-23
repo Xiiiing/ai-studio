@@ -68,10 +68,10 @@ def test_static_critic_gets_current_contract_and_separate_pixel_evidence_without
         content = kwargs['content']; calls.append(content)
         if args[4] == observation.SCHEMA: return row()
         if 'review' in args[4].get('properties', {}):
-            return {'review': copy.deepcopy(result), 'findings': [{
-                'issue_id': 'I1', 'status': 'confirmed', 'candidate_quote': 'Visible fixture observation',
+            return {'review': copy.deepcopy(result), 'findings': {'I1': {
+                'status': 'confirmed', 'candidate_quote': 'Visible fixture observation',
                 'reference_quotes': [{'reference_index': 1, 'quote': 'Visible fixture observation'}],
-                'detail': 'The actual candidate and reference evidence confirm the mismatch.'}]}
+                'detail': 'The actual candidate and reference evidence confirm the mismatch.'}}}
         return copy.deepcopy(result)
     monkeypatch.setattr(llm, '_request', request)
     monkeypatch.setattr(llm, '_image_url', lambda p: str(p))
@@ -109,12 +109,19 @@ def test_same_pixel_claim_verification_preserves_failures_and_requires_real_cita
     issue = {'code': 'identity', 'severity': 'blocking', 'detail': 'Visible mismatch to check.'}
     initial = {'status': 'fail', 'score': 20, 'summary': 'Old claim', 'issues': [issue]}
     answer = {'review': {'status': 'pass', 'score': 90, 'summary': 'Independent candidate review', 'issues': []},
-              'findings': [{'issue_id': 'I1', 'status': disposition if disposition != 'invented_quote' else 'refuted',
+              'findings': {'I1': {'status': disposition if disposition != 'invented_quote' else 'refuted',
                 'candidate_quote': 'Invented evidence' if disposition == 'invented_quote' else 'A seated person.',
                 'reference_quotes': [{'reference_index': 1, 'quote': 'A standing person.'}],
-                'detail': 'Actual candidate evidence compared to the independently observed reference.'}]}
+                'detail': 'Actual candidate evidence compared to the independently observed reference.'}}}
     calls = []
-    def request(*a, **kw): calls.append(kw['content']); return copy.deepcopy(answer)
+    def request(*a, **kw):
+        calls.append(kw['content'])
+        finding = a[4]['properties']['findings']['properties']['I1']['properties']
+        assert 'A seated person.' in finding['candidate_quote']['enum']
+        assert 'A standing person.' not in finding['candidate_quote']['enum']
+        assert 'A standing person.' in finding['reference_quotes']['items']['properties']['quote']['enum']
+        assert kw['max_tokens'] == 3000
+        return copy.deepcopy(answer)
     result = observation.verify_claims({}, context, llm.REVIEW_SCHEMA, initial, path, tmp_path, request, str)
     assert sum(x['type'] == 'image_url' for x in calls[0]) == 1
     assert result['static_verification']['initial_review'] == initial
