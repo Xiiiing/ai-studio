@@ -147,14 +147,16 @@ def test_adaptive_image_requires_independent_contract_check_before_media(case, m
         else:
             result = candidate(target['shot'], payload['project']['strategy'])
             result['plan']['image']['description'] = 'The woman stands with both empty hands visible, separated from the floating cup by a clear air gap.'
-            result['performance']['start'] = 'Empty hands at her sides; the cup floats unsupported in front.'
+            result['performance']['start'] = 'She is seated and holds the cup before standing up.'
             if approved == 'recover' and 'contract_feedback' in payload['project']:
-                result['performance']['start'] += ' The visible air gap separates both hands from the cup.'
+                result['plan']['image']['description'] += ' The cup is suspended at chest height.'
         return {'model': request['model'], 'choices': [{'finish_reason': 'stop', 'message': {'content': json.dumps(result)}}]}
     mock_transport(monkeypatch, respond)
     if approved:
         result = compile_(case)
         assert 'clear air gap' in result['parameters']['prompt']
+        assert 'seated' not in result['parameters']['prompt']
+        assert 'before standing up' not in result['parameters']['prompt']
         assert "Both of the subject's empty hands" in result['parameters']['prompt']
         assert result['quality_status'] == 'pending_independent_actual_media_review'
         assert result['visual_contract_verification']['passed']

@@ -224,9 +224,12 @@ def _prompt(candidate, source, caps, strategy):
                        'well separated from both hands and forearms. A broad visible gap of background '
                        'surrounds the prop and separates it from the fingers; the prop is freely suspended. ')
         prompt = 'Single approved starting instant: ' + spatial + description
-        if (adaptive or not approved_start) and pipeline.SEQUENCE.search(phases['start']):
+        if pipeline.SEQUENCE.search(description if adaptive else phases['start']) and (adaptive or not approved_start):
             _fail('图片表演包含连续事件，应只保留起始一瞬', 'generation_image_not_instant')
-        if adaptive or not approved_start:
+        # performance.start belongs to the video timeline and may precede the
+        # approved still. The separately verified image description owns all
+        # adaptive still staging; never merge a contradictory temporal pose.
+        if not adaptive and not approved_start:
             prompt += '\nSpatial staging: ' + phases['start']
         prompt += '\nReference images establish identity and appearance; their poses and held-prop placement do not override this approved starting state.'
         if strategy == 'spatial_state_isolation':
