@@ -302,14 +302,14 @@ def _prompt(candidate, source, caps, strategy):
         prompt = (('Approved rendering style for every person and the environment: ' + style + '\n') if style else '')
         prompt += 'Single approved starting instant: ' + spatial + description
         for binding in source.get('reference_bindings', []):
-            use = {'character': 'facial identity, hair and wardrobe only; render this identity in the approved scene style even if this reference uses a different rendering medium; re-pose this person for the approved scene, with the requested hand and prop states instead of the reference holding pose',
+            use = {'character': 'identity and appearance only for the body regions visible in the approved framing. Preserve the approved crop: a reference portrait does not require a face, torso, full figure or its background to appear. If the approved close-up shows only fingers, render only those fingers. Apply the approved scene style to the visible regions even when the reference uses another rendering medium; preserve the approved hand and prop states instead of copying the reference holding pose',
                    'scene': 'the approved environment and architecture',
                    'prop': 'appearance information only if the approved shot explicitly requires this prop to be visible; this reference does not require the prop to appear, and off-screen props must not be introduced into this frame',
                    'composition': 'all the approved distinct identities and environment shown together'}.get(binding['kind'])
             if use:
                 prompt += f"\nReference image {binding['reference_index']} ({binding.get('entity_id') or binding['kind']}) supplies {use}."
                 if binding.get('approved_identity'):
-                    prompt += '\nApproved appearance defaults (current shot overrides pose and prop placement): ' + json.dumps(binding['approved_identity'], ensure_ascii=False)
+                    prompt += '\nApproved appearance defaults for visible regions only (current shot overrides framing, pose and prop placement): ' + json.dumps(binding['approved_identity'], ensure_ascii=False)
         if pipeline.SEQUENCE.search(description) and (adaptive or not approved_start):
             _fail('图片表演包含连续事件，应只保留起始一瞬', 'generation_image_not_instant')
         # A still has no video timeline. Its complete staging comes from the
