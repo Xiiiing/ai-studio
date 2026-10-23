@@ -125,7 +125,7 @@ def test_authorized_continuity_repairs_pass_old_limit_without_resetting_history(
     assert not result.get('accepted_by')
 
 
-@pytest.mark.parametrize('approved', [True, False])
+@pytest.mark.parametrize('approved', [True, False, 'recover'])
 def test_adaptive_image_requires_independent_contract_check_before_media(case, monkeypatch, approved):
     p, cfg, target, qa, previous, root = case
     grant(p)
@@ -143,11 +143,13 @@ def test_adaptive_image_requires_independent_contract_check_before_media(case, m
         payload = json.loads(request['messages'][-1]['content'])
         calls.append(payload)
         if 'compiled_visual_prompt' in payload:
-            result = {'passed': approved, 'reason': 'Fixture independent starting-instant comparison.'}
+            result = {'passed': approved is True or (approved == 'recover' and len(calls) > 2), 'reason': 'Fixture independent starting-instant comparison.'}
         else:
             result = candidate(target['shot'], payload['project']['strategy'])
             result['plan']['image']['description'] = 'The woman stands with both empty hands visible, separated from the floating cup by a clear air gap.'
             result['performance']['start'] = 'Empty hands at her sides; the cup floats unsupported in front.'
+            if approved == 'recover' and 'contract_feedback' in payload['project']:
+                result['performance']['start'] += ' The visible air gap separates both hands from the cup.'
         return {'model': request['model'], 'choices': [{'finish_reason': 'stop', 'message': {'content': json.dumps(result)}}]}
     mock_transport(monkeypatch, respond)
     if approved:
@@ -155,8 +157,11 @@ def test_adaptive_image_requires_independent_contract_check_before_media(case, m
         assert 'clear air gap' in result['parameters']['prompt']
         assert result['quality_status'] == 'pending_independent_actual_media_review'
         assert result['visual_contract_verification']['passed']
+        assert len(result['rejected_compilations']) == (1 if approved == 'recover' else 0)
     else:
-        with pytest.raises(ProductionNeedsDecision, match='视觉转译'): compile_(case)
-    assert len(calls) == 2
+        with pytest.raises(ProductionNeedsDecision, match='重复返回'): compile_(case)
+    assert len(calls) == (4 if approved == 'recover' else 2 if approved else 3)
     assert calls[0]['project']['failed_visual_prompt'] == 'A woman holds a cup.'
     assert calls[1]['approved_contract'] == target['shot']
+    assert 'episode' not in calls[0]['project']['project_requirements']
+    assert calls[0]['project']['approved_starting_frame']['prompt'] == target['shot']['prompt']
