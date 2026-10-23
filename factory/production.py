@@ -644,7 +644,8 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
         identity = self._team_target(target)
         if identity:
             team_control.assert_publishable(self.ident, *identity, input_version=target["signature"],
-                                            compatible_input_versions=target.get("compatible_source_signatures", ()))
+                                            compatible_input_versions=(*target.get("compatible_source_signatures", ()),
+                                                *target.get("compatible_team_input_versions", ())))
         else:
             team_control.assert_publishable(self.ident, "stage", "visual_development")
 
@@ -849,6 +850,19 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                 _receipt_path(prior)
                 target.update(prompt=old_plan["parameters"]["prompt"], signature=prior["source_signature"], generation_plan=old_plan,
                     review_signature=fingerprint({"review": review_signature, "generation_plan": old_plan["signature"]}))
+                # Older runs could recompile identical approved inputs after a
+                # composition review changed, leaving the ledger on that newer
+                # plan. Permit the verified selected pixels to be re-reviewed
+                # against those equivalent inputs. This is ONLY a ledger fence:
+                # sibling takes keep their own generation identity and journal.
+                target["compatible_team_input_versions"] = []
+                for attempt_path in sorted(folder.glob("take_*/attempt.json")):
+                    attempt = read_json(attempt_path)
+                    plan = attempt.get("generation_plan") or {}
+                    if (attempt.get("source_signature")
+                            and facts(plan.get("source", {})) == facts(current_source)
+                            and plan.get("capabilities") == capabilities(pipeline_config, self.project, kind)):
+                        target["compatible_team_input_versions"].append(attempt["source_signature"])
                 return target
             # Resume a frozen compiled plan before checking the media journal;
             # the legacy target signature must not hide its own in-flight job.

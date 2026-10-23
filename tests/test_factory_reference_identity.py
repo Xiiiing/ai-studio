@@ -6,6 +6,7 @@ from PIL import Image
 import pytest
 
 from factory import generation_pipeline as pipeline, production as renderer
+from factory import team_ledger, team_control
 from factory.reference_identity import generation_identity
 from factory.scheduler import ProductionNeedsDecision
 from studio import core
@@ -197,6 +198,45 @@ def test_historical_approved_image_rechecks_qa_without_compiling_or_drawing(prod
     assert resumed.budget.snapshot()['gpu_seconds'] == 651.07
     assert resumed.budget.snapshot()['remote_gpu_receipts'] == {'b0' * 32: 651.07}
     assert len(list(current['folder'].glob('take_*'))) == 1
+
+
+@pytest.mark.parametrize('change', [None, 'facts', 'model'])
+def test_selected_pixels_cross_only_equivalent_ledger_versions(production, monkeypatch, change):
+    run, config, frame, old, target, receipt, calls = old_selection(production, monkeypatch)
+    refreshed = composition(pipeline.ROOT, frame, review='new')
+    sibling = core.read_json(run.folder / 'assets/shots/S01/take_003/attempt.json')
+    sibling.update(take='take_004', source_signature='ab' * 32, state='failed')
+    plan = sibling['generation_plan']
+    plan['source']['reference_bindings'] = [refreshed]
+    # A different compiler wording does not change the approved source facts.
+    plan['parameters']['prompt'] += ' Preserve the approved staging.'
+    if change == 'facts':
+        plan['source']['approved_shot']['prompt'] = 'A different approved scene.'
+    elif change == 'model':
+        plan['capabilities']['model'] = 'different-model'
+    core.write_json(run.folder / 'assets/shots/S01/take_004/attempt.json', sibling)
+    token = team_ledger.begin_unit(run.ident, 'image', 'S01', input_version=sibling['source_signature'])
+    team_ledger.finish_unit(token, status='completed')
+    current = target(run, refreshed)
+    if change:
+        with pytest.raises(team_control.TeamInterventionPending, match='输入版本'):
+            run._team_publish_target(current)
+        return
+    run._team_publish_target(current)
+    assert current['signature'] == receipt['source_signature']
+    assert sibling['source_signature'] not in current['compatible_source_signatures']
+    assert [a['take'] for a in run._attempts(current)] == ['take_003']
+    # Run the actual ledger-backed review/adoption path without a new render.
+    monkeypatch.setattr(run, '_new_attempt', lambda *a: pytest.fail('Must not redraw approved pixels'))
+    monkeypatch.setattr(renderer, 'inspect_image', lambda *a: {'status': 'pass', 'issues': []})
+    selected = run._render_targets([current], 'story_frames')[0]
+    assert selected['sha256'] == receipt['sha256']
+    team_control.assert_publishable(run.ident, 'image', 'S01', input_version=current['signature'])
+    assert len(calls) == 1 and run.budget.snapshot()['gpu_seconds'] == 651.07
+    # A real concurrent input change still closes the publication fence.
+    team_ledger.begin_unit(run.ident, 'image', 'S01', input_version='changed-by-producer')
+    with pytest.raises(team_control.TeamInterventionPending, match='输入版本'):
+        run._team_publish_target(current)
 
 
 @pytest.mark.parametrize('change', ['version', 'mapping', 'dimensions', 'model', 'shot'])
