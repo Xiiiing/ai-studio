@@ -175,6 +175,11 @@ def test_adaptive_image_requires_independent_contract_check_before_media(case, m
             result = candidate(target['shot'], payload['project']['strategy'])
             result['plan']['image']['description'] = 'The woman stands with both empty hands visible, separated from the floating cup by a clear air gap.'
             result['performance']['start'] = 'She is seated and holds the cup before standing up.'
+            if 'contract_feedback' in payload['project']:
+                feedback = payload['project']['contract_feedback']
+                assert 'rejected_candidate' not in feedback
+                assert len(feedback['rejected_candidate_sha256']) == 64
+                assert '当前是独立契约核对拒绝后的修订轮' in request['messages'][0]['content']
             if approved == 'recover' and 'contract_feedback' in payload['project']:
                 result['plan']['image']['description'] += ' The cup is suspended at chest height.'
         if 'project' in payload and payload.get('phase') == 'image':

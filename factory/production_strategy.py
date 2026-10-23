@@ -532,7 +532,15 @@ def compile_strategy(project, config, target, record, checkpoint=None, root=None
         rejected, seen = [], set()
         while True:
             check()
-            candidate = llm._request(model_config, ROLE, system, current_payload, schema, base / 'director', max_tokens=5200, temperature=.2)
+            current_system = system
+            if rejected:
+                current_system = derive_prompt(system, str(system) +
+                    '\n当前是独立契约核对拒绝后的修订轮。contract_feedback.verification.reason逐项说明了未解决的问题。'
+                    '本轮必须为每项缺陷加入新的、具体可见的正向形态或空间关系，再返回完整替代候选。'
+                    '例如长裙误生成为裤装，应明确连续裙面、宽松垂坠裙摆覆盖腿部；动作误生成为抱胸，应明确双前臂分开、双手与身体的距离及后移重心。'
+                    '这些是落实原批准事实的视觉细化，不允许新增剧情或改变硬约束。不要重复已被拒绝的笼统描述或仅改同义词。',
+                    'autonomous_strategy_contract_revision')
+            candidate = llm._request(model_config, ROLE, current_system, current_payload, schema, base / 'director', max_tokens=5200, temperature=.2)
             validate(candidate, schema)
             candidate_digest = digest(candidate)
             if candidate_digest in seen:
@@ -580,7 +588,7 @@ def compile_strategy(project, config, target, record, checkpoint=None, root=None
                     if not source.get('completion_authorization'):
                         _fail('视觉转译未保留完整批准要求，未提交新媒体', 'production_strategy_contract_conflict', verification)
                     rejected.append({'candidate_sha256': candidate_digest, 'verification': verification})
-                    current_payload['project']['contract_feedback'] = {'rejected_candidate': candidate, 'verification': verification}
+                    current_payload['project']['contract_feedback'] = {'rejected_candidate_sha256': candidate_digest, 'verification': verification}
                     continue
             parameters = {'prompt': prompt, 'reference_sha256': [row['sha256'] for row in render_source['references']],
                           'reference_indices': reference_indices,
