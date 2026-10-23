@@ -35,6 +35,7 @@ def test_prop_omission_requires_independent_contract_and_keeps_original_source(p
     def request(config, role, system, payload, schema, output, **kwargs):
         calls.append(copy.deepcopy(payload))
         if 'compiled_visual_prompt' in payload:
+            assert payload['diagnostic_summary'] is None  # Grounded canonical templates are checked for preservation, not adaptive novelty.
             assert payload['approved_render_style'] == target['approved_render_style']
             assert payload['excluded_prop_references'][0]['entity_id'] == 'cup'
             assert len(payload['approved_reference_bindings']) == 3

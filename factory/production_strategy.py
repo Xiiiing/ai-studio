@@ -651,7 +651,8 @@ def compile_strategy(project, config, target, record, checkpoint=None, root=None
                      'failed_visual_prompt': failed_visual_prompt,
                      'approved_reference_bindings': source.get('reference_bindings', []),
                      'excluded_prop_references': [b for b in source.get('reference_bindings', []) if b['reference_index'] in excluded],
-                     'diagnostic_summary': payload['project']['diagnostic_summary'], 'external_voiceover_preserved': True},
+                     'diagnostic_summary': payload['project']['diagnostic_summary'] if strategy == 'evidence_directed_revision' else None,
+                     'external_voiceover_preserved': True},
                     contract_schema, base / 'contract', max_tokens=2200, temperature=.1)
                 validate(verification, contract_schema)
                 if not verification['passed']:
