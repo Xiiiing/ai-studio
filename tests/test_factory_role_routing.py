@@ -252,6 +252,23 @@ def production_review_runner(tmp_path, monkeypatch):
     return build
 
 
+@pytest.mark.parametrize('setting', [{'thinking': True, 'max_tokens': 6000}, {'thinking': True, 'max_tokens': 9000}])
+def test_static_reasoning_policy_invalidates_only_image_review(production_review_runner, setting):
+    cfg = routing_config()
+    original, image = production_review_runner(cfg)
+    video = original._target('S01', original.folder / 'video/S01', 'Approved motion', kind='video', shot=original.shots[0], review=True)
+    changed = copy.deepcopy(cfg)
+    changed.setdefault('quality', {})['static_review'] = setting
+    revised, new_image = production_review_runner(changed)
+    new_video = revised._target('S01', revised.folder / 'video/S01', 'Approved motion', kind='video', shot=revised.shots[0], review=True)
+    assert new_image['signature'] == image['signature']
+    assert new_image['review_signature'] != image['review_signature']
+    assert new_video['signature'] == video['signature']
+    assert new_video['review_signature'] == video['review_signature']
+    revised.config['static_review_policy']['max_tokens'] = 10000
+    assert changed['quality']['static_review'] == setting
+
+
 @pytest.mark.parametrize("field,value", [
     ("base_url", "http://127.0.0.1:8093/v1"),
     ("revision", "new-vision-weights"),

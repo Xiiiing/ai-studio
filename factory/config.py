@@ -184,6 +184,7 @@ def production_config(project, config):
     result["audio_connection"] = resolve(config, "audio")
     result["remote_step"] = True  # Worker executions always yield remote waiting.
     result["semantic_enabled"] = bool(config.get("quality",{}).get("semantic_enabled",True))
+    result["static_review_policy"] = copy.deepcopy(config.get("quality", {}).get("static_review"))
     result["semantic_model_identity"] = llm_identity(config, "visual_critic")
     result["semantic_model"] = result["semantic_model_identity"].get("model")
     from .evaluation_sampling import POLICY, sample_times

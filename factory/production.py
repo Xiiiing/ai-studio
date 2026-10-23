@@ -802,6 +802,8 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
             signature = fingerprint({"source_signature": signature, "character_revision": self.project["team_character_revisions"][extra["character"]]})
         review_key = ("video_review:" if kind == "video" else "image_review:") + str(extra.get("character") or key)
         review_signature = fingerprint({"source_signature": signature, "policy": self.review_policy,
+                                        **({"static_review": self.config['static_review_policy']}
+                                           if kind == 'image' and not shot.get('review_purpose') and self.config.get('static_review_policy') else {}),
                                         **({"explicit_constraint_policy": VISUAL_CONSTRAINT_POLICY}
                                            if kind == "video" and self.autonomous_recovery else {}),
                                         **({"reference_evidence": extra["asset_references"]} if extra.get("asset_references") else {}),
