@@ -43,16 +43,73 @@ def _same_source(project, config, target, record, root):
         _fail('返修编译已到达执行边界，未新增模型或媒体请求', reason)
 
 
+def _settle_context_preflight(base, intent):
+    """Close only a uniquely attributable, durably rejected first model attempt.
+
+    Older strategy intents did not link their call receipt. The phase, time
+    interval and exclusive asset lock let us recover that link without treating
+    a transport failure, a later schema retry, or absent evidence as unsubmitted.
+    """
+    pending = read_json(intent)
+    phase = pending.get('phase')
+    role, directory = {'frame': ('visual_critic', 'vision'),
+                       'director': (ROLE, 'director')}.get(phase, (None, None))
+    started = pending.get('submitted_at')
+    if not role or not isinstance(started, (int, float)):
+        return
+    intents = [(path, read_json(path)) for path in base.glob('*.intent.json')]
+    unresolved = [path for path, row in intents if row.get('phase') == phase
+                  and not path.with_name(path.name.replace('.intent.json', '.json')).exists()
+                  and not path.with_name(path.name.replace('.intent.json', '.error.json')).exists()]
+    if unresolved != [intent]:
+        return
+    later = [row.get('submitted_at') for path, row in intents
+             if row.get('phase') == phase
+             and isinstance(row.get('submitted_at'), (int, float)) and row['submitted_at'] > started]
+    end = min(later, default=float('inf'))
+    candidates = []
+    for path in (base / directory / 'calls').glob('*/receipt.json'):
+        receipt = read_json(path)
+        when = receipt.get('started_at')
+        if isinstance(when, (int, float)) and started <= when < end:
+            candidates.append((path, receipt))
+    if len(candidates) != 1:
+        return
+    path, receipt = candidates[0]
+    checks = receipt.get('context_checks')
+    manifest = receipt.get('context_manifest') or {}
+    finished = receipt.get('finished_at')
+    if (receipt.get('role') != role or receipt.get('call_id') != path.parent.name
+            or receipt.get('status') != 'failed' or receipt.get('attempts') != []
+            or not isinstance(manifest, dict) or manifest.get('delivery') != 'not_submitted' or manifest.get('attempt') != 1
+            or not isinstance(checks, list) or len(checks) != 1 or not isinstance(checks[0], dict) or checks[0].get('fits') is not False
+            or manifest.get('budget') != checks[0]
+            or not isinstance(finished, (int, float)) or not receipt['started_at'] <= finished < end
+            or list(path.parent.glob('request-*.json')) or list(path.parent.glob('response-*.json'))):
+        return
+    error_path = intent.with_name(intent.name.replace('.intent.json', '.error.json'))
+    write_json(error_path, {'message': '返修岗位输入超过模型窗口；回执证实首次生成请求未提交，需修正输入后继续',
+                           'reason': 'production_strategy_context_limit',
+                           'details': {'submission': 'not_submitted', 'receipt': str(path.relative_to(base)),
+                                       'receipt_sha256': sha256(path), 'budget': checks[0]}})
+    error_path.chmod(0o600)
+
+
 def _once(base, phase, identity, callback, check):
     key = phase + '-' + digest(identity)
     base.mkdir(parents=True, exist_ok=True, mode=0o700)
     result_path, intent = base / (key + '.json'), base / (key + '.intent.json')
-    with (base / (key + '.lock')).open('a') as lock:
+    # Serialize different identities too: an input change must not race an
+    # active role call or its preflight reconciliation for the same asset.
+    with (base / 'strategy.lock').open('a') as lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             _fail('同一返修岗位正在执行，未新增请求', 'production_strategy_in_progress')
         check()
+        for path in base.glob('*.intent.json'):
+            if not path.with_name(path.name.replace('.intent.json', '.json')).exists() and not path.with_name(path.name.replace('.intent.json', '.error.json')).exists():
+                _settle_context_preflight(base, path)
         if result_path.exists():
             saved = read_json(result_path)
             if saved.get('identity_sha256') != digest(identity) or saved.get('sha256') != digest(saved.get('document')):
@@ -76,6 +133,9 @@ def _once(base, phase, identity, callback, check):
         except (ProductionNeedsDecision, ValidationError) as exc:
             write_json(error_path, {'message': str(exc)[:1000], 'reason': getattr(exc, 'reason', 'production_strategy_invalid_response'), 'details': getattr(exc, 'details', {})})
             error_path.chmod(0o600)
+            raise
+        except Exception:
+            _settle_context_preflight(base, intent)
             raise
 
         # Save known completed output before checking for a late pause/revision.
@@ -107,16 +167,16 @@ def _models(config, phase):
     return model_config, models
 
 
-def _observe(project, config, target, frame, output_dir):
+def _observe(project, config, source, frame, output_dir):
     from . import llm
     from .prompt_registry import load_prompt
     from .profile_creative import adapt_system
     from .review_contracts import starting_frame
-    context = {'project': {'id': project['id']}, 'approved_shot': starting_frame(target['shot']),
+    context = {'project': {'id': project['id']}, 'approved_shot': starting_frame(source['shot']),
                'reference_sha256': frame['sha256'],
                'rule': '独立读取真实首帧像素，确认角色、道具位置、姿态和闭口状态；不能把历史审核文字当作可见证据。这里只检查起始状态，不要求首帧提前完成未来动作。'}
     content = [{'type': 'text', 'text': json.dumps(context, ensure_ascii=False)},
-               {'type': 'image_url', 'image_url': {'url': llm._image_url(target['references'][0])}}]
+               {'type': 'image_url', 'image_url': {'url': llm._image_url(source['references'][0]['path'])}}]
     result = llm._request(config, 'visual_critic', adapt_system(load_prompt('visual_critic', '1.0.0'), project),
                           context, pipeline.FRAME_SCHEMA, output_dir, max_tokens=2200, temperature=.1, content=content)
     validate(result, pipeline.FRAME_SCHEMA)
@@ -302,7 +362,7 @@ def compile_strategy(project, config, target, record, checkpoint=None, root=None
         if frame['sha256'] != source['references'][0]['sha256']:
             _fail('返修首帧像素变化', 'production_strategy_source_changed')
         evidence = _once(base, 'frame', identity,
-                         lambda: _observe(project, model_config, target, frame, base / 'vision'), check)
+                         lambda: _observe(project, model_config, source, frame, base / 'vision'), check)
         _check_observation(evidence, source['shot'])
     schema = _schema(source['shot'], strategy)
     instructions = ('\n你现在执行系统交接的定向返修分镜职责。approved_contract_sha256必须原样返回。'

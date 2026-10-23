@@ -177,6 +177,98 @@ def test_unknown_model_result_never_replayed_even_after_different_source(case, m
     assert calls == ['visual_critic']
 
 
+def test_first_frame_context_uses_approved_facts_without_runtime_history(case, monkeypatch):
+    shot = case[2]['shot']
+    shot.update(hard_constraints=['Keep both subjects visible'],
+                material_constraints={'cup': 'approved white ceramic'},
+                audio_requirements={'voiceover': 'preserve every approved word'})
+    clean_case = copy.deepcopy(case)
+    calls = transport(monkeypatch, clean_case)
+    history = {'qa': {'detail': 'untrusted old verdict ' * 30000}}
+    shot.update(attempts=[history] * 8, video_candidate=history, image_candidate=history,
+                video=history, image=history, status='blocked')
+    before = copy.deepcopy(shot)
+    record = prepare(case)
+    compile_(case, record)
+    content = calls[0]['request']['messages'][-1]['content']
+    context = json.loads(content[0]['text'])['approved_shot']
+    assert context['hard_constraints'] == shot['hard_constraints']
+    assert context['material_constraints'] == shot['material_constraints']
+    assert context['dialogue'] == shot['dialogue']
+    assert context['audio_requirements'] == shot['audio_requirements']
+    assert context['character_states'] == shot['character_states']
+    assert 'action' not in context and 'motion_prompt' not in context
+    assert not {'attempts', 'qa', 'video', 'image', 'video_candidate', 'image_candidate', 'status'} & context.keys()
+    assert len(content[0]['text']) < 5000
+    assert shot == before
+
+
+def _context_rejection(case, monkeypatch):
+    calls = transport(monkeypatch, case)
+    original = llm.context_budget
+    def too_large(*args):
+        result = original(*args)
+        return {**result, 'fits': False, 'prompt_tokens': 580000}
+    monkeypatch.setattr(llm, 'context_budget', too_large)
+    with pytest.raises(ValueError, match='上下文'):
+        compile_(case)
+    assert calls == []
+    intent = next(case[-1].rglob('frame-*.intent.json'))
+    error = intent.with_name(intent.name.replace('.intent.json', '.error.json'))
+    receipt = next(case[-1].rglob('vision/calls/*/receipt.json'))
+    assert json.loads(error.read_text())['reason'] == 'production_strategy_context_limit'
+    monkeypatch.setattr(llm, 'context_budget', original)
+    return calls, intent, error, receipt
+
+
+def test_proven_unsubmitted_context_failure_recovers_legacy_intent_after_input_fix(case, monkeypatch):
+    calls, intent, error, receipt = _context_rejection(case, monkeypatch)
+    original_intent, original_receipt = intent.read_bytes(), receipt.read_bytes()
+    error.unlink()  # Old releases left this intent open despite a terminal preflight receipt.
+    case[2]['signature'] = 'corrected-source'
+    compile_(case)
+    assert len(calls) == 2
+    assert intent.read_bytes() == original_intent and receipt.read_bytes() == original_receipt
+    settled = json.loads(error.read_text())
+    assert settled['details']['submission'] == 'not_submitted'
+    assert settled['details']['receipt_sha256'] == strategy.sha256(receipt)
+
+
+@pytest.mark.parametrize('mutation', ['submitted', 'prior_attempt', 'missing', 'ambiguous', 'request', 'older', 'unfinished', 'another_intent'])
+def test_context_recovery_requires_unique_proof_of_no_submission(case, monkeypatch, mutation):
+    calls, intent, error, receipt = _context_rejection(case, monkeypatch)
+    error.unlink()
+    value = json.loads(receipt.read_text())
+    if mutation == 'submitted': value['context_manifest']['delivery'] = 'attempted'
+    if mutation == 'prior_attempt': value['attempts'] = [{'attempt': 1}]
+    if mutation == 'older': value['started_at'] = json.loads(intent.read_text())['submitted_at'] - 1
+    if mutation == 'unfinished': value.pop('finished_at')
+    receipt.write_text(json.dumps(value))
+    if mutation == 'missing': receipt.unlink()
+    if mutation == 'request': (receipt.parent / 'request-01.json').write_text('{}')
+    if mutation == 'ambiguous':
+        other = receipt.parent.with_name('other-call')
+        other.mkdir()
+        (other / 'receipt.json').write_text(json.dumps(value))
+    if mutation == 'another_intent':
+        intent.with_name('frame-other.intent.json').write_text(intent.read_text())
+    case[2]['signature'] = 'corrected-source'
+    with pytest.raises(ProductionNeedsDecision) as blocked:
+        compile_(case)
+    assert blocked.value.reason == 'production_strategy_unknown'
+    assert calls == [] and not error.exists()
+
+
+def test_changed_identity_cannot_race_an_active_role_call(tmp_path):
+    def first():
+        with pytest.raises(ProductionNeedsDecision) as blocked:
+            strategy._once(tmp_path, 'frame', {'source': 'second'},
+                           lambda: pytest.fail('Concurrent model replay'), lambda: None)
+        assert blocked.value.reason == 'production_strategy_in_progress'
+        return {'done': True}
+    assert strategy._once(tmp_path, 'frame', {'source': 'first'}, first, lambda: None) == {'done': True}
+
+
 def test_unpriced_director_stops_before_any_role_submission(case, monkeypatch):
     case[1]['generation_pipeline_config']['llm_profiles']['qwen'].update(base_url='https://paid.example/v1', network_mode='remote', allowed_hosts=['paid.example'], enabled=True)
     monkeypatch.setattr(llm, '_request', lambda *a, **k: pytest.fail('No unpriced model request'))
