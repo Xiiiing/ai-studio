@@ -350,6 +350,55 @@ def _load(path):
     return record
 
 
+def _unsubmitted_budget_replacements(records, source, project, root):
+    """Reclaim only a never-executed plan replaced by an explicit cap increase.
+
+    Keep every immutable record. Real attempts (including uncertain/prepared
+    attempts) still consume their slot; no quality or attempt quota is reset.
+    """
+    def facts(value):
+        value = copy.deepcopy(value)
+        for key in ('gpu_minutes', 'wall_minutes'):
+            value.get('budget', {}).pop(key, None)
+        for key in ('max_gpu_seconds', 'max_wall_seconds'):
+            value.get('configuration', {}).pop(key, None)
+        return digest(value)
+    authorized = [a['budget'] for a in project.get('budget_authorizations', [])
+                  if a.get('actor') == 'producer' and isinstance(a.get('budget'), dict)]
+    if not authorized:
+        return set()
+    candidates = [r['source'] for r in records] + [source]
+    replaced = []
+    for record in records:
+        old = record['source']
+        before = old.get('budget', {})
+        for new in candidates:
+            after = new.get('budget', {})
+            if (after in authorized and before != after and before.get('max_attempts') == after.get('max_attempts')
+                    and all(isinstance(before.get(k), (int, float)) and isinstance(after.get(k), (int, float))
+                            and after[k] >= before[k] for k in ('gpu_minutes', 'wall_minutes'))
+                    and all(old.get('configuration', {}).get(limit) == before[k] * 60
+                            and new.get('configuration', {}).get(limit) == after[k] * 60
+                            for k, limit in (('gpu_minutes', 'max_gpu_seconds'), ('wall_minutes', 'max_wall_seconds')))
+                    and facts(old) == facts(new)):
+                replaced.append(record)
+                break
+    if not replaced:
+        return set()
+    folder = _folder(project, root).parent
+    media_folders = [folder / name for name in ('assets', 'renders', 'style_previews')]
+    # An orphan provider journal is not evidence that no media was submitted.
+    # TTS batches use a different journal layout and cannot execute image/video
+    # recovery plans, so their receipts do not participate in this proof.
+    journals = [p for base in media_folders for name in ('submission.json', 'remote_task.json') for p in base.rglob(name)]
+    if any(not (p.parent / 'attempt.json').is_file() for p in journals):
+        return set()
+    attempts = [read_json(p) for base in media_folders for p in base.rglob('attempt.json')]
+    return {r['id'] for r in replaced if not any(
+        a.get('production_recovery', {}).get('record_id') == r['id']
+        or a.get('production_strategy', {}).get('source_sha256') == r['source_sha256'] for a in attempts)}
+
+
 def prepare_repair(project, config, target, last_assessment, *, previous_attempt=None,
                    root=None, checkpoint=None, current=None):
     """Return one durable repair plan; repeated calls never consume extra cycles.
@@ -387,6 +436,8 @@ def prepare_repair(project, config, target, last_assessment, *, previous_attempt
                         return _stop(gate or "recovery_source_changed", source)
                 return copy.deepcopy(saved)
             active = [r for r in records if r["action"] in {"refine_motion", "refine_start_frame"} and (schema == VERSION or r.get("schema") == schema)]
+            superseded = _unsubmitted_budget_replacements(active, source, project, root) if schema == STRATEGY_VERSION else set()
+            active = [r for r in active if r['id'] not in superseded]
             if schema == STRATEGY_VERSION and source.get("upstream_resolution"):
                 # A verified upstream correction may supersede a plan that was
                 # rejected before any subsequent media attempt existed. Preserve
@@ -395,6 +446,15 @@ def prepare_repair(project, config, target, last_assessment, *, previous_attempt
                     and r["source"].get("failed_take") == source.get("failed_take"))]
             asset_count = sum(r["scope"]["asset"] == target["key"] and r["scope"]["stage"] == target["kind"] for r in active)
             plan = _plan(source, strategy_index=asset_count)
+            if superseded:
+                used = {r.get('strategy') for r in active if r['scope']['asset'] == target['key'] and r['scope']['stage'] == target['kind']}
+                # A legacy budget change may have selected strategy #2 while
+                # #1 never reached generation. Use that still-unspent strategy.
+                for index in range(MAX_ASSET_CYCLES + 2):
+                    candidate = _plan(source, strategy_index=index)
+                    if candidate.get('strategy') not in used:
+                        plan = candidate
+                        break
             plan["schema"] = schema
             setting = config.get("production_recovery") or {}
             asset_limit = min(MAX_ASSET_CYCLES, max(0, int(setting.get("max_asset_cycles", MAX_ASSET_CYCLES))))
@@ -416,6 +476,7 @@ def prepare_repair(project, config, target, last_assessment, *, previous_attempt
             write_json(intent, {"id": identity, "source_sha256": digest(source), "created_at": time.time()})
             intent.chmod(0o600)
             record = {**plan, "id": identity, "created_at": time.time(),
+                      **({'superseded_unsubmitted_budget_plans': sorted(superseded)} if superseded else {}),
                       "scope": {"project_id": project["id"], "asset": target["key"], "stage": target["kind"]},
                       "source_sha256": digest(source), "source": source,
                       "cycles": {"asset": asset_count + 1, "project": len(active) + 1,

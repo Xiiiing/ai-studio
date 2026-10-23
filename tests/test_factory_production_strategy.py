@@ -54,6 +54,73 @@ def compile_(case, record=None, **kwargs):
     return strategy.compile_strategy(project, config, target, record or prepare(case), root=root, **kwargs)
 
 
+@pytest.mark.parametrize('name', ['grounded_single_instant', 'spatial_state_isolation'])
+def test_image_prompt_cannot_rewind_approved_state_to_previous_shot(case, name):
+    project, config, target, qa, previous, root = case
+    target['kind'] = 'image'
+    target['shot']['prompt'] = 'A standing adult, with the approved sword floating in front of him.'
+    record = prepare(case)
+    plan = candidate(target['shot'], name)
+    plan['plan']['image']['description'] = 'The adult sits on a throne, holding the sword.'
+    plan['performance']['start'] = 'He is seated holding the sword with both hands.'
+    prompt = strategy._prompt(plan, record['source'], {'provider': 'legacy'}, name)
+    assert target['shot']['prompt'] in prompt
+    assert 'sits on a throne' not in prompt and 'seated holding' not in prompt
+    assert 'do not override this approved starting state' in prompt
+
+
+@pytest.mark.parametrize('executed', [False, True])
+def test_budget_reauthorization_does_not_spend_an_unexecuted_strategy(case, executed):
+    project, config, target, qa, previous, root = case
+    target['kind'] = 'image'
+    previous['attempt'] = 2
+    first = prepare(case)
+    if executed:
+        from studio.core import write_json
+        write_json(root / 'production/factory-abc123/assets/shots/S02/take_003/attempt.json',
+                   {'production_recovery': {'record_id': first['id']}, 'state': 'rendering'})
+    project['budget'].update(gpu_minutes=300, wall_minutes=270)
+    project['budget_authorizations'] = [{'actor': 'producer', 'budget': copy.deepcopy(project['budget'])}]
+    config.update(max_gpu_seconds=18000, max_wall_seconds=16200)
+    second = prepare(case)
+    assert second['cycles']['asset'] == (2 if executed else 1)
+    assert second['strategy'] == ('spatial_state_isolation' if executed else 'grounded_single_instant')
+    assert first['id'] in second.get('superseded_unsubmitted_budget_plans', []) if not executed else not second.get('superseded_unsubmitted_budget_plans')
+    assert recovery._load(root / 'production/factory-abc123/recovery' / (first['id'] + '.json')) == first
+
+
+@pytest.mark.parametrize('unsafe', [None, 'no_authorization', 'orphan_journal', 'changed_fact'])
+def test_legacy_budget_duplicate_reclaims_only_proven_unused_slot(case, monkeypatch, unsafe):
+    from studio.core import write_json
+    project, config, target, qa, previous, root = case
+    target['kind'] = 'image'
+    previous['attempt'] = 2
+    first = prepare(case)
+    project['budget'].update(gpu_minutes=300, wall_minutes=270)
+    config.update(max_gpu_seconds=18000, max_wall_seconds=16200)
+    if unsafe == 'changed_fact': target['shot']['prompt'] += ' A red cloak.'
+    # Reproduce the former plan counter before the explicit renewal was handled.
+    second = prepare(case)
+    assert second['strategy'] == 'spatial_state_isolation'
+    write_json(root / 'production/factory-abc123/assets/shots/S02/take_003/attempt.json',
+               {'production_recovery': {'record_id': second['id']}, 'state': 'failed'})
+    if unsafe != 'no_authorization':
+        project['budget_authorizations'] = [{'actor': 'producer', 'budget': copy.deepcopy(project['budget'])}]
+    if unsafe == 'orphan_journal':
+        write_json(root / 'production/factory-abc123/assets/shots/S02/take_unknown/submission.json', {'state': 'running'})
+    previous.update(take='take_003', attempt=3)
+    third = prepare(case)
+    if unsafe:
+        assert third['reason'] == 'recovery_cycle_limit'
+    else:
+        assert third['strategy'] == 'grounded_single_instant' and third['cycles']['asset'] == 2
+        assert third['superseded_unsubmitted_budget_plans'] == [first['id']]
+        write_json(root / 'production/factory-abc123/assets/shots/S02/take_004/attempt.json',
+                   {'production_recovery': {'record_id': third['id']}, 'state': 'failed'})
+        previous.update(take='take_004', attempt=4)
+        assert prepare(case)['reason'] == 'recovery_cycle_limit'
+
+
 def observe():
     return {'alignment': 'match', 'summary': 'The woman holds the cup with closed lips.',
             'observations': [{'subject': 'woman', 'visible_state': 'Holding a white cup, lips together.',

@@ -208,10 +208,18 @@ def _prompt(candidate, source, caps, strategy):
     shot, kind = source['shot'], source['kind']
     plan, phases = candidate['plan'], candidate['performance']
     if kind == 'image':
-        prompt = 'Single approved starting instant: ' + plan['image']['description']
-        if pipeline.SEQUENCE.search(phases['start']):
+        from .review_contracts import starting_frame
+        approved_start = starting_frame(shot).get('prompt')
+        # The approved still is already a concrete visual state. Broad episode
+        # context can tempt the director to rewind to the previous shot; that
+        # invented staging must never override this shot's approved first frame.
+        description = approved_start or plan['image']['description']
+        prompt = 'Single approved starting instant: ' + description
+        if not approved_start and pipeline.SEQUENCE.search(phases['start']):
             _fail('图片表演包含连续事件，应只保留起始一瞬', 'generation_image_not_instant')
-        prompt += '\nSpatial staging: ' + phases['start']
+        if not approved_start:
+            prompt += '\nSpatial staging: ' + phases['start']
+        prompt += '\nReference images establish identity and appearance; their poses and held-prop placement do not override this approved starting state.'
         if strategy == 'spatial_state_isolation':
             prompt += '\nOne readable visual state; each approved subject and prop occupies its specified position.'
     else:
