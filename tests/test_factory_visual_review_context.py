@@ -184,3 +184,31 @@ def test_video_reassessment_uses_original_approved_action_without_amplifying_mot
     assert calls[0]['shot']['motion_prompt']==shot['motion_prompt']
     assert '不得额外要求' in calls[0]['approved_action_rule']
     assert '特效变化不能冒充人物运动' in calls[0]['approved_action_rule']
+
+
+@pytest.mark.parametrize('selected_key', ['selected_style', 'selected_style_id', 'style_id'])
+def test_legacy_first_frame_keeps_selected_style_and_static_scope(tmp_path, monkeypatch, selected_key):
+    shot = {'id': 'S07', 'prompt': 'Two women in a defensive stance, fantasy anime style.',
+            'action': 'FUTURE_ACTION step back', 'motion_prompt': 'FUTURE_MOTION dolly',
+            'continuity': 'FUTURE_END settle',
+            'character_states': {'woman': {'position': 'knees bent', 'story_state': 'FUTURE_STORY'}}}
+    project = {'slug': 'factory-legacy-style', 'format': 'animation', selected_key: 'chosen',
+        'episode': {'shots': [shot], 'visual_style': 'unused fallback'},
+        'styles': [{'id': 'chosen', 'prompt': 'High fidelity 3D cinematic animation with PBR materials.',
+                    'preview': {'qa': 'OLD_REFERENCE_VERDICT'}}]}
+    original = deepcopy((project, shot))
+    seen = []
+    answer = {'status': 'fail', 'score': 45, 'summary': 'Fixture visible mismatch remains blocking.',
+              'issues': [{'code': 'identity', 'severity': 'blocking', 'detail': 'Synthetic actual candidate wardrobe mismatch.'}]}
+    monkeypatch.setattr(llm, '_image_url', lambda p: 'data:image/png;base64,bW9jaw==')
+    monkeypatch.setattr(llm, '_request', lambda *a, **kw: seen.append(json.loads(kw['content'][0]['text'])) or deepcopy(answer))
+    result = llm.review_media(project, shot, tmp_path / 'candidate.png', [], {'llm': {'model': 'fixture'}})
+    context = seen[0]
+    assert context['approved_render_style'] == project['styles'][0]['prompt']
+    assert context['approved_visual_style'] == {'id': 'chosen', 'prompt': project['styles'][0]['prompt']}
+    assert '本身不等于二维' in context['approved_render_style_rule']
+    assert '单帧无法证明' in context['keyframe_rule']
+    assert 'FUTURE_' not in json.dumps(context) and 'OLD_REFERENCE_VERDICT' not in json.dumps(context)
+    assert context['shot']['prompt'] == shot['prompt']
+    assert result['status'] == 'fail' and result['issues'] == answer['issues']
+    assert (project, shot) == original

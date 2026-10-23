@@ -370,37 +370,43 @@ def review_media(project, shot, path, references, config=None, *, output_dir=Non
         checks["evidence"] = {"type": "string"}
         schema["properties"]["material_alignment"] = {"type": "object", "additionalProperties": False, "properties": checks, "required": list(checks)}
         schema["required"] = [*schema["required"], "material_alignment"]
+    if not is_video and (contract["motion"] == "generated_video" if contract else project.get("format") != "motion_comic"):
+        from .review_contracts import starting_frame
+        context["shot"] = starting_frame(context["shot"])
+        # The current shot's sequence entry can repeat the future action
+        # ("opens her eyes") as continuity. Do not leak it back into the
+        # static-frame gate after excluding action/motion_prompt above.
+        # Other shots remain available for prop-order contradictions.
+        context["approved_sequence"] = [entry for entry in context["approved_sequence"]
+                                        if entry.get("id") != shot.get("id")]
+        context["任务"] = (
+            "本次只评静态起始关键帧，不是完整视频。根据prompt检查指定画风、人物、衣装、构图和初始道具状态。"
+            "图片不需要已经完成整个动作，不得因为未抬手、未走到终点或没有发生位移而阻断；人物动作将在视频阶段独立审核。")
+        context["keyframe_rule"] = (
+            "只检查静态初态是否能合理承接批准动作；单帧无法证明开始睁眼、眨眼或烟雾逐渐出现等过程。"
+            "approved_sequence中本镜的观察、转头等动作不要求在起始帧已发生；低头待反应不能因尚未看向新出现的特效而阻断。"
+            "眼睛半开/全开等相近初态，若未改变人物正在观察的关键对象和剧情关系，不得单独阻断。"
+            "必须对照实际眼神/头部证据，不得把可见低头垂眼说成平视前方。"
+            "能量连接、接触等空间关系应结合人物接触位置、局部光效与可见线条判断；"
+            "接触区域已有对应光效或线条时，局部遮挡或特效线条没有逐像素相接不能直接证明连接缺失。"
+            "只有连接对象明确错误、关键效果完全缺失且没有可见关联等改变叙事事实的证据才阻断；"
+            "不能擅自增加整条特效链路及全部接触点必须无遮挡可见的要求，也不能放过真正错误的连接对象。")
+    from .review_contracts import RENDER_STYLE_RULE
+    selected = project.get('selected_style') or project.get('selected_style_id') or project.get('style_id')
+    approved = selected if isinstance(selected, dict) else next(
+        (value for value in project.get('styles', []) if value.get('id') == selected), {})
+    approved = shot.get('visual_direction') or approved
+    render_style = shot.get('render_style_prompt') or approved.get('prompt') or (project.get('episode') or {}).get('visual_style')
+    if render_style or approved:
+        context.update(approved_render_style=render_style,
+            approved_visual_style={key: approved[key] for key in ('id', 'name', 'description', 'prompt', 'palette') if key in approved},
+            approved_render_style_rule=RENDER_STYLE_RULE)
     if contract:
-        if not is_video and contract["motion"] == "generated_video":
-            from .review_contracts import starting_frame
-            context["shot"] = starting_frame(context["shot"])
-            # The current shot's sequence entry can repeat the future action
-            # ("opens her eyes") as continuity. Do not leak it back into the
-            # static-frame gate after excluding action/motion_prompt above.
-            # Other shots remain available for prop-order contradictions.
-            context["approved_sequence"] = [entry for entry in context["approved_sequence"]
-                                            if entry.get("id") != shot.get("id")]
-            context["任务"] = (
-                "本次只评静态起始关键帧，不是完整视频。根据prompt检查指定画风、人物、衣装、构图和初始道具状态。"
-                "图片不需要已经完成整个动作，不得因为未抬手、未走到终点或没有发生位移而阻断；人物动作将在视频阶段独立审核。")
-            context["keyframe_rule"] = (
-                "只检查静态初态是否能合理承接批准动作；单帧无法证明开始睁眼、眨眼或烟雾逐渐出现等过程。"
-                "approved_sequence中本镜的观察、转头等动作不要求在起始帧已发生；低头待反应不能因尚未看向新出现的特效而阻断。"
-                "眼睛半开/全开等相近初态，若未改变人物正在观察的关键对象和剧情关系，不得单独阻断。"
-                "必须对照实际眼神/头部证据，不得把可见低头垂眼说成平视前方。"
-                "能量连接、接触等空间关系应结合人物接触位置、局部光效与可见线条判断；"
-                "接触区域已有对应光效或线条时，局部遮挡或特效线条没有逐像素相接不能直接证明连接缺失。"
-                "只有连接对象明确错误、关键效果完全缺失且没有可见关联等改变叙事事实的证据才阻断；"
-                "不能擅自增加整条特效链路及全部接触点必须无遮挡可见的要求，也不能放过真正错误的连接对象。")
         if shot.get("review_purpose") == "visual_direction_preview":
             context["approved_sequence"] = []
             context["shot"] = {key: context["shot"][key] for key in
                 ("id", "prompt", "review_purpose", "visual_direction") if key in context["shot"]}
             context["任务"] = "本次只审核画风候选静帧是否符合指定媒介和候选设计，检查明显画面崩坏；不审核剧情动作是否已完成。"
-        selected = project.get("selected_style")
-        approved = selected if isinstance(selected, dict) else next(
-            (value for value in project.get("styles", []) if value.get("id") == selected), {})
-        approved = shot.get("visual_direction") or approved
         context.update(creative_contract=contract, requested_art=style_prompt(project),
                        approved_visual_style={key: approved[key] for key in
                            ("id", "name", "description", "prompt", "palette") if key in approved},
