@@ -452,9 +452,11 @@ def review_media(project, shot, path, references, config=None, *, output_dir=Non
         context["sequence_rule"] = "参考图用途独立于剧情时序，不把后续镜头动作或终态作为参考素材要求。"
     content=[{"type":"text","text":json.dumps(context,ensure_ascii=False)}]
     review_references = (references or []) if shot.get("material_constraints") else (references or [])[:4]
+    reference_media_shas = []
     for index, reference in enumerate(review_references):
         ref=reference.get("path") if isinstance(reference,dict) else reference
         if ref and Path(ref).is_file():
+            reference_media_shas.append(sha256(ref))
             content.extend([{"type":"text","text":f"角色或场景参考 {index+1}"},
                             {"type":"image_url","image_url":{"url":_image_url(ref)}}])
     if reference_purpose:
@@ -495,15 +497,52 @@ def review_media(project, shot, path, references, config=None, *, output_dir=Non
     for index,sample in enumerate(samples):
         content.extend([{"type":"text","text":f"待评镜头样本 {index+1}/{len(samples)}，时间 {sampling['timestamps'][index]:.3f} 秒"},
                         {"type":"image_url","image_url":{"url":_image_url(sample)}}])
+    static_evidence = None
+    if (not is_video and constraint_review_enabled(config) and not reference_purpose
+            and (contract['motion'] == 'generated_video' if contract else project.get('format') != 'motion_comic')
+            and shot.get('review_purpose') != 'visual_direction_preview'):
+        from .frame_observation import collect
+        try:
+            static_evidence = collect(path, review_references, config,
+                record / 'isolated-observations', _request, _image_url)
+            if (static_evidence['candidate_only_observation']['image_sha256'] != constraint_media_sha
+                    or [row['image_sha256'] for row in static_evidence['reference_only_observations']] != reference_media_shas):
+                raise ValueError('Images changed between review encoding and observation')
+        except Exception as exc:
+            from .quality import is_transient_transport
+            if is_transient_transport(exc):
+                raise
+            return {'status': 'unavailable', 'issues': [], 'evaluator': 'none',
+                    'reason': 'static_observation_unavailable', 'detail': str(exc)[:240]}
+        context.update(static_evidence)
+        # Future-shot mentions do not make a prop mandatory (or forbidden) in
+        # this starting frame. Video/delivery review keeps sequence evidence.
+        context['approved_sequence'] = []
+        context['sequence_rule'] = ('本次只按本镜批准prompt和明确起始状态检查候选首帧；'
+            '跨镜头剧情连续性由视频及成片审核独立检查，不要求本镜提前持有后续才提及的道具。')
+        content[0]['text'] = json.dumps(context, ensure_ascii=False)
     if not samples:
         return {"status":"fail","issues":[{"code":"decode","detail":"没有可解码画面"}],"evaluator":"technical"}
     from .context_manifest import capture
+    review_config, review_tokens = config, 2200 if contract else 1600
+    if static_evidence is not None:
+        from .frame_observation import critic_configuration
+        review_config, review_tokens = critic_configuration(config, review_tokens)
     with capture(project, "quality_review"):
-        result=_request(config,"visual_critic",REVIEW_SYSTEM,
-                        None,schema,record,max_tokens=2200 if contract else 1600,temperature=.15,content=content)
+        result=_request(review_config,"visual_critic",REVIEW_SYSTEM,
+                        None,schema,record,max_tokens=review_tokens,temperature=.15,content=content)
     errors = list(Draft202012Validator(schema).iter_errors(result))
     if errors:
         raise ValueError("VLM result does not match the visual review contract")
+    if static_evidence is not None:
+        from .frame_observation import verify_claims
+        result = verify_claims(config, context, schema, result, path, record, _request, _image_url)
+        expected = [static_evidence['candidate_only_observation'], *static_evidence['reference_only_observations']]
+        if any(sha256(p.get('path') if isinstance(p, dict) else p) != row['image_sha256']
+               for p, row in zip([path, *review_references], expected)):
+            return {'status': 'unavailable', 'issues': [], 'evaluator': 'none',
+                    'reason': 'static_review_pixels_changed'}
+        result['static_evidence'] = static_evidence
     if reference_purpose and not is_video:
         from .reference_review import verify_reference
         result = verify_reference(config, schema, context, reference_content, result, path, record)
@@ -583,6 +622,9 @@ def review_media(project, shot, path, references, config=None, *, output_dir=Non
         result['status'] = 'fail'
     if result.get('camera_verification', {}).get('status') == 'fail':
         result['status'] = 'fail'
+    if result.get('static_verification', {}).get('status') == 'unavailable':
+        result['status'] = 'unavailable'
+        result['detail'] = '首帧缺陷尚缺同一候选像素的可验证证据，保留素材待补审，不据此自动重绘。'
     selected_model = resolve_llm(config, "visual_critic", require_vision=True)
     result.update(evaluator="vlm_sampled_frames",model=selected_model["model"],
                   profile=selected_model["profile"],endpoint=selected_model.get("base_url"),

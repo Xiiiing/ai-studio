@@ -310,7 +310,7 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                if self.config.get("semantic_model_identity") is not None else {}),
             "implementation": {} if explicit_policy else {
                 name: sha256(ROOT / "factory" / name)
-                for name in ("llm.py", "quality.py", "evaluation_sampling.py", "temporal_review.py", "spatial_review.py", "review_contracts.py", "camera_review.py") if (ROOT / "factory" / name).is_file()},
+                for name in ("llm.py", "quality.py", "evaluation_sampling.py", "temporal_review.py", "spatial_review.py", "review_contracts.py", "camera_review.py", "frame_observation.py") if (ROOT / "factory" / name).is_file()},
             "evaluator": (getattr(evaluator, "__module__", "") + "." +
                           getattr(evaluator, "__qualname__", type(evaluator).__name__)) if evaluator else None,
         })
