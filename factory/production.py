@@ -1458,7 +1458,15 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                         self.emit(phase)
                         started = time.monotonic()
                         try:
-                            names = [worker.copy_input(p) for p in target["references"]]
+                            references = target["references"]
+                            if record.get('production_strategy'):
+                                from .production_strategy import render_references
+                                compiled = record['production_strategy']
+                                references = render_references(target, compiled['parameters'])
+                                if len(references) != len(target['references']) and not (compiled.get('visual_contract_verification') or {}).get('passed'):
+                                    raise ProductionNeedsDecision('逐镜参考选择尚未通过独立契约核对', 'production_strategy_contract_conflict')
+                                record['render_references'] = [media_receipt(p) for p in references]
+                            names = [worker.copy_input(p) for p in references]
                             if target["kind"] == "image":
                                 graph = image_request(self.config.get("image_connection", {}), record["prompt"], record["seed"], *self.image_size,
                                                    references=names, prefix=self.slug + "/" + target["key"])
