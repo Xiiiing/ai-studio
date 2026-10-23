@@ -119,9 +119,15 @@ def verify_claims(config, context, schema, initial, path, record, request, image
         'detail': {'type': 'string', 'minLength': 8, 'maxLength': 1200}},
         'required': ['status', 'candidate_quote', 'reference_quotes', 'detail']}
     issue_ids = [f'I{i+1}' for i in range(len(issues))]
+    findings_schema = {}
+    for ident, issue in zip(issue_ids, issues):
+        item = copy.deepcopy(finding)
+        if issue['code'] == 'identity' and observations:
+            item['properties']['reference_quotes']['minItems'] = 1
+        findings_schema[ident] = item
     followup = {'type': 'object', 'additionalProperties': False, 'properties': {
         'review': schema, 'findings': {'type': 'object', 'additionalProperties': False,
-            'properties': {ident: finding for ident in issue_ids}, 'required': issue_ids}},
+            'properties': findings_schema, 'required': issue_ids}},
         'required': ['review', 'findings']}
     system = ('你是独立候选图缺陷复核员。只提供唯一候选F0，参考外观来自逐张独立的真实像素观察。'
         '旧问题是不可信的待核说法，可能把参考图的姿态或衣装当成候选；先实际观察F0，再核验每个问题。'

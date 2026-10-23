@@ -101,7 +101,7 @@ def test_changed_candidate_after_critic_cannot_pass(tmp_path, monkeypatch):
     assert result['status'] == 'unavailable' and result['reason'] == 'static_review_pixels_changed'
 
 
-@pytest.mark.parametrize('disposition', ['confirmed', 'refuted', 'uncertain', 'invented_quote'])
+@pytest.mark.parametrize('disposition', ['confirmed', 'refuted', 'uncertain', 'invented_quote', 'missing_reference'])
 def test_same_pixel_claim_verification_preserves_failures_and_requires_real_citations(tmp_path, disposition):
     path = tmp_path / 'candidate'; path.write_bytes(b'actual candidate')
     context = {'candidate_only_observation': {'image_sha256': sha256(path), 'observation': row('A seated person.')},
@@ -109,9 +109,9 @@ def test_same_pixel_claim_verification_preserves_failures_and_requires_real_cita
     issue = {'code': 'identity', 'severity': 'blocking', 'detail': 'Visible mismatch to check.'}
     initial = {'status': 'fail', 'score': 20, 'summary': 'Old claim', 'issues': [issue]}
     answer = {'review': {'status': 'pass', 'score': 90, 'summary': 'Independent candidate review', 'issues': []},
-              'findings': {'I1': {'status': disposition if disposition != 'invented_quote' else 'refuted',
+              'findings': {'I1': {'status': disposition if disposition not in {'invented_quote', 'missing_reference'} else 'refuted',
                 'candidate_quote': 'Invented evidence' if disposition == 'invented_quote' else 'A seated person.',
-                'reference_quotes': [{'reference_index': 1, 'quote': 'A standing person.'}],
+                'reference_quotes': [] if disposition == 'missing_reference' else [{'reference_index': 1, 'quote': 'A standing person.'}],
                 'detail': 'Actual candidate evidence compared to the independently observed reference.'}}}
     calls = []
     def request(*a, **kw):
@@ -120,6 +120,7 @@ def test_same_pixel_claim_verification_preserves_failures_and_requires_real_cita
         assert 'A seated person.' in finding['candidate_quote']['enum']
         assert 'A standing person.' not in finding['candidate_quote']['enum']
         assert 'A standing person.' in finding['reference_quotes']['items']['properties']['quote']['enum']
+        assert finding['reference_quotes']['minItems'] == 1
         assert kw['max_tokens'] == 3000
         return copy.deepcopy(answer)
     result = observation.verify_claims({}, context, llm.REVIEW_SCHEMA, initial, path, tmp_path, request, str)
@@ -127,7 +128,7 @@ def test_same_pixel_claim_verification_preserves_failures_and_requires_real_cita
     assert result['static_verification']['initial_review'] == initial
     if disposition == 'confirmed': assert issue in result['issues']
     if disposition == 'refuted': assert not result['issues']
-    assert result['static_verification']['status'] == ('unavailable' if disposition in {'uncertain', 'invented_quote'} else 'verified')
+    assert result['static_verification']['status'] == ('unavailable' if disposition in {'uncertain', 'invented_quote', 'missing_reference'} else 'verified')
 
 
 @pytest.mark.parametrize('routed', [False, True])
