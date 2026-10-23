@@ -155,6 +155,7 @@ def test_adaptive_image_requires_independent_contract_check_before_media(case, m
     if approved:
         result = compile_(case)
         assert 'clear air gap' in result['parameters']['prompt']
+        assert "Both of the subject's empty hands" in result['parameters']['prompt']
         assert result['quality_status'] == 'pending_independent_actual_media_review'
         assert result['visual_contract_verification']['passed']
         assert len(result['rejected_compilations']) == (1 if approved == 'recover' else 0)

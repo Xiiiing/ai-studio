@@ -9,6 +9,7 @@ from __future__ import annotations
 import copy
 import fcntl
 import json
+import re
 from pathlib import Path
 import time
 
@@ -215,7 +216,14 @@ def _prompt(candidate, source, caps, strategy):
         # invented staging must never override this shot's approved first frame.
         adaptive = strategy == 'evidence_directed_revision'
         description = plan['image']['description'] if adaptive else approved_start or plan['image']['description']
-        prompt = 'Single approved starting instant: ' + description
+        spatial = ''
+        if adaptive and len(shot.get('characters') or []) == 1 and re.search(
+                r'\b(?:floating|levitating) in front of (?:him|her|them)\b', approved_start or '', re.I):
+            spatial = ("Both of the subject's empty hands are fully visible, relaxed beside the hips. "
+                       'The approved floating prop hangs unsupported in clear air in front of the subject, '
+                       'well separated from both hands and forearms. A broad visible gap of background '
+                       'surrounds the prop and separates it from the fingers; the prop is freely suspended. ')
+        prompt = 'Single approved starting instant: ' + spatial + description
         if (adaptive or not approved_start) and pipeline.SEQUENCE.search(phases['start']):
             _fail('图片表演包含连续事件，应只保留起始一瞬', 'generation_image_not_instant')
         if adaptive or not approved_start:
@@ -284,7 +292,6 @@ def _prompt(candidate, source, caps, strategy):
 def _failed_prompt(project, target, source, root):
     from studio.core import ROOT
     take = source['failed_take'].get('take', '')
-    import re
     if not re.fullmatch(r'take_[0-9]+', take):
         return None
     folder = Path(target.get('folder') or (Path(root or ROOT) / 'production' / ('factory-' + project['id']) /
