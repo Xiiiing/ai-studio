@@ -133,14 +133,6 @@ class GPUClient:
         destination.mkdir(parents=True, exist_ok=True)
         submission_path = destination / "submission.json"
         retained_submission = submission_path.exists()
-        if (not submission_path.exists() and workload.get("kind") == "comfy" and
-                any(n.get("class_type") == "MiniMaxH3ImageToVideo" for n in workload.get("graph", {}).values())):
-            from studio.h3 import graph_recipe
-            selected = graph_recipe(workload["graph"])
-            if selected["quality"] == "production":
-                self.require_h3(selected)
-            else:
-                self.require_h3()
         identity = fingerprint({"workload": workload, "destination": str(destination.resolve()), "service": self.base})
         if submission_path.exists():
             submission = read_json(submission_path)
@@ -150,6 +142,14 @@ class GPUClient:
             request_id = submission["gpu_service_job_id"]
         else:
             try:
+                if (workload.get("kind") == "comfy" and
+                        any(n.get("class_type") == "MiniMaxH3ImageToVideo" for n in workload.get("graph", {}).values())):
+                    from studio.h3 import graph_recipe
+                    selected = graph_recipe(workload["graph"])
+                    if selected["quality"] == "production":
+                        self.require_h3(selected)
+                    else:
+                        self.require_h3()
                 self._fence_project_submission(destination,budget,control,event_callback)
                 budget.check(control, require_gpu=True)
                 wall_limit=min(21600,float(timeout),budget.timeout(timeout))

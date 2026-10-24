@@ -135,6 +135,58 @@ def test_pause_before_intent_restores_same_prepared_take_without_unknown_post(se
     assert state['posts'][0]['request_id'] == proof['request_identity']
 
 
+@pytest.mark.parametrize('quality', ['preview', 'production'])
+@pytest.mark.parametrize('failure_mode', ['unavailable', 'transport'])
+def test_h3_preflight_stop_resumes_same_strategy_take_before_any_post(service, monkeypatch, quality, failure_mode):
+    from factory.production import _Run
+    from studio.graphs import h3_video
+    from studio.h3 import MODEL, REVISION, BASE_REVISION
+    root, config, state = service
+    worker = gc.RemoteComfyWorker(config['gpu_service'], Budget(config), 'fixture')
+    source = root / 'frame.png'; source.write_bytes(b'approved fixture frame')
+    name = worker.copy_input(source)
+    workflow = h3_video('An adult turns.', 42, name, profile={'quality': quality})
+    target = {'folder': root / 'shots/S01', 'key': 'S01', 'kind': 'video', 'signature': 'fixture-source'}
+    record = {'take': 'take_007', 'attempt': 7, 'state': 'rendering', 'prepared_only': False,
+              'source_signature': target['signature'], 'production_strategy': {'fixture': True}}
+    folder = target['folder'] / record['take']
+    original_request = worker.client.request
+    ready = False
+    health_calls = []
+    def request(route, *args, **kwargs):
+        if route != '/health':
+            return original_request(route, *args, **kwargs)
+        health_calls.append(route)
+        if not ready and failure_mode == 'transport':
+            raise ProductionPaused('Fixture health transport unavailable', 'remote_gpu_unavailable')
+        return {'gpu_cards': [6, 7], 'video_backends': {'comfyui_h3': {
+            'model': MODEL, 'gpu_count': 2, 'revision': REVISION, 'installed': ready,
+            'recipes': {'production': {'revision': BASE_REVISION, 'installed': ready}}}}}
+    monkeypatch.setattr(worker.client, 'request', request)
+    with pytest.raises((ProductionNeedsDecision, ProductionPaused)) as failure:
+        worker.execute(workflow, folder, 'video')
+    assert failure.value.reason == ('remote_h3_unavailable' if failure_mode == 'unavailable' else 'remote_gpu_unavailable')
+    assert not state['posts'] and not (folder / 'submission.json').exists()
+    assert worker.budget.snapshot()['gpu_seconds'] == 0
+    session = object.__new__(_Run)
+    assert session._remember_pre_submit_stop(worker, target, record, failure.value)
+    core.write_json(folder / 'attempt.json', record)
+    session.config = {}; session.strategy_recovery = True; session.h3_automatic = True
+    session.video_connection = {'provider': 'comfyui_h3'}
+    assert session._unfinished_candidate(target) is None
+    assert target['resume_attempt']['take'] == 'take_007' and target['resume_attempt']['attempt'] == 7
+    ready = True
+    workload = {'kind': 'comfy', 'graph': workflow, 'inputs': [worker.inputs[name]], 'output_kind': 'video'}
+    answer = worker.client.run(workload, folder, worker.budget)
+    assert answer['status'] == 'completed' and len(state['posts']) == 1
+    assert state['posts'][0]['request_id'] == record['pre_submit_stops'][0]['request_identity']
+    # A saved submission is reconciled even if H3 is no longer ready.
+    ready = False
+    assert worker.client.run(workload, folder, worker.budget)['id'] == answer['id']
+    assert len(state['posts']) == 1 and len(health_calls) == 2
+    assert worker.budget.snapshot()['gpu_seconds'] == 7.25
+
+
 @pytest.mark.parametrize('mutation', ['after_intent', 'unknown', 'wrong_destination'])
 def test_only_proven_pre_intent_stop_can_restore_prepared_state(service, mutation):
     from factory.production import _Run
