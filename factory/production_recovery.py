@@ -275,7 +275,7 @@ def _issues(assessment, *, classified=False, previous=None, production_revision=
         return [], "unsafe_or_unresolved_submission"
     if classified:
         from .media_review_policy import repairable, shot_identity, VERSION
-        if any(i.get('requires_choice') is True for i in issues):
+        if any(isinstance(i, dict) and i.get('requires_choice') is True for i in assessment.get('issues', [])):
             return [], 'media_goal_requires_choice'
         technical = assessment.get('technical') or {}
         measured = technical.get('issues', []) if technical.get('status') == 'fail' else []
