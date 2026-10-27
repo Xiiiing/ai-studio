@@ -11,7 +11,8 @@ from test_factory_shot_workbench import project
 def test_stage_retry_archives_delivery_and_requires_a_fresh_production_version(project, monkeypatch, stage):
     pid = project["id"]
     previous_delivery = {"video_url": "/media/production/old.mp4", "manifest_url": "/media/production/old.json"}
-    project = store.update(pid, {"status": "approved", "delivery": previous_delivery, "delivery_complete_revision": 1})
+    # Seed an already approved historical movie with its original review contract.
+    project = store.update(pid, {"creative_quality_contract":None, "status": "approved", "delivery": previous_delivery, "delivery_complete_revision": 1})
     ident = "stage:" + stage
     task = team_ledger.task_detail(pid, ident)["task"]
     result = team_control.submit(pid, {"request_id": "retry-" + stage, "expected_control_revision": 0,
