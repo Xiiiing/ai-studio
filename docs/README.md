@@ -26,6 +26,11 @@
 | [人物、场景与画风素材库](MATERIAL_LIBRARY.md) | 两层素材库、多图版本、定稿与生产参考 |
 | [Series Bible 与版本化资产](SERIES_BIBLE.md) | 系列设定、稳定角色、视觉资产与镜头依赖 |
 | [逐镜制作工作台](SHOT_WORKBENCH.md) | 镜头候选、选片、局部修改与版本冲突 |
+| [制作质量与剪辑验收（0.3.5—0.3.10）](AID_IMPROVEMENT_ACCEPTANCE.md) | 本轮各阶段入口、验收步骤和真实验证边界 |
+| [审核、覆盖与连续性](EDITORIAL_QUALITY.md) | 证据化问题、事件来源、跨镜承接与旧项目显式启用 |
+| [模型能力与项目版本](MODEL_CAPABILITIES.md) | 实际适配器能力、配置快照和提交前阻断 |
+| [逐镜来源与操作影响](SHOT_CONTEXT_039.md) | 参考素材、有效参数、候选来源和定向返修影响 |
+| [单集时间线剪辑](TIMELINE_EDITOR.md) | 独立版本、音轨字幕、预览、检查、导出与采用 |
 | [制作规格](PRODUCTION_PROFILES.md) | 镜长、节奏、声线和制作预设 |
 | [可介入的 AI 制作团队（0.1.0）](TEAM_CONTROL_0_1_0.md) | 任务账本、部门指挥、定向介入、成果保护和实际调度 |
 | [团队指挥台](TEAM_COCKPIT.md) | 团队分工、状态与制作入口 |

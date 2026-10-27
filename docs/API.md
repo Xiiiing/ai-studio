@@ -80,6 +80,19 @@ POST `/api/factory/models`：
 
 ## 创建项目
 
+新制作合约通过独立版本字段启用，不推断旧项目已获得新审核证据：
+
+| 接口 | 行为 |
+| --- | --- |
+| GET `/api/factory/projects/{id}/creative-quality` | 当前审核分类、剧情覆盖、跨镜状态和复核任务；只读 |
+| POST 同路径 | `expected_revision`、`request_id`、`confirmed=true`，在空闲边界显式启用；保留原稿和旧素材，旧终审进入历史 |
+| POST `/api/factory/projects/{id}/creative-quality/review` | 同样的版本与幂等字段，加 `authorize_review=true`；明确授权后排队复核现有稿件和成片，不生成素材 |
+| GET `/api/factory/projects/{id}/model-capabilities` | 项目固定能力、历史、可采用状态与阻断原因 |
+| POST 同路径 | `expected_revision`、`request_id`、`confirmed=true`，明确采用当前配置的实际能力，不自动换模型或规格 |
+| GET/POST `/api/factory/projects/{id}/edits` | 独立剪辑版本、CPU worker 预览、检查、导出、取消和采用，详见[剪辑接口](TIMELINE_EDITOR.md) |
+
+`GET /api/factory/models` 增加 `model_capability_schema`、`model_capabilities` 和 `model_capability_presets`；能力声明仅来自当前适配器。项目的审核、覆盖、连续性和能力快照分别带合约版本。新项目默认启用当前合约；旧项目读取不修改状态，显式采用后仍须重新检查，不补造历史通过记录。复核模型仅在单独授权后调用，未知提交不能以重试或新版本绕过。
+
 POST `/api/factory/projects`，成功返回 202：
 
 ```json
