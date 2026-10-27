@@ -136,3 +136,10 @@ def test_unpriced_visual_vendor_is_rejected_before_any_review_request(actual_cut
     with pytest.raises(continuity.ProductionNeedsDecision) as caught:
         continuity.verify_delivery(p, delivery, {})
     assert caught.value.reason == 'shot_continuity_budget_required'
+
+
+def test_missing_delivery_media_requires_explicit_review_instead_of_server_error():
+    p = project()
+    with pytest.raises(continuity.ProductionNeedsDecision) as caught:
+        continuity.verify_delivery(p, {}, {})
+    assert caught.value.reason == 'shot_continuity_missing_media'
