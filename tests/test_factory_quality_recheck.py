@@ -5,6 +5,7 @@ import shutil
 import subprocess
 import threading
 import urllib.request
+from pathlib import Path
 from http.server import ThreadingHTTPServer
 
 import pytest
@@ -279,15 +280,18 @@ def test_queue_request_replay_is_idempotent_and_no_supplied_reviewer_grant_no_jo
     with store.connection() as db: assert db.execute('SELECT count(*) FROM jobs WHERE project_id=? AND kind=?', (p['id'], recheck.KIND)).fetchone()[0] == 1
 
 
-def test_stage035_only_pins_review_without_future_feature_modules(database, movie, monkeypatch):
+def test_old_review_only_contract_does_not_enable_missing_future_features(database, movie, monkeypatch):
     import builtins
     original = builtins.__import__
+    absent = {name for name in ('story_coverage', 'shot_continuity', 'edit_versions') if not (Path(__file__).parents[1] / 'factory' / (name + '.py')).exists()}
     def guarded(name, *args, **kwargs):
-        if name.rsplit('.', 1)[-1] in {'story_coverage', 'shot_continuity', 'edit_versions'}: raise AssertionError('future stage import: ' + name)
+        if name.rsplit('.', 1)[-1] in absent: raise AssertionError('future stage import: ' + name)
         return original(name, *args, **kwargs)
+    p = existing(database, movie, status='paused')
+    p = store.update(p['id'], {'creative_quality_contract': {'version': creative_contracts.VERSION}, 'creative_quality_review_required': True})
     monkeypatch.setattr(builtins, '__import__', guarded)
-    p = adopt(existing(database, movie, status='paused')); synthetic(monkeypatch)
-    assert p['creative_quality_contract'] == {'version': creative_contracts.VERSION}
+    synthetic(monkeypatch)
     queue(p); current, _ = execute(p['id'])
     assert current['quality_recheck']['task']['status'] == 'pass'
+    assert current['creative_quality_contract'] == {'version': creative_contracts.VERSION}
     assert not current['creative_quality_review_required']
