@@ -60,7 +60,7 @@ class VideoProductionMixin:
         if self.config.get("image_connection", {}).get("provider", "legacy") != "legacy":
             refs=list(target["references"]) + [self.receipt_path(v) for v in self.assets.get("characters", {}).values()]
             repair=self._target("repair_"+target["key"],target["folder"]/record["take"]/"repair_keyframe",
-                                record["repair"].get("prompt_prefix", "") + "\n" + self.style_prompt + " " + target["shot"]["prompt"],refs[:4])
+                                record["repair"].get("prompt_prefix", "") + "\n" + self.style_prompt + " " + target["shot"]["prompt"],refs[:4], review_context=target["shot"])
             self._render_targets([repair], "keyframe_repair")
             record["repair_keyframe"]=repair["selected"]
             self._save_attempt(target,record)
@@ -75,6 +75,8 @@ class VideoProductionMixin:
                        record["repair"].get("prompt_suffix", "")) + "\n" +
                       self.style_prompt + " " + target["shot"]["prompt"] +
                       " Preserve each corresponding character identity and wardrobe.")
+            from .shot_continuity import bind_prompt
+            prompt = bind_prompt(prompt, target.get('shot_continuity'))
             graph = image_request(self.config.get("image_connection", {}), prompt, record["seed"], *self.image_size, references=names,
                                prefix=self.slug + "/repair/" + target["key"])
             frame = worker.execute(graph, target["folder"] / record["take"] / "repair_keyframe",

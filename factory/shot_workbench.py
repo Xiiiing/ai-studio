@@ -16,6 +16,16 @@ SHOT_RE = re.compile(r"S\d{2,3}\Z")
 TAKE_RE = re.compile(r"(?:take_\d{3,9}|camera_[a-f0-9]{16})\Z")
 
 
+def continuity_input(project, shot):
+    from .shot_continuity import request_context
+    from .scheduler import ProductionNeedsDecision
+    try:
+        context = request_context(project, shot)
+        return {'shot_continuity': context} if context else {}
+    except ProductionNeedsDecision as exc:
+        return {'shot_continuity': {'invalid': True, 'reason': exc.reason, 'message': str(exc)}}
+
+
 def retained_video_results(root):
     """Protect existing files even when a result journal needs restoration."""
     folder = root / "renders"
@@ -46,6 +56,7 @@ def plan_signature(project, shot, stage):
         # Match the renderer's 24 fps normalization, including JSON 6 vs 6.0.
         inputs["seconds"] = round(float(inputs["seconds"]) * 24) / 24
     return core.fingerprint({"shot": inputs,
+                             **continuity_input(project, shot),
                              "series": project.get("series_references", {}).get(shot["id"], []),
                              **({"materials": material_references(project, shot)} if project.get("material_package") else {}),
                              "style": project.get("selected_style"),
@@ -97,13 +108,14 @@ def candidate(project, shot_id, stage, take, *, verify=False):
     qa = result.get("qa") or attempt.get("qa") or {}
     bound_plan = result.get("plan_signature") or attempt.get("plan_signature")
     current_plan = plan_signature(project, shot, stage)
+    continuity = continuity_input(project, shot).get('shot_continuity') or {}
     # Old receipts can be selected only within the exact currently selected
     # source family; execution will still check the full target/model signature.
     legacy_current = next((s for s in project.get("shots", []) if s.get("id") == shot_id), {}).get(stage) or {}
     compatible = (bound_plan == current_plan if bound_plan else bool(
         not shot.get("render_revisions") and result.get("source_signature") and
         result.get("source_signature") == legacy_current.get("source_signature")))
-    eligible = bool(path and compatible and qa.get("eligible_for_selection") is True and
+    eligible = bool(path and compatible and not continuity.get('invalid') and qa.get("eligible_for_selection") is True and
                     qa.get("technical", {}).get("status") == "pass")
     return {"id": stage + ":" + take, "take": take, "stage": stage,
             "attempt": attempt.get("attempt", result.get("attempt")),
@@ -112,6 +124,7 @@ def candidate(project, shot_id, stage, take, *, verify=False):
             "provider": attempt.get("provider"), "parameters": attempt.get("parameters", {}),
             **({"h3_prompt": copy.deepcopy(attempt["h3_prompt"])} if attempt.get("h3_prompt") else {}),
             "qa": qa, "error": attempt.get("error"), "selectable": eligible,
+            "continuity_valid": not continuity.get('invalid', False),
             "plan_current": compatible, "plan_signature": current_plan,
             "source_signature": result.get("source_signature") or attempt.get("source_signature"),
             "media_url": "/media/" + path.relative_to(core.ROOT).as_posix() if path else None,

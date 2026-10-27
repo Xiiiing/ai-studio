@@ -295,3 +295,35 @@ def test_old_review_only_contract_does_not_enable_missing_future_features(databa
     assert current['quality_recheck']['task']['status'] == 'pass'
     assert current['creative_quality_contract'] == {'version': creative_contracts.VERSION}
     assert not current['creative_quality_review_required']
+
+
+def test_actual_cross_cut_failure_is_actionable_and_does_not_replace_delivery(database, movie, monkeypatch):
+    p = adopt(existing(database, movie)); synthetic(monkeypatch)
+    original = llm._request
+    def request(*args, **kwargs):
+        value = original(*args, **kwargs)
+        if 'previous_observed' in args[4].get('properties', {}):
+            value.update(status='fail', issues=['S02首帧的钥匙持有人与前镜矛盾'])
+        return value
+    monkeypatch.setattr(llm, '_request', request)
+    queue(p); current, _ = execute(p['id'])
+    assert current['quality_recheck']['task']['status'] == 'fail'
+    assert current['delivery'] == p['delivery']
+    issue = current['needs_decision']['issues'][0]
+    assert '钥匙持有人' in issue['description'] and issue['shot_ids'] == ['S02']
+    assert issue['auto_repair'] is False
+
+
+def test_cross_cut_transport_unknown_is_displayed_and_not_reposted(database, movie, monkeypatch):
+    p = adopt(existing(database, movie)); calls = synthetic(monkeypatch)
+    original = llm._request
+    def request(*args, **kwargs):
+        if 'previous_observed' in args[4].get('properties', {}): raise ConnectionError('synthetic lost response')
+        return original(*args, **kwargs)
+    monkeypatch.setattr(llm, '_request', request)
+    queue(p); current, _ = execute(p['id'])
+    assert current['quality_recheck']['task']['status'] == 'unknown'
+    assert current['creative_quality_review_required'] and current['delivery'] == p['delivery']
+    count = len(calls)
+    with pytest.raises(ValueError, match='结果未知'): queue(current, 'different-request-id')
+    assert len(calls) == count
