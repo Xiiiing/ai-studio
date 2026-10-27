@@ -1235,7 +1235,7 @@ export function DramaDetail({
                   {e.delivery && (
                     <button
                       className="button"
-                      onClick={() => openProject(e.id, "timeline")}
+                      onClick={() => openEpisode(e.id, "timeline")}
                     >
                       时间线剪辑
                     </button>

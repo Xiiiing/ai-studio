@@ -38,7 +38,7 @@ def plan(count=3):
         'depends_on': []} for i in range(1, count+1)]}
 
 
-def plan_for(project, count=None):
+def plan_for(project, count=None, document=None):
     """A model fixture for the project's actual frozen outline contract.
 
     Keep plan() as the historical protocol fixture used by older tests. New
@@ -47,15 +47,15 @@ def plan_for(project, count=None):
     from factory.creative_contracts import enabled
     from factory.story_coverage import source_catalog
     project = store.get(project['id'], False)
-    value = plan(count or project['episode_count'])
+    value = copy.deepcopy(document) if document is not None else plan(count or project['episode_count'])
     if enabled(project):
         sources = [item for item in source_catalog(project) if item['required']]
         for outline in value['episodes']:
             refs = [item['id'] for item in sources if item['episode_number'] in (None, outline['number'])]
-            outline['beats'] = [
+            outline.setdefault('beats', [
                 {'id': f"E{outline['number']}B1", 'description': f"角色发现第{outline['number']}封信。", 'source_refs': refs},
                 {'id': f"E{outline['number']}B2", 'description': f"角色检查第{outline['number']}封信得到新线索。", 'source_refs': refs},
-            ]
+            ])
     return value
 
 
