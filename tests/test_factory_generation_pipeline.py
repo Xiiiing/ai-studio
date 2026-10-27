@@ -53,6 +53,9 @@ def production(project, tmp_path, monkeypatch):
     monkeypatch.setattr(schemas, 'ROOT', tmp_path)
     monkeypatch.setattr(core, 'ROOT', tmp_path)
     p=idle(project)
+    # These 0.2.2 compiler/replay fixtures retain their historical script and
+    # adapter contract; new defaults are covered by quality/capability tests.
+    p=store.update(p['id'], {'creative_quality_contract':None, 'model_capability_snapshot':None})
     p=store.update(p['id'], {'format':'animation', 'script': {'synopsis':'保留动作因果，不恢复已删除的雨伞', 'ending':'误会闭合', 'cast':{'female':'Adult woman, black hair'}, 'shots':[shot()]}})
     g.configure(p['id'], body(p))
     p=store.get(p['id'], False)
@@ -77,7 +80,7 @@ def test_http_opt_in_idempotence_and_old_outputs_preserved(project, http_client,
     base=f"/api/factory/projects/{project['id']}/generation-pipeline"
     assert http_client('GET',base)[1]['enabled'] is False
     assert http_client('POST',base,body(project))[0] == 409
-    p=idle(project);p=store.update(p['id'],{'shots':[{'id':'S01','seconds':5,'image':{'path':'approved.png'}}],'delivery':{'path':'final.mp4'}})
+    p=idle(project);p=store.update(p['id'],{'creative_quality_contract':None,'shots':[{'id':'S01','seconds':5,'image':{'path':'approved.png'}}],'delivery':{'path':'final.mp4'}})
     request=body(p)
     first=http_client('POST',base,request)
     assert first[0] == 200 and http_client('POST',base,request)==first
