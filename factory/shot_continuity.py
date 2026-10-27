@@ -4,11 +4,15 @@ import copy
 import json
 from pathlib import Path
 from studio import core
-from .creative_contracts import enabled
+from .creative_contracts import enabled as editorial_enabled
 from .schemas import object_schema, text_schema, array_schema
 from .scheduler import ProductionNeedsDecision
 
 VERSION = 'ai-studio.shot-continuity.v1'
+
+
+def enabled(project):
+    return editorial_enabled(project) and (project.get('creative_quality_contract') or {}).get('continuity_version') == VERSION
 STATE_SCHEMA = object_schema({'mode': {'type': 'string', 'enum': ['continuous', 'scene_cut', 'time_skip']},
     'opening_state': text_schema(1, 1200), 'ending_state': text_schema(1, 1200),
     'allowed_changes': array_schema(text_schema(1, 500), 0, 12)})
@@ -97,10 +101,16 @@ def verify_delivery(project, delivery, config, control=None):
     from jsonschema import validate
     path = verified_artifact({**project, 'delivery': delivery}, 'episode_clean.mp4')
     media_sha = core.sha256(path)
+    from .config import resolve_llm
+    from .prompt_workbench import _local_trial
+    if not _local_trial(resolve_llm(config, 'visual_critic', require_vision=True)):
+        raise ProductionNeedsDecision('跨镜复核仅使用已有授权的内网视觉模型；供应商金额授权尚未接入', 'shot_continuity_budget_required')
     model = llm_identity(config, 'visual_critic')
     results, offset = [], 0.0
-    for previous, current in zip(shots, shots[1:]):
+    for index, (previous, current) in enumerate(zip(shots, shots[1:]), 1):
         offset += float(previous['seconds'])
+        if project.get('continuity_boundary_indices') is not None and index not in project['continuity_boundary_indices']:
+            continue
         context = request_context(project, current, episode)
         timestamps = [max(0, offset - 1/24), offset]
         identity = {'version': VERSION, 'context': context['source_signature'], 'media_sha256': media_sha,
@@ -142,6 +152,21 @@ def verify_delivery(project, delivery, config, control=None):
         results.append(result)
         if answer['status'] != 'pass' or answer['issues']:
             raise ProductionNeedsDecision('跨镜状态需要复核或定向修复，原成片已保留', 'shot_continuity',
-                {'type': 'episode_continuity', 'shot_ids': [current['id']], 'review': result, 'retained_delivery': copy.deepcopy(delivery)})
+                {'type': 'episode_continuity', 'unit_id': current.get('unit_id'), 'shot_ids': [current.get('local_shot_id', current['id'])], 'review': result, 'retained_delivery': copy.deepcopy(delivery)})
     return {'version': VERSION, 'status': 'pass', 'scope': 'adjacent_endpoint_frames', 'media_sha256': media_sha,
         'transitions': results, 'limitations': '不证明未采样动作、整段声音或人工终审'}
+
+
+
+def verify_episode(episode, units, delivery, config, control=None):
+    """Long-unit internals were checked by the graph; inspect only new cut joins."""
+    if not enabled(episode): return None
+    shots, boundaries = [], []
+    for unit in units:
+        if shots: boundaries.append(len(shots))
+        for shot in (unit.get('episode') or unit.get('script') or {}).get('shots', []):
+            shots.append({**copy.deepcopy(shot), 'id': unit['global_prefix'] + '-' + shot['id'],
+                'unit_id': unit['id'], 'local_shot_id': shot['id']})
+    if not shots: raise ProductionNeedsDecision('单集合成缺少逐镜来源，未生成跨镜通过结论', 'shot_continuity_missing')
+    current = {**episode, 'script': {'shots': shots}, 'episode': {'shots': shots}, 'continuity_boundary_indices': boundaries}
+    return verify_delivery(current, delivery, config, control)

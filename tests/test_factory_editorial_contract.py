@@ -97,3 +97,29 @@ def test_adopted_contract_blocks_production_before_model_or_media(monkeypatch):
     monkeypatch.setattr(workflows, '_project', lambda state: p)
     with pytest.raises(workflows.ReviewBlocked, match='新创作契约'):
         workflows.production({'project_id': p['id']})
+
+
+def test_feature_contracts_do_not_silently_upgrade_previously_marked_projects():
+    from factory import story_coverage, shot_continuity
+    old = {'id': '111122223333', 'creative_quality_contract': {'version': policy.VERSION}}
+    assert policy.enabled(old)
+    assert not story_coverage.enabled(old)
+    assert not shot_continuity.enabled(old)
+    child = policy.initialize({'id': '111122223334'}, parent=old)
+    assert child['creative_quality_contract'] == old['creative_quality_contract']
+    assert not story_coverage.enabled(child) and not shot_continuity.enabled(child)
+    assert story_coverage.enabled(project()) and shot_continuity.enabled(project())
+    # The explicit adoption operation calls initialize without a parent.
+    policy.initialize(old)
+    assert story_coverage.enabled(old) and shot_continuity.enabled(old)
+
+
+def test_unreferenced_repair_target_cannot_unlock_an_unrelated_shot():
+    candidate = issue(); candidate['shot_ids'] = ['S99']
+    review = policy.normalize(project(), {'issues': [candidate]}, episode())
+    assert not policy.can_repair(project(), review)
+    assert not review['repair_shot_ids']
+    candidate['shot_ids'] = []
+    review = policy.normalize(project(), {'issues': [candidate]}, episode())
+    assert review['repair_shot_ids'] == ['S01', 'S02']
+    assert policy.can_repair(project(), review)

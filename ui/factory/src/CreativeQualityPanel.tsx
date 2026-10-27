@@ -17,6 +17,12 @@ export function CreativeQualityPanel({ project }: { project: RecordData }) {
   const enabled =
     project.creative_quality_contract?.version ===
     "ai-studio.creative-quality.v1";
+  const complete =
+    enabled &&
+    project.creative_quality_contract?.coverage_version ===
+      "ai-studio.story-coverage.v1" &&
+    project.creative_quality_contract?.continuity_version ===
+      "ai-studio.shot-continuity.v1";
   const review = project.draft_review || project.script_review?.review || {};
   const quality = useQuery({
     queryKey: ["creative-quality", project.id, project.revision],
@@ -48,7 +54,7 @@ export function CreativeQualityPanel({ project }: { project: RecordData }) {
       title="审核与返修依据"
       description="客观问题按证据定向返修；创作建议与审美选择保留给作者判断。"
     >
-      {!enabled ? (
+      {!complete ? (
         <div>
           <p>
             此项目沿用原审核契约。新契约只在空闲边界启用，保留历史，重新审核后才能继续制作。
