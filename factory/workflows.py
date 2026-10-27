@@ -37,6 +37,7 @@ class State(TypedDict, total=False):
     style_answer: dict
     final_answer: dict
     direct_production_revision: int
+    quality_review_id: str
     restart_revision: int
     timeline_edit_version: str
 
@@ -278,7 +279,8 @@ def final_decision(state):
     answer=store.answer_for(p["id"],gate["id"])
     from .drama_intent import enabled as whole_drama
     from .edit_versions import adopted_current
-    if answer is None and not whole_drama(p) and not adopted_current(p):
+    from .quality_recheck import final_current as quality_final_current
+    if answer is None and not whole_drama(p) and not adopted_current(p) and not quality_final_current(p):
         answer=supervise_gate(p["id"],gate)
     if answer is None and p.get("team_mode") == "delegated":
         # A receipt may outlive a lost graph checkpoint, or a human may answer
@@ -438,6 +440,12 @@ def _advance(pid):
         raise ProjectPaused("已在检查点暂停")
     if p["status"] in {"blocked","failed","cancelled"}:
         return {"blocked":True,"status":p["status"]}
+    from .quality_recheck import require_current, handle_final as handle_quality_final
+    if (p.get('delivery') or {}).get('quality_recheck_id') and not p.get('revision_request') and not p.get('workflow_restart_from'):
+        require_current(p)
+    quality_handled = handle_quality_final(p)
+    if quality_handled is not None:
+        return quality_handled
     from .edit_versions import handle_adopted_final, require_adopted_current
     require_adopted_current(p)
     handled = handle_adopted_final(p)
@@ -453,6 +461,8 @@ def _advance(pid):
             snap=resume_edited_graph(graph,snap,p,config)
         from .edit_versions import resume_edited_graph as resume_timeline_graph
         snap=resume_timeline_graph(graph,snap,p,config)
+        from .quality_recheck import resume_reviewed_graph
+        snap=resume_reviewed_graph(graph,snap,p,config)
         if not snap.values:
             return graph.invoke({"project_id":pid},config)
         pending=[i for task in snap.tasks for i in task.interrupts]
