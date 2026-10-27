@@ -85,7 +85,11 @@ def source_catalog(project):
 def scoped_sources(project):
     number = project.get('episode_number')
     values = source_catalog(project)
-    return [v for v in values if v['episode_number'] in (None, number)] if number else values
+    values = [v for v in values if v['episode_number'] in (None, number)] if number else values
+    if project.get('record_kind') == 'scene_unit' and 'beats' in (project.get('outline') or {}):
+        refs = {ref for event in project['outline']['beats'] for ref in event.get('source_refs', [])}
+        values = [v for v in values if v['id'] in refs or not v['required'] and v['episode_number'] is None]
+    return values
 
 
 def required_events(project):
@@ -121,7 +125,7 @@ def inspect(project, episode=None):
     events = required_events(project)
     ids = [b['id'] for b in events]
     known = set(ids)
-    source_ids = {s['id'] for s in scoped_sources(project)}
+    source_ids = {s['id'] for s in scoped_sources(project) if s['required']}
     invalid, mapping, covered = [], [], set()
     if len(ids) != len(known): invalid.append('批准事件ID重复')
     shot_ids = [s.get('id') for s in episode.get('shots', [])]
@@ -191,3 +195,11 @@ def plan_issues(project, plan):
     missing = required - set(references)
     if missing: invalid.append('原始正文片段未被任何分集事件承载：' + '、'.join(sorted(missing)))
     return invalid
+
+
+
+def unit_source_excerpt(episode, outline):
+    """Only approved event sources enter the unit's narrative excerpt."""
+    if not enabled(episode): return episode.get('source_excerpt', '')
+    refs = {ref for event in outline.get('beats', []) for ref in event.get('source_refs', [])}
+    return '\n'.join(source['text'] for source in scoped_sources(episode) if source['id'] in refs)
