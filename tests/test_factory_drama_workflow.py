@@ -3,7 +3,7 @@ import json
 
 from factory import drama_workflow, dramas, store
 from studio import core
-from test_factory_dramas import isolated, input_payload, plan, ready
+from test_factory_dramas import isolated, input_payload, plan_for, ready
 
 
 def stages(value):
@@ -12,7 +12,7 @@ def stages(value):
 
 def test_blocked_unconfirmed_planning_keeps_review_and_evidence(isolated):
     p = dramas.create(input_payload())
-    store.update(p['id'], {'draft_plan': plan(), 'plan_review': {'passed': False, 'issues': ['集间因果不连贯']},
+    store.update(p['id'], {'draft_plan': plan_for(p), 'plan_review': {'passed': False, 'issues': ['集间因果不连贯']},
         'status': 'blocked', 'stage': 'plan_repair'})
     directory = isolated / 'production' / p['slug'] / 'planning/cache'
     directory.mkdir(parents=True)
@@ -175,7 +175,7 @@ def test_summary_size_is_bounded_across_nested_content():
 
 def test_active_return_and_public_history_do_not_publish_private_drafts(isolated):
     p = dramas.create(input_payload())
-    store.update(p['id'], {'draft_plan':plan(), 'plan_phase':'writing', 'plan_attempt':2,
+    store.update(p['id'], {'draft_plan':plan_for(p), 'plan_phase':'writing', 'plan_attempt':2,
         'plan_review':{'passed':False,'issues':['承接冲突']},
         'plan_repair_basis':{'private_input':'never-expose-repair-basis'},
         'plan_history':[{'cycle':1,'attempt':1,'draft_plan':{'archive':'never-expose-archived-draft'},
@@ -190,7 +190,7 @@ def test_active_return_and_public_history_do_not_publish_private_drafts(isolated
 
 def test_drama_graph_links_real_lifecycle_and_scopes_review_records(isolated):
     p = dramas.create(input_payload())
-    store.update(p['id'], {'draft_plan': plan(), 'plan_review': {'passed': False, 'issues': ['承接冲突']},
+    store.update(p['id'], {'draft_plan': plan_for(p), 'plan_review': {'passed': False, 'issues': ['承接冲突']},
         'status': 'blocked', 'stage': 'plan_repair', 'plan_phase': 'blocked',
         'plan_history': [{'cycle': 1, 'attempt': 1, 'review': {'passed': False, 'issues': ['承接冲突']}}]})
     workflow = dramas.snapshot(p['id'])['workflow']
@@ -215,7 +215,7 @@ def test_pending_and_returning_graphs_do_not_claim_success_without_evidence(isol
     workflow = p['workflow']
     assert all(node['status'] == 'pending' for node in workflow['graph']['nodes'])
     assert workflow['graph']['active_node'] == 'planning'
-    store.update(p['id'], {'draft_plan': plan(), 'plan_review': {'passed': False, 'issues': ['退回编剧']},
+    store.update(p['id'], {'draft_plan': plan_for(p), 'plan_review': {'passed': False, 'issues': ['退回编剧']},
         'plan_phase': 'writing', 'plan_attempt': 2})
     workflow = dramas.snapshot(p['id'])['workflow']
     assert workflow['graph']['active_node'] == 'planning'
@@ -248,7 +248,7 @@ def test_long_graph_retains_unit_links_and_continuity_return_route(isolated):
 
 def test_confirmation_node_is_human_only_after_review_and_never_invents_legacy_review(isolated):
     p = dramas.create(input_payload())
-    store.update(p['id'], {'draft_plan': plan(), 'plan_review': {'passed': True, 'issues': []}})
+    store.update(p['id'], {'draft_plan': plan_for(p), 'plan_review': {'passed': True, 'issues': []}})
     workflow = dramas.snapshot(p['id'])['workflow']
     assert workflow['graph']['active_node'] == 'confirmation'
     assert next(node for node in workflow['graph']['nodes'] if node['id'] == 'confirmation')['status'] == 'human'
@@ -264,7 +264,7 @@ def test_paused_planning_graph_keeps_saved_draft_and_paused_work_state(isolated)
     p = dramas.create(input_payload())
     with store.connection() as db:
         db.execute("UPDATE jobs SET status='completed'")
-    store.update(p['id'], {'draft_plan': plan(), 'plan_phase': 'writing', 'status': 'paused'})
+    store.update(p['id'], {'draft_plan': plan_for(p), 'plan_phase': 'writing', 'status': 'paused'})
     workflow = dramas.snapshot(p['id'])['workflow']
     assert workflow['graph']['active_node'] == 'planning'
     assert next(node for node in workflow['graph']['nodes'] if node['id'] == 'planning')['status'] == 'paused'
