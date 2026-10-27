@@ -173,7 +173,15 @@ for (const width of [320, 390, 768, 1024, 1440, 1920]) {
           const more = page.locator(".project-more");
           const trigger = more.getByRole("button");
           await trigger.click();
-          await expect(page.getByRole("menuitem")).toHaveCount(5);
+          await expect(page.getByRole("menuitem")).toHaveCount(6);
+          await expect(page.getByRole("menuitem")).toHaveText([
+            "团队与回执",
+            "提示词工作台",
+            "生成提示词流水线",
+            "Agent 执行循环",
+            "云任务与费用",
+            "模型能力与版本",
+          ]);
           for (const item of await page.getByRole("menuitem").all()) {
             await expect(item).toBeInViewport({ ratio: 1 });
             const box = await item.boundingBox();
