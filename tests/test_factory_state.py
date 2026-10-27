@@ -299,6 +299,8 @@ def production_block_project(script_retry_project, isolated):
               "completed": 11, "history_marker": "cumulative-production-ledger"}
     store.update(p["id"], {
         "selected_style": "style-two", "script": episode, "episode": episode,
+        # Historical recovery records carry no observed cross-shot evidence.
+        "creative_quality_contract": None, "model_capability_snapshot": None,
         "script_review": {"passed": True},
         "shots": [{"id": s["id"], "status": "failed" if s["id"] == "S05" else "passed"}
                   for s in episode["shots"]],
