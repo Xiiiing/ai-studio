@@ -278,7 +278,7 @@ def _contract_review_schema(require_motion):
     return schema
 
 
-def _enforce_contract_review(result, require_motion):
+def _enforce_contract_review(result, require_motion, *, editorial=False):
     checks = [("style_alignment", "mismatch", "off_prompt", "画风不符合制作要求")]
     if require_motion:
         checks.append(("motion_alignment", "camera_only", "action", "只有相机移动，未观察到要求的人物动作"))
@@ -287,8 +287,12 @@ def _enforce_contract_review(result, require_motion):
         observation = result[field]
         if observation["status"] == failed:
             result["status"] = "fail"
-            result["issues"].append({"code": code, "severity": "blocking",
-                                     "detail": label + "：" + observation["evidence"]})
+            detail = label + "：" + observation["evidence"]
+            if editorial:
+                from .media_review_policy import objective_issue
+                result["issues"].append(objective_issue(code, detail))
+            else:
+                result["issues"].append({"code": code, "severity": "blocking", "detail": detail})
         uncertain |= observation["status"] == "uncertain"
     if uncertain and result["status"] != "fail":
         result["status"] = "unavailable"
@@ -451,7 +455,9 @@ def review_media(project, shot, path, references, config=None, *, output_dir=Non
         context.pop("keyframe_rule", None)
         context["sequence_rule"] = "参考图用途独立于剧情时序，不把后续镜头动作或终态作为参考素材要求。"
     content=[{"type":"text","text":json.dumps(context,ensure_ascii=False)}]
-    review_references = (references or []) if shot.get("material_constraints") else (references or [])[:4]
+    from .media_review_policy import enabled as editorial_media, binding as media_binding, review_schema, normalize as normalize_media_review, RULE as MEDIA_REVIEW_RULE
+    review_media_sha = sha256(path) if editorial_media(project) else None
+    review_references = (references or []) if shot.get("material_constraints") or editorial_media(project) else (references or [])[:4]
     reference_media_shas = []
     for index, reference in enumerate(review_references):
         ref=reference.get("path") if isinstance(reference,dict) else reference
@@ -523,6 +529,13 @@ def review_media(project, shot, path, references, config=None, *, output_dir=Non
         content[0]['text'] = json.dumps(context, ensure_ascii=False)
     if not samples:
         return {"status":"fail","issues":[{"code":"decode","detail":"没有可解码画面"}],"evaluator":"technical"}
+    media_contract = media_binding(project, shot, path, sampling, reference_media_shas)
+    if media_contract:
+        if media_contract['media_sha256'] != review_media_sha:
+            return {'status': 'unavailable', 'issues': [], 'reason': 'media_review_pixels_changed'}
+        schema = review_schema(schema, media_contract)
+        context.update(media_review_contract=media_contract, media_review_rule=MEDIA_REVIEW_RULE)
+        content[0]['text'] = json.dumps(context, ensure_ascii=False)
     from .context_manifest import capture
     review_config, review_tokens = config, 2200 if contract else 1600
     if static_evidence is not None:
@@ -578,7 +591,7 @@ def review_media(project, shot, path, references, config=None, *, output_dir=Non
         elif "uncertain" in alignment.values() and result["status"] != "fail":
             result["status"] = "unavailable"
     if contract:
-        _enforce_contract_review(result, require_motion)
+        _enforce_contract_review(result, require_motion, editorial=bool(media_contract))
     if temporal_pending:
         from .temporal_review import TEMPORAL_CODES
         audit = result.get("temporal_verification", {})
@@ -625,10 +638,36 @@ def review_media(project, shot, path, references, config=None, *, output_dir=Non
     if result.get('static_verification', {}).get('status') == 'unavailable':
         result['status'] = 'unavailable'
         result['detail'] = '首帧缺陷尚缺同一候选像素的可验证证据，保留素材待补审，不据此自动重绘。'
+    if media_contract:
+        # These two diagnoses are created by independent, program-validated
+        # sample checks after the critic response, rather than by model advice.
+        from .media_review_policy import objective_issue
+        for key, label in (('explicit_constraint_verification', '明确视觉状态要求未满足'),
+                           ('camera_verification', '实际运镜不符合批准要求')):
+            audit = result.get(key) or {}
+            if audit.get('status') != 'fail' or audit.get('media_sha256') != media_contract['media_sha256']:
+                continue
+            if key == 'camera_verification':
+                row = audit.get('observation') or {}
+                indices = [row.get('from_sample'), row.get('to_sample')]
+                evidence = row.get('evidence', '')
+            else:
+                rows = [row for row in audit.get('observations', []) if row.get('mouth') == 'open']
+                indices = [row.get('sample') for row in rows]
+                evidence = '；'.join(str(row.get('evidence', '')) for row in rows)
+            refs = ['candidate:' + str(i - 1) for i in indices if type(i) is int and 1 <= i <= len(samples)]
+            if refs:
+                derived = objective_issue('action', label + '：' + evidence)
+                derived.update(evidence_refs=refs, location='、'.join(refs))
+                result['issues'].append(derived)
     selected_model = resolve_llm(config, "visual_critic", require_vision=True)
     result.update(evaluator="vlm_sampled_frames",model=selected_model["model"],
                   profile=selected_model["profile"],endpoint=selected_model.get("base_url"),
                   sampled_frames=len(samples),reference_count=supplied if reference_purpose else len(review_references), sampling=sampling,
                   temporal_scope="sampled_frames_only",human_reviewed=False,
                   project_id=project.get("id"),shot_id=shot.get("id"),config_revision=config_revision(config))
-    return result
+    if media_contract and (sha256(path) != review_media_sha or
+            [sha256(p.get('path') if isinstance(p, dict) else p) for p in review_references] != reference_media_shas):
+        result.update(status='unavailable', detail='本次媒体或参考像素在复核期间改变，保留已有结果，需按当前文件重新复核。')
+    return normalize_media_review(project, result, path, shot, contract=media_contract,
+        minimum_score=config.get('quality', {}).get('minimum_score', 60))

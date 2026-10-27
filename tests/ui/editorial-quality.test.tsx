@@ -1,6 +1,8 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
+import userEvent from "@testing-library/user-event";
+import { waitFor } from "@testing-library/react";
 import { CreativeQualityPanel } from "../../ui/factory/src/CreativeQualityPanel";
 
 it("shows the current evidence and distinguishes author choice from automatic repair", () => {
@@ -115,4 +117,72 @@ it("shows planned continuity separately from actual endpoint observations", () =
   expect(
     screen.getByText(/实际交界帧复核：尚未建立通过结论/),
   ).toBeInTheDocument();
+});
+
+it("requests only the explicit authorized existing-review operation", async () => {
+  const fetcher = vi
+    .fn()
+    .mockImplementation((_url, options) =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            enabled: true,
+            recheck: options?.method === "POST" ? { task: { status: "queued" } } : {},
+          }),
+          { status: 200 },
+        ),
+      ),
+    );
+  vi.stubGlobal("fetch", fetcher);
+  try {
+    render(
+      <QueryClientProvider
+        client={
+          new QueryClient({ defaultOptions: { queries: { retry: false } } })
+        }
+      >
+        <CreativeQualityPanel
+          project={{
+            id: "111122223333",
+            revision: 12,
+            creative_quality_contract: {
+              version: "ai-studio.creative-quality.v1",
+              coverage_version: "ai-studio.story-coverage.v1",
+              continuity_version: "ai-studio.shot-continuity.v1",
+            },
+          }}
+        />
+      </QueryClientProvider>,
+    );
+    const button = screen.getByRole("button", { name: "复核现有稿件与成片" });
+    expect(button).toBeDisabled();
+    await userEvent.click(
+      screen.getByLabelText("授权本次已有内网文字与视觉模型复核"),
+    );
+    await userEvent.click(button);
+    await waitFor(() =>
+      expect(
+        fetcher.mock.calls.some(
+          ([url, options]) =>
+            String(url).endsWith("/creative-quality/review") &&
+            options?.method === "POST",
+        ),
+      ).toBe(true),
+    );
+    const [, options] = fetcher.mock.calls.find(
+      ([url, options]) =>
+        String(url).endsWith("/creative-quality/review") &&
+        options?.method === "POST",
+    )!;
+    expect(JSON.parse(options.body)).toMatchObject({
+      expected_revision: 12,
+      confirmed: true,
+      authorize_review: true,
+    });
+    expect(
+      fetcher.mock.calls.filter(([, options]) => options?.method === "POST"),
+    ).toHaveLength(1);
+  } finally {
+    vi.unstubAllGlobals();
+  }
 });

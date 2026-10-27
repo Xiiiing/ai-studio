@@ -114,6 +114,10 @@ def _handle(job):
         return  # A completed/recovered claim is not permission to execute again.
     pid=job["project_id"]
     try:
+        if job.get('kind') == 'creative_quality_review':
+            from .quality_recheck import run
+            run(job)
+            return
         from .production_resource_wait import before_execution
         if before_execution(job):
             return
