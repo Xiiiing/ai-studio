@@ -60,6 +60,21 @@ def test_replacement_frame_context_is_bound_without_impersonating_an_approved_sh
     assert shot_continuity.bind_prompt(target['prompt'], target['shot_continuity']) == target['prompt']
 
 
+def test_cloud_repair_keyframe_actual_graph_preserves_adjacent_state(runtime, transport, monkeypatch):
+    from factory import video_production
+    monkeypatch.setattr(video_production, 'inspect_image', lambda *args: {'status': 'pass', 'issues': []})
+    run = runtime
+    shot = enabled_run(run)
+    frame = run.folder / 'approved-frame.png'
+    frame.write_bytes(b'synthetic reference bytes')
+    target = run._target('S02', run.folder / 'cloud-video', 'Approved motion', [frame], kind='video', shot=shot, seconds=4)
+    record = {'take': 'take_001', 'repair': {'regenerate_keyframe': True}, 'seed': 1}
+    run._remote_first_frame(target, record)
+    graph = json.dumps(transport['posts'][0]['graph'], ensure_ascii=False)
+    assert 'Approved adjacent-shot state' in graph and '钥匙仍在甲手中' in graph
+    assert record['repair_keyframe']['path']
+
+
 def test_legacy_plain_target_does_not_require_or_invent_state(runtime):
     shot = runtime.shots[0]
     target = runtime._target(shot['id'], runtime.folder / 'plain', shot['prompt'], shot=shot)
