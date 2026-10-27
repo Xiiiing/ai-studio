@@ -126,7 +126,11 @@ def test_missing_or_merged_characters_still_block_without_publishing_manifest(co
         context = json.loads(kwargs['content'][0]['text'])
         if 'candidate_reference_claims_untrusted' not in context:
             return {'status': 'fail', 'score': 30, 'summary': '缺少两位批准人物', 'issues': [
-                {'code': 'identity', 'severity': 'blocking', 'detail': '只看到男主，缺少蓝裙女性和灰袍长者'}]}
+                {'code': 'identity', 'severity': 'blocking', 'detail': '只看到男主，缺少蓝裙女性和灰袍长者',
+                 'nature': 'OBJECTIVE', 'location': 'candidate:0，当前同框候选',
+                 'impact': '批准的三个人物中缺少女性与长者，无法落实本镜人物关系。',
+                 'repair_target': '保留男主与场景，恢复批准的蓝裙女性和灰袍长者。',
+                 'evidence_refs': ['candidate:0'], 'requires_choice': False}]}
         facts = context['approved_facts']
         criterion = next(item for item in facts if item['field'] == 'purpose')
         issue = context['candidate_reference_claims_untrusted'][0]['claim']
