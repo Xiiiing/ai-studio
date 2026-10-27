@@ -27,7 +27,8 @@ def render(engine, target, record, phase):
         refs = list(target['references']) + ([] if material else [engine.receipt_path(v) for v in engine.assets.get('characters', {}).values()])
         from .model_capabilities import enabled as capability_contract
         replacement = engine._target('repair_' + target['key'], target['folder'] / record['take'] / 'repair_keyframe',
-                                     record['repair'].get('prompt_prefix', '') + '\n' + engine.style_prompt + ' ' + target['shot']['prompt'], refs if material or capability_contract(engine.project) else refs[:4])
+                                     record['repair'].get('prompt_prefix', '') + '\n' + engine.style_prompt + ' ' + target['shot']['prompt'], refs if material or capability_contract(engine.project) else refs[:4],
+                                     review_context=target['shot'])
         engine._render_targets([replacement], 'keyframe_repair')
         path = engine.receipt_path(replacement['selected']) if replacement.get('selected') else None
         # _attach stores the selected receipt in the target's selection manifest.
