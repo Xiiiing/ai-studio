@@ -19,9 +19,12 @@ def bundle(project, values):
 
 def episode():
     return {"cast": {"female": "Adult woman with short hair", "male": "Adult man with long hair"}, "visual_style": "watercolor",
-            "shots": [{"id": "S01", "seconds": 4, "prompt": "An adult woman waits on a station platform", "motion_prompt": "She turns gently", "characters": ["female"], "dialogue": [], "reference_group": "female"},
-                      {"id": "S02", "seconds": 4, "prompt": "An adult man reads in a room", "motion_prompt": "He turns a page", "characters": ["male"], "dialogue": [], "reference_group": "male"},
-                      {"id": "S03", "seconds": 4, "prompt": "He reaches the same platform", "motion_prompt": "He stops", "characters": ["male"], "dialogue": [], "reference_group": "male", "reference_shots": ["S01"]}]}
+            "shots": [{"id": "S01", "seconds": 4, "prompt": "An adult woman waits on a station platform", "motion_prompt": "She turns gently", "characters": ["female"], "dialogue": [], "reference_group": "female",
+                       "continuity_state": {"mode": "continuous", "opening_state": "The woman waits on the platform.", "ending_state": "The woman has turned gently.", "allowed_changes": ["The approved turn."]}},
+                      {"id": "S02", "seconds": 4, "prompt": "An adult man reads in a room", "motion_prompt": "He turns a page", "characters": ["male"], "dialogue": [], "reference_group": "male",
+                       "continuity_state": {"mode": "scene_cut", "opening_state": "The man reads in a room.", "ending_state": "The same man has turned a page.", "allowed_changes": ["Cut from the platform to the man's room."]}},
+                      {"id": "S03", "seconds": 4, "prompt": "He reaches the same platform", "motion_prompt": "He stops", "characters": ["male"], "dialogue": [], "reference_group": "male", "reference_shots": ["S01"],
+                       "continuity_state": {"mode": "time_skip", "opening_state": "The same man reaches the platform after leaving his room.", "ending_state": "He has stopped on the platform.", "allowed_changes": ["Omit the journey from the room to the platform."]}}]}
 
 
 def run(project, monkeypatch, evaluator=None):
