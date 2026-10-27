@@ -8,6 +8,7 @@ from contextlib import ExitStack
 
 from .prompt_registry import load_prompt, derive_prompt
 from .review_policy import automation, exhausted_message, max_review_rounds
+from . import creative_contracts as editorial
 
 from studio.core import write_json
 from studio.planning import export_storyboard
@@ -87,7 +88,7 @@ def _script_gate_issues(review):
               "originality": "原创组合", "closure": "结局闭合", "feasibility": "制作可行性"}
     scores = review.get("scores", {})
     issues = [copy.deepcopy(item) for item in review.get("issues", [])
-              if item.get("severity") in ("blocking", "major")]
+              if item.get("severity") in ("blocking", "major") or item.get("requires_choice")]
     values = [scores.get(key, 0) for key in SCORE_KEYS]
     low = [(key, scores.get(key, 0)) for key in SCORE_KEYS if scores.get(key, 0) < 6]
     if low:
@@ -182,6 +183,9 @@ def create_proposals(project, config, checkpoint):
                 review["issues"].append(_review_issue("character_roles", "故事人物未覆盖创作规格中的稳定角色"))
             if title_counts[proposal["title"].strip()] > 1:
                 review["issues"].append(_review_issue("duplicate_proposal", "多个候选方案标题完全相同"))
+            if editorial.enabled(project):
+                source = {"shots": [{"id": "proposal:" + proposal["id"], "action": json.dumps(proposal, ensure_ascii=False)}]}
+                review = editorial.normalize(project, review, source)
             proposal["scores"] = review["scores"]
             proposal["review"] = review
             proposal["eligible"] = review_passes(review)
@@ -192,6 +196,8 @@ def create_proposals(project, config, checkpoint):
             "proposal_generation": project.get("proposal_generation", 1)})
         atomic_text(folder / "proposals.md", _proposal_doc(proposals, history))
         if any(proposal["eligible"] for proposal in proposals):
+            break
+        if editorial.enabled(project) and not any(editorial.can_repair(project, p["review"]) for p in proposals):
             break
     eligible_count = sum(bool(proposal["eligible"]) for proposal in proposals)
     all_passed = eligible_count == len(proposals)
@@ -757,7 +763,11 @@ def _make_script(project, config, checkpoint, feedback=None):
             request["previous_attempt"] = copy.deepcopy(episode)
             if resolved and not affected:
                 request["rewrite_instruction"] = "保留requirements和删除项，在已选主题内重构AI工作方案；可重新设计回馈机制与后半结构。用实际setup/choice/payoff解决原创和结局问题，不依赖换礼物或追加尾声。逐项处理独立评审证据。"
-            request["independent_feedback"] = final_review
+            request["independent_feedback"] = editorial.repair_feedback(project, final_review)
+            if editorial.enabled(project) and final_review.get("repair_shot_ids"):
+                repair_scope = final_review["repair_shot_ids"]
+                request["only_revise_shot_ids"] = repair_scope
+                request["locked_shot_ids"] = [s["id"] for s in previous_attempt["shots"] if s["id"] not in repair_scope]
         if pending_supplement:
             request['supplement_request'] = {key: copy.deepcopy(pending_supplement[key])
                 for key in ('id', 'source', 'target', 'scope', 'issues')}
@@ -843,7 +853,7 @@ def _make_script(project, config, checkpoint, feedback=None):
              "episode": episode, "technical_findings": structural,
              "task": "以出品人反馈修订后的故事目标评价完整成片因果链、结局与反转证据。原提案冲突部分已被反馈覆盖；不得因遵守删除要求而扣分，仍保留明确被删除要素则指出镜头证据并阻断。"},
                 SCRIPT_REVIEW_SCHEMA, checkpoint, max_tokens=5800, temperature=0.25)
-        final_review["issues"] = structural + final_review["issues"]
+        final_review = editorial.normalize(project, final_review, episode, structural)
         final_review["passed"] = review_passes(final_review)
         pending_supplement = (direction or {}).get('supplement_request')
         repair_scope = list(pending_supplement['scope']) if pending_supplement else None
@@ -854,7 +864,7 @@ def _make_script(project, config, checkpoint, feedback=None):
         write_json(folder / "episode.json", episode)
         atomic_text(folder / "script.md", _script_doc(episode, final_review))
         export_storyboard(episode, folder / "storyboard.csv")
-        if final_review["passed"]:
+        if final_review["passed"] or not editorial.can_repair(project, final_review):
             break
     passed = final_review["passed"]
     if affected and project.get("styles"):
@@ -880,7 +890,7 @@ def _make_script(project, config, checkpoint, feedback=None):
         "script_review": {"passed": passed, "rounds": history, "review": final_review,
                           "producer_feedback": producer_feedback},
         "needs_decision": None if passed else _gate("script_review",
-            exhausted_message("剧本", index),
+            ("本轮审核需要确认创作方向或补齐有效证据；原稿已保留，未自动重写。" if not editorial.can_repair(project, final_review) else exhausted_message("剧本", index)),
             _script_gate_issues(final_review)),
         "planning_artifacts": {**project.get("planning_artifacts", {}),
             "resolved_story_brief": relative_path(folder / "resolved-story-brief.md") if resolved else None,

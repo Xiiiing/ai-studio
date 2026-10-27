@@ -13,6 +13,7 @@ from studio.core import write_json
 from studio.planning import export_storyboard
 from . import creative as c
 from .review_policy import automation, exhausted_message, max_review_rounds
+from . import creative_contracts as editorial
 
 
 def round_limit_patch(project, config):
@@ -55,6 +56,13 @@ def _revision_scope(project):
         if not scope or not set(scope).issubset(old_shots):
             raise c.CreativeReviewError("上游补料范围失效，已保留原稿")
         return previous, old_shots, list(scope)
+    if editorial.enabled(project) and project.get("creative_round", 1) > 1 and project.get("screenplay_draft"):
+        review = project.get("draft_review") or {}
+        if not editorial.can_repair(project, review):
+            raise c.CreativeReviewError("当前审核没有获准自动返修的客观问题，原稿已保留", review.get("issues", []))
+        previous = project["screenplay_draft"]
+        shots = {s["id"]: s for s in previous.get("shots", [])}
+        return previous, shots, list(review.get("repair_shot_ids", []))
     previous = project.get("episode") or project.get("script") or {}
     old_shots = {shot["id"]: shot for shot in previous.get("shots", [])}
     affected = c.revision_shot_ids(project.get("script_feedback"), old_shots)
@@ -160,7 +168,7 @@ def write_screenplay(project, config, checkpoint):
         "proposal_reference_only_where_feedback_does_not_override": True,
     }
     if index > 1:
-        request["independent_feedback"] = project.get("draft_review")
+        request["independent_feedback"] = editorial.repair_feedback(project, project.get("draft_review") or {})
         request["previous_attempt"] = copy.deepcopy(project.get("screenplay_draft"))
         if resolved and not affected:
             request["rewrite_instruction"] = (
@@ -214,7 +222,7 @@ def write_screenplay(project, config, checkpoint):
             previous.get("character_names", episode.get("character_names", {}))
         )
         episode["visual_style"] = previous["visual_style"]
-        if pending:
+        if pending or (editorial.enabled(project) and index > 1):
             # Adopt only requested shots, preserving all other approved facts.
             changed={s['id']:s for s in episode['shots'] if s['id'] in affected}
             episode=copy.deepcopy(previous)
@@ -308,7 +316,7 @@ def review_screenplay(project, config, checkpoint):
         max_tokens=5800,
         temperature=0.25,
     )
-    review["issues"] = structural + review["issues"]
+    review = editorial.normalize(project, review, episode, structural)
     review["passed"] = c.review_passes(review) and not project.get("storyboard_supplement_request")
     history = copy.deepcopy(project.get("creative_review_rounds", []))
     history = [row for row in history if row["round"] != index]
@@ -367,19 +375,23 @@ def review_screenplay(project, config, checkpoint):
             "script_review": c.relative_path(review_path),
         },
     }
+    if editorial.enabled(project):
+        patch["creative_quality_review_required"] = not review["passed"]
     if review["passed"]:
         patch.update(
             script_complete_generation=project["script_generation"], needs_decision=None
         )
-    elif index < max_review_rounds(config):
+    elif index < max_review_rounds(config) and editorial.can_repair(project, review):
         patch["creative_round"] = index + 1
         patch["needs_decision"] = None
     else:
         patch["needs_decision"] = c._gate(
             "script_review",
-            exhausted_message("剧本", index),
+            ("本轮审核需要确认创作方向或补齐有效证据；原稿已保留，未自动重写。" if not editorial.can_repair(project, review) else exhausted_message("剧本", index)),
             c._script_gate_issues(review),
         )
+    if patch.get("needs_decision"):
+        patch["review_automation"].update(status="blocked", reason=patch["needs_decision"]["message"])
     return patch
 
 

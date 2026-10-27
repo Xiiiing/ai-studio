@@ -409,6 +409,8 @@ def cached_json_call(project, config, role, stage, system, payload, schema,
         from .prompt_registry import derive_prompt
         system = derive_prompt(system, str(system) + "\n落实 producer_task_requirements 中本次出品人的任务要求；只在该任务职责与既有范围内修改，不跳过独立审核。", "producer_intervention")
     schema, system = adapt_schema(schema, project), adapt_system(system, project)
+    from .creative_contracts import review_call
+    system, payload, schema = review_call(project, role, system, payload, schema)
     from .prompt_registry import prompt_receipt
     prompt_meta = prompt_receipt(system, role, payload, schema)
     # Keep the original content-based signature and cache path. A byte-equal v1
@@ -478,6 +480,7 @@ def review_passes(review):
     values = [scores.get(key, 0) for key in SCORE_KEYS]
     return (len(values) == len(SCORE_KEYS) and min(values) >= 6
             and sum(values) / len(values) >= 7
+            and not any(i.get("requires_choice") for i in review.get("issues", []))
             and not any(i.get("severity") in ("blocking", "major")
                         for i in review.get("issues", [])))
 
