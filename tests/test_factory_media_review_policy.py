@@ -99,11 +99,12 @@ def test_recovery_rejects_subjective_low_quality_even_with_blocking_code(data, k
     assert qa == before
 
 
-@pytest.mark.parametrize('mutation', ['none', 'choice', 'stale_media', 'stale_revision', 'stale_shot', 'missing_location'])
+@pytest.mark.parametrize('mutation', ['none', 'choice', 'minor_choice', 'stale_media', 'stale_revision', 'stale_shot', 'missing_location'])
 def test_recovery_accepts_only_current_objective_major_evidence(data, mutation):
     items = [classified_issue(code='action'), classified_issue('AESTHETIC', code='low_quality')]
     p, config, target, qa, previous, root = reviewed_case(data, items)
     if mutation == 'choice': items[0]['requires_choice'] = True
+    if mutation == 'minor_choice': items[1].update(requires_choice=True, severity='minor')
     if mutation == 'stale_media': qa['semantic']['media_review_contract']['media_sha256'] = '0' * 64
     if mutation == 'stale_revision': qa['semantic']['media_review_contract']['production_revision'] -= 1
     if mutation == 'stale_shot': target['shot']['action'] = 'A newly approved different action.'
@@ -115,7 +116,7 @@ def test_recovery_accepts_only_current_objective_major_evidence(data, mutation):
         assert result['source']['assessment']['issues'] == items
     else:
         assert result['action'] == 'stop'
-        assert result['reason'] == ('media_goal_requires_choice' if mutation == 'choice' else 'media_objective_evidence_missing')
+        assert result['reason'] == ('media_goal_requires_choice' if mutation in {'choice', 'minor_choice'} else 'media_objective_evidence_missing')
 
 
 def test_measured_objective_failure_keeps_blocking_and_repair_with_subjective_advice(data):
