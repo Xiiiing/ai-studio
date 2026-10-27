@@ -9,7 +9,7 @@ from . import store
 
 def seed_validation_project():
     """Create a NEW validation record only; callers configure isolated store/ROOT."""
-    project = store.create({'brief':'隔离剪辑验收：两段CPU测试图案和测试音，不是真实剧情、画质或模型效果。','title':'CPU时间线操作样例（非模型成片）'})
+    project = store.create({'brief':'隔离剪辑验收：两段CPU测试图案和测试音，不是真实剧情、画质或模型效果。','title':'CPU时间线操作样例（非模型成片）','prepare_materials':True})
     pid=project['id']
     base=core.ROOT/'production'/project['slug']
     base.mkdir(parents=True,exist_ok=True)

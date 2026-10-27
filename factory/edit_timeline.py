@@ -137,7 +137,8 @@ def catalog(project, checksum=True):
     size = (project.get('delivery') or {}).get('resolution') or sources[clips[0]['source_id']]['resolution']
     return {'integrity_checked':checksum,'sources': sources, 'default': {'schema': SCHEMA, 'fps': FPS, 'resolution': size, 'clips': clips,
         'audio': audio, 'subtitles': subtitles, 'confirmed_duration_frames': cursor, 'caption_text_confirmed': False},
-        'signature': core.fingerprint({'sources': sources, 'delivery': source_delivery(project).get('source_signature')})}
+        'signature': core.fingerprint({'sources': sources, 'delivery': source_delivery(project).get('source_signature'),
+            'approved_context':{k:project.get(k) for k in ('outline','script','episode','resolved_story_brief','creative_quality_contract','execution_config')}})}
 
 
 def positions(clips):
@@ -247,6 +248,8 @@ def check_document(project, document, sources):
         required = required_events(project)
     except ImportError:
         required = (project.get('outline') or {}).get('beats') or []
+    if not required:
+        issues.append({'code':'coverage_contract_missing','message':'当前项目尚未建立批准事件映射；请在空闲边界显式启用新创作合约并核对映射，原素材和草稿保留'})
     represented = set()
     for clip in document['clips']:
         represented.update(sources[clip['source_id']].get('beat_ids', []))
@@ -254,4 +257,5 @@ def check_document(project, document, sources):
         if event['id'] not in represented:
             issues.append({'code':'missing_event','event_id':event['id'],'message':'剪辑缺少必要事件：' + event.get('description',event['id'])})
     return {'status':'fail' if issues else 'pass','issues':issues, 'duration_frames':duration, 'positions':spans,
-            'semantic_status':'not_reviewed','scope':'structure_and_declared_mapping_not_observed_media'}
+            'semantic_status':'not_reviewed','required_event_ids':[e['id'] for e in required],
+            'scope':'structure_and_declared_mapping_not_observed_media'}

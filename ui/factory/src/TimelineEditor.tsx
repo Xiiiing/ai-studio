@@ -691,6 +691,7 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
             disabled ||
             !saved ||
             selected?.semantic?.status !== "pass" ||
+            selected?.review_current !== true ||
             selected?.structural?.status !== "pass"
           }
           onClick={() => void action("export", { version_id: version })}
@@ -777,7 +778,8 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
               disabled ||
               !saved ||
               !watched ||
-              selected.source_current === false
+              selected.source_current === false ||
+              selected.review_current !== true
             }
             onClick={() =>
               void action("adopt", {

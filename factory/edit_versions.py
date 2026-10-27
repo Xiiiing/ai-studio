@@ -49,6 +49,7 @@ def _public(project):
     versions = copy.deepcopy(state.get('versions', []))
     for version in versions:
         version['source_current'] = bool(catalog and version['catalog_signature'] == catalog['signature'])
+        version['review_current'] = bool(version['source_current'] and semantic_current(version))
     return {'project_id':project['id'],'revision':project['revision'],'fps':timeline.FPS,
         'catalog':catalog,'error':error,'versions':versions,'task':copy.deepcopy(state.get('task')),
         'adopted_version_id':state.get('adopted_version_id'), 'editable':project['status'] in {'paused','blocked','awaiting_final','approved'},
@@ -57,6 +58,37 @@ def _public(project):
 
 def snapshot(pid):
     return _public(store.get(pid,False))
+
+
+def semantic_current(item):
+    """A pass label or old critic response is never sufficient authority."""
+    review = item.get('semantic') or {}
+    preview = item.get('preview') or {}
+    clean = next((r for r in preview.get('artifacts',[]) if Path(r.get('path','')).name == 'episode_clean.mp4'),None)
+    checks = review.get('checks')
+    if (review.get('status') != 'pass' or not isinstance(checks,list) or not checks
+            or review.get('edit_signature') != item.get('document_signature') or not clean
+            or review.get('media_sha256') != clean.get('sha256')
+            or not isinstance(review.get('observed_end'),str) or not review['observed_end'].strip()
+            or preview.get('source_signature') != item.get('document_signature')):
+        return False
+    clips = {c['id'] for c in item['document']['clips']}
+    duration = timeline.positions(item['document']['clips'])[-1]['end_frame']
+    event_ids, observed_clips = set(), set()
+    for check in checks:
+        if (not isinstance(check,dict) or check.get('status') != 'pass' or check.get('issues')
+                or not check.get('signature') or check.get('review_kind') not in {'event','continuity'}
+                or not isinstance(check.get('samples'),list) or not check['samples']):
+            return False
+        for sample in check['samples']:
+            if (not isinstance(sample,dict) or sample.get('clip_id') not in clips
+                    or type(sample.get('frame')) is not int or not 0 <= sample['frame'] < duration):
+                return False
+            if check['review_kind'] == 'continuity':
+                observed_clips.add(sample['clip_id'])
+        event_ids.update(check.get('event_ids',[]))
+    required = set((item.get('structural') or {}).get('required_event_ids',[]))
+    return bool(required and required <= event_ids and observed_clips == clips)
 
 
 def mutate(pid, payload):
@@ -136,10 +168,12 @@ def mutate(pid, payload):
                 structural = timeline.check_document(project,item['document'],item['sources'])
                 item['structural'] = structural
                 if action == 'adopt':
+                    if project.get('creative_quality_review_required'):
+                        raise ValueError('请先完成已显式启用的新创作合约审核；剪辑不能继承旧稿通过结论')
                     if payload.get('confirmed') is not True or payload.get('human_reviewed') is not True:
                         raise ValueError('采用剪辑须明确确认已观看新版本')
                     exported = item.get('export')
-                    if structural['status'] != 'pass' or item.get('semantic',{}).get('status') != 'pass' or not exported:
+                    if structural['status'] != 'pass' or not semantic_current(item) or not exported:
                         raise ValueError('剪辑尚未完成当前版本检查及正式导出')
                     for receipt in exported['artifacts']:
                         timeline.verified(receipt,project)
@@ -151,15 +185,50 @@ def mutate(pid, payload):
                         project['delivery'] = {**copy.deepcopy(exported),'revision':project['production_revision'],
                             'status':'awaiting_producer_final_review','edit_version_id':item['id']}
                         project['status'] = 'awaiting_final'
+                        project['stage'] = 'final_decision'
+                        project['progress'] = 95
+                        project['delivery_complete_revision'] = project['production_revision']
+                        for key in ('accepted_by','accepted_at','approved_by','approved_at','final_approved_revision','producer_approved'):
+                            project.pop(key,None)
+                        if project.get('episode_review'):
+                            project.setdefault('episode_review_history',[]).append(copy.deepcopy(project.pop('episode_review')))
+                        if project.get('drama_id'):
+                            drama = store._read(db,project['drama_id'])
+                            if project['id'] not in drama.get('episodes',[]):
+                                raise ValueError('剪辑剧集不属于当前整剧')
+                            if drama.get('delivery_bundle'):
+                                drama['delivery_bundle'] = {**drama['delivery_bundle'],'current':False,
+                                    'invalidated_by_edit':{'episode_id':project['id'],'edit_version_id':item['id']}}
+                            if drama.get('series_review'):
+                                drama['series_review'] = {**drama['series_review'],'current':False}
+                            store._write(db,drama)
                         project['needs_decision'] = None
                         project['error'] = None
                         state['adopted_version_id'] = item['id']
                         for decision in project.get('decisions',[]):
                             if decision.get('type') == 'final' and decision.get('status') == 'pending':
                                 decision['status'] = 'superseded'
-                        project['decisions'] = [*project.get('decisions',[]),{'id':uuid.uuid4().hex[:12],
-                            'type':'final','status':'pending','edit_version_id':item['id'],'message':'请按新剪辑版本完成原有出品人终审。'}]
-                elif action == 'export' and (structural['status'] != 'pass' or item.get('semantic',{}).get('status') != 'pass'):
+                        project['decisions'] = [*project.get('decisions',[]),{'id':f"{pid}:final:{project['production_revision']}",
+                            'type':'final','title':'请观看新剪辑版本并完成出品人终审。',
+                            'options':[{'id':'approve','label':'通过终版'},{'id':'revise','label':'局部修改'},{'id':'reedit','label':'重新剪辑'}],
+                            'created_at':store.now(),'status':'pending','edit_version_id':item['id']}]
+                        if project.get('record_kind') == 'episode':
+                            review = item['semantic']
+                            samples = sorted({(s['clip_id'],s['frame']) for c in review['checks'] for s in c['samples']},key=lambda s:s[1])
+                            index = {c['id']:c for c in item['document']['clips']}
+                            evidence = [{'clip_id':cid,'frame':f,'timestamp':f/timeline.FPS,
+                                'shot_id':item['sources'][index[cid]['source_id']]['global_shot_id'],
+                                'unit_id':item['sources'][index[cid]['source_id']]['owner_id'],
+                                'local_shot_id':item['sources'][index[cid]['source_id']]['shot_id']} for cid,f in samples]
+                            project['episode_review'] = {'status':'pass','signature':core.fingerprint({'edit':item['id'],'review':review,'delivery':exported['source_signature']}),
+                                'production_revision':project['production_revision'],'outline_sha256':core.fingerprint(project.get('outline')),
+                                'delivery_signature':exported['source_signature'],'edit_version_id':item['id'],
+                                'checks':[{'beat_id':eid,'status':'pass','shot_ids':sorted({item['sources'][index[s['clip_id']]['source_id']]['global_shot_id'] for s in c['samples']}),'evidence':c.get('summary','')}
+                                    for c in review['checks'] if c['review_kind']=='event' for eid in c['event_ids']],
+                                'issues':[],'observed_end':review['observed_end'],
+                                'evidence':{'media_sha256':review['media_sha256'],'samples':evidence,'coverage':review['scope']}}
+
+                elif action == 'export' and (structural['status'] != 'pass' or not semantic_current(item)):
                     raise ValueError('剪辑存在未解决问题，先检查并修复后再正式导出')
                 else:
                     if action == 'check' and type(payload.get('authorize_review',False)) is not bool:
@@ -239,16 +308,20 @@ def _semantic(project, item, preview, folder, control):
         review_folder = folder/'reviews'/signature
         path,intent = review_folder/'review.json',review_folder/'intent.json'
         if path.exists():
-            answer = core.read_json(path)
+            saved = core.read_json(path)
+            if saved.get('signature') != signature or saved.get('sha256') != core.fingerprint(saved.get('value')):
+                raise ValueError('剪辑审核缓存身份或校验值不符，保留预览且不重发请求')
+            answer = saved['value']
         else:
             if intent.exists():
                 raise ValueError('上次剪辑审核结果未知，保留预览等待对账，不重复请求模型')
             payload = {'required_events':group_events,'review_kind':review_kind,'samples':samples,'clips':group,
                 'source_facts':{c['source_id']:{k:v for k,v in sources[c['source_id']].items() if k in {'action','continuity','beat_ids','shot_id'}} for c in group},
                 'audio_edits':document['audio'],'subtitles':document['subtitles'],
+                'includes_final_frame':any(s['frame']==positions[-1]['end_frame']-1 for s in samples),
                 'scope':'sampled_exported_frames_and_timeline_metadata_not_full_video_or_audio_comprehension'}
             schema = obj({'status':{'enum':['pass','fail','uncertain']},'summary':txt(1,2000),
-                'issues':arr(txt(1,1500),0,30)})
+                'issues':arr(txt(1,1500),0,30),'observed_end':txt(0,2000)})
             content = [{'type':'text','text':__import__('json').dumps(payload,ensure_ascii=False)}]
             for sample in samples:
                 content += [{'type':'text','text':__import__('json').dumps(sample)},
@@ -258,18 +331,21 @@ def _semantic(project, item, preview, folder, control):
                 '审核当前剪辑真实导出抽样帧与时间线元数据，检查必要剧情覆盖、人物持物状态和相邻镜头承接。'
                 '原始动作文字和beat标签不是发生证据；明确矛盾fail，样本不足uncertain。正常换场与省略时间允许状态变化。'
                 '仅判断本组可见镜头；跨组边界包含前一帧。不得声称看过未采样时段或听懂音轨；字幕不代表真实发声。'
-                '问题须写出当前clip_id、时间和实际证据。只有本组证据充分且无问题时pass。',
+                '问题须写出当前clip_id、时间和实际证据。只有本组证据充分且无问题时pass。'
+                'includes_final_frame=true时，observed_end须描述最后真实抽样帧可见的人物持物和位置，不复制计划；否则填空串。',
                 payload,schema,review_folder,max_tokens=2400,temperature=.2,content=content)
             from jsonschema import validate
             validate(answer,schema)
-            core.write_json(path,answer)
+            core.write_json(path,{'signature':signature,'value':answer,'sha256':core.fingerprint(answer)})
         checks.append({'signature':signature,'samples':samples,'event_ids':[e['id'] for e in group_events],'review_kind':review_kind,**answer})
     statuses = {c['status'] for c in checks}
     status = 'fail' if 'fail' in statuses else 'uncertain' if 'uncertain' in statuses else 'pass'
     if any(c['issues'] for c in checks) and status == 'pass':
         status = 'fail'
     return {'status':status,'checks':checks,'media_sha256':video_receipt['sha256'],
-        'edit_signature':item['document_signature'],'scope':'sampled_current_export_not_unobserved_video_or_audio',
+        'edit_signature':item['document_signature'],
+        'observed_end':next((c.get('observed_end','') for c in reversed(checks) if any(s['frame']==positions[-1]['end_frame']-1 for s in c['samples'])),''),
+        'scope':'sampled_current_export_not_unobserved_video_or_audio',
         'human_final_review_required':True}
 
 
@@ -305,7 +381,9 @@ def run(job):
         semantic = item.get('semantic',{'status':'not_reviewed'})
         if action == 'check' and task.get('authorize_review') and structural['status'] == 'pass':
             semantic = _semantic(project,item,preview,folder,lambda:_cancelled(job))
-        if action == 'export' and (structural['status'] != 'pass' or semantic.get('status') != 'pass'):
+            if semantic.get('status') == 'pass' and not semantic_current({**item,'preview':preview,'structural':structural,'semantic':semantic}):
+                raise ValueError('审核缺少当前剪辑与实际成片对应的完整检查证据，不能以pass标签通过')
+        if action == 'export' and (structural['status'] != 'pass' or not semantic_current({**item,'preview':preview,'structural':structural,'semantic':semantic})):
             raise ValueError('剪辑未通过当前版本的剧情、连续性和技术检查')
         with store.connection() as db:
             db.execute('BEGIN IMMEDIATE')
@@ -349,3 +427,95 @@ def run(job):
                     store._write(db,current)
                 db.execute('UPDATE jobs SET status=?,finished=?,error=? WHERE id=? AND status=\'running\' AND lease=?',
                     ('cancelled' if cancelled else 'failed' if error else 'completed',time.time(),error,job['id'],job['lease']))
+
+
+def adopted_current(project):
+    state = project.get('timeline_edits') or {}
+    vid = state.get('adopted_version_id')
+    item = next((v for v in state.get('versions',[]) if v['id']==vid),None)
+    try:
+        source_current = bool(item and timeline.catalog(project,checksum=False)['signature']==item['catalog_signature'])
+    except (ValueError,OSError,KeyError):
+        source_current = False
+    return bool(item and source_current and not project.get('creative_quality_review_required')
+        and (project.get('delivery') or {}).get('edit_version_id')==vid
+        and project.get('delivery_complete_revision')==project.get('production_revision')
+        and (project.get('delivery') or {}).get('source_signature')==(item.get('export') or {}).get('source_signature')
+        and item.get('structural',{}).get('status')=='pass' and semantic_current(item))
+
+
+def require_adopted_current(project):
+    vid = (project.get('timeline_edits') or {}).get('adopted_version_id')
+    adopted_revision = (project.get('delivery') or {}).get('revision',project.get('production_revision',0))
+    prior_answer = (project.get('answers') or {}).get(f"{project['id']}:final:{adopted_revision}") or {}
+    revising = bool(project.get('revision_action') or (project.get('revision_request') or {}).get('choice') in {'revise','reedit'}
+        or (project.get('production_revision',0)>adopted_revision and prior_answer.get('choice')=='revise'))
+    if vid and not revising and (project.get('delivery') or {}).get('edit_version_id')==vid and not adopted_current(project):
+        raise ValueError('当前剪辑或创作合约已变化，请重新检查剪辑后再终审；不会恢复旧片或自动批准')
+
+
+def resume_edited_graph(graph, snapshot, project, configuration):
+    """Re-enter only final decision, never original production or old approval."""
+    if not adopted_current(project):
+        return snapshot
+    vid = project['timeline_edits']['adopted_version_id']
+    if snapshot.values.get('timeline_edit_version')==vid:
+        return snapshot
+    graph.update_state(configuration,{'project_id':project['id'],'route':'continue',
+        'final_generation':project['production_revision'],'timeline_edit_version':vid},as_node='production')
+    gid=f"{project['id']}:final:{project['production_revision']}"
+    if not (project.get('answers') or {}).get(gid):
+        store.update(project['id'],{'status':'awaiting_final','stage':'final_decision'})
+    return graph.get_state(configuration)
+
+
+def handle_adopted_final(project, *, long_episode=False):
+    """Long episodes have no parent LangGraph; edited cuts share the manual gate.
+
+Reedit goes back to the explicit editor, not the original automatic assembly.
+A requested screenplay revision may proceed through the existing production path.
+"""
+    if not adopted_current(project):
+        return None
+    vid=project['timeline_edits']['adopted_version_id']
+    gid=f"{project['id']}:final:{project['production_revision']}"
+    answer=(project.get('answers') or {}).get(gid)
+    if not answer:
+        if long_episode:
+            store.update(project['id'],{'status':'awaiting_final','stage':'final_decision'})
+            return {'waiting':{'id':gid,'type':'final','edit_version_id':vid}}
+        return None
+    if answer.get('choice') != 'reedit' and not long_episode:
+        return None
+    with store.connection() as db:
+        db.execute('BEGIN IMMEDIATE')
+        current=store._read(db,project['id'])
+        if not adopted_current(current) or (current.get('answers') or {}).get(gid) != answer:
+            raise ValueError('剪辑终审版本已变化，原答复未应用到新版本')
+        decision=next((d for d in current['decisions'] if d['id']==gid),None)
+        if not decision or decision.get('status')!='answered' or decision.get('answer')!=answer:
+            raise ValueError('剪辑终审回执与当前决策不符')
+        from .execution_context import current_job
+        job=current_job.get()
+        if job:
+            row=db.execute('SELECT project_id,status,lease FROM jobs WHERE id=?',(job['id'],)).fetchone()
+            if not row or row['project_id']!=current['id'] or row['status']!='running' or row['lease']!=job.get('lease'):
+                raise ValueError('剪辑终审执行租约已失效')
+        choice=answer['choice']
+        if choice=='approve':
+            current.update(status='approved',stage='delivered',progress=100,accepted_at=store.now(),accepted_by=answer.get('actor','producer'))
+            current.setdefault('decision_effects',{})[gid]={'route':'done','applied_at':store.now()}
+        elif choice=='reedit':
+            current.update(status='paused',pause_requested=True,error=None,
+                needs_decision={'type':'edit_feedback','message':'已保留当前剪辑；请在时间线载入此版本，按意见另存并重新检查。',
+                    'feedback':answer.get('feedback',''),'edit_version_id':vid})
+            current.setdefault('decision_effects',{})[gid]={'route':'timeline_edit','applied_at':store.now()}
+        elif choice=='revise':
+            current.update(revision_action='revise',revision_feedback=answer.get('feedback',''),revision_scope={})
+        else:
+            raise ValueError('不支持的剪辑终审答复')
+        store._write(db,current)
+        store._event(db,current['id'],'已处理当前剪辑版本的人工终审：'+choice,'timeline_final',{'gate_id':gid,'edit_version_id':vid})
+    if choice=='approve':
+        store.remember(project['id'])
+    return None if choice=='revise' else {'route':'done' if choice=='approve' else 'timeline_edit'}

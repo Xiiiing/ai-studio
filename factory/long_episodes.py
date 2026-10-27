@@ -354,6 +354,12 @@ def _reference_stage(episode_id, unit_id, *, finished=False):
 
 
 def run(episode, config):
+    from .edit_versions import handle_adopted_final, require_adopted_current
+    require_adopted_current(episode)
+    handled = handle_adopted_final(episode,long_episode=True)
+    if handled is not None:
+        return handled
+    episode=store.get(episode['id'],False)
     from .drama_runtime import setup_episode
     from .workflows import advance, ReviewBlocked
     from studio.core import ROOT

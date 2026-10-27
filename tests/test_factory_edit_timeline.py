@@ -51,7 +51,7 @@ def test_sources_default_and_immutable_version_replay_conflicts(project):
         edits.mutate(project['id'],{**payload,'request_id':'second'})
     old=copy.deepcopy(result['versions'][0])
     newer=mutate(project,'save',document=document,label='恢复历史为新版本',parent_id=old['id'])
-    assert newer['versions'][0]=={**old,'source_current':True}
+    assert newer['versions'][0]=={**old,'source_current':True,'review_current':False}
     assert newer['versions'][1]['id']!=old['id']
     assert store.get(project['id'],False)['delivery']==project['delivery']
 
@@ -171,13 +171,24 @@ def test_late_worker_cannot_publish_and_review_failure_not_approval(project,monk
     assert edits.snapshot(project['id'])['versions'][-1]['semantic']['status']=='uncertain'
 
 
+def synthetic_bound_review(project,item,preview,*args):
+    spans = timeline.positions(item['document']['clips'])
+    samples = [{'clip_id':p['clip_id'],'frame':p['start_frame'],'seconds':p['start_frame']/24} for p in spans]
+    required = timeline.check_document(project,item['document'],item['sources'])['required_event_ids']
+    return {'status':'pass','edit_signature':item['document_signature'],'media_sha256':preview['artifacts'][1]['sha256'],
+        'scope':'synthetic_test_transport_not_model_quality','observed_end':'Synthetic CPU pattern final frame, not real actors or artistic quality.','checks':[
+            {'status':'pass','issues':[],'signature':core.fingerprint(['events',item['document_signature']]),
+             'review_kind':'event','event_ids':required,'samples':samples,'summary':'controlled test inference'},
+            {'status':'pass','issues':[],'signature':core.fingerprint(['continuity',item['document_signature']]),
+             'review_kind':'continuity','event_ids':[],'samples':samples,'summary':'controlled test inference'}]}
+
+
 def test_checked_export_adoption_is_new_delivery_and_preserves_old_history(project,monkeypatch):
     cat=timeline.catalog(project)
     result=mutate(project,'save',document=cat['default'],label='人工将要观看的剪辑')
     vid=result['versions'][-1]['id']
     # Controlled transport fixture, never a claim of actual model quality.
-    monkeypatch.setattr(edits,'_semantic',lambda p,item,preview,*a:{'status':'pass','edit_signature':item['document_signature'],
-        'scope':'synthetic_test_transport_not_actual_model_quality','media_sha256':preview['artifacts'][1]['sha256']})
+    monkeypatch.setattr(edits,'_semantic',synthetic_bound_review)
     mutate(project,'check',version_id=vid,authorize_review=True);edits.run(queued_job(project))
     mutate(project,'export',version_id=vid);edits.run(queued_job(project))
     before=store.get(project['id'],False)
@@ -252,3 +263,195 @@ def test_unknown_review_intent_blocks_new_version_model_resubmission(project):
     # CPU-only preview remains usable without issuing a model request.
     result=mutate(project,'preview',version_id=result['versions'][-1]['id'])
     assert result['task']['authorize_review'] is False
+
+
+def test_legacy_missing_event_contract_keeps_preview_but_cannot_export(project):
+    project=store.update(project['id'],{'outline':{},'proposals':[],'resolved_story_brief':None})
+    cat=timeline.catalog(project)
+    result=mutate(project,'save',document=cat['default'],label='历史项目待启用覆盖合约')
+    item=result['versions'][-1]
+    assert item['structural']['status']=='fail'
+    assert any(i['code']=='coverage_contract_missing' for i in item['structural']['issues'])
+    result=mutate(project,'preview',version_id=item['id']);edits.run(queued_job(project))
+    assert edits.snapshot(project['id'])['versions'][-1]['preview']
+    with pytest.raises(ValueError,match='先检查'):
+        mutate(project,'export',version_id=item['id'])
+
+
+def test_false_pass_with_empty_or_stale_checks_cannot_publish(project,monkeypatch):
+    cat=timeline.catalog(project)
+    result=mutate(project,'save',document=cat['default'],label='拒绝空审核')
+    vid=result['versions'][-1]['id']
+    def false_pass(p,item,preview,*args):
+        answer=synthetic_bound_review(p,item,preview)
+        answer['checks']=[]
+        return answer
+    monkeypatch.setattr(edits,'_semantic',false_pass)
+    mutate(project,'check',version_id=vid,authorize_review=True);edits.run(queued_job(project))
+    result=edits.snapshot(project['id'])
+    assert result['task']['status']=='failed'
+    assert '不能以pass标签通过' in result['task']['error']
+    assert result['versions'][-1]['semantic']['status']=='not_reviewed'
+    with pytest.raises(ValueError,match='先检查'):
+        mutate(project,'export',version_id=vid)
+    sample=result['versions'][-1]
+    sample['preview']={'artifacts':[{'path':'episode_clean.mp4','sha256':'new'}],'source_signature':sample['document_signature']}
+    sample['semantic']={'status':'pass','edit_signature':sample['document_signature'],'media_sha256':'old','checks':[{'status':'pass'}]}
+    assert edits.semantic_current(sample) is False
+
+
+def test_adoption_invalidates_parent_bundle_and_removes_old_human_approval(project,monkeypatch):
+    from factory import dramas
+    parent=dramas.record('drama','隔离旧整剧交付','测试新剪辑不会继承人工审批')
+    parent.update(episodes=[project['id']],batches=[],plans=[],plan_version=1,episode_count=1,
+        delivery_bundle={'source_signature':'old-bundle','current':True,'archive':{'path':'unchanged-archive.zip'}},
+        series_review={'status':'pass','source_signature':'old-review'})
+    with store.connection() as db:dramas.insert(db,parent)
+    store.update(project['id'],{'drama_id':parent['id'],'record_kind':'episode','status':'approved',
+        'accepted_at':'old-date','accepted_by':'old-producer','approved_at':'old-date',
+        'episode_review':{'status':'pass','signature':'old-episode-review'}})
+    cat=timeline.catalog(store.get(project['id'],False))
+    result=mutate(project,'save',document=cat['default'],label='整剧中的新剪辑')
+    vid=result['versions'][-1]['id']
+    monkeypatch.setattr(edits,'_semantic',synthetic_bound_review)
+    mutate(project,'check',version_id=vid,authorize_review=True);edits.run(queued_job(project))
+    mutate(project,'export',version_id=vid);edits.run(queued_job(project))
+    mutate(project,'adopt',version_id=vid,confirmed=True,human_reviewed=True)
+    current=store.get(project['id'],False);root=store.get(parent['id'],False)
+    assert current['status']=='awaiting_final'
+    assert not any(k in current for k in ('accepted_by','accepted_at','approved_at'))
+    assert current['episode_review_history'][-1]['signature']=='old-episode-review'
+    assert current['episode_review']['signature'] != 'old-episode-review'
+    assert current['episode_review']['edit_version_id']==vid
+    assert root['delivery_bundle']['current'] is False
+    assert root['delivery_bundle']['archive']==parent['delivery_bundle']['archive']
+    assert root['series_review']['current'] is False
+    assert any(d['type']=='final' and d['status']=='pending' for d in current['decisions'])
+
+
+def adopted_fixture(project,monkeypatch):
+    monkeypatch.setattr(edits,'_semantic',synthetic_bound_review)
+    cat=timeline.catalog(store.get(project['id'],False))
+    result=mutate(project,'save',document=cat['default'],label='验证真实终审路由')
+    vid=result['versions'][-1]['id']
+    mutate(project,'check',version_id=vid,authorize_review=True);edits.run(queued_job(project))
+    mutate(project,'export',version_id=vid);edits.run(queued_job(project))
+    mutate(project,'adopt',version_id=vid,confirmed=True,human_reviewed=True)
+    return store.get(project['id'],False)
+
+
+def test_adopted_short_cut_uses_current_langgraph_final_gate_without_original_production(project,monkeypatch,tmp_path):
+    from factory import workflows, supervision
+    monkeypatch.setattr(workflows,'DATA',tmp_path/'graph')
+    monkeypatch.setattr(workflows,'CHECKPOINTS',tmp_path/'graph'/'checkpoints.sqlite3')
+    monkeypatch.setattr(workflows,'production',lambda state:pytest.fail('adopted cut must not regenerate original media'))
+    monkeypatch.setattr(supervision,'supervise_gate',lambda *a,**k:pytest.fail('new edit final approval must be human'))
+    with workflows.durable_graph(project['workflow_version']) as graph:
+        graph.update_state({'configurable':{'thread_id':project['id']}},
+            {'project_id':project['id'],'route':'continue','final_generation':project['production_revision']},as_node='production')
+    adopted=adopted_fixture(project,monkeypatch)
+    assert adopted['delivery_complete_revision']==adopted['production_revision']
+    gate=next(d for d in adopted['decisions'] if d['status']=='pending' and d['type']=='final')
+    assert gate['id']==f"{project['id']}:final:{adopted['production_revision']}"
+    # Resume can only wait for the new gate; it cannot delegate final approval.
+    store.update(project['id'],{'pause_requested':False,'status':'queued'})
+    workflows.advance(project['id'])
+    waiting=store.get(project['id'],False)
+    assert waiting['status']=='awaiting_final'
+    store.decide(project['id'],{'type':'final','decision_id':gate['id'],'choice':'approve','expected_revision':waiting['revision']})
+    source=copy.deepcopy(waiting['delivery'])
+    workflows.advance(project['id'])
+    accepted=store.get(project['id'],False)
+    assert accepted['status']=='approved' and accepted['delivery']==source
+    assert accepted['decision_effects'][gate['id']]['route']=='done'
+
+
+def test_adopted_reedit_returns_to_timeline_without_overwriting_cut(project,monkeypatch,tmp_path):
+    from factory import workflows
+    monkeypatch.setattr(workflows,'DATA',tmp_path/'graph')
+    monkeypatch.setattr(workflows,'CHECKPOINTS',tmp_path/'graph'/'checkpoints.sqlite3')
+    monkeypatch.setattr(workflows,'production',lambda state:pytest.fail('manual timeline reedit is not generation'))
+    adopted=adopted_fixture(project,monkeypatch)
+    gate=next(d for d in adopted['decisions'] if d['status']=='pending' and d['type']=='final')
+    store.decide(project['id'],{'type':'final','decision_id':gate['id'],'choice':'reedit','feedback':'将第二段剪短一秒',
+        'expected_revision':adopted['revision']})
+    result=workflows.advance(project['id'])
+    assert result['route']=='timeline_edit'
+    current=store.get(project['id'],False)
+    assert current['status']=='paused' and current['delivery']==adopted['delivery']
+    assert current['needs_decision']['edit_version_id']==adopted['timeline_edits']['adopted_version_id']
+    assert current['needs_decision']['feedback']=='将第二段剪短一秒'
+
+
+def test_long_episode_final_approval_does_not_reassemble_original_units(project,monkeypatch):
+    from factory import long_episodes
+    store.update(project['id'],{'record_kind':'episode'})
+    adopted=adopted_fixture(project,monkeypatch)
+    gate=next(d for d in adopted['decisions'] if d['status']=='pending' and d['type']=='final')
+    store.decide(project['id'],{'type':'final','decision_id':gate['id'],'choice':'approve','expected_revision':adopted['revision']})
+    monkeypatch.setattr('factory.episode_assembly.assemble',lambda *a,**k:pytest.fail('must not overwrite new cut with original units'))
+    monkeypatch.setattr(long_episodes,'plan_units',lambda *a,**k:pytest.fail('manual final gate must not replan units'))
+    result=long_episodes.run(store.get(project['id'],False),{})
+    assert result['route']=='done'
+    current=store.get(project['id'],False)
+    assert current['status']=='approved' and current['delivery']==adopted['delivery']
+
+
+def test_edited_finalization_respects_pending_new_creative_contract(project,monkeypatch):
+    adopted=adopted_fixture(project,monkeypatch)
+    current=store.update(project['id'],{'creative_quality_review_required':True})
+    assert edits.adopted_current(current) is False
+    with pytest.raises(ValueError,match='新创作合约审核'):
+        mutate(project,'adopt',version_id=adopted['timeline_edits']['adopted_version_id'],confirmed=True,human_reviewed=True)
+
+
+def test_changed_event_description_invalidates_previous_cut_even_when_ids_unchanged(project,monkeypatch):
+    adopted=adopted_fixture(project,monkeypatch)
+    vid=adopted['timeline_edits']['adopted_version_id']
+    outline=copy.deepcopy(adopted['outline']);outline['beats'][0]['description']='不同的必要剧情要求，ID不变'
+    store.update(project['id'],{'outline':outline})
+    assert edits.snapshot(project['id'])['versions'][-1]['source_current'] is False
+    with pytest.raises(ValueError,match='源制作版本已变化'):
+        mutate(project,'export',version_id=vid)
+
+
+def test_validation_seed_never_exposes_a_generation_job_during_media_creation(project,monkeypatch):
+    import subprocess
+    original=subprocess.run
+    observed=[]
+    def guarded_cpu_command(*args,**kwargs):
+        with store.connection() as db:
+            count=db.execute("SELECT count(*) FROM jobs WHERE kind='workflow' AND status IN ('queued','running')").fetchone()[0]
+            observed.append(count)
+            assert count==0
+        return original(*args,**kwargs)
+    monkeypatch.setattr('factory.edit_validation.subprocess.run',guarded_cpu_command)
+    created=seed_validation_project()
+    assert observed and set(observed)=={0}
+    assert created['is_validation'] is True and created['pause_requested'] is True
+    assert created['status']=='awaiting_final'
+
+
+def test_subtitle_text_edit_retains_original_audio_receipts_and_requires_review(project):
+    catalog=timeline.catalog(project)
+    voices={sid:s['receipt']['sha256'] for sid,s in catalog['sources'].items() if s['kind']=='voice'}
+    document=catalog['default'];document['subtitles'][0]['text']='新的字幕文字，不是新配音'
+    document['caption_text_confirmed']=True
+    result=mutate(project,'save',document=document,label='只改字幕')
+    version=result['versions'][-1]
+    assert version['document']['subtitles'][0]['source_text']=='CPU测试音，不是人物配音'
+    assert version['semantic']['status']=='not_reviewed'
+    assert {sid:s['receipt']['sha256'] for sid,s in version['sources'].items() if s['kind']=='voice'}==voices
+    assert all(core.sha256(core.ROOT/version['sources'][sid]['receipt']['path'])==sha for sid,sha in voices.items())
+
+
+def test_explicit_screenplay_revision_can_resume_after_long_unit_revision_boundary(project,monkeypatch):
+    adopted=adopted_fixture(project,monkeypatch)
+    gate=next(d for d in adopted['decisions'] if d['status']=='pending' and d['type']=='final')
+    store.decide(project['id'],{'type':'final','decision_id':gate['id'],'choice':'revise','feedback':'修改批准范围内的人物动作',
+        'expected_revision':adopted['revision']})
+    # The long-unit mutation has consumed revision_action and advanced production,
+    # while retaining the adopted cut until a new version is available.
+    current=store.update(project['id'],{'production_revision':adopted['production_revision']+1,'revision_action':None})
+    edits.require_adopted_current(current)
+    assert current['delivery']['edit_version_id']==adopted['delivery']['edit_version_id']
