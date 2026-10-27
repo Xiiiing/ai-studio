@@ -28,6 +28,9 @@ def project(tmp_path, monkeypatch):
         {"id": "S01", "seconds": 4, "prompt": "A person at a station", "motion_prompt": "A slow camera push", "camera_motion": "hold", "characters": ["lead"]},
         {"id": "S02", "seconds": 4, "prompt": "A quiet bench", "motion_prompt": "Static camera", "camera_motion": "hold", "characters": ["lead"]},
         {"id": "S03", "seconds": 4, "prompt": "The person returns a book", "reference_shots": ["S01"], "characters": ["lead"]}]}
+    for shot in episode['shots']:
+        shot['continuity_state'] = {'mode': 'scene_cut', 'opening_state': shot['prompt'],
+            'ending_state': shot['prompt'], 'allowed_changes': ['Separate approved setup; no continuous action dependency.']}
     p = store.update(p["id"], {"status": "paused", "episode": episode, "script": copy.deepcopy(episode),
                               "selected_story": "A", "selected_style": "style-A", "script_review": {"passed": True},
                               "styles": [{"id": "style-A", "prompt": "Hand drawn illustration"}]})
@@ -223,3 +226,37 @@ def test_loopback_shot_api_cas_origin_and_no_paid_call(project):
         assert store.get(project["id"])["production_edits"][-1]["shot_ids"] == ["S01"]
     finally:
         server.shutdown(); server.server_close(); thread.join(timeout=2)
+
+
+def test_candidate_proof_changes_with_current_or_previous_continuity_state(project):
+    from test_factory_shot_workbench import fixture_candidate
+    fixture_candidate(project, 'take_001')
+    before = board.snapshot(project['id'])['shots'][0]['candidates'][0]
+    assert before['selectable']
+    episode = copy.deepcopy(project['episode'])
+    episode['shots'][0]['continuity_state']['opening_state'] = 'The adult is holding the approved red book.'
+    store.update(project['id'], {'episode': episode, 'script': copy.deepcopy(episode)})
+    after = board.snapshot(project['id'])['shots'][0]['candidates'][0]
+    assert not after['selectable'] and not after['plan_current']
+    second = episode['shots'][1]
+    second['continuity_state']['mode'] = 'continuous'
+    p = {**project, 'episode': episode, 'script': copy.deepcopy(episode)}
+    signature = board.plan_signature(p, second, 'image')
+    episode['shots'][0]['continuity_state']['ending_state'] = 'The book is now placed on the bench.'
+    assert board.plan_signature(p, second, 'image') != signature
+
+
+def test_incomplete_new_state_cannot_select_a_candidate_or_break_read_projection(project):
+    from test_factory_shot_workbench import fixture_candidate
+    from factory.shot_edits import mutate
+    import pytest
+    fixture_candidate(project, 'take_001')
+    episode = copy.deepcopy(project['episode'])
+    episode['shots'][0].pop('continuity_state')
+    p = store.update(project['id'], {'episode': episode, 'script': copy.deepcopy(episode)})
+    board = board.snapshot(p['id'])
+    candidate = board['shots'][0]['candidates'][0]
+    assert not candidate['continuity_valid'] and not candidate['selectable']
+    with pytest.raises(ValueError, match='候选未通过验证'):
+        mutate(p['id'], 'S01', {'action':'select', 'expected_revision':p['revision'],
+            'stage':'image', 'take':'take_001', 'confirmed':True})
