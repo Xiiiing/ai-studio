@@ -4,7 +4,7 @@ import copy
 import pytest
 
 from factory import drama_planning, dramas, store, workflows
-from test_factory_dramas import isolated, input_payload, plan
+from test_factory_dramas import isolated, input_payload, plan_for
 
 
 ISSUE = '第2集开场必须承接第1集结尾已发现线索的状态'
@@ -19,10 +19,10 @@ def pending():
 
 def mock_roles(monkeypatch, reviews):
     calls = []
-    expected = plan()
     decisions = iter(reviews)
 
     def call(project, config, role, stage, instructions, payload, *args):
+        expected = plan_for(project)
         calls.append((role, stage, copy.deepcopy(payload)))
         if role == 'story_editor':
             return {k: copy.deepcopy(v) for k, v in expected.items() if k != 'episodes'}
@@ -38,7 +38,7 @@ def mock_roles(monkeypatch, reviews):
 
 def test_edited_plan_rejected_then_automatically_repaired_and_reviewed(isolated, monkeypatch):
     p = pending()
-    original = plan()
+    original = plan_for(p)
     store.update(p['id'], {'draft_plan': original, 'plan_review': {'passed': True, 'issues': []}})
     edited = copy.deepcopy(original)
     edited['episodes'][0]['ending_state'] = '发现新线索'
@@ -70,7 +70,7 @@ def test_three_failed_reviews_keep_drafts_and_explicit_retry_uses_new_cycle(isol
     assert len(result['plan_history']) == 3
     assert result['plan_history'][-1]['returned_to'] == []
     assert result['plan_history'][-1]['phase'] == 'exhausted'
-    assert all(item['draft_plan'] == plan() for item in result['plan_history'])
+    assert all(item['draft_plan'] == plan_for(p) for item in result['plan_history'])
     before = {stage for _, stage, _ in calls}
     # Worker sets blocked when handling ReviewBlocked; emulate its final update.
     result = store.update(p['id'], {'status': 'blocked', 'error': 'exhausted'})
@@ -117,7 +117,7 @@ def test_pause_after_return_resumes_next_attempt_without_repeating_rejection(iso
 
 def test_review_checkpoint_resumes_without_rewriting_draft(isolated, monkeypatch):
     p = pending()
-    draft = plan()
+    draft = plan_for(p)
     store.update(p['id'], {'draft_plan': draft, 'plan_cycle': 2, 'plan_attempt': 2,
         'plan_phase': 'reviewing', 'stage': 'plan_review', 'plan_history': []})
     calls = mock_roles(monkeypatch, [True])
@@ -142,7 +142,7 @@ def test_pause_mid_writing_reuses_completed_model_outputs_from_real_cache(isolat
     from factory import llm
     from factory.scheduler import ProductionPaused
     p = pending()
-    expected = plan()
+    expected = plan_for(p)
     expected['relationships'] = []
     model_calls = []
     paused = False
@@ -173,7 +173,7 @@ def test_pause_mid_writing_reuses_completed_model_outputs_from_real_cache(isolat
 
 def test_runtime_failure_retry_preserves_active_cycle_and_repair_basis(isolated):
     p = pending()
-    basis = {'plan': plan(), 'issues': [ISSUE]}
+    basis = {'plan': plan_for(p), 'issues': [ISSUE]}
     p = store.update(p['id'], {'status': 'blocked', 'plan_phase': 'writing',
         'plan_cycle': 4, 'plan_attempt': 2, 'plan_repair_basis': basis})
     dramas.control(p['id'], {'expected_revision': p['revision'], 'request_id': 'retry-runtime', 'action': 'retry'})
@@ -184,7 +184,7 @@ def test_runtime_failure_retry_preserves_active_cycle_and_repair_basis(isolated)
 
 def test_approved_checkpoint_restores_awaiting_confirmation(isolated, monkeypatch):
     p = pending()
-    store.update(p['id'], {'draft_plan':plan(), 'plan_review':{'passed':True,'issues':[]},
+    store.update(p['id'], {'draft_plan':plan_for(p), 'plan_review':{'passed':True,'issues':[]},
         'plan_phase':'approved', 'plan_cycle':1, 'plan_attempt':2, 'status':'queued'})
     monkeypatch.setattr(drama_planning,'call',lambda *args:pytest.fail('approved planning must not call a model'))
     drama_planning.run(p['id'], {})
