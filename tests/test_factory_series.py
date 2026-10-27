@@ -228,6 +228,7 @@ def test_character_states_are_explicit_not_identity_mutations():
 
 
 def test_real_shot_cache_reuses_unrelated_shots_but_invalidates_updated_reference(series, monkeypatch):
+    from factory import model_capabilities
     pid = series["id"]
     first = create_asset(pid)
     bind(pid, first)
@@ -246,6 +247,13 @@ def test_real_shot_cache_reuses_unrelated_shots_but_invalidates_updated_referenc
         yield Renderer()
     monkeypatch.setattr(production.Scheduler, "worker", worker)
     settings = {"image_width": 128, "image_height": 128, "semantic_enabled": False, "max_attempts": 2}
+    # The cache test selects a standalone FLUX renderer; explicitly bind its
+    # capabilities rather than inheriting the installation's unrelated defaults.
+    current = store.get(pid)
+    model_capabilities.adopt(current, settings)
+    store.update(pid, {"model_capability_snapshot": current["model_capability_snapshot"],
+                       "model_capability_history": current.get("model_capability_history", [])})
+    assert model_capabilities.active(store.get(pid), settings, "image")["enabled"]
     def render():
         run = production._Run(store.get(pid), settings, lambda patch: store.update(pid, patch), None)
         run._characters_and_images()
