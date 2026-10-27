@@ -1,4 +1,29 @@
 /* The workbench uses shared semantic colors in both themes. */
+.shot-production-context {
+  margin-block: 20px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow-wrap: anywhere;
+}
+.shot-context-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+.shot-context-grid > div {
+  min-width: 0;
+}
+.shot-impact {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+@media (max-width: 720px) {
+  .shot-context-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
 .shot-detail,
 .shot-versions,
 .shot-preview-grid > * {
