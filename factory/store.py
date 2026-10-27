@@ -207,6 +207,8 @@ def create(payload):
         project["creative_contract"] = contract
     if payload.get("prepare_materials"):
         project.update(status="paused", pause_requested=True, material_setup_requested=True)
+    from .creative_contracts import initialize as initialize_quality
+    initialize_quality(project)
     from .attention_actions import delegation_status
     project["delegation"] = delegation_status(project)
     import hashlib

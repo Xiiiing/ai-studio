@@ -75,6 +75,8 @@ def insert(db, project):
     from .drama_intent import inherit
     if parent:
         inherit(project, parent)
+    from .creative_contracts import initialize as initialize_quality
+    initialize_quality(project, parent)
     if parent and "agent_loop" in parent:
         project.setdefault("agent_loop", copy.deepcopy(parent["agent_loop"]))
     if parent and "generation_pipeline" in parent:

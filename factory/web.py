@@ -191,6 +191,10 @@ class Handler(LocalMediaHandler):
             if match:
                 from .shot_workbench import snapshot as shot_snapshot
                 return self.json(shot_snapshot(match.group(1)))
+            match=re.fullmatch(r"/api/factory/projects/([a-f0-9]{12})/creative-quality",path)
+            if match:
+                from .creative_contracts import snapshot as quality_snapshot
+                return self.json(quality_snapshot(store.get(match[1],False)))
             match=re.fullmatch(r"/api/factory/projects/([a-f0-9]{12})/series",path)
             if match:
                 from .series_bible import summary as series_summary
@@ -351,6 +355,10 @@ class Handler(LocalMediaHandler):
                                                payload["expected_revision"],**video))
             if route=="/api/factory/projects":
                 return self.json({"project":store.create(payload)},202)
+            match=re.fullmatch(r"/api/factory/projects/([a-f0-9]{12})/creative-quality",route)
+            if match:
+                from .creative_contracts import adopt
+                return self.json({"project":adopt(match[1],payload)},202)
             match=re.fullmatch(r"/api/factory/projects/([a-f0-9]{12})/shots/(S\d{2,3})",route)
             if match:
                 from .shot_edits import mutate as mutate_shot

@@ -30,6 +30,7 @@ import { Workflow } from "./Workflow";
 import { AgentLoop } from "./AgentLoop";
 import { GenerationPipeline } from "./GenerationPipeline";
 import { PromptWorkbench } from "./PromptWorkbench";
+import { CreativeQualityPanel } from "./CreativeQualityPanel";
 import { QualityComparison } from "./QualityComparison";
 import { DramaNextStep } from "./DramaNextStep";
 import {
@@ -531,6 +532,7 @@ const dramaTabs = [
   ["batches", "生成批次"],
   ["results", "成果"],
   ["comparison", "质量比较"],
+  ["creative-quality", "审核与返修依据"],
   ["prompts", "提示词工作台"],
   ["generation", "生成提示词流水线"],
   ["agent", "Agent 执行循环"],
@@ -589,6 +591,7 @@ function DramaNavigation({
                 "assets",
                 "batches",
                 "comparison",
+                "creative-quality",
                 "prompts",
                 "generation",
                 "agent",
@@ -889,6 +892,7 @@ export function DramaDetail({
       {tab === "agent" && <AgentLoop project={p} />}
       {tab === "generation" && <GenerationPipeline project={p} />}
       {tab === "prompts" && <PromptWorkbench project={p} />}
+      {tab === "creative-quality" && <CreativeQualityPanel project={p} />}
       {tab === "comparison" && <QualityComparison project={p} />}
       {tab === "plan" &&
         p.plan_phase &&
@@ -1648,6 +1652,7 @@ export function LongEpisodeDetail({
           ["overview", "剧集总览"],
           ["workflow", "制作流程与团队"],
           ["comparison", "质量比较"],
+          ["creative-quality", "审核与返修依据"],
           ["prompts", "提示词工作台"],
           ["generation", "生成提示词流水线"],
           ["agent", "Agent 执行循环"],
@@ -1668,6 +1673,8 @@ export function LongEpisodeDetail({
         <GenerationPipeline project={p} />
       ) : activeTab === "prompts" ? (
         <PromptWorkbench project={p} />
+      ) : activeTab === "creative-quality" ? (
+        <CreativeQualityPanel project={p} />
       ) : activeTab === "comparison" ? (
         <QualityComparison project={p} />
       ) : activeTab === "workflow" ? (

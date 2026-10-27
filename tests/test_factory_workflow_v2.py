@@ -523,6 +523,8 @@ def test_review_reentry_after_store_commit_does_not_review_old_draft_as_new_roun
     runtime, monkeypatch
 ):
     p, _ = runtime
+    # Historical persisted review has no versioned editorial evidence.
+    store.update(p["id"], {"creative_quality_contract": None})
     store.update(
         p["id"],
         {
@@ -584,6 +586,8 @@ def test_old_attempt_without_recorded_execution_version_is_not_relabelled(runtim
 
 def test_old_two_round_ceiling_resumes_third_round_without_replaying_calls(runtime, monkeypatch):
     p, calls = runtime
+    # Historical persisted review has no versioned editorial evidence.
+    store.update(p["id"], {"creative_quality_contract": None})
     configuration = {"creative": {"max_review_rounds": 2}}
     monkeypatch.setattr(wf, "load_config", lambda: configuration)
     reviewed = []
@@ -633,6 +637,8 @@ def test_old_two_round_ceiling_resumes_third_round_without_replaying_calls(runti
 
 def test_persisted_exhausted_review_blocks_again_without_infinite_repair(runtime, monkeypatch):
     p, _ = runtime
+    # Historical persisted review has no versioned editorial evidence.
+    store.update(p["id"], {"creative_quality_contract": None})
     monkeypatch.setattr(wf, "load_config", lambda: {"creative": {"max_review_rounds": 4}})
     store.update(p["id"], {"creative_round": 4,
         "screenplay_complete_round": [1, 4], "script_review_complete_round": [1, 4],

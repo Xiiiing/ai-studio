@@ -12,6 +12,7 @@ export const projectPages = [
   ["script", "剧本与分镜"],
   ["quality", "制作与质检"],
   ["comparison", "质量比较"],
+  ["creative-quality", "审核与返修依据"],
   ["delivery", "成片交付"],
   ["series", "系列资产"],
   ["materials", "素材与定稿"],
@@ -37,7 +38,7 @@ export function ProjectNavigation({
   const section =
     tab === "series"
       ? "materials"
-      : ["quality", "comparison"].includes(tab)
+      : ["quality", "comparison", "creative-quality"].includes(tab)
         ? "decisions"
         : tab;
   const children =
@@ -51,6 +52,7 @@ export function ProjectNavigation({
             ["decisions", "待办决策"],
             ["quality", "质检记录"],
             ["comparison", "质量比较"],
+            ["creative-quality", "审核与返修依据"],
           ]
         : [];
   return (

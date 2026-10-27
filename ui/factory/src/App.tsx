@@ -81,6 +81,7 @@ import { ShotQuality } from "./ShotQuality";
 import { AgentLoop } from "./AgentLoop";
 import { GenerationPipeline } from "./GenerationPipeline";
 import { PromptWorkbench } from "./PromptWorkbench";
+import { CreativeQualityPanel } from "./CreativeQualityPanel";
 import { QualityComparison } from "./QualityComparison";
 import {
   CreativeContract,
@@ -1815,6 +1816,8 @@ function Project({
             <GenerationPipeline project={p} />
           ) : tab === "prompts" ? (
             <PromptWorkbench project={p} />
+          ) : tab === "creative-quality" ? (
+            <CreativeQualityPanel project={p} />
           ) : tab === "comparison" ? (
             <QualityComparison project={p} />
           ) : tab === "quality" ? (
