@@ -2,6 +2,7 @@ import { StudioSelect } from "./StudioSelect";
 import { useEffect, useState, type ReactNode } from "react";
 import { useShotDraft } from "./SessionDraft";
 import { ShotVersions } from "./ShotVersions";
+import { ShotProductionContext } from "./ShotProductionContext";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Film, Save, Play, ArrowUpRight } from "lucide-react";
 import {
@@ -172,6 +173,17 @@ function ShotDetail({
         disabled={disabled || stale}
         onSubmit={mutate}
         truncated={!!shot.truncated}
+        operationImpact={shot.operation_impact}
+      />
+      <ShotProductionContext
+        shot={shot}
+        revision={board.revision}
+        stage={
+          values.prompt !== shot.prompt ||
+          (values.regenerate && (values.stage || "image") === "image")
+            ? "image"
+            : "video"
+        }
       />
       <details
         className="shot-editor"

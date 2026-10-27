@@ -52,6 +52,7 @@ export function ShotVersions({
   disabled,
   onSubmit,
   truncated,
+  operationImpact,
 }: {
   projectId: string;
   candidates: RecordData[];
@@ -59,6 +60,7 @@ export function ShotVersions({
   disabled: boolean;
   onSubmit: (body: RecordData) => void;
   truncated?: boolean;
+  operationImpact?: RecordData;
 }) {
   const [previewId, setPreviewId] = useState("");
   const [compared, setCompared] = useState<string[]>([]);
@@ -140,6 +142,7 @@ export function ShotVersions({
             revision={revision}
             disabled={disabled || !candidate.selectable}
             onSubmit={onSubmit}
+            impact={operationImpact?.["select_" + candidate.stage]}
           />
         ))}
       </div>
@@ -240,18 +243,24 @@ export function ShotVersions({
 function Candidate({
   candidate: c,
   revision,
-  disabled,
+  disabled: externallyDisabled,
   onSubmit,
   projectId,
+  impact,
 }: {
   projectId: string;
   candidate: RecordData;
   revision: number;
   disabled: boolean;
   onSubmit: (body: RecordData) => void;
+  impact?: RecordData;
 }) {
   const [confirmed, setConfirmed] = useState(false),
     [base, setBase] = useState(revision);
+  const disabled =
+    externallyDisabled ||
+    !!impact?.unresolved_tasks?.length ||
+    (impact != null && impact.source_revision !== revision);
   const stale = confirmed && base !== revision,
     url = ownedMedia(projectId, c.media_url);
   return (
@@ -297,6 +306,22 @@ function Candidate({
           </div>
         </section>
         <small>模型：{c.model || c.receipt?.model || "未记录"}</small>
+        {c.source_signature && (
+          <small title={c.source_signature}>
+            来源签名：{String(c.source_signature).slice(0, 16)}
+          </small>
+        )}
+        <details>
+          <summary>参考素材与有效参数</summary>
+          <Readable
+            value={{
+              references: c.asset_references || [],
+              parameters: c.parameters || {},
+              shot_revision: c.receipt?.shot_revision,
+              source_signature: c.source_signature,
+            }}
+          />
+        </details>
         {c.cost && (
           <small>
             估算 {money(c.cost.estimated_cost_micros, c.cost.currency)} · 确认{" "}
@@ -323,6 +348,18 @@ function Candidate({
             });
           }}
         >
+          {impact && (
+            <p className="form-help">
+              采用此候选影响：
+              {(impact.affected || [])
+                .map(
+                  (row: RecordData) =>
+                    `${row.shot_id}（${(row.stages || []).map((s: string) => (s === "image" ? "首帧" : "视频")).join("、")}）`,
+                )
+                .join("；")}
+              。原素材保留。
+            </p>
+          )}
           <label className="check">
             <input
               type="checkbox"

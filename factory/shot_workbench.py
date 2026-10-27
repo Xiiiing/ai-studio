@@ -124,6 +124,9 @@ def snapshot(pid):
         project = store._read(db, pid)
         costs = {(r["shot_id"], r["take"]): dict(r) for r in db.execute(
             "SELECT shot_id,take,estimated_cost_micros,confirmed_cost_micros,currency FROM cloud_tasks WHERE project_id=?", (pid,))}
+        running = bool(db.execute("SELECT 1 FROM jobs WHERE project_id=? AND status='running'", (pid,)).fetchone())
+        unresolved = [dict(r) for r in db.execute(
+            "SELECT shot_id,status FROM cloud_tasks WHERE project_id=? AND status NOT IN ('downloaded','failed','rejected')", (pid,))]
     episode = project.get("episode") or project.get("script") or {}
     runtime = {s["id"]: s for s in project.get("shots", [])}
     rows, errors = [], []
@@ -153,13 +156,37 @@ def snapshot(pid):
                 except (ValueError, OSError, KeyError) as exc:
                     errors.append({"shot_id": sid, "stage": stage, "take": take.name, "error": str(exc)[:300]})
         rows.append({**copy.deepcopy(shot), "status": runtime.get(sid, {}).get("status", "planned"),
+                     "operation_impact": operation_impact(project, sid, unresolved),
                      "shot_revision": shot.get("shot_revision", 1), "candidates": versions,
                      "asset_references": project.get("series_references", {}).get(sid, []) + material_references(project, shot),
                      "truncated": count > len(versions),
                      "selections": project.get("shot_selections", {}).get(sid, {})})
     return {"project_id": pid, "revision": project["revision"], "production_revision": project.get("production_revision", 1),
             "shots": rows, "errors": errors, "truncated": len(episode.get("shots", [])) > 80,
-            "editable": project["status"] in {"paused", "blocked", "awaiting_final", "approved"}}
+            "editable": not running and project["status"] in {"paused", "blocked", "awaiting_final", "approved"},
+            "execution_busy": running}
+
+
+def operation_impact(project, shot_id, unresolved=()):
+    """Read-only preview of the same dependency rules used by shot_edits.
+
+    A preview is bound to the project revision and never grants permission to
+    mutate, submit, or reuse an old candidate. All server write guards still run.
+    """
+    from .series_bindings import dependent_closure
+    episode = project.get('episode') or project.get('script') or {}
+    order = [s['id'] for s in episode.get('shots', [])]
+    result = {}
+    for operation in ('edit_image', 'edit_video', 'select_image', 'select_video'):
+        image = operation.endswith('_image')
+        affected = dependent_closure(project, [shot_id]) if image else [shot_id]
+        stages = [{'shot_id': sid, 'stages': (['video'] if operation == 'select_image' and sid == shot_id
+                                            or not image else ['image', 'video'])} for sid in affected]
+        result[operation] = {'source_revision': project['revision'], 'affected': stages,
+            'preserved_shot_ids': [sid for sid in order if sid not in affected],
+            'unresolved_tasks': [r for r in unresolved if r['shot_id'] in affected],
+            'original_candidates_preserved': True, 'generation_submitted': False}
+    return result
 
 
 def pinned_selection(project, target):
