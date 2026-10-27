@@ -459,10 +459,12 @@ def review_media(project, shot, path, references, config=None, *, output_dir=Non
     review_media_sha = sha256(path) if editorial_media(project) else None
     review_references = (references or []) if shot.get("material_constraints") or editorial_media(project) else (references or [])[:4]
     reference_media_shas = []
+    reference_media_paths = []
     for index, reference in enumerate(review_references):
         ref=reference.get("path") if isinstance(reference,dict) else reference
         if ref and Path(ref).is_file():
             reference_media_shas.append(sha256(ref))
+            reference_media_paths.append(Path(ref))
             content.extend([{"type":"text","text":f"角色或场景参考 {index+1}"},
                             {"type":"image_url","image_url":{"url":_image_url(ref)}}])
     if reference_purpose:
@@ -666,8 +668,8 @@ def review_media(project, shot, path, references, config=None, *, output_dir=Non
                   sampled_frames=len(samples),reference_count=supplied if reference_purpose else len(review_references), sampling=sampling,
                   temporal_scope="sampled_frames_only",human_reviewed=False,
                   project_id=project.get("id"),shot_id=shot.get("id"),config_revision=config_revision(config))
-    if media_contract and (sha256(path) != review_media_sha or
-            [sha256(p.get('path') if isinstance(p, dict) else p) for p in review_references] != reference_media_shas):
+    if media_contract and (not path.is_file() or sha256(path) != review_media_sha or
+            [sha256(p) if p.is_file() else None for p in reference_media_paths] != reference_media_shas):
         result.update(status='unavailable', detail='本次媒体或参考像素在复核期间改变，保留已有结果，需按当前文件重新复核。')
     return normalize_media_review(project, result, path, shot, contract=media_contract,
         minimum_score=config.get('quality', {}).get('minimum_score', 60))
