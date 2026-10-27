@@ -28,6 +28,9 @@ def project(tmp_path, monkeypatch):
         {"id": "S01", "seconds": 4, "prompt": "A person at a station", "motion_prompt": "A slow camera push", "camera_motion": "hold", "characters": ["lead"]},
         {"id": "S02", "seconds": 4, "prompt": "A quiet bench", "motion_prompt": "Static camera", "camera_motion": "hold", "characters": ["lead"]},
         {"id": "S03", "seconds": 4, "prompt": "The person returns a book", "reference_shots": ["S01"], "characters": ["lead"]}]}
+    for shot in episode['shots']:
+        shot['continuity_state'] = {'mode': 'scene_cut', 'opening_state': shot['prompt'],
+            'ending_state': shot['prompt'], 'allowed_changes': ['Separate approved setup; no continuous action dependency.']}
     p = store.update(p["id"], {"status": "paused", "episode": episode, "script": copy.deepcopy(episode),
                               "selected_story": "A", "selected_style": "style-A", "script_review": {"passed": True},
                               "styles": [{"id": "style-A", "prompt": "Hand drawn illustration"}]})
