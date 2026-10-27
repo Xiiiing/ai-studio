@@ -236,6 +236,8 @@ def production(state):
     p=_project(state)
     if p.get("revision_request") and p.get("revision_prepared") != p["production_revision"]:
         return {"route":"revision"}
+    if p.get("creative_quality_review_required"):
+        raise ReviewBlocked("已启用新创作契约，请先重新独立审核当前稿件", {"type":"script_review", "message":"新契约尚无当前版本审核，原素材已保留。"})
     if (p.get("script_review") or {}).get("passed") is not True:
         raise ReviewBlocked("当前剧本尚未通过独立评审，不能开始制作",
                             {"type":"edit_feedback" if p.get("revision_request") else "script_review",
@@ -516,6 +518,10 @@ def script_review(state):
     if (p.get('script_review_complete_round')==p.get('screenplay_complete_round')
             and p.get('script_review_route') in {'repair','continue'}):
         if p['script_review_route'] == 'repair':
+            from .creative_contracts import can_repair
+            saved_review = p.get('draft_review') or p.get('script_review', {}).get('review', {})
+            if not can_repair(p, saved_review):
+                raise ReviewBlocked('当前审核需确认创作方向或补齐证据，未自动重写', {'type': 'script_review', 'issues': saved_review.get('issues', [])})
             # A legacy checkpoint can contain the failed review at its former
             # two-round ceiling. Move forward once, without reviewing it again.
             reviewed_generation,index=p['script_review_complete_round']
