@@ -209,6 +209,9 @@ def create(payload):
         project.update(status="paused", pause_requested=True, material_setup_requested=True)
     from .creative_contracts import initialize as initialize_quality
     initialize_quality(project)
+    from .model_capabilities import pin as pin_capabilities
+    from .config import load_config as load_project_configuration
+    pin_capabilities(project, project.get('execution_config') or load_project_configuration())
     from .attention_actions import delegation_status
     project["delegation"] = delegation_status(project)
     import hashlib

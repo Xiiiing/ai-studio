@@ -37,7 +37,8 @@ def test_adoption_requires_confirmation_and_preserves_story(database, monkeypatc
     assert quality.adopt(p['id'], payload)['revision'] == adopted['revision']
 
 
-def test_quality_http_projection_does_not_write_or_generate(database):
+@pytest.mark.parametrize('endpoint', ['creative-quality', 'model-capabilities'])
+def test_quality_http_projection_does_not_write_or_generate(database, endpoint):
     import json
     import threading
     import urllib.request
@@ -48,9 +49,31 @@ def test_quality_http_projection_does_not_write_or_generate(database):
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
-        with urllib.request.urlopen(f'http://127.0.0.1:{server.server_port}/api/factory/projects/{p["id"]}/creative-quality') as r:
+        with urllib.request.urlopen(f'http://127.0.0.1:{server.server_port}/api/factory/projects/{p["id"]}/{endpoint}') as r:
             result = json.load(r)
-        assert result['enabled'] and result['history_preserved']
+        assert result['enabled']
+        if endpoint == 'creative-quality':
+            assert result['history_preserved']
+        else:
+            assert result['can_adopt'] and result['snapshot']['version'] == 'ai-studio.model-capabilities.v1'
         assert store.get(p['id'], False)['revision'] == p['revision']
     finally:
         server.shutdown(); server.server_close(); thread.join()
+
+
+def test_capability_adoption_cas_and_running_guard(database):
+    from factory import capability_adoption
+    p = store.create({'brief': '两位成年人在车站归还一封遗失的信件', 'prepare_materials': True})
+    p = store.update(p['id'], {'model_capability_snapshot': None})
+    body = {'request_id': 'capability-v1', 'expected_revision': p['revision'] - 1, 'confirmed': True}
+    with pytest.raises(ValueError): capability_adoption.adopt(p['id'], body)
+    body['expected_revision'] = p['revision']
+    changed = capability_adoption.adopt(p['id'], body)
+    assert changed['model_capability_snapshot']['version'] == 'ai-studio.model-capabilities.v1'
+    assert capability_adoption.adopt(p['id'], body)['revision'] == changed['revision']
+    with store.connection() as db:
+        store._enqueue(db, p['id'])
+        db.execute("UPDATE jobs SET status='running' WHERE project_id=?", (p['id'],))
+    assert not capability_adoption.snapshot(p['id'])['can_adopt']
+    with pytest.raises(ValueError):
+        capability_adoption.adopt(p['id'], {**body, 'request_id': 'capability-v2', 'expected_revision': changed['revision']})

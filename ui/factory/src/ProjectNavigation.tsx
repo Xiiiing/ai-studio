@@ -13,6 +13,7 @@ export const projectPages = [
   ["quality", "制作与质检"],
   ["comparison", "质量比较"],
   ["creative-quality", "审核与返修依据"],
+  ["model-capabilities", "模型能力与版本"],
   ["delivery", "成片交付"],
   ["series", "系列资产"],
   ["materials", "素材与定稿"],
@@ -85,19 +86,31 @@ export function ProjectNavigation({
           label="更多"
           ariaLabel={
             "更多项目页面" +
-            (["team", "prompts", "generation", "agent", "costs"].includes(tab)
+            ([
+              "team",
+              "prompts",
+              "generation",
+              "agent",
+              "costs",
+              "model-capabilities",
+            ].includes(tab)
               ? "：" + projectPages.find(([id]) => id === tab)?.[1]
               : "")
           }
           triggerClassName="project-more-trigger"
-          items={["team", "prompts", "generation", "agent", "costs"].map(
-            (value) => ({
-              key: value,
-              label: projectPages.find(([id]) => id === value)?.[1],
-              selected: tab === value,
-              onSelect: () => onTab(value),
-            }),
-          )}
+          items={[
+            "team",
+            "prompts",
+            "generation",
+            "agent",
+            "costs",
+            "model-capabilities",
+          ].map((value) => ({
+            key: value,
+            label: projectPages.find(([id]) => id === value)?.[1],
+            selected: tab === value,
+            onSelect: () => onTab(value),
+          }))}
         />
       </div>
       {!!children.length && (

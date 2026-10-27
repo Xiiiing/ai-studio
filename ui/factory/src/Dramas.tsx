@@ -31,6 +31,7 @@ import { AgentLoop } from "./AgentLoop";
 import { GenerationPipeline } from "./GenerationPipeline";
 import { PromptWorkbench } from "./PromptWorkbench";
 import { CreativeQualityPanel } from "./CreativeQualityPanel";
+import { ProjectModelCapabilities } from "./ProjectModelCapabilities";
 import { QualityComparison } from "./QualityComparison";
 import { DramaNextStep } from "./DramaNextStep";
 import {
@@ -533,6 +534,7 @@ const dramaTabs = [
   ["results", "成果"],
   ["comparison", "质量比较"],
   ["creative-quality", "审核与返修依据"],
+  ["model-capabilities", "模型能力与版本"],
   ["prompts", "提示词工作台"],
   ["generation", "生成提示词流水线"],
   ["agent", "Agent 执行循环"],
@@ -592,6 +594,7 @@ function DramaNavigation({
                 "batches",
                 "comparison",
                 "creative-quality",
+                "model-capabilities",
                 "prompts",
                 "generation",
                 "agent",
@@ -893,6 +896,7 @@ export function DramaDetail({
       {tab === "generation" && <GenerationPipeline project={p} />}
       {tab === "prompts" && <PromptWorkbench project={p} />}
       {tab === "creative-quality" && <CreativeQualityPanel project={p} />}
+      {tab === "model-capabilities" && <ProjectModelCapabilities project={p} />}
       {tab === "comparison" && <QualityComparison project={p} />}
       {tab === "plan" &&
         p.plan_phase &&
@@ -1653,6 +1657,7 @@ export function LongEpisodeDetail({
           ["workflow", "制作流程与团队"],
           ["comparison", "质量比较"],
           ["creative-quality", "审核与返修依据"],
+          ["model-capabilities", "模型能力与版本"],
           ["prompts", "提示词工作台"],
           ["generation", "生成提示词流水线"],
           ["agent", "Agent 执行循环"],
@@ -1675,6 +1680,8 @@ export function LongEpisodeDetail({
         <PromptWorkbench project={p} />
       ) : activeTab === "creative-quality" ? (
         <CreativeQualityPanel project={p} />
+      ) : activeTab === "model-capabilities" ? (
+        <ProjectModelCapabilities project={p} />
       ) : activeTab === "comparison" ? (
         <QualityComparison project={p} />
       ) : activeTab === "workflow" ? (

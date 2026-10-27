@@ -77,6 +77,12 @@ def insert(db, project):
         inherit(project, parent)
     from .creative_contracts import initialize as initialize_quality
     initialize_quality(project, parent)
+    from .model_capabilities import pin as pin_capabilities
+    from .config import load_config as load_project_configuration
+    if parent and parent.get('model_capability_snapshot') and parent.get('format') == project.get('format'):
+        project.setdefault('model_capability_snapshot', copy.deepcopy(parent['model_capability_snapshot']))
+    elif parent is None or parent.get('model_capability_snapshot'):
+        pin_capabilities(project, project.get('execution_config') or load_project_configuration())
     if parent and "agent_loop" in parent:
         project.setdefault("agent_loop", copy.deepcopy(parent["agent_loop"]))
     if parent and "generation_pipeline" in parent:
