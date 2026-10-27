@@ -1,3 +1,4 @@
+import { ModelCapabilities } from "./ModelCapabilities";
 import { StudioSelect } from "./StudioSelect";
 import { ServiceCategories } from "./ServiceCategories";
 import { useRef, useState } from "react";
@@ -50,6 +51,9 @@ export function MediaServiceEditor({
       (original?.provider === "comfyui_h3" ? "preview" : "production"),
   );
   const [busy, setBusy] = useState(false);
+  const [videoDuration, setVideoDuration] = useState(
+    Number(original?.duration || 6),
+  );
   const pending = useRef(false);
   const [error, setError] = useState("");
   const presets = {
@@ -62,6 +66,11 @@ export function MediaServiceEditor({
       : presets[provider] || {}),
     ...original,
   };
+  const profileId = service?.profiles[0]?.[0];
+  const capability =
+    (profileId
+      ? inventory.model_capabilities?.[kind]?.[profileId]
+      : undefined) || inventory.model_capability_presets?.[kind]?.[provider];
   const cloud = provider.startsWith("dashscope_") || provider === "minimax";
   const external = provider === "comfyui_external";
   const h3 = provider === "comfyui_h3";
@@ -94,6 +103,7 @@ export function MediaServiceEditor({
     "shift_video",
     "shift_audio",
     "sampler",
+    ...(provider === "minimax" ? ["duration", "resolution"] : []),
   ]);
   const advanced = Object.fromEntries(
     Object.entries(current).filter(([key]) => !basic.has(key)),
@@ -162,6 +172,23 @@ export function MediaServiceEditor({
               ]) {
                 if (values[key]) p[key] = String(values[key]).trim();
                 else if (values[key] === "") delete p[key];
+              }
+              if (
+                provider === "minimax" &&
+                capability?.duration_options?.length
+              ) {
+                p.duration = Number(values.duration);
+                p.resolution = String(values.resolution);
+                if (
+                  (capability.invalid_combinations || []).some(
+                    (pair: RecordData) =>
+                      pair.duration === p.duration &&
+                      pair.resolution === p.resolution,
+                  )
+                )
+                  throw new Error(
+                    "该时长与清晰度组合不受当前适配器支持，请明确选择可用组合。",
+                  );
               }
               if (h3)
                 p = normalizeProfile(
@@ -242,6 +269,49 @@ export function MediaServiceEditor({
               <CredentialField saved={!!original?.api_key_env} />
             )}
             {field("model", "模型 ID", { required: true })}
+            <ModelCapabilities value={capability} />
+            {provider === "minimax" &&
+              capability?.duration_options?.length > 0 && (
+                <div className="form-row">
+                  <Field label="生成时长">
+                    <StudioSelect
+                      name="duration"
+                      value={String(videoDuration)}
+                      onChange={(e) => setVideoDuration(Number(e.target.value))}
+                    >
+                      {capability.duration_options.map((seconds: number) => (
+                        <option key={seconds} value={seconds}>
+                          {seconds} 秒
+                        </option>
+                      ))}
+                    </StudioSelect>
+                  </Field>
+                  <Field label="生成清晰度">
+                    <StudioSelect
+                      name="resolution"
+                      defaultValue={current.resolution || "768P"}
+                    >
+                      {(capability.resolution_options || []).map(
+                        (resolution: string) => (
+                          <option
+                            key={resolution}
+                            value={resolution}
+                            disabled={(
+                              capability.invalid_combinations || []
+                            ).some(
+                              (pair: RecordData) =>
+                                pair.duration === videoDuration &&
+                                pair.resolution === resolution,
+                            )}
+                          >
+                            {resolution}
+                          </option>
+                        ),
+                      )}
+                    </StudioSelect>
+                  </Field>
+                </div>
+              )}
             {h3 && (
               <>
                 <Field label="H3 质量档">

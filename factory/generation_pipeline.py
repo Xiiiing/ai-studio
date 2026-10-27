@@ -96,6 +96,16 @@ def source(project, shot, references=(), *, style='', cast=None):
 
 
 def capabilities(config, project, phase):
+    from .model_capabilities import enabled as capability_contract, active
+    if capability_contract(project):
+        shared = active(project, config, phase)
+        return {**shared, 'adapter_sha256': shared['identity'],
+                'reference_limit': max(shared['reference_counts'], default=0),
+                'single_instant': phase == 'image',
+                'continuous_action': shared.get('continuous_action', False),
+                'max_seconds': (shared.get('duration') or {}).get('max', 15),
+                'width': config.get(phase + '_width', config.get('image_width', 576)),
+                'height': config.get(phase + '_height', config.get('image_height', 1024)), 'fps': 24}
     profile = config.get('image_connection', {}) if phase == 'image' else config.get('video_connection', {})
     provider = profile.get('provider', 'legacy' if phase == 'image' else 'comfyui_wan')
     from .media_profiles import identity as media_identity

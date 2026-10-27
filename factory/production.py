@@ -1224,7 +1224,17 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                     case = start(self, target, directed)
         target['_system_repair_context'] = (directed, case)
 
+    def _assert_model_capabilities(self, target, *, references=None, prompt=None):
+        from .model_capabilities import validate_target, CapabilityError
+        try:
+            width, height = self.image_size if target['kind'] == 'image' else self.video_size
+            return validate_target(self.project, self.config, target, width, height,
+                                   references=references, prompt=prompt)
+        except CapabilityError as exc:
+            raise ProductionNeedsDecision(str(exc), exc.code, exc.details) from None
+
     def _new_attempt(self, target):
+        capability_receipt = self._assert_model_capabilities(target)
         from .drama_resources import ensure
         ensure(self.project, self.config, media=target["kind"])
         if self._review_only_video(target):
@@ -1341,6 +1351,8 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                                  "steps": 4 if target["kind"] == "image" else 20},
                   "references": [media_receipt(p) for p in target["references"]],
                   "started_at": time.time()}
+        if capability_receipt:
+            record['model_capabilities'] = capability_receipt
         if self.strategy_recovery:
             record['prepared_only'] = True
         if directed:
@@ -1529,6 +1541,7 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                                 if len(references) != len(target['references']) and not (compiled.get('visual_contract_verification') or {}).get('passed'):
                                     raise ProductionNeedsDecision('逐镜参考选择尚未通过独立契约核对', 'production_strategy_contract_conflict')
                                 record['render_references'] = [media_receipt(p) for p in references]
+                            self._assert_model_capabilities(target, references=references, prompt=record['prompt'])
                             names = [worker.copy_input(p) for p in references]
                             if target["kind"] == "image":
                                 graph = image_request(self.config.get("image_connection", {}), record["prompt"], record["seed"], *self.image_size,
@@ -1547,11 +1560,14 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                                     if not any(ref.get("library_key") for ref in target.get("asset_references", [])):
                                         shot_refs += [_receipt_path(value) for value in self.assets.get("characters", {}).values()]
                                     material = any(ref.get("library_key") for ref in target.get("asset_references", []))
-                                    repair_names = [worker.copy_input(p) for p in (shot_refs if material else shot_refs[:4])]
                                     keyframe_prompt = ((record["repair"].get("prompt_prefix") or
                                                         record["repair"].get("prompt_suffix", "")) + "\n" +
                                                        self.style_prompt + " " + target["shot"]["prompt"] +
                                                        " Preserve each corresponding character identity and wardrobe.")
+                                    from .model_capabilities import enabled as capability_contract
+                                    repair_refs = shot_refs if material or capability_contract(self.project) else shot_refs[:4]
+                                    self._assert_model_capabilities({**target, 'kind': 'image', 'prompt': keyframe_prompt, 'references': repair_refs})
+                                    repair_names = [worker.copy_input(p) for p in repair_refs]
                                     repair_graph = image_request(self.config.get("image_connection", {}), keyframe_prompt, record["seed"], *self.image_size,
                                                               references=repair_names,
                                                               prefix=self.slug + "/repair/" + target["key"])

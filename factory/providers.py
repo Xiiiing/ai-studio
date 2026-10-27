@@ -939,6 +939,7 @@ def public_inventory(config=None):
     from .config import load_config, list_roles
     from .media_profiles import inventory as media_inventory
     from .video_providers import public_video_inventory
+    from .model_capabilities import inventory as capability_inventory
     current = load_config() if config is None else copy.deepcopy(config)
     normalized = {name: normalize_profile(profile)
                   for name, profile in current.get("llm_profiles", {}).items()}
@@ -952,7 +953,7 @@ def public_inventory(config=None):
                                          or _credential_available(profile)),
                "roles": [role for role, selected in current.get("llm_roles", {}).items() if selected == name]}
         rows.append(row)
-    return {**public_video_inventory(current), **media_inventory(current), "presets": presets(PROVIDERS), "setup_incomplete": current.get("setup_incomplete", False), "revision": config_revision(current), "profiles": rows,
+    return {**public_video_inventory(current), **media_inventory(current), **capability_inventory(current), "presets": presets(PROVIDERS), "setup_incomplete": current.get("setup_incomplete", False), "revision": config_revision(current), "profiles": rows,
             "editable_profiles": {name: redact_secrets(profile, profile) for name, profile in normalized.items()},
             "role_assignments": copy.deepcopy(current.get("llm_roles", {})),
             "roles": list_roles(current),
