@@ -203,3 +203,39 @@ def test_unsupported_image_inputs_and_output_count_do_not_get_ignored():
     cap = c.describe(configuration()['image_connection'], 'image')
     for value in ({'first_frame': 'frame.png'}, {'output_count': 2}):
         with pytest.raises(c.CapabilityError): c.validate(cap, request(**value))
+
+
+def test_empty_configuration_pin_is_read_only_and_contains_no_grants(monkeypatch):
+    import json
+    from factory import llm, config
+    from factory.gpu_client import GPUClient
+    monkeypatch.setattr(llm, 'request_json', lambda *a, **k: pytest.fail('Capability pin invoked a model'))
+    monkeypatch.setattr(GPUClient, 'run', lambda *a, **k: pytest.fail('Capability pin invoked GPU generation'))
+    cfg = json.loads((config.ROOT / 'config/factory.empty.example.json').read_text())
+    p = {**project(), 'budget': {'gpu_minutes': 999, 'authorization_id': 'another-project-grant'},
+         'execution_config': cfg}
+    saved = c.pin(p, cfg)
+    rendered = json.dumps(saved)
+    assert 'another-project-grant' not in rendered and 'authorization' not in rendered
+    assert saved['profiles']['image']['enabled'] is False
+    assert saved['profiles']['video']['provider'] == 'comfyui_wan'
+
+
+def test_one_sentence_h3_pin_uses_selected_frozen_connections_without_copying_grants(monkeypatch):
+    from factory import llm
+    from factory.gpu_client import GPUClient
+    monkeypatch.setattr(llm, 'request_json', lambda *a, **k: pytest.fail('Capability pin invoked model inference'))
+    monkeypatch.setattr(GPUClient, 'run', lambda *a, **k: pytest.fail('Capability pin invoked GPU generation'))
+    cfg = configuration()
+    p = {**project(), 'production_mode': 'one_sentence', 'execution_config': cfg,
+         'production_spec': {'authorization_id': 'prior-grant', 'whole_drama_budget': {'limit': 999}}}
+    saved = c.pin(p, p['execution_config'])
+    assert saved['profiles']['video']['provider'] == 'comfyui_h3'
+    assert saved['profiles']['video']['model'] == 'MiniMax-H3'
+    assert saved['profiles']['video']['reference_counts'] == [1]
+    assert set(saved) == {'version', 'profiles'}
+    assert 'prior-grant' not in repr(saved)
+    child = {**project(), 'model_capability_snapshot': copy.deepcopy(saved)}
+    c.adopt(child, {**cfg, 'video_connection': {**cfg['video_connection'], 'enabled': False}})
+    assert p['model_capability_snapshot'] == saved
+    assert child['model_capability_snapshot'] != saved
