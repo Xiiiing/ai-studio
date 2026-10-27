@@ -26,6 +26,8 @@ def initialize(project, parent=None):
         return project
     project.setdefault('creative_quality_contract', copy.deepcopy((parent or {}).get(
         'creative_quality_contract') or {'version': VERSION}))
+    from .story_coverage import freeze_source
+    freeze_source(project, parent)
     return project
 
 
@@ -55,6 +57,19 @@ def review_call(project, role, system, payload, schema):
         return system, payload, schema
     schema = copy.deepcopy(schema)
     changed = False
+    from .story_coverage import required_events
+    event_project = {**project, **({'resolved_story_brief': payload['resolved_story_brief']} if payload.get('resolved_story_brief') else {})}
+    events = required_events(event_project) if isinstance(payload.get('episode'), dict) else []
+    if events:
+        schema['properties']['coverage_checks'] = {'type': 'object', 'additionalProperties': False,
+            'properties': {event['id']: {'type': 'object', 'additionalProperties': False, 'properties': {
+                'status': {'type': 'string', 'enum': ['pass', 'fail', 'uncertain']},
+                'evidence_refs': {'type': 'array', 'items': {'type': 'string', 'enum': [r['id'] for r in catalog]}, 'minItems': 1, 'maxItems': 12, 'uniqueItems': True},
+                'reason': {'type': 'string', 'minLength': 4, 'maxLength': 1000}}, 'required': ['status', 'evidence_refs', 'reason']} for event in events},
+            'required': [event['id'] for event in events]}
+        schema['required'] = list(dict.fromkeys(schema.get('required', []) + ['coverage_checks']))
+        payload = {**payload, 'project': {**(payload.get('project') or {}), 'required_story_events': events}}
+        changed = True
 
     def upgrade(node):
         nonlocal changed
@@ -114,6 +129,18 @@ def normalize(project, review, episode, structural=()):
             entry['auto_repair'] = False
             entry['evidence_status'] = 'unverified'
         issues.append(entry)
+    for ident, check in value.get('coverage_checks', {}).items():
+        if check.get('status') != 'pass':
+            refs = check.get('evidence_refs', [])
+            valid = bool(refs and all(r in catalog for r in refs))
+            issues.append({'severity': 'major', 'code': 'story_coverage_' + check.get('status', 'uncertain'),
+                'nature': 'OBJECTIVE', 'description': '必要事件 ' + ident + ' 尚未在正文中得到有效落实',
+                'location': '、'.join(refs), 'evidence': check.get('reason', ''), 'impact': '必要剧情可能缺失',
+                'suggestion': '补齐相应事件并重新独立审核，保留其他内容', 'repair_target': check.get('reason', ''),
+                'shot_ids': [r for r in refs if r in catalog], 'evidence_refs': refs,
+                'evidence_sources': [copy.deepcopy(catalog[r]) for r in refs if r in catalog],
+                'source_signature': source, 'requires_choice': False,
+                'auto_repair': valid and check.get('status') == 'fail', 'evidence_status': check.get('status')})
     value.update(issues=issues, review_contract=VERSION, source_signature=source,
         repair_shot_ids=sorted({sid for i in issues if i.get('auto_repair') for sid in i.get('shot_ids', []) if sid in catalog}))
     return value
@@ -156,6 +183,7 @@ def adopt(pid, payload):
 
 def snapshot(project):
     review = project.get('draft_review') or (project.get('script_review') or {}).get('review') or {}
-    return {'enabled': enabled(project), 'version': (project.get('creative_quality_contract') or {}).get('version'),
+    from .story_coverage import inspect
+    return {'coverage': inspect(project), 'enabled': enabled(project), 'version': (project.get('creative_quality_contract') or {}).get('version'),
         'requires_review': project.get('creative_quality_review_required', False),
         'review': copy.deepcopy(review), 'history_preserved': True}

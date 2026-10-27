@@ -34,7 +34,8 @@ def outline_schema(number, world, project=None):
     dependencies.update(maxItems=number - 1, uniqueItems=True)
     if number > 1:
         dependencies['items']['maximum'] = number - 1
-    return schema
+    from .story_coverage import outline_schema as coverage_schema
+    return coverage_schema(schema, project or {})
 
 
 def plan_schema(count):
@@ -77,6 +78,10 @@ def _save(pid, patch):
 
 def call(project, config, role, stage, instructions, payload, schema, tokens=6000):
     from .scheduler import ProductionPaused
+    from .story_coverage import request_context
+    coverage = request_context(project)
+    if coverage:
+        payload = {**payload, 'project': {**(payload.get('project') or {}), 'story_coverage': coverage}}
     with store.connection() as db:
         _authority(db, project['id'])
     if store.get(project['id'],False).get('pause_requested'): raise ProductionPaused('已在创作任务边界暂停')
@@ -260,6 +265,8 @@ def run(pid, config):
             if not assessment['passed'] and not assessment['issues']: assessment['issues'] = ['该组审核未通过']
             issues.extend(assessment['issues'])
             groups.append({'episodes': [e['number'] for e in group], 'passed': assessment['passed'] and not assessment['issues']})
+        from .story_coverage import plan_issues
+        issues.extend(plan_issues(p, plan))
         review = {'passed': not issues, 'issues': issues[:30], 'groups': groups, 'candidate_sha256': fingerprint(plan)}
         if contract_error:
             review.update(source='contract', repair_targets=contract_error.repair_targets)

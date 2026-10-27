@@ -305,7 +305,8 @@ def episode_schema(shot_count=15, project=None):
         "shots": array_schema(shot, shot_count, shot_count),
     })
     from .profile_creative import adapt_schema
-    return adapt_schema(schema, project or {})
+    from .story_coverage import attach_schema
+    return attach_schema(adapt_schema(schema, project or {}), project or {})
 
 
 def utc_now():
@@ -375,6 +376,10 @@ def project_context(project):
     if "creative_contract" in project:
         from .creative_contract import resolve as resolve_contract
         context["creative_contract"] = resolve_contract(project)
+    from .story_coverage import request_context
+    coverage = request_context(project)
+    if coverage:
+        context["story_coverage"] = coverage
     from .drama_intent import enabled
     if enabled(project):
         context["narrative_scope"] = copy.deepcopy(project.get("narrative_scope"))
@@ -531,6 +536,8 @@ def technical_issues(episode, project):
         covered = {b for shot in shots for b in shot.get("beat_ids", [])}
         if beats - covered or covered - beats:
             add("story_beat_coverage", "必要事件缺少镜头承载或引用了未知事件：" + str(sorted(beats ^ covered)))
+    from .story_coverage import structural_issues
+    issues.extend(structural_issues(project, episode))
     from .production_profiles import validate_episode
     try:
         validate_episode(episode, project)

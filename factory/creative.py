@@ -730,7 +730,7 @@ def _make_script(project, config, checkpoint, feedback=None):
         "working_plan_fields": ["synopsis", "ending", "causal_beats", "creative_plan", "retained_elements"],
         "allow_restructure_second_half": not bool(affected),
         "rule": "保留用户要求、删除项与已选主题；AI自选回馈机制和后半段可重构，实际setup/choice/payoff必须落实到镜头与声音。"}
-    payload = {"project": _safe_context(project), "selected_proposal": proposal_reference,
+    payload = {"project": _safe_context({**project, "resolved_story_brief": resolved}), "selected_proposal": proposal_reference,
         "resolved_story_brief": resolved_goal, "creative_scope": creative_scope,
         "timeline": [{"id": "S%02d" % (i + 1), "seconds": seconds} for i, seconds in enumerate(plan)],
         "authorized_adaptation_material": _adaptation_material(project),
@@ -797,7 +797,7 @@ def _make_script(project, config, checkpoint, feedback=None):
                     raise CreativeReviewError('返修依据缺少可交付内容', accepted['request']['issues'])
                 bindings.enter_context(handoffs.bind(folder, returned))
             raw = cached_json_call(project, config, "screenwriter", "screenplay-%d" % index,
-                current_writer_system, request, episode_schema(len(plan), project), checkpoint,
+                current_writer_system, request, episode_schema(len(plan), {**project, "resolved_story_brief": resolved}), checkpoint,
                 max_tokens=11500, temperature=0.65)
         episode = _canonical_episode(raw, project)
         if affected and previous:
@@ -827,7 +827,7 @@ def _make_script(project, config, checkpoint, feedback=None):
                 previous_attempt=previous_attempt,
                 supplement_request_id=(pending_supplement or {}).get('id'))
             episode, director_issues = direction["episode"], direction["issues"]
-        structural = (technical_issues(episode, project) +
+        structural = (technical_issues(episode, {**project, "resolved_story_brief": resolved}) +
                       _excluded_story_issues(episode, resolved) + director_issues)
         report(checkpoint, stage="script_review", progress=32 + index * 3,
                message="独立审稿人正在逐镜检查剧情闭合、声音槽位和连续性",

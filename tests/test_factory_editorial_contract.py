@@ -74,6 +74,9 @@ def test_actual_creative_loop_preserves_aesthetic_choice_without_automatic_rewri
         p['workflow_version'] = 2
         def reply(**kw):
             value = case.reply(**kw)
+            if kw['role'] == 'screenwriter' and 'shots' in value:
+                events = kw['payload']['project'].get('story_coverage', {}).get('events', [])
+                value['shots'][0]['beat_ids'] = [e['id'] for e in events]
             if kw['role'] == 'independent_critic' and 'episode' in kw['payload']:
                 note = issue('AESTHETIC'); note['requires_choice'] = requires_choice
                 value['issues'] = [note]
