@@ -98,7 +98,10 @@ def plan_units(episode, config):
             origins = {b['id']: b for b in episode['outline'].get('beats', [])}
             for scene in scenes:
                 for beat in scene.get('beats', []):
-                    beat['source_refs'] = copy.deepcopy(origins.get(beat['id'], {}).get('source_refs', []))
+                    approved = origins.get(beat['id'])
+                    if approved:
+                        beat['description'] = approved['description']
+                        beat['source_refs'] = copy.deepcopy(approved.get('source_refs', []))
         actual = sum(s['seconds'] for s in scenes)
         technical_feedback = []
         if whole_drama(episode) or quality_contract(episode):
@@ -174,17 +177,20 @@ def plan_units(episode, config):
                     if whole_drama(episode) or quality_contract(episode):
                         beats = scene['beats']
                         outline['beats'] = beats[(index-1)*len(beats)//len(durations):index*len(beats)//len(durations)]
+                    from .story_coverage import unit_source_excerpt
                     unit=dramas.record('scene_unit',prefix+' · '+scene['title'], scene['synopsis'],
                         drama_id=e['drama_id'],episode_id=e['id'],parent_id=e['id'],scene_id=scene['scene_id'],
                         unit_index=index,sequence=sequence,global_prefix=prefix, location_id=scene['location_id'],prop_ids=scene['prop_ids'],
                         duration_seconds=seconds,format=e['format'], plan_version=e['plan_version'],plan=plan,outline=outline,
-                        source_excerpt=e.get('source_excerpt',''),
+                        source_excerpt=unit_source_excerpt(e, outline),
                         dependency_context=copy.deepcopy(e.get('dependency_context',[])),
                         series_key=e['series_key'], budget=copy.deepcopy(e['budget']),execution_config=copy.deepcopy(config),
                         unit_brief={'scene':scene,'unit_index':index,'unit_count':len(durations),'seconds':seconds,
                                     'allocation':'按顺序连续展开场景，勿在每个单元重复整个场景；最后单元才到达场景结尾'})
                     from .production_completion import inherit
                     inherit(e, unit)
+                    from .creative_contracts import initialize
+                    initialize(unit, parent=e)
                     dramas.insert(db,unit)
                     e['unit_ids'].append(unit['id'])
             e.update(scene_plan=scenes,scene_review=review,status='producing',stage='scene_units',progress=10,
