@@ -129,7 +129,15 @@ def test_visual_review_has_separate_material_checks_and_keeps_all_references(pro
     captured = {}
     def request(*args, **kwargs):
         captured["schema"] = args[4]; captured["content"] = kwargs["content"]
-        return {"status": "pass", "score": 95, "summary": "fixture verdict", "issues": [],
+        issues = []
+        if verdict == 'mismatch':
+            issues = [{'code': 'off_prompt', 'severity': 'blocking',
+                'detail': 'The candidate uses a different medium from the confirmed material.',
+                'nature': 'OBJECTIVE', 'location': 'candidate:0 at 0 seconds',
+                'impact': 'The explicitly approved rendering medium is absent.',
+                'repair_target': 'Restore the confirmed medium while retaining the approved character.',
+                'evidence_refs': ['candidate:0', 'reference:0'], 'requires_choice': False}]
+        return {"status": "pass", "score": 95, "summary": "fixture verdict", "issues": issues,
                 "material_alignment": {"identity": "match", "style": verdict, "scene": "not_applicable", "correspondence": "match", "evidence": "visible fixture evidence"}}
     monkeypatch.setattr(llm, "_request", request)
     result = llm.review_media(project, {"id": "S01", "material_constraints": [{"kind": "character", "role": "female"}]}, path, [path] * 5,
