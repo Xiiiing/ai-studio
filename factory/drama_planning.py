@@ -38,10 +38,12 @@ def outline_schema(number, world, project=None):
     return coverage_schema(schema, project or {})
 
 
-def plan_schema(count):
+def plan_schema(count, project=None):
     # Earlier v3 plans remain readable; newly generated plans include relationships.
     outline = copy.deepcopy(OUTLINE)
     outline['properties']['beats'] = arr(obj({'id': {'type': 'string', 'pattern': '^[A-Za-z][A-Za-z0-9_-]{0,63}$'}, 'description': txt(4, 800)}), 2, 8)
+    from .story_coverage import outline_schema as coverage_schema
+    outline = coverage_schema(outline, project or {})
     properties={**copy.deepcopy(GLOBAL['properties']), 'episodes': arr(outline, count, count)}
     return obj(properties,required=[key for key in properties if key!='relationships'])
 

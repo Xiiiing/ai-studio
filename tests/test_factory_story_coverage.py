@@ -68,3 +68,32 @@ def test_independent_coverage_failure_yields_grounded_directed_repair():
     assert result['repair_shot_ids'] == ['S01']
     result = creative_contracts.normalize(p, {'issues': [], 'coverage_checks': {'B1': {'status': 'uncertain', 'evidence_refs': ['S01'], 'reason': '正文无法确认'}}}, ep)
     assert not creative_contracts.can_repair(p, result)
+
+
+def test_chinese_episode_ordinals_and_scene_slugs_are_scoped_without_inventing_events():
+    p = creative_contracts.initialize({'id': '111122223333', 'source_text': '第十一集 夜归\n内景 车站 夜\n甲发现旧信。\n第十二集 真相\n乙归还钥匙。'})
+    rows = [r for r in coverage.source_catalog(p) if r['required']]
+    assert [(r['text'], r['episode_number']) for r in rows] == [('甲发现旧信。', 11), ('乙归还钥匙。', 12)]
+    p['episode_number'] = 11
+    assert '乙归还钥匙。' not in [r['text'] for r in coverage.scoped_sources(p)]
+
+
+def test_semantic_evidence_must_belong_to_the_event_carrier():
+    p = creative_contracts.initialize({'id': '111122223333', 'outline': {'beats': [{'id': 'B1', 'description': '递交钥匙'}]}})
+    ep = {'shots': [{'id': 'S01', 'action': '递交钥匙', 'beat_ids': ['B1']}, {'id': 'S02', 'action': '无关空景', 'beat_ids': []}]}
+    _, _, schema = creative_contracts.review_call(p, 'independent_critic', 'review', {'episode': ep}, schemas.SCRIPT_REVIEW_SCHEMA)
+    assert schema['properties']['coverage_checks']['properties']['B1']['properties']['evidence_refs']['items']['enum'] == ['S01']
+    result = creative_contracts.normalize(p, {'issues': [], 'coverage_checks': {'B1': {'status': 'pass', 'evidence_refs': ['S02'], 'reason': '空景正常'}}}, ep)
+    assert result['coverage_checks']['B1']['status'] == 'uncertain'
+    assert not creative_contracts.can_repair(p, result)
+
+
+def test_full_versioned_plan_schema_accepts_outline_source_refs():
+    from factory.drama_planning import plan_schema
+    from tests.test_factory_dramas import plan
+    p = imported(); source = [r['id'] for r in coverage.source_catalog(p) if r['required']]
+    value = plan()
+    for outline in value['episodes']:
+        outline['beats'] = [{'id': f'B{outline["number"]}_{i}', 'description': '人物完成当前必要事件', 'source_refs': source} for i in (1, 2)]
+    validate(value, plan_schema(len(value['episodes']), p))
+    assert not coverage.plan_issues(p, value)

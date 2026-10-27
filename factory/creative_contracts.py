@@ -64,7 +64,7 @@ def review_call(project, role, system, payload, schema):
         schema['properties']['coverage_checks'] = {'type': 'object', 'additionalProperties': False,
             'properties': {event['id']: {'type': 'object', 'additionalProperties': False, 'properties': {
                 'status': {'type': 'string', 'enum': ['pass', 'fail', 'uncertain']},
-                'evidence_refs': {'type': 'array', 'items': {'type': 'string', 'enum': [r['id'] for r in catalog]}, 'minItems': 1, 'maxItems': 12, 'uniqueItems': True},
+                'evidence_refs': {'type': 'array', 'items': {'type': 'string', 'enum': [s['id'] for s in payload['episode'].get('shots', []) if event['id'] in s.get('beat_ids', [])] or [r['id'] for r in catalog]}, 'minItems': 1, 'maxItems': 12, 'uniqueItems': True},
                 'reason': {'type': 'string', 'minLength': 4, 'maxLength': 1000}}, 'required': ['status', 'evidence_refs', 'reason']} for event in events},
             'required': [event['id'] for event in events]}
         schema['required'] = list(dict.fromkeys(schema.get('required', []) + ['coverage_checks']))
@@ -130,6 +130,10 @@ def normalize(project, review, episode, structural=()):
             entry['evidence_status'] = 'unverified'
         issues.append(entry)
     for ident, check in value.get('coverage_checks', {}).items():
+        mapped = {s['id'] for s in episode.get('shots', []) if ident in s.get('beat_ids', [])}
+        if not set(check.get('evidence_refs', [])) <= mapped:
+            check = {**check, 'status': 'uncertain', 'reason': '审核证据不属于该事件的承载镜头，未采用此结论。'}
+            value['coverage_checks'][ident] = check
         if check.get('status') != 'pass':
             refs = check.get('evidence_refs', [])
             valid = bool(refs and all(r in catalog for r in refs))
