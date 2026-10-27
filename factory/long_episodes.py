@@ -35,7 +35,8 @@ def plan_units(episode, config):
     seconds = episode['duration_seconds']
     generation = episode.get('scene_generation', 1)
     schema = scene_schema(ids, seconds)
-    if whole_drama(episode):
+    from .creative_contracts import enabled as quality_contract
+    if whole_drama(episode) or quality_contract(episode):
         scene = schema['properties']['scenes']['items']
         scene['properties']['beats'] = arr(obj({'id': {'type': 'string', 'enum': [b['id'] for b in episode['outline']['beats']]}, 'description': txt(4, 800)}), 0, 8)
         scene['required'].append('beats')
@@ -93,9 +94,14 @@ def plan_units(episode, config):
                  'feedback': feedback, 'technical_feedback': technical_feedback}, schema, 11000)
         prior_feedback = copy.deepcopy(feedback)
         scenes = result['scenes']
+        if quality_contract(episode):
+            origins = {b['id']: b for b in episode['outline'].get('beats', [])}
+            for scene in scenes:
+                for beat in scene.get('beats', []):
+                    beat['source_refs'] = copy.deepcopy(origins.get(beat['id'], {}).get('source_refs', []))
         actual = sum(s['seconds'] for s in scenes)
         technical_feedback = []
-        if whole_drama(episode):
+        if whole_drama(episode) or quality_contract(episode):
             assigned = [b['id'] for scene in scenes for b in scene.get('beats', [])]
             expected = [b['id'] for b in episode['outline']['beats']]
             if sorted(assigned) != sorted(expected):
@@ -165,7 +171,7 @@ def plan_units(episode, config):
                     outline={'number':e['episode_number'],'title':scene['title'],
                         'synopsis':scene['synopsis'], 'characters':scene['characters'], 'depends_on':[],
                         'opening_state':scene['opening_state'],'ending_state':scene['ending_state'], **({'beats': scene['beats']} if 'beats' in scene else {})}
-                    if whole_drama(episode):
+                    if whole_drama(episode) or quality_contract(episode):
                         beats = scene['beats']
                         outline['beats'] = beats[(index-1)*len(beats)//len(durations):index*len(beats)//len(durations)]
                     unit=dramas.record('scene_unit',prefix+' · '+scene['title'], scene['synopsis'],
