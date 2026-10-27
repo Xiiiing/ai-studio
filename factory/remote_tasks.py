@@ -109,14 +109,21 @@ def claim_job(project_id=None):
             timeline_job = (row['kind'] == 'timeline_edit' and edit_task.get('job_id') == row['id']
                 and edit_task.get('status') in {'queued','running'} and not edit_task.get('cancel_requested')
                 and project['status'] in {'paused','blocked','awaiting_final','approved'})
+            review_task = (project.get('quality_recheck') or {}).get('task') or {}
+            review_job = (row['kind'] == 'creative_quality_review' and review_task.get('job_id') == row['id']
+                and review_task.get('status') in {'queued','running'} and not review_task.get('cancel_requested')
+                and project['status'] in {'paused','blocked','awaiting_final','approved'})
+            if row['kind'] == 'creative_quality_review' and not review_job:
+                db.execute("UPDATE jobs SET status='cancelled',finished=? WHERE id=?", (timestamp, row['id']))
+                continue
             if row['kind'] == 'timeline_edit' and not timeline_job:
                 db.execute("UPDATE jobs SET status='cancelled',finished=? WHERE id=?", (timestamp, row['id']))
                 continue
-            if not timeline_job and not team_command and ((row["kind"] == "review_advice" and not advice) or project.get("pause_requested") or (project["status"] in store.TERMINAL | {"paused", "blocked", "failed"} and not (advice or delivery_job))
+            if not (timeline_job or review_job) and not team_command and ((row["kind"] == "review_advice" and not advice) or project.get("pause_requested") or (project["status"] in store.TERMINAL | {"paused", "blocked", "failed"} and not (advice or delivery_job))
                     or project["status"].startswith("awaiting_") and not delivery_job):
                 db.execute("UPDATE jobs SET status='cancelled',finished=? WHERE id=?", (timestamp, row["id"]))
                 continue
-            if not timeline_job and project.get("production", {}).get("remote_wait_started_at") is not None:
+            if not (timeline_job or review_job) and project.get("production", {}).get("remote_wait_started_at") is not None:
                 settle_wait(project, timestamp)
                 store._write(db, project)
             lease = row["lease"] + 1
