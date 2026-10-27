@@ -60,7 +60,15 @@ for (const theme of ["light", "dark"])
       const trigger = more.getByRole("button");
       await trigger.click();
       const menu = page.getByRole("menu");
-      await expect(menu.getByRole("menuitem")).toHaveCount(5);
+      await expect(menu.getByRole("menuitem")).toHaveCount(6);
+      await expect(menu.getByRole("menuitem")).toHaveText([
+        "团队与回执",
+        "提示词工作台",
+        "生成提示词流水线",
+        "Agent 执行循环",
+        "云任务与费用",
+        "模型能力与版本",
+      ]);
       expect((await page.locator(".project-pane").boundingBox()).y).toBe(
         before.y,
       );
