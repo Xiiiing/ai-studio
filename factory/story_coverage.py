@@ -21,6 +21,18 @@ def freeze_source(project, parent=None):
         marker.setdefault('source_document', {'project_id': project['id'], 'sha256': sha})
 
 
+def ordinal(value):
+    if value.isdecimal(): return int(value)
+    digits = dict(zip('零〇一二两三四五六七八九', [0,0,1,2,2,3,4,5,6,7,8,9]))
+    if '百' in value:
+        left, right = value.split('百', 1)
+        return digits.get(left, 1) * 100 + (ordinal(right) if right else 0)
+    if '十' in value:
+        left, right = value.split('十', 1)
+        return digits.get(left, 1) * 10 + (digits.get(right, 0) if right else 0)
+    return int(''.join(str(digits[c]) for c in value))
+
+
 def _document(project):
     value = project.get('creative_source_document')
     ref = (project.get('creative_quality_contract') or {}).get('source_document')
@@ -47,8 +59,9 @@ def source_catalog(project):
         heading = value.lstrip('#').strip()
         if re.fullmatch(r'(?:角色|人物|场景|道具|风格)(?:设定|介绍|表)?[:：]?', heading): narrative = False
         elif re.fullmatch(r'(?:正文|剧本正文|故事正文|正片)[:：]?', heading): narrative = True
-        episode = re.match(r'(?:第\s*(\d+)\s*集|(?:Episode|EP)\s*(\d+)(?![0-9]))', heading, re.I)
-        if episode: number = int(episode[1] or episode[2]); narrative = True
+        episode = re.match(r'(?:第\s*([零〇一二两三四五六七八九十百0-9]+)\s*集|(?:Episode|EP)\s*([0-9]+)(?![0-9]))', heading, re.I)
+        if episode: number = ordinal(episode[1] or episode[2]); narrative = True
+        scene_heading = bool(re.fullmatch(r'(?:第[零〇一二两三四五六七八九十百0-9]+场.*|(?:INT\.|EXT\.|内景|外景).*)', heading, re.I))
         # Bound individual semantic chunks without dropping any source bytes.
         start, end = match.start(), match.end()
         while start < end:
@@ -59,7 +72,7 @@ def source_catalog(project):
             segment = text[start:stop]
             result.append({'id': 'src_' + hashlib.sha256((str(start) + ':' + segment).encode()).hexdigest()[:16],
                 'text': segment, 'start': start, 'end': stop, 'sha256': hashlib.sha256(segment.encode()).hexdigest(),
-                'document_sha256': document_sha, 'required': narrative and not value.startswith('#') and episode is None and heading not in {'正文', '剧本正文', '故事正文', '正片'},
+                'document_sha256': document_sha, 'required': narrative and not value.startswith('#') and episode is None and not scene_heading and heading not in {'正文', '剧本正文', '故事正文', '正片'},
                 'episode_number': number})
             start = stop
     return result
