@@ -371,6 +371,9 @@ def decide(pid, payload, actor=None):
     with connection() as db:
         db.execute("BEGIN IMMEDIATE")
         p = _read(db, pid)
+        if kind == "final" and choice == "approve":
+            from .quality_recheck import require_current
+            require_current(p)
         if payload.get("decision_id"):
             d = next((d for d in p["decisions"] if d["id"] == payload["decision_id"]), None)
             if d and d.get("status") == "answered":
