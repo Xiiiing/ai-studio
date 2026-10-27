@@ -312,11 +312,10 @@ function Candidate({
           </small>
         )}
         <details>
-          <summary>参考素材与有效参数</summary>
+          <summary>参考素材与来源</summary>
           <Readable
             value={{
               references: c.asset_references || [],
-              parameters: c.parameters || {},
               shot_revision: c.receipt?.shot_revision,
               source_signature: c.source_signature,
             }}
