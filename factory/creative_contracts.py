@@ -119,7 +119,10 @@ def normalize(project, review, episode, structural=()):
     for issue in value.get('issues', []):
         entry = copy.deepcopy(issue)
         refs = entry.get('evidence_refs', [])
-        valid = bool(refs and len(refs) == len(set(refs)) and all(r in catalog for r in refs))
+        targets = entry.get('shot_ids') or refs
+        valid_targets = bool(targets and all(isinstance(sid, str) and sid in catalog for sid in targets) and set(targets) <= set(refs))
+        entry['shot_ids'] = list(targets)
+        valid = bool(refs and len(refs) == len(set(refs)) and all(r in catalog for r in refs) and valid_targets)
         entry['source_signature'] = source
         entry['evidence_origin'] = 'independent_review'
         entry['evidence_sources'] = [copy.deepcopy(catalog[r]) for r in refs if r in catalog]
@@ -161,6 +164,7 @@ def can_repair(project, review):
 
 
 def repair_feedback(project, review):
+    if not review: return {}
     if not enabled(project): return copy.deepcopy(review)
     return {**copy.deepcopy(review), 'issues': [copy.deepcopy(i) for i in review.get('issues', []) if i.get('auto_repair')],
         'instruction': '只修改有证据的修订目标及必要衔接；其他已批准内容保持原样。'}
@@ -181,17 +185,36 @@ def adopt(pid, payload):
         cas(project, payload)
         require_idle(db, project)
         ensure_no_gpu_intents(project)
+        from .quality_recheck import require_idle_scope
+        require_idle_scope(db, project)
         initialize(project)
-        project['creative_quality_review_required'] = True
-        project.setdefault('creative_quality_adoptions', []).append({'at': store.now(), 'source_revision': project['revision'], 'version': VERSION})
+        from .quality_recheck import APPROVAL_KEYS
+        previous_approval = {key: copy.deepcopy(project[key]) for key in APPROVAL_KEYS if key in project}
+        project.setdefault('creative_quality_adoptions', []).append({'at': store.now(), 'source_revision': project['revision'],
+            'version': VERSION, 'previous_status': project['status'], 'previous_approval': previous_approval})
+        for approval_key in APPROVAL_KEYS:
+            project.pop(approval_key, None)
+        for decision in project.get('decisions', []):
+            if decision.get('type') == 'final' and decision.get('status') == 'pending': decision['status'] = 'superseded'
+        project.update(creative_quality_review_required=True, status='paused', pause_requested=True,
+            message='已启用新契约；请明确发起现有稿件与成片复核，不会自动生成或重制。')
+        if project.get('drama_id'):
+            drama = store._read(db, project['drama_id'])
+            if drama.get('delivery_bundle'):
+                drama['delivery_bundle'] = {**drama['delivery_bundle'], 'current': False, 'invalidated_by_quality_adoption': project['id']}
+            if drama.get('series_review'):
+                drama['series_review'] = {**drama['series_review'], 'current': False}
+            store._write(db, drama)
         project.setdefault('operation_requests', {})[key] = {'signature': signature}
         store._write(db, project)
         return project
 
 
 def snapshot(project):
-    review = project.get('draft_review') or (project.get('script_review') or {}).get('review') or {}
+    from .quality_recheck import snapshot as recheck_snapshot
     from .story_coverage import inspect
-    return {'coverage': inspect(project), 'enabled': enabled(project), 'version': (project.get('creative_quality_contract') or {}).get('version'),
+    recheck = recheck_snapshot(project)
+    review = (recheck.get('task') or {}).get('text_review') or project.get('draft_review') or (project.get('script_review') or {}).get('review') or {}
+    return {'recheck': recheck, 'coverage': inspect(project), 'enabled': enabled(project), 'version': (project.get('creative_quality_contract') or {}).get('version'),
         'requires_review': project.get('creative_quality_review_required', False),
         'review': copy.deepcopy(review), 'history_preserved': True}
