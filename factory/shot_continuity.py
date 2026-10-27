@@ -56,13 +56,23 @@ def request_context(project, shot, episode=None):
     current = {'shot_id': shot['id'], 'mode': current_state['mode'], 'opening_state': current_state['opening_state'],
         'ending_state': current_state['ending_state'], 'allowed_changes': current_state['allowed_changes'],
         'character_states': copy.deepcopy(shot.get('character_states', {}))}
+    previous_fields = ('id', 'continuity_state', 'character_states')
+    if current_state['mode'] == 'continuous':
+        previous_fields += ('prompt', 'motion_prompt', 'seconds', 'action', 'continuity', 'cast', 'characters', 'reference_shots', 'dialogue', 'render_style_prompt')
     context = {'version': VERSION, 'previous': None if previous is None else {
         'shot_id': previous['id'], 'planned_ending_state': previous_state['ending_state'],
         'character_states': copy.deepcopy(previous.get('character_states', {})),
-        'source_signature': core.fingerprint(previous)}, 'current': current, 'rule': RULE,
+        'source_signature': core.fingerprint({key: previous[key] for key in previous_fields if key in previous})}, 'current': current, 'rule': RULE,
         'observed_state': 'not_observed'}
     context['source_signature'] = core.fingerprint(context)
     return context
+
+
+def bind_prompt(prompt, context):
+    """Keep the approved snapshot in every adapter request, including repairs."""
+    if not context: return prompt
+    appendix = 'Approved adjacent-shot state (planned, not observed):\n' + json.dumps(context, ensure_ascii=False, sort_keys=True)
+    return prompt if appendix in prompt else prompt + '\n' + appendix
 
 
 def structural_issues(project, episode):

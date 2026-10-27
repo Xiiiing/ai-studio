@@ -129,7 +129,15 @@ def test_visual_review_has_separate_material_checks_and_keeps_all_references(pro
     captured = {}
     def request(*args, **kwargs):
         captured["schema"] = args[4]; captured["content"] = kwargs["content"]
-        return {"status": "pass", "score": 95, "summary": "fixture verdict", "issues": [],
+        issues = []
+        if verdict == 'mismatch':
+            issues = [{'code': 'off_prompt', 'severity': 'blocking',
+                'detail': 'The candidate uses a different medium from the confirmed material.',
+                'nature': 'OBJECTIVE', 'location': 'candidate:0 at 0 seconds',
+                'impact': 'The explicitly approved rendering medium is absent.',
+                'repair_target': 'Restore the confirmed medium while retaining the approved character.',
+                'evidence_refs': ['candidate:0', 'reference:0'], 'requires_choice': False}]
+        return {"status": "pass", "score": 95, "summary": "fixture verdict", "issues": issues,
                 "material_alignment": {"identity": "match", "style": verdict, "scene": "not_applicable", "correspondence": "match", "evidence": "visible fixture evidence"}}
     monkeypatch.setattr(llm, "_request", request)
     result = llm.review_media(project, {"id": "S01", "material_constraints": [{"kind": "character", "role": "female"}]}, path, [path] * 5,
@@ -141,6 +149,7 @@ def test_visual_review_has_separate_material_checks_and_keeps_all_references(pro
 
 def test_real_render_cache_reuses_unrelated_shots_after_material_switch(project, monkeypatch):
     from contextlib import contextmanager
+    from factory import model_capabilities
     from test_factory_series import pattern
     import json
     value = material(); project = bundle(project, [(value, "female", {})])
@@ -157,8 +166,15 @@ def test_real_render_cache_reuses_unrelated_shots_after_material_switch(project,
     @contextmanager
     def worker(*args, **kwargs): yield Renderer()
     monkeypatch.setattr(production.Scheduler, "worker", worker)
+    settings = {"image_width": 128, "image_height": 128, "semantic_enabled": False}
+    # Bind this synthetic FLUX renderer without bypassing the frozen capability
+    # checks that precede every real target submission.
+    model_capabilities.adopt(project, settings)
+    project = store.update(project["id"], {"model_capability_snapshot": project["model_capability_snapshot"],
+                                          "model_capability_history": project.get("model_capability_history", [])})
+    assert model_capabilities.active(project, settings, "image")["enabled"]
     def render():
-        engine = production._Run(store.get(project["id"]), {"image_width": 128, "image_height": 128, "semantic_enabled": False}, lambda patch: store.update(project["id"], patch), None)
+        engine = production._Run(store.get(project["id"]), settings, lambda patch: store.update(project["id"], patch), None)
         engine._characters_and_images()
         return {shot["id"]: shot["image"] for shot in engine.shots}
     before = render(); count = len(calls)

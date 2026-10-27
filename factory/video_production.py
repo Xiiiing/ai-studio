@@ -57,24 +57,34 @@ class VideoProductionMixin:
         if is_locked(self.ident, "image", target["shot"]["id"]):
             raise ProductionNeedsDecision("视频返修需要更换已锁定首帧，请先解锁或调整返修要求", "team_locked_keyframe",
                                           {"shot_id": target["shot"]["id"], "task_id": "image:" + target["shot"]["id"]})
+        from .model_capabilities import enabled as capability_contract
+        refs = list(target["references"]) + [self.receipt_path(v) for v in self.assets.get("characters", {}).values()]
+        # New contracts reject an unsupported reference set. The old renderer's
+        # four-reference behavior belongs only to explicitly legacy projects.
+        if not capability_contract(self.project):
+            refs = refs[:4]
         if self.config.get("image_connection", {}).get("provider", "legacy") != "legacy":
-            refs=list(target["references"]) + [self.receipt_path(v) for v in self.assets.get("characters", {}).values()]
+            prompt = record["repair"].get("prompt_prefix", "") + "\n" + self.style_prompt + " " + target["shot"]["prompt"]
+            from .shot_continuity import bind_prompt
+            prompt = bind_prompt(prompt, target.get('shot_continuity'))
+            self._assert_model_capabilities({"kind": "image", "prompt": prompt, "references": refs})
             repair=self._target("repair_"+target["key"],target["folder"]/record["take"]/"repair_keyframe",
-                                record["repair"].get("prompt_prefix", "") + "\n" + self.style_prompt + " " + target["shot"]["prompt"],refs[:4])
+                                prompt, refs, review_context=target['shot'])
             self._render_targets([repair], "keyframe_repair")
             record["repair_keyframe"]=repair["selected"]
             self._save_attempt(target,record)
             return self.receipt_path(record["repair_keyframe"])
         # A diagnosed action/identity issue may require a new first frame. This is
         # the only local GPU lease in the cloud route; remote polling holds none.
+        prompt = ((record["repair"].get("prompt_prefix") or
+                   record["repair"].get("prompt_suffix", "")) + "\n" +
+                  self.style_prompt + " " + target["shot"]["prompt"] +
+                  " Preserve each corresponding character identity and wardrobe.")
+        from .shot_continuity import bind_prompt
+        prompt = bind_prompt(prompt, target.get('shot_continuity'))
+        self._assert_model_capabilities({"kind": "image", "prompt": prompt, "references": refs})
         with self.scheduler.worker(self.slug + "_repair_keyframe", self.control) as worker:
-            refs = list(target["references"])
-            refs += [self.receipt_path(value) for value in self.assets.get("characters", {}).values()]
-            names = [worker.copy_input(path) for path in refs[:4]]
-            prompt = ((record["repair"].get("prompt_prefix") or
-                       record["repair"].get("prompt_suffix", "")) + "\n" +
-                      self.style_prompt + " " + target["shot"]["prompt"] +
-                      " Preserve each corresponding character identity and wardrobe.")
+            names = [worker.copy_input(path) for path in refs]
             graph = image_request(self.config.get("image_connection", {}), prompt, record["seed"], *self.image_size, references=names,
                                prefix=self.slug + "/repair/" + target["key"])
             frame = worker.execute(graph, target["folder"] / record["take"] / "repair_keyframe",
@@ -92,7 +102,9 @@ class VideoProductionMixin:
         fresh = []
         for target in targets:
             self.boundary()
+            self._assert_model_capabilities(target)
             record = target.pop("resume_attempt", None) or self._new_attempt(target)
+            self._assert_model_capabilities(target, prompt=record['prompt'])
             frame = self._remote_first_frame(target, record)
             line = cloud_budget.request_line(self.ident, target["key"], record, sha256(frame),
                                              self.video_connection, target["seconds"])
