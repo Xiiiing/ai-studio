@@ -42,7 +42,8 @@ def model_value(schema, payload):
     elif 'number' in props and 'synopsis' in props:
         number = schema['properties']['number']['const']
         value = plan()['episodes'][number-1]
-        value['beats'] = [{'id': f'E{number}B{i}', 'description': f'角色明确完成第{number}集必要事件{i}'} for i in (1, 2)]
+        value['beats'] = [{'id': f'E{number}B{i}', 'description': f'角色明确完成第{number}集必要事件{i}',
+                          **({'source_refs': []} if 'source_refs' in props.get('beats', {}).get('items', {}).get('properties', {}) else {})} for i in (1, 2)]
     elif 'cast' in props and 'shots' in props:
         roles = list(value['cast'])
         beats = payload['_agent_constraints']['outline']['beats']
@@ -92,6 +93,12 @@ def model_value(schema, payload):
         value.update(action='select', choice=payload['candidates'][0]['id']) if payload['candidates'] else value.update(action='escalate', choice='')
     if 'scores' in props:
         value['scores'] = {k: 8 for k in props['scores']['properties']}
+    if 'coverage_checks' in props:
+        episode = payload.get('episode') or payload.get('current_episode') or {}
+        for beat_id, check in value['coverage_checks'].items():
+            refs = [s['id'] for s in episode.get('shots', []) if beat_id in s.get('beat_ids', [])]
+            check.update(status='pass', evidence_refs=refs,
+                         reason='Synthetic narrative fixture carries this event in the specified current shot.')
     validate(value, schema)
     return value
 

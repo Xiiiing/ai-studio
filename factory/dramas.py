@@ -245,7 +245,7 @@ def snapshot(pid, *, db=None, details=True):
 def validate_plan(plan, project):
     from jsonschema import validate, ValidationError
     from .drama_planning import plan_schema
-    try: validate(plan, plan_schema(project['episode_count']))
+    try: validate(plan, plan_schema(project['episode_count'], project))
     except ValidationError as exc:
         path = list(exc.absolute_path)
         raise PlanValidationError('全剧规划字段无效：' + '.'.join(map(str, path)),

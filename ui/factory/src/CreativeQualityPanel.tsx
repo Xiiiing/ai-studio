@@ -142,7 +142,7 @@ export function CreativeQualityPanel({ project }: { project: RecordData }) {
           )}
           {rows(coverage.invalid).map((value, i) => (
             <p role="alert" key={i}>
-              {value}
+              {String(value)}
             </p>
           ))}
         </div>
