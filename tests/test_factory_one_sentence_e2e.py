@@ -48,6 +48,7 @@ def model_value(schema, payload):
         beats = payload['_agent_constraints']['outline']['beats']
         for index, shot in enumerate(value['shots']):
             shot.update(prompt='An adult stands beside a blue wall with a white cup on the table.',
+                        camera_motion='hold',
                         action='The adult gently turns toward the camera.',
                         motion_prompt='A visible gentle head turn toward the camera.',
                         reference_group=roles[0], characters=[roles[0]],
@@ -66,6 +67,15 @@ def model_value(schema, payload):
         value['image']['description'] = shot['prompt']
         value['video'].update(initial_state='An adult faces the wall beside a white cup.', action=shot['action'],
                               end_state='The adult faces the camera beside the same cup.', camera='Locked camera.', requires_body_motion=True)
+    elif 'motion' in props and 'from_sample' in props:
+        value.update(motion='hold', from_sample=1, to_sample=2,
+                     evidence='Synthetic test pattern background has fixed framing in both samples.')
+    elif 'observations' in props and 'mouth' in props['observations'].get('items', {}).get('properties', {}):
+        # The CPU test pattern contains no people. The integrated explicit
+        # constraint verifier requires one genuine-shaped observation per sample.
+        value['observations'] = [{'sample': i, 'mouth': 'not_visible',
+            'evidence': 'Synthetic test pattern has no visible human mouth.'}
+            for i in range(1, props['observations']['minItems'] + 1)]
     elif 'alignment' in props and 'observations' in props:
         value['alignment'] = 'match'
         value['observations'] = [{'subject': 'lead', 'visible_state': 'Synthetic adult beside a cup.', 'image_region': 'center', 'certainty': 'visible'}]
@@ -235,6 +245,7 @@ def test_three_episode_worker_delivery_uses_real_business_stages(monkeypatch, tm
 
             current = dramas.snapshot(p['id'])
             if current['automation_state']['status'] == 'blocked':
+                print('SYNTHETIC_BLOCKED', [(e['id'], store.get(e['id'], False).get('needs_decision'), store.get(e['id'], False).get('error')) for e in current['episodes']])
                 from factory import agent_loop
                 for record in [store.get(p['id'], False), *[store.get(e['id'], False) for e in current['episodes']]]:
                     for row in agent_loop._rows(record):
