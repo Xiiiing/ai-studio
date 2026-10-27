@@ -359,6 +359,10 @@ class Handler(LocalMediaHandler):
                                                payload["expected_revision"],**video))
             if route=="/api/factory/projects":
                 return self.json({"project":store.create(payload)},202)
+            match=re.fullmatch(r"/api/factory/projects/([a-f0-9]{12})/creative-quality/review",route)
+            if match:
+                from .quality_recheck import configure
+                return self.json(configure(match[1],payload),202)
             match=re.fullmatch(r"/api/factory/projects/([a-f0-9]{12})/creative-quality",route)
             if match:
                 from .creative_contracts import adopt
