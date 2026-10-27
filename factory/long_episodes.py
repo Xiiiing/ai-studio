@@ -366,6 +366,12 @@ def _reference_stage(episode_id, unit_id, *, finished=False):
 
 
 def run(episode, config):
+    from .quality_recheck import require_current, handle_final as handle_quality_final
+    if (episode.get('delivery') or {}).get('quality_recheck_id') and not episode.get('revision_action'):
+        require_current(episode)
+    quality_handled = handle_quality_final(episode, long_episode=True)
+    if quality_handled is not None: return quality_handled
+    episode = store.get(episode['id'], False)
     from .edit_versions import handle_adopted_final, require_adopted_current
     require_adopted_current(episode)
     handled = handle_adopted_final(episode,long_episode=True)

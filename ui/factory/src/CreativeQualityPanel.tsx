@@ -12,6 +12,7 @@ const kinds: Record<string, string> = {
 export function CreativeQualityPanel({ project }: { project: RecordData }) {
   const client = useQueryClient();
   const [confirmed, setConfirmed] = useState(false);
+  const [reviewAuthorized, setReviewAuthorized] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const enabled =
@@ -29,7 +30,12 @@ export function CreativeQualityPanel({ project }: { project: RecordData }) {
     queryFn: () => request(`/projects/${project.id}/creative-quality`),
     initialData: project.creative_quality,
     retry: false,
+    refetchInterval: (query) =>
+      ["queued", "running"].includes(query.state.data?.recheck?.task?.status)
+        ? 1500
+        : false,
   });
+  const recheck = quality.data?.recheck?.task;
   const coverage = quality.data?.coverage || project.creative_quality?.coverage;
   const continuity =
     quality.data?.continuity || project.creative_quality?.continuity;
@@ -45,6 +51,26 @@ export function CreativeQualityPanel({ project }: { project: RecordData }) {
       await client.invalidateQueries();
     } catch (err) {
       setError(err instanceof Error ? err.message : "启用失败，请刷新后核对");
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function reviewExisting() {
+    setBusy(true);
+    setError("");
+    try {
+      await request(`/projects/${project.id}/creative-quality/review`, {
+        expected_revision: project.revision,
+        request_id: crypto.randomUUID(),
+        confirmed: true,
+        authorize_review: reviewAuthorized,
+      });
+      setReviewAuthorized(false);
+      await client.invalidateQueries();
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "复核请求未完成，请核对已有任务",
+      );
     } finally {
       setBusy(false);
     }
@@ -77,6 +103,50 @@ export function CreativeQualityPanel({ project }: { project: RecordData }) {
             ? "当前稿件需要按新契约重新审核"
             : "已采用有来源的审核契约"}
         </p>
+      )}
+      {enabled && (
+        <div aria-label="复核现有稿件与成片">
+          <p>
+            复核只读取现有稿件与文件；不重写、不生成、不重制。缺少新契约元数据时会列出缺口，需在原修改入口另行处理。
+          </p>
+          <label>
+            <input
+              type="checkbox"
+              checked={reviewAuthorized}
+              onChange={(e) => setReviewAuthorized(e.target.checked)}
+            />
+            授权本次已有内网文字与视觉模型复核
+          </label>
+          <button
+            disabled={
+              !reviewAuthorized ||
+              busy ||
+              ["queued", "running"].includes(recheck?.status)
+            }
+            onClick={reviewExisting}
+          >
+            复核现有稿件与成片
+          </button>
+          {recheck && (
+            <p role="status">
+              复核状态：
+              {(
+                {
+                  queued: "排队中",
+                  running: "正在读取现有证据",
+                  pass: "复核通过，成片仍需重新人工终审",
+                  fail: "未通过，原稿与素材保留",
+                  uncertain: "证据不足，原稿与素材保留",
+                  needs_metadata: "需明确补齐原稿元数据",
+                  unknown: "结果未知，等待核对原调用",
+                  failed: "未完成，原稿与素材保留",
+                } as Record<string, string>
+              )[recheck.status] || recheck.status}
+            </p>
+          )}
+          {recheck?.message && <p>{recheck.message}</p>}
+          {recheck?.error && <p role="alert">{recheck.error}</p>}
+        </div>
       )}
       {error && <p role="alert">{error}</p>}
       {rows(review.issues).map((issue, i) => (
