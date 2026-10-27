@@ -404,6 +404,7 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
                 <label>
                   进入转场
                   <select
+                    aria-label="进入转场"
                     value={clip.transition.kind}
                     disabled={index === 0}
                     onChange={(e) =>
@@ -552,6 +553,7 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
         <label>
           添加已有背景音乐
           <select
+            aria-label="添加已有背景音乐"
             value=""
             onChange={(e) => {
               const id = e.target.value;
@@ -588,6 +590,7 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
             <label>
               字幕 {index + 1}
               <textarea
+                aria-label={`字幕 ${index + 1}`}
                 value={cue.text}
                 maxLength={1000}
                 onChange={(e) =>
