@@ -93,11 +93,42 @@ def _base(project):
 
 def _unknown(project):
     base = _base(project)
+    for intent in (base.parent / 'shot-transitions').glob('*/intent.json'):
+        if not (intent.parent / 'review.json').exists(): return True
     for index, intent in enumerate(base.glob('*/**/intent.json')):
         if index >= 2000: raise ValueError('已有复核意图过多，请先核对历史记录')
         if not (intent.parent / 'result.json').exists() and not list((intent.parent / 'call').glob('calls/*/parsed.json')):
             return True
     return False
+
+
+
+def require_idle_scope(db, project):
+    """Project adoption/recheck cannot race descendant production or cloud intents."""
+    from .production_edits import require_resolved_cloud
+    from .review_advice import ensure_no_gpu_intents
+    pending, seen = [project['id']], set()
+    while pending:
+        pid = pending.pop()
+        if pid in seen: continue
+        if len(seen) >= 10000: raise ValueError('项目层级过大，请先核对制作范围')
+        seen.add(pid)
+        current = store._read(db, pid)
+        if db.execute("SELECT 1 FROM jobs WHERE project_id=? AND status IN ('queued','running')", (pid,)).fetchone():
+            raise ValueError('项目或制作单元仍有在途任务，请先暂停并等待收尾')
+        ensure_no_gpu_intents(current)
+        episode = current.get('episode') or current.get('script') or {}
+        require_resolved_cloud(db, pid, [s['id'] for s in episode.get('shots', [])])
+        if db.execute("SELECT 1 FROM cloud_tasks WHERE project_id=? AND status NOT IN ('downloaded','failed','rejected')", (pid,)).fetchone():
+            raise ValueError('项目或制作单元尚有未核对云任务，不能用新契约绕过原提交')
+        children = [*current.get('unit_ids', [])]
+        if current.get('record_kind') == 'drama': children += current.get('episodes', [])
+        if any(not isinstance(child, str) for child in children): raise ValueError('项目层级记录无效，请先核对归属')
+        pending.extend(children)
+    # A scene-unit's parent can still own a job changing its plan.
+    parent_id = project.get('episode_id')
+    if parent_id and parent_id not in seen and db.execute("SELECT 1 FROM jobs WHERE project_id=? AND status IN ('queued','running')", (parent_id,)).fetchone():
+        raise ValueError('父剧集仍在制作，请先暂停父项目后启用新契约')
 
 
 def configure(pid, payload):
@@ -121,13 +152,7 @@ def configure(pid, payload):
         if not editorial.enabled(project): raise ValueError('请先明确启用新创作契约，历史项目不会自动升级')
         if project.get('record_kind') == 'drama': raise ValueError('请逐集选择现有稿件与成片进行复核')
         require_idle(db, project)
-        ids = [pid, *project.get('unit_ids', [])]
-        for uid in ids:
-            if db.execute("SELECT 1 FROM jobs WHERE project_id=? AND status IN ('queued','running')", (uid,)).fetchone():
-                raise ValueError('项目或制作单元仍有在途任务，请先暂停并等待收尾')
-            ensure_no_gpu_intents(store._read(db, uid))
-            episode, _ = _episode(store._read(db, uid))
-            require_resolved_cloud(db, uid, [s['id'] for s in episode.get('shots', [])])
+        require_idle_scope(db, project)
         if _unknown(project): raise ValueError('已有复核模型请求结果未知，请先核对原调用，不能重复提交')
         config = _config(project)
         _authorize(project, config)
@@ -148,7 +173,9 @@ def configure(pid, payload):
 def _owned(db, job):
     row = db.execute('SELECT project_id,status,lease FROM jobs WHERE id=?', (job['id'],)).fetchone()
     if not row or row['project_id'] != job['project_id'] or row['status'] != 'running' or row['lease'] != job.get('lease'): return False
-    task = (store._read(db, job['project_id']).get('quality_recheck') or {}).get('task') or {}
+    project = store._read(db, job['project_id'])
+    if project['status'] == 'cancelled': return False
+    task = (project.get('quality_recheck') or {}).get('task') or {}
     return task.get('job_id') == job['id'] and task.get('status') in ACTIVE and not task.get('cancel_requested')
 
 
@@ -234,7 +261,7 @@ def _review_media(project, episode, units, job, config):
     from .llm import _image_url
     from .story_coverage import required_events
     from .schemas import object_schema, text_schema, array_schema
-    from .shot_continuity import verify_delivery, verify_episode
+    from .shot_continuity import verify_delivery
     delivery = project['delivery']
     path = verified_artifact(project, 'episode_clean.mp4')
     seconds = float(delivery.get('duration_seconds', episode.get('total_seconds', project['duration_seconds'])))
@@ -269,7 +296,15 @@ def _review_media(project, episode, units, job, config):
             checks.append({'event_id': event['id'], 'samples': samples, 'media_sha256': payload['media_sha256'], **answer})
             if answer['status'] != 'pass' or answer['issues']:
                 return {'status': answer['status'] if answer['status'] != 'pass' else 'fail', 'technical': technical, 'checks': checks, 'issues': answer['issues']}
-    transitions = verify_episode(project, units, delivery, config, lambda: _control(job)) if units else verify_delivery(project, delivery, config, lambda: _control(job))
+    from .scheduler import ProductionNeedsDecision
+    try:
+        transitions = verify_delivery({**project, 'script': episode, 'episode': episode}, delivery, config, lambda: _control(job))
+    except ProductionNeedsDecision as exc:
+        detail = exc.details or {}
+        if exc.reason == 'shot_continuity_unknown': raise UnknownReview('上次跨镜复核结果未知，未重复请求') from exc
+        return {'status': 'fail', 'technical': technical, 'checks': checks, 'continuity': detail,
+            'repair_shot_ids': detail.get('shot_ids', []), 'unit_id': detail.get('unit_id'),
+            'issues': (detail.get('review') or {}).get('issues') or [str(exc)]}
     return {'status': 'pass', 'technical': technical, 'checks': checks, 'continuity': transitions,
         'media_sha256': core.sha256(path), 'scope': 'sampled_events_and_adjacent_endpoint_frames_not_human_acceptance'}
 
@@ -296,10 +331,15 @@ def run(job):
                 'message': '现有稿件缺少新契约的有效映射、状态或规格；请在原修改入口明确补齐后再复核。本任务不会重写或重制。'}
         else:
             text = _review_text(project, episode, bound, config)
-            outcome = {'status': 'pass' if text['passed'] else 'fail', 'text_review': text, 'issues': text['issues']}
+            from .creative import _script_gate_issues
+            outcome = {'status': 'pass' if text['passed'] else 'fail', 'text_review': text, 'issues': text['issues'] if text['passed'] else _script_gate_issues(text)}
             if text['passed'] and project.get('delivery'):
                 media = _review_media(project, episode, units, bound, config)
-                outcome.update(status=media['status'], media_review=media, issues=media.get('issues', []))
+                media_issues = [{'severity': 'major', 'code': 'existing_media_recheck', 'description': str(value),
+                    'evidence': '当前媒体 ' + str(media.get('media_sha256') or (project.get('delivery') or {}).get('source_signature')) + ' 的实际检查回执',
+                    'suggestion': '在原镜头或剪辑入口按证据明确安排修复；本复核任务不会重制。',
+                    'shot_ids': media.get('repair_shot_ids', []), 'unit_id': media.get('unit_id'), 'auto_repair': False} for value in media.get('issues', [])]
+                outcome.update(status=media['status'], media_review=media, issues=media_issues)
             elif text['passed']:
                 outcome['media_review'] = {'status': 'not_created', 'scope': 'text_only_existing_media_absent'}
         with store.connection() as db:
@@ -351,7 +391,9 @@ def run(job):
 
 def snapshot(project):
     state = project.get('quality_recheck') or {}
-    return {'task': copy.deepcopy(state.get('task')), 'history': copy.deepcopy(state.get('history', [])),
+    task = copy.deepcopy(state.get('task'))
+    if task and task.get('status') in ACTIVE and project['status'] == 'cancelled': task['status'] = 'cancelled'
+    return {'task': task, 'history': copy.deepcopy(state.get('history', [])),
         'scope': 'existing_text_and_media_only_no_generation', 'requires_review': project.get('creative_quality_review_required', False)}
 
 

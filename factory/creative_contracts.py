@@ -187,6 +187,8 @@ def adopt(pid, payload):
         cas(project, payload)
         require_idle(db, project)
         ensure_no_gpu_intents(project)
+        from .quality_recheck import require_idle_scope
+        require_idle_scope(db, project)
         initialize(project)
         from .quality_recheck import APPROVAL_KEYS
         previous_approval = {key: copy.deepcopy(project[key]) for key in APPROVAL_KEYS if key in project}
