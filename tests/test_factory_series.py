@@ -36,9 +36,12 @@ def document():
 
 def episode():
     return {"cast": {"female": "Adult woman with short hair", "male": "Adult man with long hair"},
-            "shots": [{"id": "S01", "seconds": 4, "prompt": "She waits", "reference_group": "female"},
-                      {"id": "S02", "seconds": 4, "prompt": "He reads", "reference_group": "male"},
-                      {"id": "S03", "seconds": 4, "prompt": "He reaches the same station", "reference_group": "male", "reference_shots": ["S01"]}]}
+            "shots": [{"id": "S01", "seconds": 4, "prompt": "She waits", "reference_group": "female",
+                       "continuity_state": {"mode": "continuous", "opening_state": "The woman waits at the station.", "ending_state": "She remains at the station.", "allowed_changes": []}},
+                      {"id": "S02", "seconds": 4, "prompt": "He reads", "reference_group": "male",
+                       "continuity_state": {"mode": "scene_cut", "opening_state": "The man reads in his room.", "ending_state": "The same man continues reading.", "allowed_changes": ["Cut from the station to the man's room."]}},
+                      {"id": "S03", "seconds": 4, "prompt": "He reaches the same station", "reference_group": "male", "reference_shots": ["S01"],
+                       "continuity_state": {"mode": "time_skip", "opening_state": "The same man arrives at the station.", "ending_state": "He remains at the station.", "allowed_changes": ["Omit the journey from his room to the station."]}}]}
 
 
 @pytest.fixture
