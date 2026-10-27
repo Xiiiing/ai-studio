@@ -199,6 +199,10 @@ class Handler(LocalMediaHandler):
             if match:
                 from .capability_adoption import snapshot as capability_snapshot
                 return self.json(capability_snapshot(match[1]))
+            match=re.fullmatch(r"/api/factory/projects/([a-f0-9]{12})/edits",path)
+            if match:
+                from .edit_versions import snapshot as edit_snapshot
+                return self.json(edit_snapshot(match[1]))
             match=re.fullmatch(r"/api/factory/projects/([a-f0-9]{12})/series",path)
             if match:
                 from .series_bible import summary as series_summary
@@ -367,6 +371,10 @@ class Handler(LocalMediaHandler):
             if match:
                 from .capability_adoption import adopt
                 return self.json({"project":adopt(match[1],payload)},202)
+            match=re.fullmatch(r"/api/factory/projects/([a-f0-9]{12})/edits",route)
+            if match:
+                from .edit_versions import mutate as edit_mutate
+                return self.json(edit_mutate(match[1],payload),202)
             match=re.fullmatch(r"/api/factory/projects/([a-f0-9]{12})/shots/(S\d{2,3})",route)
             if match:
                 from .shot_edits import mutate as mutate_shot

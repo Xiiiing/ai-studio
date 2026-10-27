@@ -54,6 +54,8 @@ FACTORY_ROUTES = (
     Route("POST", PROJECT + r"/creative-quality", "configuration", "creative_quality_adopt", 4096),
     Route("GET", PROJECT + r"/model-capabilities", "read", "model_capability_snapshot"),
     Route("POST", PROJECT + r"/model-capabilities", "configuration", "capability_adopt", 4096),
+    Route("GET", PROJECT + r"/edits", "read", "timeline_versions"),
+    Route("POST", PROJECT + r"/edits", "task_control", "timeline_edit", 1048576),
     Route("POST", PROJECT + r"/generation-pipeline(?:/settle)?", "configuration", "generation_plan_configure", 4096),
     Route("GET", PROJECT + r"/prompts(?:/calls(?:/[a-f0-9]{32})?)?", "read", "prompt_workbench"),
     Route("POST", PROJECT + r"/prompts/(save|preview|validate|apply)", "modify", "prompt_edit", 131072),

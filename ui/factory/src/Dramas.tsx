@@ -32,6 +32,7 @@ import { GenerationPipeline } from "./GenerationPipeline";
 import { PromptWorkbench } from "./PromptWorkbench";
 import { CreativeQualityPanel } from "./CreativeQualityPanel";
 import { ProjectModelCapabilities } from "./ProjectModelCapabilities";
+import { TimelineEditor } from "./TimelineEditor";
 import { QualityComparison } from "./QualityComparison";
 import { DramaNextStep } from "./DramaNextStep";
 import {
@@ -1231,6 +1232,14 @@ export function DramaDetail({
                   >
                     查看剧集流程
                   </button>
+                  {e.delivery && (
+                    <button
+                      className="button"
+                      onClick={() => openProject(e.id, "timeline")}
+                    >
+                      时间线剪辑
+                    </button>
+                  )}
                   {[
                     "queued",
                     "producing",
@@ -1658,6 +1667,7 @@ export function LongEpisodeDetail({
           ["comparison", "质量比较"],
           ["creative-quality", "审核与返修依据"],
           ["model-capabilities", "模型能力与版本"],
+          ["timeline", "时间线剪辑"],
           ["prompts", "提示词工作台"],
           ["generation", "生成提示词流水线"],
           ["agent", "Agent 执行循环"],
@@ -1682,6 +1692,8 @@ export function LongEpisodeDetail({
         <CreativeQualityPanel project={p} />
       ) : activeTab === "model-capabilities" ? (
         <ProjectModelCapabilities project={p} />
+      ) : activeTab === "timeline" ? (
+        <TimelineEditor projectId={p.id} />
       ) : activeTab === "comparison" ? (
         <QualityComparison project={p} />
       ) : activeTab === "workflow" ? (

@@ -15,6 +15,7 @@ export const projectPages = [
   ["creative-quality", "审核与返修依据"],
   ["model-capabilities", "模型能力与版本"],
   ["delivery", "成片交付"],
+  ["timeline", "时间线剪辑"],
   ["series", "系列资产"],
   ["materials", "素材与定稿"],
   ["costs", "云任务与费用"],
@@ -37,11 +38,13 @@ export function ProjectNavigation({
   onTab: (tab: string) => void;
 }) {
   const section =
-    tab === "series"
-      ? "materials"
-      : ["quality", "comparison", "creative-quality"].includes(tab)
-        ? "decisions"
-        : tab;
+    tab === "timeline"
+      ? "delivery"
+      : tab === "series"
+        ? "materials"
+        : ["quality", "comparison", "creative-quality"].includes(tab)
+          ? "decisions"
+          : tab;
   const children =
     section === "materials"
       ? [
@@ -55,7 +58,12 @@ export function ProjectNavigation({
             ["comparison", "质量比较"],
             ["creative-quality", "审核与返修依据"],
           ]
-        : [];
+        : section === "delivery"
+          ? [
+              ["delivery", "成片交付"],
+              ["timeline", "时间线剪辑"],
+            ]
+          : [];
   return (
     <div className="project-navigation-bar">
       <SelectionGroup

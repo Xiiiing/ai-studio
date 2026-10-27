@@ -83,6 +83,7 @@ import { GenerationPipeline } from "./GenerationPipeline";
 import { PromptWorkbench } from "./PromptWorkbench";
 import { CreativeQualityPanel } from "./CreativeQualityPanel";
 import { ProjectModelCapabilities } from "./ProjectModelCapabilities";
+import { TimelineEditor } from "./TimelineEditor";
 import { QualityComparison } from "./QualityComparison";
 import {
   CreativeContract,
@@ -1821,6 +1822,8 @@ function Project({
             <CreativeQualityPanel project={p} />
           ) : tab === "model-capabilities" ? (
             <ProjectModelCapabilities project={p} />
+          ) : tab === "timeline" ? (
+            <TimelineEditor projectId={p.id} />
           ) : tab === "comparison" ? (
             <QualityComparison project={p} />
           ) : tab === "quality" ? (
