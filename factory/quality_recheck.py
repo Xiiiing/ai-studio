@@ -224,14 +224,18 @@ def _call(project, job, config, phase, role, system, payload, schema, content=No
 
 def _structural(project, episode, units):
     from .schemas import technical_issues
-    from .story_coverage import structural_issues as coverage_issues
-    from .shot_continuity import structural_issues as continuity_issues
     issues = []
     if not episode.get('shots'):
         return [{'code': 'script_missing', 'description': '没有可复核的现有稿件，请在原创作入口补齐稿件后再复核', 'shot_ids': []}]
     if units:
         for unit in units: issues.extend(technical_issues(unit.get('episode') or unit.get('script') or {}, unit))
-        issues.extend(coverage_issues(project, episode)); issues.extend(continuity_issues(project, episode))
+        marker = project.get('creative_quality_contract') or {}
+        if marker.get('coverage_version') == 'ai-studio.story-coverage.v1':
+            from .story_coverage import structural_issues
+            issues.extend(structural_issues(project, episode))
+        if marker.get('continuity_version') == 'ai-studio.shot-continuity.v1':
+            from .shot_continuity import structural_issues
+            issues.extend(structural_issues(project, episode))
     else: issues.extend(technical_issues(episode, project))
     return issues
 
@@ -259,9 +263,7 @@ def _review_media(project, episode, units, job, config):
     from .quality import inspect_video
     from .drama_continuity import frame
     from .llm import _image_url
-    from .story_coverage import required_events
     from .schemas import object_schema, text_schema, array_schema
-    from .shot_continuity import verify_delivery
     delivery = project['delivery']
     path = verified_artifact(project, 'episode_clean.mp4')
     seconds = float(delivery.get('duration_seconds', episode.get('total_seconds', project['duration_seconds'])))
@@ -273,8 +275,15 @@ def _review_media(project, episode, units, job, config):
         positions[shot['id']] = (cursor, float(shot['seconds'])); cursor += float(shot['seconds'])
     if abs(cursor - seconds) > 1/24: return {'status': 'fail', 'technical': technical, 'issues': ['成片时间线与当前稿件长度不符，需明确修复后复核']}
     checks = []
-    for event in required_events(project):
-        carriers = [s for s in episode['shots'] if event['id'] in s.get('beat_ids', [])]
+    marker = project.get('creative_quality_contract') or {}
+    coverage_enabled = marker.get('coverage_version') == 'ai-studio.story-coverage.v1'
+    if coverage_enabled:
+        from .story_coverage import required_events
+        events = required_events(project)
+    else:
+        events = [{'id': 'existing_script', 'description': '按当前批准稿件核查已有媒体中的人物、动作与客观要求；只说明实际采样范围', 'approved_script': episode}]
+    for event in events:
+        carriers = [s for s in episode['shots'] if event['id'] in s.get('beat_ids', [])] if coverage_enabled else episode['shots']
         if not carriers: return {'status': 'uncertain', 'technical': technical, 'issues': ['必要事件缺少实际成片镜头映射：' + event['id']]}
         for batch in range(0, len(carriers), 12):
             samples = []
@@ -298,7 +307,10 @@ def _review_media(project, episode, units, job, config):
                 return {'status': answer['status'] if answer['status'] != 'pass' else 'fail', 'technical': technical, 'checks': checks, 'issues': answer['issues']}
     from .scheduler import ProductionNeedsDecision
     try:
-        transitions = verify_delivery({**project, 'script': episode, 'episode': episode}, delivery, config, lambda: _control(job))
+        transitions = {'status': 'not_required_by_contract'}
+        if marker.get('continuity_version') == 'ai-studio.shot-continuity.v1':
+            from .shot_continuity import verify_delivery
+            transitions = verify_delivery({**project, 'script': episode, 'episode': episode}, delivery, config, lambda: _control(job))
     except ProductionNeedsDecision as exc:
         detail = exc.details or {}
         if exc.reason == 'shot_continuity_unknown': raise UnknownReview('上次跨镜复核结果未知，未重复请求') from exc
@@ -309,7 +321,7 @@ def _review_media(project, episode, units, job, config):
         if _unknown(project): raise UnknownReview('跨镜复核已有提交意图但未取得有效回执，保留原成片等待核对') from exc
         raise
     return {'status': 'pass', 'technical': technical, 'checks': checks, 'continuity': transitions,
-        'media_sha256': core.sha256(path), 'scope': 'sampled_events_and_adjacent_endpoint_frames_not_human_acceptance'}
+        'media_sha256': core.sha256(path), 'scope': 'sampled_existing_media_not_human_acceptance'}
 
 
 def run(job):
