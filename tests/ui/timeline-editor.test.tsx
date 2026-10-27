@@ -138,9 +138,23 @@ it("keeps formal export disabled until current checks pass and saves explicit ne
     await screen.findByRole("heading", { name: "时间线剪辑" }),
   ).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "正式导出" })).toBeDisabled();
+  await user.clear(screen.getByLabelText("拆分源帧 1"));
+  await user.type(screen.getByLabelText("拆分源帧 1"), "24");
+  await user.click(screen.getAllByRole("button", { name: "按指定帧拆分" })[0]);
   await user.click(screen.getByRole("button", { name: "保存为新版本" }));
   expect(
     vi.mocked(request).mock.calls.find((c) => Boolean(c[1]))?.[1],
-  ).toMatchObject({ action: "save", expected_revision: 7, document: doc });
+  ).toMatchObject({
+    action: "save",
+    expected_revision: 7,
+    document: {
+      ...doc,
+      clips: [
+        expect.objectContaining({ in_frame: 0, out_frame: 24 }),
+        expect.objectContaining({ in_frame: 24, out_frame: 72 }),
+        expect.objectContaining({ in_frame: 0, out_frame: 72 }),
+      ],
+    },
+  });
   expect(screen.getByRole("button", { name: "正式导出" })).toBeDisabled();
 });

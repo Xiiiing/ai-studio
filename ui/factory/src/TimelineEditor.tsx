@@ -82,6 +82,7 @@ export function splitEditClip(
 ): EditDocument {
   const next = structuredClone(document),
     clip = next.clips[index];
+  if (!Number.isInteger(sourceFrame)) throw new Error("拆分点须为整数帧");
   if (sourceFrame <= clip.in_frame || sourceFrame >= clip.out_frame)
     throw new Error("拆分点须位于源入点和出点之间");
   const positions = editPositions(next.clips),
@@ -171,6 +172,7 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
     [dirty, setDirty] = useState(false),
     [watched, setWatched] = useState(false),
     [reviewAuthorized, setReviewAuthorized] = useState(false);
+  const [splitFrames, setSplitFrames] = useState<Record<string, number>>({});
   const data = query.data,
     versions = data?.versions ?? [],
     selected = versions.find((v: RecordData) => v.id === version);
@@ -182,6 +184,7 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
     setDirty(false);
     setError("");
     setWatched(false);
+    setSplitFrames({});
   }, [projectId]);
   useEffect(() => {
     if (data && !document && data.catalog?.default) {
@@ -240,6 +243,7 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
     setDirty(false);
     setWatched(false);
     setError("");
+    setSplitFrames({});
   }
   if (query.isPending) return <p>正在读取剪辑素材…</p>;
   if (query.error)
@@ -439,6 +443,41 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
                 />
               </div>
               <div className="timeline-tools">
+                <label>
+                  拆分源帧
+                  <input
+                    aria-label={`拆分源帧 ${index + 1}`}
+                    type="number"
+                    step="1"
+                    min={clip.in_frame + 1}
+                    max={clip.out_frame - 1}
+                    value={
+                      splitFrames[clip.id] ??
+                      Math.floor((clip.in_frame + clip.out_frame) / 2)
+                    }
+                    onChange={(e) =>
+                      setSplitFrames((current) => ({
+                        ...current,
+                        [clip.id]: Number(e.target.value),
+                      }))
+                    }
+                  />
+                </label>
+                <button
+                  disabled={clip.out_frame - clip.in_frame < 2}
+                  onClick={() =>
+                    replace(() =>
+                      splitEditClip(
+                        document,
+                        index,
+                        splitFrames[clip.id] ??
+                          Math.floor((clip.in_frame + clip.out_frame) / 2),
+                      ),
+                    )
+                  }
+                >
+                  按指定帧拆分
+                </button>
                 <button
                   disabled={index === 0}
                   onClick={() =>
