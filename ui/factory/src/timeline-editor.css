@@ -1,0 +1,132 @@
+.timeline-editor {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+}
+.timeline-editor fieldset {
+  min-width: 0;
+  border: 1px solid var(--border, #7775);
+  border-radius: 12px;
+  padding: 1rem;
+}
+.timeline-editor legend {
+  font-weight: 650;
+  padding: 0 0.5rem;
+}
+.timeline-tools,
+.timeline-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: end;
+}
+.timeline-editor label {
+  display: grid;
+  gap: 0.35rem;
+  min-width: 0;
+  max-width: 100%;
+}
+.timeline-editor input:not([type="checkbox"]),
+.timeline-editor select,
+.timeline-editor textarea {
+  max-width: 100%;
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+}
+.timeline-fields label {
+  flex: 1 1 110px;
+}
+.timeline-fields input {
+  width: 8rem;
+}
+.timeline-editor .timeline-check {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  max-width: 45rem;
+}
+.timeline-check input {
+  flex: none;
+}
+.timeline-clip-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr));
+  gap: 1rem;
+}
+.timeline-clip,
+.timeline-audio,
+.timeline-caption {
+  display: grid;
+  gap: 0.7rem;
+  padding: 0.8rem;
+  border: 1px solid var(--border, #7775);
+  border-radius: 10px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.timeline-clip video {
+  width: 100%;
+  height: 160px;
+  object-fit: contain;
+  background: #111;
+  border-radius: 8px;
+}
+.timeline-editor button {
+  white-space: normal;
+  min-height: 40px;
+}
+.timeline-overview {
+  display: flex;
+  gap: 2px;
+  min-width: 0;
+  overflow-x: auto;
+}
+.timeline-overview a {
+  display: grid;
+  text-align: center;
+  min-width: 42px;
+  padding: 0.5rem;
+  background: var(--surface, #7772);
+  border: 1px solid var(--border, #7775);
+  border-radius: 6px;
+}
+.timeline-overview small {
+  font-size: 0.75rem;
+}
+.timeline-audio audio {
+  max-width: 100%;
+  width: 100%;
+}
+.timeline-preview {
+  display: grid;
+  gap: 0.5rem;
+}
+.timeline-preview video {
+  width: 100%;
+  max-height: 60vh;
+  background: #111;
+}
+.timeline-editor fieldset > div + div {
+  margin-top: 0.75rem;
+}
+.timeline-editor [role="alert"] {
+  color: var(--danger, #b34d4d);
+}
+@media (max-width: 480px) {
+  .timeline-editor fieldset {
+    padding: 0.65rem;
+  }
+  .timeline-tools > * {
+    max-width: 100%;
+  }
+  .timeline-fields label {
+    flex-basis: 90px;
+  }
+  .timeline-tools button {
+    flex: 1 1 130px;
+  }
+  .timeline-editor h3 {
+    font-size: 1rem;
+  }
+}

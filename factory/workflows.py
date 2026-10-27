@@ -38,6 +38,7 @@ class State(TypedDict, total=False):
     final_answer: dict
     direct_production_revision: int
     restart_revision: int
+    timeline_edit_version: str
 
 
 def _project(state):
@@ -276,7 +277,8 @@ def final_decision(state):
     from .supervision import supervise_gate
     answer=store.answer_for(p["id"],gate["id"])
     from .drama_intent import enabled as whole_drama
-    if answer is None and not whole_drama(p):
+    from .edit_versions import adopted_current
+    if answer is None and not whole_drama(p) and not adopted_current(p):
         answer=supervise_gate(p["id"],gate)
     if answer is None and p.get("team_mode") == "delegated":
         # A receipt may outlive a lost graph checkpoint, or a human may answer
@@ -436,6 +438,11 @@ def _advance(pid):
         raise ProjectPaused("已在检查点暂停")
     if p["status"] in {"blocked","failed","cancelled"}:
         return {"blocked":True,"status":p["status"]}
+    from .edit_versions import handle_adopted_final, require_adopted_current
+    require_adopted_current(p)
+    handled = handle_adopted_final(p)
+    if handled is not None:
+        return handled
     with durable_graph(p.get("workflow_version",1)) as graph:
         config={"configurable":{"thread_id":pid},"recursion_limit":100}
         snap=graph.get_state(config)
@@ -444,6 +451,8 @@ def _advance(pid):
         if p.get("production_edit_revision"):
             from .production_edits import resume_edited_graph
             snap=resume_edited_graph(graph,snap,p,config)
+        from .edit_versions import resume_edited_graph as resume_timeline_graph
+        snap=resume_timeline_graph(graph,snap,p,config)
         if not snap.values:
             return graph.invoke({"project_id":pid},config)
         pending=[i for task in snap.tasks for i in task.interrupts]
