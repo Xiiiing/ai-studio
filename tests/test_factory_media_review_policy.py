@@ -99,7 +99,7 @@ def test_recovery_rejects_subjective_low_quality_even_with_blocking_code(data, k
     assert qa == before
 
 
-@pytest.mark.parametrize('mutation', ['none', 'choice', 'minor_choice', 'stale_media', 'stale_revision', 'stale_shot', 'missing_location'])
+@pytest.mark.parametrize('mutation', ['none', 'choice', 'minor_choice', 'stale_media', 'stale_revision', 'stale_shot', 'stale_camera', 'missing_location'])
 def test_recovery_accepts_only_current_objective_major_evidence(data, mutation):
     items = [classified_issue(code='action'), classified_issue('AESTHETIC', code='low_quality')]
     p, config, target, qa, previous, root = reviewed_case(data, items)
@@ -108,6 +108,7 @@ def test_recovery_accepts_only_current_objective_major_evidence(data, mutation):
     if mutation == 'stale_media': qa['semantic']['media_review_contract']['media_sha256'] = '0' * 64
     if mutation == 'stale_revision': qa['semantic']['media_review_contract']['production_revision'] -= 1
     if mutation == 'stale_shot': target['shot']['action'] = 'A newly approved different action.'
+    if mutation == 'stale_camera': target['shot']['camera_motion'] = 'pan_left'
     if mutation == 'missing_location': items[0].pop('location')
     result = recovery.prepare_repair(p, config, target, qa, previous_attempt=previous, root=root)
     if mutation == 'none':
@@ -128,6 +129,18 @@ def test_measured_objective_failure_keeps_blocking_and_repair_with_subjective_ad
     assert result['action'] == 'refine_motion' and result['reason'].endswith('_black_frame')
     combined = quality.combine(qa['technical'], {'status': 'pass', 'issues': [classified_issue('AESTHETIC')]}, True)
     assert combined['status'] == 'fail' and not combined['eligible_for_selection']
+
+
+def test_objective_character_reference_repair_uses_its_actual_review_context(data):
+    p, config, target, qa, previous, root = reviewed_case(data, [classified_issue(code='identity')])
+    target['kind'] = 'image'
+    context = target.pop('shot')
+    context.update(review_purpose='character_reference', approved_reference_requirements={'identity': 'An adult woman with the approved white cup.'})
+    target['review_context'] = context
+    qa['semantic']['media_review_contract'] = policy.binding(p, context, target['references'][0])
+    result = recovery.prepare_repair(p, config, target, qa, previous_attempt=previous, root=root)
+    assert result['action'] == 'refine_start_frame'
+    assert result['source']['media_review_target']['shot_id'] == context['id']
 
 
 def test_unmarked_legacy_media_keeps_original_review_contract(tmp_path):

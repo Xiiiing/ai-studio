@@ -124,9 +124,12 @@ def _source(project, config, target, assessment, previous, root):
             "failed_take": {k: copy.deepcopy(previous[k]) for k in (
                 "take", "attempt", "source_signature", "state", "output", "remote_task") if k in previous},
             "assessment": copy.deepcopy(assessment)}
-    from .media_review_policy import enabled as classified_media
+    from .media_review_policy import enabled as classified_media, shot_identity
     if classified_media(project):
         result['media_review_policy'] = 'ai-studio.media-review-boundary.v1'
+        review_target = target.get('shot') or target.get('review_context') or {}
+        result['media_review_target'] = {'shot_id': review_target.get('id'),
+                                       'approved_shot_sha256': shot_identity(review_target)}
     if target.get('approved_render_style'):
         result['approved_render_style'] = copy.deepcopy(target['approved_render_style'])
     if target.get("kind") == "image":
@@ -261,7 +264,7 @@ def _priced_boundary(config, target):
     return None
 
 
-def _issues(assessment, *, classified=False, previous=None, production_revision=None, project_id=None, shot=None):
+def _issues(assessment, *, classified=False, previous=None, production_revision=None, project_id=None, review_target=None):
     if not isinstance(assessment, dict) or assessment.get("status") != "fail":
         return [], "review_not_failed"
     semantic = assessment.get("semantic")
@@ -274,7 +277,7 @@ def _issues(assessment, *, classified=False, previous=None, production_revision=
     if any(str(i.get("code", "")).lower() in _UNSAFE for i in issues):
         return [], "unsafe_or_unresolved_submission"
     if classified:
-        from .media_review_policy import repairable, shot_identity, VERSION
+        from .media_review_policy import repairable, VERSION
         if any(isinstance(i, dict) and i.get('requires_choice') is True for i in assessment.get('issues', [])):
             return [], 'media_goal_requires_choice'
         technical = assessment.get('technical') or {}
@@ -283,8 +286,9 @@ def _issues(assessment, *, classified=False, previous=None, production_revision=
         contract = semantic.get('media_review_contract') or {}
         expected_media = ((previous or {}).get('output') or {}).get('sha256')
         bound = (contract.get('version') == VERSION and contract.get('production_revision') == production_revision
-                 and contract.get('project_id') == project_id and contract.get('shot_id') == (shot or {}).get('id')
-                 and contract.get('approved_shot_sha256') == shot_identity(shot or {})
+                 and contract.get('project_id') == project_id
+                 and contract.get('shot_id') == (review_target or {}).get('shot_id')
+                 and contract.get('approved_shot_sha256') == (review_target or {}).get('approved_shot_sha256')
                  and bool(expected_media) and contract.get('media_sha256') == expected_media)
         issues = [i for i in issues if i in measured or bound and repairable(i, contract)]
         if not issues:
@@ -295,7 +299,7 @@ def _issues(assessment, *, classified=False, previous=None, production_revision=
 def _plan(source, *, strategy_index=0):
     issues, stop = _issues(source["assessment"], classified=bool(source.get('media_review_policy')),
                            previous=source.get('failed_take'), production_revision=source.get('production_revision'),
-                           project_id=source.get('project_id'), shot=source.get('shot'))
+                           project_id=source.get('project_id'), review_target=source.get('media_review_target'))
     if stop:
         return _stop(stop, source)
     codes = {str(issue.get("code", "")).lower() for issue in issues}
