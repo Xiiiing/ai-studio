@@ -46,6 +46,7 @@ def seed_validation_project():
         db.execute('BEGIN IMMEDIATE')
         project=store._read(db,pid)
         project.update(status='awaiting_final',is_validation=True,pause_requested=True,delivery=delivery,
+            duration_seconds=6,
             episode={'shots':clips,'cast':{}},script={'shots':clips,'cast':{}},shots=clips,
             outline={'beats':[{'id':f'B{i}','description':f'展示CPU测试图案{i}，不证明模型效果。'} for i in (1,2)]})
         db.execute("UPDATE jobs SET status='cancelled' WHERE project_id=? AND status='queued'",(pid,))
