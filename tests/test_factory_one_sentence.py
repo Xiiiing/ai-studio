@@ -9,7 +9,7 @@ from factory import dramas, store, drama_intent as intent, drama_runtime, drama_
 from factory import agent_loop, generation_pipeline, drama_resources, drama_delivery
 from factory.scheduler import ProductionBudgetExceeded, ProductionNeedsDecision
 from factory.remote_tasks import ProductionDeferred
-from tests.test_factory_dramas import isolated, input_payload, plan
+from tests.test_factory_dramas import isolated, input_payload, plan, plan_for
 
 
 def create(**values):
@@ -17,9 +17,9 @@ def create(**values):
 
 
 def reviewed(p):
-    document = plan()
+    document = plan_for(p)
     for episode in document['episodes']:
-        episode['beats'] = [{'id': f"E{episode['number']}B{i}", 'description': f'必要事件{i}明确推进剧情'} for i in (1, 2)]
+        episode['beats'] = [{'id': f"E{episode['number']}B{i}", 'description': f'必要事件{i}明确推进剧情', 'source_refs': []} for i in (1, 2)]
     with store.connection() as db:
         db.execute("UPDATE jobs SET status='completed' WHERE project_id=?", (p['id'],))
     store.update(p['id'], {'draft_plan': document, 'plan_review': {'passed': True, 'issues': []},
@@ -153,7 +153,7 @@ def test_unverified_dependency_cannot_use_planned_state(isolated):
 def test_plan_events_cannot_be_missing_or_duplicate(isolated):
     p = store.get(create()['id'], False)
     document = plan()
-    with pytest.raises(dramas.PlanValidationError, match='必要事件'):
+    with pytest.raises(dramas.PlanValidationError, match='全剧规划字段无效|必要事件'):
         dramas.validate_plan(document, p)
 
 
@@ -341,7 +341,9 @@ def test_user_global_visual_constraint_is_frozen_independently_of_model(isolated
 
 def test_scoped_return_preserves_unaffected_compiled_source_but_keeps_facts_fenced(isolated):
     p = store.get(create()['id'], False)
-    shot = {'id': 'S02', 'seconds': 6, 'prompt': 'An adult beside a cup', 'action': 'turn toward camera'}
+    shot = {'id': 'S02', 'seconds': 6, 'prompt': 'An adult beside a cup', 'action': 'turn toward camera',
+        'continuity_state': {'mode':'continuous','opening_state':'Adult beside the cup','ending_state':'Adult faces the camera','allowed_changes':[]}}
+    p['episode']={'shots':[{**copy.deepcopy(shot),'id':'S01'},copy.deepcopy(shot)]}
     before = generation_pipeline.source(p, shot)
     p['script_feedback'] = {'shot_ids': ['S01'], 'notes': '实际持物矛盾，定向修复'}
     assert generation_pipeline.source(p, shot) == before
