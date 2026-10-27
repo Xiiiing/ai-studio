@@ -32,7 +32,9 @@ def seed_workspace(root, project, store, core):
                       + "明确人物动机，保持行动与镜头连续。" * 60, encoding="utf-8")
     script = planning / "script.md"
     script.write_text("# 站台重逢\n\n## 第一场\n\n- 主角拿出旧信。\n- 搭档解释迟到的原因。\n\n**两人决定重新开始。**", encoding="utf-8")
-    shots = [{"id": f"S{index + 1:02d}", "seconds": seconds, "dramatic_beat": "解释与行动", "characters": ["char_lead", "char_partner"], "dialogue": []}
+    shots = [{"id": f"S{index + 1:02d}", "seconds": seconds, "dramatic_beat": "解释与行动", "characters": ["char_lead", "char_partner"], "dialogue": [],
+              "continuity_state": {"mode": "continuous", "opening_state": "两位成年人站在站台旁，主角拿着旧信。",
+                                   "ending_state": "两位成年人仍在站台旁，旧信保持由主角持有。", "allowed_changes": []}}
              for index, seconds in enumerate(project["production_profile"]["shot_seconds"])]
     board = planning / "storyboard.json"
     core.write_json(board, {"shots": shots})
