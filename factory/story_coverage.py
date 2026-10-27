@@ -4,14 +4,18 @@ import copy
 import hashlib
 import re
 from studio.core import fingerprint
-from .creative_contracts import enabled
+from .creative_contracts import enabled as editorial_enabled
 
 VERSION = 'ai-studio.story-coverage.v1'
 
 
+def enabled(project):
+    return editorial_enabled(project) and (project.get('creative_quality_contract') or {}).get('coverage_version') == VERSION
+
+
 def freeze_source(project, parent=None):
     marker = project.get('creative_quality_contract')
-    if not marker: return
+    if not enabled(project): return
     if parent and (parent.get('creative_quality_contract') or {}).get('source_document'):
         marker.setdefault('source_document', copy.deepcopy(parent['creative_quality_contract']['source_document']))
     elif project.get('source_text'):

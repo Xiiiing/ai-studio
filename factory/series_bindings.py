@@ -29,7 +29,7 @@ def dependent_closure(project, direct):
     changed = True
     while changed:
         changed = False
-        from .creative_contracts import enabled
+        from .shot_continuity import enabled
         shots = episode.get("shots", [])
         for index, shot in enumerate(shots):
             dependencies = set(shot.get("reference_shots", []))
