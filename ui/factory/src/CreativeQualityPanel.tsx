@@ -24,7 +24,6 @@ export function CreativeQualityPanel({ project }: { project: RecordData }) {
       "ai-studio.story-coverage.v1" &&
     project.creative_quality_contract?.continuity_version ===
       "ai-studio.shot-continuity.v1";
-  const review = project.draft_review || project.script_review?.review || {};
   const quality = useQuery({
     queryKey: ["creative-quality", project.id, project.revision],
     queryFn: () => request(`/projects/${project.id}/creative-quality`),
@@ -35,6 +34,11 @@ export function CreativeQualityPanel({ project }: { project: RecordData }) {
         ? 1500
         : false,
   });
+  const review =
+    quality.data?.review ||
+    project.draft_review ||
+    project.script_review?.review ||
+    {};
   const recheck = quality.data?.recheck?.task;
   const coverage = quality.data?.coverage || project.creative_quality?.coverage;
   const continuity =
