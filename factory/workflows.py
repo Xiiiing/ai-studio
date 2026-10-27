@@ -36,6 +36,7 @@ class State(TypedDict, total=False):
     story_answer: dict
     style_answer: dict
     final_answer: dict
+    quality_review_id: str
     direct_production_revision: int
     restart_revision: int
 
@@ -271,7 +272,8 @@ def final_decision(state):
     from .supervision import supervise_gate
     answer=store.answer_for(p["id"],gate["id"])
     from .drama_intent import enabled as whole_drama
-    if answer is None and not whole_drama(p):
+    from .quality_recheck import final_current as quality_final_current
+    if answer is None and not whole_drama(p) and not quality_final_current(p):
         answer=supervise_gate(p["id"],gate)
     if answer is None and p.get("team_mode") == "delegated":
         # A receipt may outlive a lost graph checkpoint, or a human may answer
@@ -431,6 +433,11 @@ def _advance(pid):
         raise ProjectPaused("已在检查点暂停")
     if p["status"] in {"blocked","failed","cancelled"}:
         return {"blocked":True,"status":p["status"]}
+    from .quality_recheck import require_current, handle_final as handle_quality_final
+    if (p.get('delivery') or {}).get('quality_recheck_id') and not p.get('revision_request') and not p.get('workflow_restart_from'):
+        require_current(p)
+    quality_handled = handle_quality_final(p)
+    if quality_handled is not None: return quality_handled
     with durable_graph(p.get("workflow_version",1)) as graph:
         config={"configurable":{"thread_id":pid},"recursion_limit":100}
         snap=graph.get_state(config)
@@ -439,6 +446,8 @@ def _advance(pid):
         if p.get("production_edit_revision"):
             from .production_edits import resume_edited_graph
             snap=resume_edited_graph(graph,snap,p,config)
+        from .quality_recheck import resume_reviewed_graph
+        snap=resume_reviewed_graph(graph,snap,p,config)
         if not snap.values:
             return graph.invoke({"project_id":pid},config)
         pending=[i for task in snap.tasks for i in task.interrupts]

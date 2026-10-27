@@ -151,10 +151,14 @@ def create_proposals(project, config, checkpoint):
             round_payload["previous_proposals"] = proposals
             round_payload["independent_feedback"] = history[-1]
             round_payload["rewrite_instruction"] = "保留成立的要素，修正问题；三个方案仍须明显不同。"
+        previous_proposals = copy.deepcopy(proposals)
         generated = cached_json_call(project, config, "creator", "proposals-%d" % round_index,
             CREATOR_SYSTEM, round_payload, PROPOSALS_SCHEMA, checkpoint, max_tokens=7500)
         proposals = [{**item, "id": ident} for item, ident in
                      zip(generated["proposals"], ("A", "B", "C"))]
+        if editorial.enabled(project) and previous_proposals:
+            previous_by_id = {p["id"]: p for p in previous_proposals}
+            proposals = [p if editorial.can_repair(project, previous_by_id[p["id"]].get("review", {})) else copy.deepcopy(previous_by_id[p["id"]]) for p in proposals]
         report(checkpoint, stage="story_review", progress=17 + round_index * 3,
                message="独立审稿人正在核查三套故事的因果、动机和结局",
                review_automation=automation(config, "proposals", round_index, project.get("proposal_generation", 1),

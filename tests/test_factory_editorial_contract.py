@@ -94,3 +94,14 @@ def test_adopted_contract_blocks_production_before_model_or_media(monkeypatch):
     monkeypatch.setattr(workflows, '_project', lambda state: p)
     with pytest.raises(workflows.ReviewBlocked, match='新创作契约'):
         workflows.production({'project_id': p['id']})
+
+
+def test_unreferenced_repair_target_cannot_unlock_an_unrelated_shot():
+    candidate = issue(); candidate['shot_ids'] = ['S99']
+    review = policy.normalize(project(), {'issues': [candidate]}, episode())
+    assert not policy.can_repair(project(), review)
+    assert not review['repair_shot_ids']
+    candidate['shot_ids'] = []
+    review = policy.normalize(project(), {'issues': [candidate]}, episode())
+    assert review['repair_shot_ids'] == ['S01', 'S02']
+    assert policy.can_repair(project(), review)
