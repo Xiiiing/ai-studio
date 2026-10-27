@@ -17,6 +17,10 @@ def production(isolated, monkeypatch):
     p = dramas.create(input_payload(episode_count=2, duration_seconds=120, automation={
         'enabled': True, 'episode_numbers': [1, 2],
         'budget': {'gpu_minutes': 120, 'wall_minutes': 180, 'max_attempts': 3}}))
+    # The worker lifecycle fixture resumes a historical root with pre-035
+    # synthetic scenes and delivery dictionaries, rather than claiming that
+    # those dictionaries satisfy new editorial/media-evidence contracts.
+    p = store.update(p['id'], {'creative_quality_contract': None, 'model_capability_snapshot': None})
     document = plan(2)
     document['episodes'][1]['depends_on'] = [1]
     store.update(p['id'], {'draft_plan': document, 'plan_review': {'passed': True, 'issues': []},
