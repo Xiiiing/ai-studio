@@ -83,3 +83,9 @@ it("requests only the explicit authorized existing-review operation", async () =
     vi.unstubAllGlobals();
   }
 });
+
+
+it("does not request a future feature upgrade for the current035 marker", () => {
+  render(<QueryClientProvider client={new QueryClient()}><CreativeQualityPanel project={{id:"111122223333", creative_quality_contract:{version:"ai-studio.creative-quality.v1"}}} /></QueryClientProvider>);
+  expect(screen.queryByRole("button", {name:"启用新审核契约"})).not.toBeInTheDocument();
+});

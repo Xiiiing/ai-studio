@@ -18,12 +18,7 @@ export function CreativeQualityPanel({ project }: { project: RecordData }) {
   const enabled =
     project.creative_quality_contract?.version ===
     "ai-studio.creative-quality.v1";
-  const complete =
-    enabled &&
-    project.creative_quality_contract?.coverage_version ===
-      "ai-studio.story-coverage.v1" &&
-    project.creative_quality_contract?.continuity_version ===
-      "ai-studio.shot-continuity.v1";
+  const complete = enabled;
   const quality = useQuery({
     queryKey: ["creative-quality", project.id, project.revision],
     queryFn: () => request(`/projects/${project.id}/creative-quality`),
