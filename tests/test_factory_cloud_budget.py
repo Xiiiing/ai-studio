@@ -22,7 +22,9 @@ def isolated(tmp_path, monkeypatch):
     store.initialize()
     p = store.create({"brief": "成年人物在车站重逢的原创小故事", "format": "animation"})
     episode = {"cast": {"lead": "Adult actor"}, "shots": [
-        {"id": "S01", "seconds": 4, "prompt": "A person waits", "motion_prompt": "A person turns"}]}
+        {"id": "S01", "seconds": 4, "prompt": "A person waits", "motion_prompt": "A person turns",
+         "continuity_state": {"mode": "continuous", "opening_state": "The adult waits at the station.",
+                              "ending_state": "The same adult has turned.", "allowed_changes": ["The approved turn."]}}]}
     p = store.update(p["id"], {"episode": episode, "script": episode})
     profile = {"profile": "cloud", **normalize_video_profile({
         "provider": "minimax", "enabled": True, "model": "MiniMax-Hailuo-2.3",
