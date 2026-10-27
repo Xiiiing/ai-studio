@@ -31,6 +31,14 @@ def case(isolated, monkeypatch):
         'image_width': 288, 'image_height': 512, 'output_width': 288, 'output_height': 512,
         'semantic_enabled': True, 'semantic_review_revision': 'reference-facts-test',
         'image_connection': {'provider': 'legacy', 'model': 'FLUX.2-klein-4B'}}
+    # Freeze the exact fixture adapter we execute, rather than carrying the
+    # unrelated empty-installation connection snapshot created by ready().
+    from factory.model_capabilities import adopt
+    adopt(current, render_config)
+    current = store.update(current['id'], {
+        'model_capability_snapshot': current['model_capability_snapshot'],
+        'model_capability_history': current.get('model_capability_history', []),
+    })
     monkeypatch.setattr(config, 'production_config', lambda *args: copy.deepcopy(render_config))
     monkeypatch.setattr(config, 'llm_identity', lambda cfg, role: {'model': cfg.get('compiler_model', 'fixture-compiler'), 'role': role})
     monkeypatch.setattr(llm, 'resolve_llm', lambda *args, **kwargs: {'model': 'fixture-vision', 'profile': 'vision'})

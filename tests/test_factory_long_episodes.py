@@ -24,6 +24,10 @@ def video75(tmp_path_factory):
 
 def episode_fixture(seconds, monkeypatch):
     p=dramas.create(input_payload(duration_seconds=seconds))
+    # This fixture constructs pre-035 plans, scene records and synthetic unit
+    # deliveries to exercise historical long-timeline assembly/recovery. It has
+    # no new editorial evidence and must not masquerade as a new-contract run.
+    p=store.update(p['id'], {'creative_quality_contract':None, 'model_capability_snapshot':None})
     store.update(p['id'],{'draft_plan':plan(),'plan_review':{'passed':True},'status':'awaiting_plan'})
     with store.connection() as db: db.execute("UPDATE jobs SET status='completed'")
     p=dramas.snapshot(p['id']);p=dramas.confirm(p['id'],{'expected_revision':p['revision'],'request_id':'confirm'})
