@@ -140,6 +140,11 @@ def semantic_review(evaluator, project, shot, path, references):
         return {"status": "unavailable", "score": None, "issues": [],
                 "detail": "A semantic evaluator was not configured; technical checks do not certify identity or drama."}
     try:
+        from .media_review_policy import binding, enabled, normalize
+        if enabled(project):
+            from studio.core import sha256
+            original_media = sha256(path)
+            original_references = [sha256(p) for p in references]
         raw = evaluator(project, shot, str(path), [str(p) for p in references])
         if not isinstance(raw, dict):
             raise ValueError("Semantic evaluator did not return a structured assessment")
@@ -156,6 +161,11 @@ def semantic_review(evaluator, project, shot, path, references):
         score = raw.get("score")
         raw["score"] = float(score) if isinstance(score, (int, float)) and math.isfinite(score) else None
         raw["scope"] = "vlm_sampled_review_not_vbench_or_human_certification"
+        if enabled(project):
+            contract = binding(project, shot, path, raw.get('sampling'), [sha256(p) for p in references])
+            if contract['media_sha256'] != original_media or [sha256(p) for p in references] != original_references:
+                raw.update(status='unavailable', detail='媒体或参考像素在本次复核期间改变，保留素材等待重新复核。')
+            raw = normalize(project, raw, path, shot, contract=contract)
         return raw
     except Exception as exc:
         transient = is_transient_transport(exc)

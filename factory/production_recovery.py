@@ -30,7 +30,7 @@ _REPAIRABLE = {"action", "continuity", "identity", "composition", "black", "blac
 _V2_MEDIA_DEFECTS = {"anatomy", "off_prompt", "low_quality"}
 _UPSTREAM = {"reference_conflict", "reference_missing", "reference_mismatch", "capability", "unsupported_motion"}
 _UNSAFE = {"unknown_submit", "unknown_submission", "unresolved_submission", "unsafe", "tampered", "unpriced", "cost_unknown", "budget_exceeded", "budget_exhausted", "paused"}
-_SHOT_FIELDS = ("id", "seconds", "prompt", "action", "motion_prompt", "continuity", "character_states", "characters", "camera_motion", "dialogue", "material_constraints", "reference_group")
+_SHOT_FIELDS = ("id", "seconds", "prompt", "action", "motion_prompt", "continuity", "character_states", "characters", "camera_motion", "dialogue", "material_constraints", "reference_group", "continuity_state")
 _STRATEGY_SHOT_FIELDS = _SHOT_FIELDS + ("camera", "camera_constraints", "hard_constraints", "requirements", "audio_requirements", "dramatic_beat", "location", "cast", "lip_sync", "render_style_prompt", "reference_shots", "render_revisions")
 _CLOSED = re.compile(r"visible mouths remain naturally closed|external voiceover; naturally closed mouths|(?:mouths? (?:stay|remain|stays|remains) (?:naturally )?closed)|(?:mouths? (?:are |is )?closed|closed[- ]mouths?|lips (?:stay |remain )?together).{0,30}(?:throughout|entire clip|all frames)|(?:throughout|entire clip|all frames).{0,30}(?:mouths? (?:are |is )?closed|closed[- ]mouths?|lips (?:stay |remain )?together)|(?:全程|始终|从头到尾).{0,12}(?:闭口|闭嘴|嘴唇闭合|嘴巴闭合|嘴部闭合)", re.I)
 
@@ -124,6 +124,9 @@ def _source(project, config, target, assessment, previous, root):
             "failed_take": {k: copy.deepcopy(previous[k]) for k in (
                 "take", "attempt", "source_signature", "state", "output", "remote_task") if k in previous},
             "assessment": copy.deepcopy(assessment)}
+    from .media_review_policy import enabled as classified_media
+    if classified_media(project):
+        result['media_review_policy'] = 'ai-studio.media-review-boundary.v1'
     if target.get('approved_render_style'):
         result['approved_render_style'] = copy.deepcopy(target['approved_render_style'])
     if target.get("kind") == "image":
@@ -258,7 +261,7 @@ def _priced_boundary(config, target):
     return None
 
 
-def _issues(assessment):
+def _issues(assessment, *, classified=False, previous=None, production_revision=None, project_id=None, shot=None):
     if not isinstance(assessment, dict) or assessment.get("status") != "fail":
         return [], "review_not_failed"
     semantic = assessment.get("semantic")
@@ -270,11 +273,29 @@ def _issues(assessment):
         return [], "review_has_no_blocking_diagnosis"
     if any(str(i.get("code", "")).lower() in _UNSAFE for i in issues):
         return [], "unsafe_or_unresolved_submission"
+    if classified:
+        from .media_review_policy import repairable, shot_identity, VERSION
+        if any(i.get('requires_choice') is True for i in issues):
+            return [], 'media_goal_requires_choice'
+        technical = assessment.get('technical') or {}
+        measured = technical.get('issues', []) if technical.get('status') == 'fail' else []
+        semantic = assessment.get('semantic') or assessment
+        contract = semantic.get('media_review_contract') or {}
+        expected_media = ((previous or {}).get('output') or {}).get('sha256')
+        bound = (contract.get('version') == VERSION and contract.get('production_revision') == production_revision
+                 and contract.get('project_id') == project_id and contract.get('shot_id') == (shot or {}).get('id')
+                 and contract.get('approved_shot_sha256') == shot_identity(shot or {})
+                 and bool(expected_media) and contract.get('media_sha256') == expected_media)
+        issues = [i for i in issues if i in measured or bound and repairable(i, contract)]
+        if not issues:
+            return [], 'media_objective_evidence_missing'
     return issues, None
 
 
 def _plan(source, *, strategy_index=0):
-    issues, stop = _issues(source["assessment"])
+    issues, stop = _issues(source["assessment"], classified=bool(source.get('media_review_policy')),
+                           previous=source.get('failed_take'), production_revision=source.get('production_revision'),
+                           project_id=source.get('project_id'), shot=source.get('shot'))
     if stop:
         return _stop(stop, source)
     codes = {str(issue.get("code", "")).lower() for issue in issues}
