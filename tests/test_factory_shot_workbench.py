@@ -254,8 +254,8 @@ def test_incomplete_new_state_cannot_select_a_candidate_or_break_read_projection
     episode = copy.deepcopy(project['episode'])
     episode['shots'][0].pop('continuity_state')
     p = store.update(project['id'], {'episode': episode, 'script': copy.deepcopy(episode)})
-    board = board.snapshot(p['id'])
-    candidate = board['shots'][0]['candidates'][0]
+    projection = board.snapshot(p['id'])
+    candidate = projection['shots'][0]['candidates'][0]
     assert not candidate['continuity_valid'] and not candidate['selectable']
     with pytest.raises(ValueError, match='候选未通过验证'):
         mutate(p['id'], 'S01', {'action':'select', 'expected_revision':p['revision'],
