@@ -33,6 +33,7 @@ def test_adoption_requires_confirmation_and_preserves_story(database, monkeypatc
     assert store.get(p['id'], False)['revision'] == p['revision']
     payload['confirmed'] = True
     adopted = quality.adopt(p['id'], payload)
+    assert quality.enabled(adopted)
     assert adopted['script'] == original and adopted['creative_quality_review_required']
     assert quality.adopt(p['id'], payload)['revision'] == adopted['revision']
 
@@ -54,3 +55,12 @@ def test_quality_http_projection_does_not_write_or_generate(database):
         assert store.get(p['id'], False)['revision'] == p['revision']
     finally:
         server.shutdown(); server.server_close(); thread.join()
+
+
+def test_coverage_upgrade_does_not_change_children_of_older_editorial_contract():
+    from factory import story_coverage
+    old = {'creative_quality_contract': {'version': quality.VERSION}}
+    child = quality.initialize({'id': '111122223333'}, old)
+    assert quality.enabled(child) and not story_coverage.enabled(child)
+    new = quality.initialize({'id': 'aaaabbbbcccc'})
+    assert story_coverage.enabled(new)

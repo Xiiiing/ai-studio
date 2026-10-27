@@ -35,7 +35,7 @@ def plan_units(episode, config):
     seconds = episode['duration_seconds']
     generation = episode.get('scene_generation', 1)
     schema = scene_schema(ids, seconds)
-    from .creative_contracts import enabled as quality_contract
+    from .story_coverage import enabled as quality_contract
     if whole_drama(episode) or quality_contract(episode):
         scene = schema['properties']['scenes']['items']
         scene['properties']['beats'] = arr(obj({'id': {'type': 'string', 'enum': [b['id'] for b in episode['outline']['beats']]}, 'description': txt(4, 800)}), 0, 8)
