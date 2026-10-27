@@ -142,8 +142,12 @@ def test_complete_api_movie_never_initializes_local_inference(cloud,monkeypatch)
     import factory.speech as speech
     monkeypatch.setattr(speech.importlib.util,'spec_from_file_location',forbidden)
     p=store.update(p['id'],{'episode':{'title':'API fixture','cast':{'female':'Adult woman','male':'Adult man'},'shots':[
-        {'id':'S01','seconds':3,'prompt':'Adult woman by a window','motion_prompt':'Woman turns','reference_group':'female','dialogue':[{'id':'L01','role':'female','text':'你好。','start':.2}]},
-        {'id':'S02','seconds':3,'prompt':'Adult man enters','motion_prompt':'Man enters','reference_group':'male','dialogue':[{'id':'L02','role':'male','text':'再见。','start':.2}]}]},
+        {'id':'S01','seconds':3,'prompt':'Adult woman by a window','motion_prompt':'Woman turns','reference_group':'female','dialogue':[{'id':'L01','role':'female','text':'你好。','start':.2}],
+         'continuity_state':{'mode':'continuous','opening_state':'The adult woman stands by the window.',
+                             'ending_state':'The same woman has turned.','allowed_changes':['The approved turn.']}},
+        {'id':'S02','seconds':3,'prompt':'Adult man enters','motion_prompt':'Man enters','reference_group':'male','dialogue':[{'id':'L02','role':'male','text':'再见。','start':.2}],
+         'continuity_state':{'mode':'scene_cut','opening_state':'The adult man stands outside the entrance.',
+                             'ending_state':'The same man has entered.','allowed_changes':['Cut from the woman to the man at the entrance.']}}]},
         'styles':[{'id':'a','name':'A','prompt':'Warm illustration'},{'id':'b','name':'B','prompt':'Cool illustration'},{'id':'c','name':'C','prompt':'Ink illustration'}]})
     def checkpoint(patch):store.update(p['id'],copy.deepcopy(patch))
     previews=invoke_with_authorization(p['id'],cfg,lambda:production.generate_style_previews(store.get(p['id']),flat,checkpoint))
