@@ -227,6 +227,21 @@ def test_actual_cross_cut_failure_is_actionable_and_does_not_replace_delivery(da
     assert issue['auto_repair'] is False
 
 
+def test_cross_cut_transport_unknown_is_displayed_and_not_reposted(database, movie, monkeypatch):
+    p = adopt(existing(database, movie)); calls = synthetic(monkeypatch)
+    original = llm._request
+    def request(*args, **kwargs):
+        if 'previous_observed' in args[4].get('properties', {}): raise ConnectionError('synthetic lost response')
+        return original(*args, **kwargs)
+    monkeypatch.setattr(llm, '_request', request)
+    queue(p); current, _ = execute(p['id'])
+    assert current['quality_recheck']['task']['status'] == 'unknown'
+    assert current['creative_quality_review_required'] and current['delivery'] == p['delivery']
+    count = len(calls)
+    with pytest.raises(ValueError, match='结果未知'): queue(current, 'different-request-id')
+    assert len(calls) == count
+
+
 def test_cancelled_project_cannot_publish_a_late_review(database, monkeypatch):
     p = adopt(existing(database, status='paused')); calls = synthetic(monkeypatch)
     original = llm._request

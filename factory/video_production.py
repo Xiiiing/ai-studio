@@ -65,9 +65,11 @@ class VideoProductionMixin:
             refs = refs[:4]
         if self.config.get("image_connection", {}).get("provider", "legacy") != "legacy":
             prompt = record["repair"].get("prompt_prefix", "") + "\n" + self.style_prompt + " " + target["shot"]["prompt"]
+            from .shot_continuity import bind_prompt
+            prompt = bind_prompt(prompt, target.get('shot_continuity'))
             self._assert_model_capabilities({"kind": "image", "prompt": prompt, "references": refs})
             repair=self._target("repair_"+target["key"],target["folder"]/record["take"]/"repair_keyframe",
-                                prompt, refs)
+                                prompt, refs, review_context=target['shot'])
             self._render_targets([repair], "keyframe_repair")
             record["repair_keyframe"]=repair["selected"]
             self._save_attempt(target,record)
@@ -78,6 +80,8 @@ class VideoProductionMixin:
                    record["repair"].get("prompt_suffix", "")) + "\n" +
                   self.style_prompt + " " + target["shot"]["prompt"] +
                   " Preserve each corresponding character identity and wardrobe.")
+        from .shot_continuity import bind_prompt
+        prompt = bind_prompt(prompt, target.get('shot_continuity'))
         self._assert_model_capabilities({"kind": "image", "prompt": prompt, "references": refs})
         with self.scheduler.worker(self.slug + "_repair_keyframe", self.control) as worker:
             names = [worker.copy_input(path) for path in refs]

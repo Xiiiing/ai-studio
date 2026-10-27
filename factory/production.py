@@ -745,6 +745,13 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
 
     def _target(self, key, folder, prompt, references=(), kind="image", **extra):
         from .reference_identity import generation_identity
+        from .shot_continuity import request_context, bind_prompt
+        approved_shot = extra.get('shot') or extra.get('review_context') or {}
+        if approved_shot.get('id') in {shot['id'] for shot in self.shots} and kind in {'image', 'video'}:
+            continuity = request_context(self.project, approved_shot, {'shots': self.shots})
+            if continuity:
+                extra['shot_continuity'] = continuity
+                prompt = bind_prompt(prompt, continuity)
         refs = [Path(p) for p in references]
         dimensions = self.image_size if kind == "image" else self.video_size
         signature = fingerprint({"prompt": prompt, "references": [media_receipt(p) for p in refs],
@@ -797,6 +804,8 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
         expected = {key: shot.get(key) for key in (
             "id", "seconds", "prompt", "motion_prompt", "dialogue", "reference_group",
             "reference_shots", "continuity", "camera_motion", "action", "cast", "characters")}
+        if extra.get('shot_continuity'):
+            expected['shot_continuity'] = copy.deepcopy(extra['shot_continuity'])
         if self.creative_contract:
             signature = fingerprint({"source_signature": signature, "creative_contract": self.creative_contract})
             expected.update(creative_contract=self.creative_contract,
@@ -1382,6 +1391,8 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                 'message': '按出品人明确的新版本要求制作，原审核、素材和尝试历史保留。'}
         if target.get("asset_references"):
             record["asset_references"] = copy.deepcopy(target["asset_references"])
+        if target.get('shot_continuity'):
+            record['shot_continuity'] = copy.deepcopy(target['shot_continuity'])
         if self._remote_video(target):
             record.update(provider="minimax", profile=self.video_connection["profile"],
                           model=self.video_connection["model"],
@@ -1403,6 +1414,8 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
             from .production_handoffs import advance
             advance(self, case, 'repairing', 'video_generator' if target['kind'] == 'video' else 'image_generator',
                     artifact={'strategy_signature': compiled_strategy['signature'], 'take': take})
+        from .shot_continuity import bind_prompt
+        record['prompt'] = bind_prompt(record['prompt'], target.get('shot_continuity'))
         if self.h3_automatic and target["kind"] == "video" and not target.get("generation_plan") and not compiled_strategy:
             record["state"] = "prompt_preparing"
             if repair.get("regenerate_keyframe"):
@@ -1445,6 +1458,8 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
         self._team_admit_target(target)
         record.update(prompt=compiled["prompt"], h3_prompt=compiled["receipt"],
                       references=references, state="rendering")
+        from .shot_continuity import bind_prompt
+        record['prompt'] = bind_prompt(record['prompt'], target.get('shot_continuity'))
 
     def _render_targets(self, targets, phase):
         if targets and self._team_target(targets[0]):
@@ -1564,6 +1579,8 @@ class _Run(MaterialProductionMixin, SeriesProductionMixin, VideoProductionMixin,
                                                         record["repair"].get("prompt_suffix", "")) + "\n" +
                                                        self.style_prompt + " " + target["shot"]["prompt"] +
                                                        " Preserve each corresponding character identity and wardrobe.")
+                                    from .shot_continuity import bind_prompt
+                                    keyframe_prompt = bind_prompt(keyframe_prompt, target.get('shot_continuity'))
                                     from .model_capabilities import enabled as capability_contract
                                     repair_refs = shot_refs if material or capability_contract(self.project) else shot_refs[:4]
                                     self._assert_model_capabilities({**target, 'kind': 'image', 'prompt': keyframe_prompt, 'references': repair_refs})

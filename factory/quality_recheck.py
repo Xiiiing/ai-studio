@@ -305,6 +305,9 @@ def _review_media(project, episode, units, job, config):
         return {'status': 'fail', 'technical': technical, 'checks': checks, 'continuity': detail,
             'repair_shot_ids': detail.get('shot_ids', []), 'unit_id': detail.get('unit_id'),
             'issues': (detail.get('review') or {}).get('issues') or [str(exc)]}
+    except Exception as exc:
+        if _unknown(project): raise UnknownReview('跨镜复核已有提交意图但未取得有效回执，保留原成片等待核对') from exc
+        raise
     return {'status': 'pass', 'technical': technical, 'checks': checks, 'continuity': transitions,
         'media_sha256': core.sha256(path), 'scope': 'sampled_events_and_adjacent_endpoint_frames_not_human_acceptance'}
 
