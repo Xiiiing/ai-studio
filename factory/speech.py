@@ -55,6 +55,14 @@ class SpeechMixin:
 
     def _speech_sources_impl(self, lines, voices):
         """Match the installed driver's real per-line source digest, without loading a model."""
+        from .model_capabilities import enabled, active, validate, CapabilityError
+        if enabled(self.project):
+            try:
+                capability = active(self.project, self.config, 'audio')
+                for line in lines:
+                    validate(capability, {'text': line.get('text'), 'voice_id': line.get('role'), 'references': []})
+            except CapabilityError as exc:
+                raise ProductionNeedsDecision(str(exc), exc.code, exc.details) from None
         from .drama_resources import ensure
         ensure(self.project, self.config, media="audio")
         if self.config.get("audio_connection", {}).get("enabled") is False:

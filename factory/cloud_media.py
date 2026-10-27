@@ -64,7 +64,9 @@ def prepare_images(engine, targets):
     profile=paid_profile(engine.config['image_connection'],'image')
     prepared={}; fresh=[]
     for target in targets:
+        engine._assert_model_capabilities(target)
         record=target.pop('resume_attempt',None) or engine._new_attempt(target)
+        engine._assert_model_capabilities(target, prompt=record['prompt'])
         body=image_body(profile,record['prompt'],target['references'],engine.image_size,record['seed'])
         line=make_line(engine.ident,target['key'],record,profile,body,'image')
         prepared[target['key']]=(record,body,line)

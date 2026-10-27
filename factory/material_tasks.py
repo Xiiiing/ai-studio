@@ -52,7 +52,7 @@ def public(task):
             "authorization": data.get("authorization"), "source": data.get("source"),
             "style": {k: data["style"][k] for k in ("asset_id", "version")} if data.get("style") else None,
             "model": data.get("image_profile", {}).get("model") or data.get("vision_identity", {}).get("model"),
-            "signature": task["signature"]}
+            "signature": task["signature"], "model_capabilities": data.get("model_capability_snapshot")}
 
 
 def tasks(project_id=None):
@@ -64,17 +64,11 @@ def tasks(project_id=None):
 
 
 def reference_limit(profile):
-    if profile["provider"] == "dashscope_image":
-        return 3 if profile["model"].startswith("qwen-image-3.") else 10
-    templates = profile.get("reference_templates", {})
-    if templates:
-        return max(map(int, templates))
-    if profile.get("workflow_template"):
-        from .workflow_templates import load_template
-        template = load_template(profile["workflow_template"])
-        return len({mapping["source"] for mapping in template["mappings"] if mapping["source"].startswith("reference:")})
-    return 4  # Existing built-in FLUX.2 klein graph, not the remote upload transport limit.
-
+    from .model_capabilities import describe
+    capability = describe(profile, 'image')
+    if capability['status'] == 'unknown' or not capability['reference_counts']:
+        raise ValueError('图像模型参考能力尚未明确，请检查工作流与连接')
+    return max(capability['reference_counts'])
 
 def _steps(count, maximum):
     if count <= maximum:
@@ -130,6 +124,8 @@ def create(payload, config=None):
             if not profile.get("enabled", True):
                 raise ValueError("请先启用图像连接")
             data["image_profile"] = profile
+            from .model_capabilities import describe
+            data["model_capability_snapshot"] = describe(profile, "image")
             # Generation candidates always receive an independent visual review.
             resolve_llm(config, "visual_critic", require_vision=True)
             data["vision_identity"] = llm_identity(config, "visual_critic")
@@ -334,6 +330,12 @@ def _render_image(task, prompt, refs, folder, step, budget):
     from .scheduler import Budget, Scheduler
     from .image_generation import image_request
     data, profile = task["data"], task["data"]["image_profile"]
+    if data.get('model_capability_snapshot'):
+        from .model_capabilities import describe, validate, CapabilityError
+        capability = data['model_capability_snapshot']
+        if capability != describe(profile, 'image'):
+            raise CapabilityError('素材任务的模型能力已变化，原任务与素材保留', 'snapshot')
+        validate(capability, {'prompt': prompt, 'references': refs, 'width': 768, 'height': 1024, 'inspect_files': True})
     folder.mkdir(parents=True, exist_ok=True)
     if profile["provider"] == "dashscope_image":
         return _cloud_image(task, prompt, refs, folder, step)

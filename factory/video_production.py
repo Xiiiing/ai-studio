@@ -124,6 +124,7 @@ class VideoProductionMixin:
                 self._save_attempt(target, record)
                 self.emit(phase_for(task))
             try:
+                self._assert_model_capabilities(target, references=[frame], prompt=record['prompt'])
                 def authorize(request):
                     cloud_budget.validate_live_profile(self.video_connection)
                     return cloud_budget.reserve(self.ident, batch["id"], line, self.video_connection, request)
