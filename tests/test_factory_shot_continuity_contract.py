@@ -53,8 +53,11 @@ def test_missing_state_and_stale_order_do_not_fabricate_a_context():
 def actual_cut(tmp_path, monkeypatch):
     from studio.media import FFMPEG
     monkeypatch.setattr(core, 'ROOT', tmp_path)
+    from factory import episode_assembly
+    monkeypatch.setattr(episode_assembly, 'ROOT', tmp_path)
     from factory import config, drama_resources, llm
     monkeypatch.setattr(config, 'llm_identity', lambda *a: {'model': 'synthetic-visual-fixture'})
+    monkeypatch.setattr(config, 'resolve_llm', lambda *a, **kw: {'base_url': 'http://127.0.0.1:8090/v1', 'provider': 'llama_cpp', 'enabled': True})
     monkeypatch.setattr(drama_resources, 'ensure', lambda *a, **kw: None)
     p = project(); folder = tmp_path / 'production' / p['slug']; folder.mkdir(parents=True)
     path = folder / 'episode_clean.mp4'
@@ -106,3 +109,30 @@ def test_unknown_endpoint_review_is_not_reposted(actual_cut, monkeypatch):
     with pytest.raises(continuity.ProductionNeedsDecision, match='结果未知'):
         continuity.verify_delivery(p, delivery, {})
     assert len(count) == 1
+
+
+
+def test_long_episode_maps_global_sources_and_audits_unit_joins_only(actual_cut, monkeypatch):
+    p, delivery, _ = actual_cut
+    units = [{'id': 'a', 'global_prefix': 'U1', 'script': {'shots': [shot('S01')]}},
+             {'id': 'b', 'global_prefix': 'U2', 'script': {'shots': [shot('S01')]}}]
+    from factory import llm
+    inputs = []
+    def review(*args, **kwargs):
+        inputs.append(args[3])
+        return {'status': 'pass', 'previous_observed': '前单元末帧', 'current_observed': '后单元首帧', 'issues': []}
+    monkeypatch.setattr(llm, '_request', review)
+    result = continuity.verify_episode(p, units, delivery, {})
+    assert len(inputs) == 1
+    assert result['transitions'][0]['from_shot'] == 'U1-S01'
+    assert result['transitions'][0]['to_shot'] == 'U2-S01'
+
+
+def test_unpriced_visual_vendor_is_rejected_before_any_review_request(actual_cut, monkeypatch):
+    from factory import config, llm
+    p, delivery, _ = actual_cut
+    monkeypatch.setattr(config, 'resolve_llm', lambda *a, **kw: {'base_url': 'https://vendor.invalid/v1', 'provider': 'openai_compatible', 'enabled': True})
+    monkeypatch.setattr(llm, '_request', lambda *a, **kw: pytest.fail('unpriced request must not submit'))
+    with pytest.raises(continuity.ProductionNeedsDecision) as caught:
+        continuity.verify_delivery(p, delivery, {})
+    assert caught.value.reason == 'shot_continuity_budget_required'
