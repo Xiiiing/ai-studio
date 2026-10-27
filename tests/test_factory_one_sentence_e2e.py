@@ -16,8 +16,8 @@ from http.server import ThreadingHTTPServer
 import pytest
 from jsonschema import validate
 
-from factory import store, workflows, config, llm, providers, worker, dramas
-from factory import production, scheduler, schemas, drama_delivery
+from factory import store, workflows, config, llm, providers, worker, dramas, supervision
+from factory import production, scheduler, schemas, drama_delivery, generation_pipeline
 from factory.video_providers import H3_PRODUCTION_PROFILE
 from studio import core
 from tests import test_factory_production as cpu_media
@@ -176,7 +176,14 @@ def test_three_episode_worker_delivery_uses_real_business_stages(monkeypatch, tm
                 if ('observed_end' in schema.get('properties', {}) and payload.get('beats', [{}])[0].get('id') == 'E1B1' and not review_returned):
                     value.update(status='fail', issues=['实际持物与必要事件不符'])
                     value['checks'][0]['status'] = 'fail'
-                    review_returned.append(copy.deepcopy(value))
+                    # Observe the actual first cut before its scoped repair; names
+                    # from different shot folders are not comparable identities.
+                    from factory.execution_context import current_job
+                    active = current_job.get()
+                    assert active is not None
+                    before = store.get(active['project_id'], False)
+                    review_returned.append({**copy.deepcopy(value), 'source_project': copy.deepcopy(before),
+                        'source_media': {s['id']:copy.deepcopy(s['video']) for s in before['shots']}})
                 if 'repairs' in schema.get('properties', {}) and payload.get('episodes') and not series_returned:
                     value.update(status='fail', issues=['末集结局缺失'], repairs=[{
                         'episode_number': 3, 'shot_ids': ['S01'], 'reason': '末集必要结局未兑现，请定向修复实际镜头。'}])
@@ -280,8 +287,26 @@ def test_three_episode_worker_delivery_uses_real_business_stages(monkeypatch, tm
         repaired = store.get(current['episodes'][0]['id'], False)
         assert len(repaired['episode_repair_history']) == 1 and repaired['delivery_history']
         assert repaired['episode_media_revisions'] == {'S01': {'image': 1, 'video': 1}}
-        takes = {s['id']: s['video']['take'] for s in repaired['shots']}
-        assert takes['S01'] != takes['S02']  # Failed media is regenerated even when the writer keeps the same text.
+        before = review_returned[0]['source_project']
+        old_media = review_returned[0]['source_media']
+        new_media = {s['id']: s['video'] for s in repaired['shots']}
+        assert new_media['S01']['take'] != old_media['S01']['take']
+        assert new_media['S01']['source_signature'] != old_media['S01']['source_signature']
+        # S02 consumes S01's approved ending state and source signature. Changing
+        # S01's approved render inputs invalidates that immediate successor, not S03.
+        old_shots = {s['id']:s for s in before['script']['shots']}
+        new_shots = {s['id']:s for s in repaired['script']['shots']}
+        old_context = generation_pipeline.source(before, old_shots['S02'])['shot_continuity']
+        new_context = generation_pipeline.source(repaired, new_shots['S02'])['shot_continuity']
+        assert old_context['previous']['source_signature'] != new_context['previous']['source_signature']
+        assert new_media['S02']['source_signature'] != old_media['S02']['source_signature']
+        assert new_media['S03']['path'] == old_media['S03']['path']
+        assert new_media['S03']['source_signature'] == old_media['S03']['source_signature']
+        # Actual file bytes remain bound to both old and new receipts; synthetic
+        # generation may legitimately emit identical pixels for different takes.
+        for media in (old_media['S01'], new_media['S01'], old_media['S02'], new_media['S02'], new_media['S03']):
+            path = core.ROOT / media['path']
+            assert path.is_file() and core.sha256(path) == media['sha256'] and path.stat().st_size == media['bytes']
         with store.connection() as db:
             assert db.execute('SELECT status FROM jobs WHERE id=?', (resource_job,)).fetchone()[0] == 'completed'
 
