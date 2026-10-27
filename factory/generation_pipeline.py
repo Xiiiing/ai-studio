@@ -63,7 +63,7 @@ def source(project, shot, references=(), *, style='', cast=None):
         raise ValueError('镜头时长应为0.5–15秒，请先拆分镜头')
     fields = ('id', 'seconds', 'prompt', 'action', 'motion_prompt', 'camera_motion', 'characters', 'cast',
               'reference_group', 'render_revisions', 'character_states', 'continuity', 'dramatic_beat', 'location', 'dialogue',
-              'material_constraints', 'reference_shots', 'lip_sync')
+              'material_constraints', 'reference_shots', 'lip_sync', 'continuity_state')
     approved = {k: copy.deepcopy(shot[k]) for k in fields if k in shot}
     refs = []
     if len(references) > 16:
@@ -85,7 +85,9 @@ def source(project, shot, references=(), *, style='', cast=None):
             goal.pop('script_feedback', None)  # Scoped returns cannot invalidate unrelated approved media.
     goal['synopsis'] = episode.get('synopsis')
     goal['ending'] = episode.get('ending')
-    return {'schema': VERSION, 'project_id': project['id'], 'shot_id': shot['id'], 'story_goal': goal,
+    from .shot_continuity import request_context
+    continuity = request_context(project, shot)
+    return {**({'shot_continuity': continuity} if continuity else {}), 'schema': VERSION, 'project_id': project['id'], 'shot_id': shot['id'], 'story_goal': goal,
             'approved_shot': approved, 'cast': copy.deepcopy(cast if cast is not None else episode.get('cast', {})),
             'style': style or shot.get('render_style_prompt') or episode.get('visual_style', ''),
             'references': refs, 'format': project.get('format'),

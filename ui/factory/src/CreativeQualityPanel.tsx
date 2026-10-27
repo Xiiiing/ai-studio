@@ -18,8 +18,15 @@ export function CreativeQualityPanel({ project }: { project: RecordData }) {
     project.creative_quality_contract?.version ===
     "ai-studio.creative-quality.v1";
   const review = project.draft_review || project.script_review?.review || {};
-  const quality = useQuery({ queryKey: ["creative-quality", project.id, project.revision], queryFn: () => request(`/projects/${project.id}/creative-quality`), initialData: project.creative_quality, retry: false });
+  const quality = useQuery({
+    queryKey: ["creative-quality", project.id, project.revision],
+    queryFn: () => request(`/projects/${project.id}/creative-quality`),
+    initialData: project.creative_quality,
+    retry: false,
+  });
   const coverage = quality.data?.coverage || project.creative_quality?.coverage;
+  const continuity =
+    quality.data?.continuity || project.creative_quality?.continuity;
   async function adopt() {
     setBusy(true);
     setError("");
@@ -145,6 +152,49 @@ export function CreativeQualityPanel({ project }: { project: RecordData }) {
               {String(value)}
             </p>
           ))}
+        </div>
+      )}
+      {continuity && (
+        <div aria-label="跨镜状态承接">
+          <h3>跨镜状态承接</h3>
+          <p>
+            计划状态与实际观察分别保存。实际复核仅覆盖前镜末帧与后镜首帧，不证明未采样过程或整段声音。
+          </p>
+          {rows(continuity.links).map((link) => (
+            <details key={link.current.shot_id}>
+              <summary>
+                {link.previous?.shot_id || "首镜"} → {link.current.shot_id} ·{" "}
+                {link.current.mode === "continuous"
+                  ? "连续动作"
+                  : link.current.mode === "scene_cut"
+                    ? "换场"
+                    : "省略时间"}
+              </summary>
+              <p>
+                上一镜计划末态：
+                {link.previous?.planned_ending_state || "无上一镜"}
+              </p>
+              <p>本镜计划初态：{link.current.opening_state}</p>
+              <p>本镜计划末态：{link.current.ending_state}</p>
+              <p>
+                允许变化：
+                {rows(link.current.allowed_changes).join("；") || "无额外变化"}
+              </p>
+            </details>
+          ))}
+          {rows(continuity.invalid).map((item, i) => (
+            <p role="alert" key={i}>
+              {item.shot_id}：{item.message}
+            </p>
+          ))}
+          <p>
+            实际交界帧复核：
+            {continuity.media_review?.status === "pass"
+              ? "通过（仅交界帧）"
+              : continuity.media_review?.status === "fail"
+                ? "发现明确矛盾"
+                : "尚未建立通过结论"}
+          </p>
         </div>
       )}
       {!rows(review.issues).length && (

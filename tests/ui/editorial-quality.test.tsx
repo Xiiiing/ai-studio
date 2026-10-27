@@ -77,3 +77,42 @@ it("separates mapped labels from semantic evidence and shows missing events", ()
   expect(screen.getByText(/尚未建立当前版本结论/)).toBeInTheDocument();
   expect(screen.getByText(/引用完整不代表画面已经发生/)).toBeInTheDocument();
 });
+
+it("shows planned continuity separately from actual endpoint observations", () => {
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <CreativeQualityPanel
+        project={{
+          id: "111122223333",
+          creative_quality_contract: {
+            version: "ai-studio.creative-quality.v1",
+          },
+          creative_quality: {
+            continuity: {
+              links: [
+                {
+                  previous: {
+                    shot_id: "S01",
+                    planned_ending_state: "乙持有钥匙",
+                  },
+                  current: {
+                    shot_id: "S02",
+                    mode: "scene_cut",
+                    opening_state: "乙在门口",
+                    ending_state: "乙打开门",
+                    allowed_changes: ["切换到门口"],
+                  },
+                },
+              ],
+              invalid: [],
+            },
+          },
+        }}
+      />
+    </QueryClientProvider>,
+  );
+  expect(screen.getByText(/S01 → S02 · 换场/)).toBeInTheDocument();
+  expect(
+    screen.getByText(/实际交界帧复核：尚未建立通过结论/),
+  ).toBeInTheDocument();
+});

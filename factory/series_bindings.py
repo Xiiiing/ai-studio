@@ -29,8 +29,13 @@ def dependent_closure(project, direct):
     changed = True
     while changed:
         changed = False
-        for shot in episode.get("shots", []):
-            if shot["id"] not in affected and set(shot.get("reference_shots", [])) & affected:
+        from .creative_contracts import enabled
+        shots = episode.get("shots", [])
+        for index, shot in enumerate(shots):
+            dependencies = set(shot.get("reference_shots", []))
+            if enabled(project) and index and (shot.get("continuity_state") or {}).get("mode") == "continuous":
+                dependencies.add(shots[index - 1]["id"])
+            if shot["id"] not in affected and dependencies & affected:
                 affected.add(shot["id"])
                 changed = True
     return sorted(affected)

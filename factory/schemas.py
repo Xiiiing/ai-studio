@@ -306,7 +306,8 @@ def episode_schema(shot_count=15, project=None):
     })
     from .profile_creative import adapt_schema
     from .story_coverage import attach_schema
-    return attach_schema(adapt_schema(schema, project or {}), project or {})
+    from .shot_continuity import attach_schema as continuity_schema
+    return continuity_schema(attach_schema(adapt_schema(schema, project or {}), project or {}), project or {})
 
 
 def utc_now():
@@ -380,6 +381,7 @@ def project_context(project):
     coverage = request_context(project)
     if coverage:
         context["story_coverage"] = coverage
+        context["shot_continuity_rule"] = "每镜continuity_state明确continuous/scene_cut/time_skip、opening_state、ending_state和allowed_changes；计划不冒充实际结果。"
     from .drama_intent import enabled
     if enabled(project):
         context["narrative_scope"] = copy.deepcopy(project.get("narrative_scope"))
@@ -538,6 +540,8 @@ def technical_issues(episode, project):
             add("story_beat_coverage", "必要事件缺少镜头承载或引用了未知事件：" + str(sorted(beats ^ covered)))
     from .story_coverage import structural_issues
     issues.extend(structural_issues(project, episode))
+    from .shot_continuity import structural_issues as continuity_issues
+    issues.extend(continuity_issues(project, episode))
     from .production_profiles import validate_episode
     try:
         validate_episode(episode, project)
