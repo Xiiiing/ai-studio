@@ -19,7 +19,9 @@ def enabled(project):
 
 def shot_identity(shot):
     return fingerprint({k: copy.deepcopy(shot[k]) for k in ('id', 'prompt', 'action', 'motion_prompt', 'continuity',
-        'continuity_state', 'character_states', 'characters', 'seconds', 'dialogue') if k in shot}
+        'continuity_state', 'character_states', 'characters', 'seconds', 'dialogue', 'camera_motion',
+        'render_style_prompt', 'visual_direction', 'material_constraints', 'lip_sync', 'review_purpose',
+        'approved_reference_requirements') if k in shot}
     )
 
 
