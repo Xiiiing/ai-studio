@@ -38,9 +38,30 @@ def plan(count=3):
         'depends_on': []} for i in range(1, count+1)]}
 
 
+def plan_for(project, count=None):
+    """A model fixture for the project's actual frozen outline contract.
+
+    Keep plan() as the historical protocol fixture used by older tests. New
+    creation paths require explicit stable events and valid source references.
+    """
+    from factory.creative_contracts import enabled
+    from factory.story_coverage import source_catalog
+    project = store.get(project['id'], False)
+    value = plan(count or project['episode_count'])
+    if enabled(project):
+        sources = [item for item in source_catalog(project) if item['required']]
+        for outline in value['episodes']:
+            refs = [item['id'] for item in sources if item['episode_number'] in (None, outline['number'])]
+            outline['beats'] = [
+                {'id': f"E{outline['number']}B1", 'description': f"角色发现第{outline['number']}封信。", 'source_refs': refs},
+                {'id': f"E{outline['number']}B2", 'description': f"角色检查第{outline['number']}封信得到新线索。", 'source_refs': refs},
+            ]
+    return value
+
+
 def ready():
     p = dramas.create(input_payload())
-    store.update(p['id'], {'draft_plan': plan(), 'plan_review': {'passed': True, 'issues': []}, 'status': 'awaiting_plan'})
+    store.update(p['id'], {'draft_plan': plan_for(p), 'plan_review': {'passed': True, 'issues': []}, 'status': 'awaiting_plan'})
     # No planning worker is executed by this metadata fixture.
     with store.connection() as db: db.execute("UPDATE jobs SET status='completed'")
     p = dramas.snapshot(p['id'])
@@ -49,6 +70,10 @@ def ready():
 
 def test_create_confirm_generate_are_idempotent_and_private(isolated):
     p = ready()
+    from factory import creative_contracts, model_capabilities
+    current = store.get(p['id'], False)
+    assert creative_contracts.enabled(current) and model_capabilities.enabled(current)
+    assert all(len(e['beats']) == 2 for e in current['draft_plan']['episodes'])
     assert len(p['episodes']) == 3 and p['plan_version'] == 1
     assert dramas.create(input_payload())['id'] == p['id']
     payload = {'expected_revision': p['revision'], 'request_id': 'batch', 'episode_numbers': [1, 3]}
@@ -67,7 +92,7 @@ def test_create_confirm_generate_are_idempotent_and_private(isolated):
 def test_worker_failure_releases_unrelated_episode_and_dependencies_wait(isolated, monkeypatch):
     p = ready()
     # Episode 3 depends on the unresolved production of 1; 2 does not.
-    new_plan = plan()
+    new_plan = plan_for(p)
     new_plan['episodes'][2]['depends_on'] = [1]
     store.update(p['id'], {'draft_plan': new_plan, 'plan_review': {'passed': True}})
     p = dramas.snapshot(p['id'])
@@ -194,9 +219,9 @@ def test_acceptance_rejects_stale_episode_revision(isolated):
 def test_planning_reviews_bounded_episode_groups_and_preserves_source(isolated,monkeypatch):
     from factory import drama_planning
     monkeypatch.setattr(__import__('studio.core',fromlist=['ROOT']),'ROOT',isolated)
-    source='第一集\n成年角色在车站找到旧信。\n第二集\n沿旧信找到线索。'
+    source='\n'.join(f'第{number}集\n成年角色在车站找到第{number}封旧信，检查后得到新的线索。' for number in range(1,7))
     p=dramas.create(input_payload(episode_count=6,duration_seconds=300,source_text=source))
-    expected=plan(6);review_sizes=[]
+    expected=plan_for(p,6);review_sizes=[]
     def call(project,cfg,role,stage,instructions,payload,*args):
         if stage.startswith('drama-source-'):return {'summary':'按原文整理的车站与信件事件。'}
         if stage.startswith('drama-world-'):return {k:v for k,v in expected.items() if k!='episodes'}
@@ -218,7 +243,7 @@ def test_sixteen_characters_and_changed_shared_plan_do_not_overwrite_started_epi
     p=ready()
     p=dramas.generate(p['id'],{'expected_revision':p['revision'],'request_id':'first-batch','episode_numbers':[1]})
     original=store.get(p['episodes'][0]['id'],False)
-    edited=plan()
+    edited=plan_for(p)
     edited['characters']=[{**edited['characters'][0],'character_id':f'person{i}','name':f'角色{i}'} for i in range(16)]
     for outline in edited['episodes']:outline['characters']=['person0']
     edited['relationships']=['person0与person1是成年兄妹，分别寻找旧信的线索。']
@@ -234,13 +259,16 @@ def test_sixteen_characters_and_changed_shared_plan_do_not_overwrite_started_epi
         'characters':[f'person{i}' for i in range(5)],'location_id':'','prop_ids':[],
         'opening_state':'进入','ending_state':'找到信件'}
     with pytest.raises(ValidationError):validate({'scenes':[scene]},long_episodes.scene_schema([f'person{i}' for i in range(16)]))
+    schema = drama_planning.plan_schema(3,store.get(p['id'],False))
+    validate(edited, schema)  # A valid16-character fixture must reach the intended bound.
     edited['characters'].append({**edited['characters'][0],'character_id':'person16'})
-    with pytest.raises(ValidationError):validate(edited,drama_planning.plan_schema(3))
+    with pytest.raises(ValidationError) as error: validate(edited, schema)
+    assert error.value.validator == 'maxItems' and list(error.value.absolute_path) == ['characters']
 
 
 def test_confirmation_with_pending_review_requeues_without_crashing(isolated):
     p = dramas.create(input_payload())
-    store.update(p['id'], {'draft_plan': plan(), 'plan_review': None, 'status': 'blocked'})
+    store.update(p['id'], {'draft_plan': plan_for(p), 'plan_review': None, 'status': 'blocked'})
     with store.connection() as db:
         db.execute("UPDATE jobs SET status='failed'")
     p = dramas.snapshot(p['id'])
