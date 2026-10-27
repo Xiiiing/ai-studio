@@ -4,7 +4,7 @@ import copy
 import pytest
 
 from factory import drama_planning as planning, dramas, store, worker, workflows
-from test_factory_dramas import isolated, input_payload, plan
+from test_factory_dramas import isolated, input_payload, plan, plan_for
 
 
 def project(**kwargs):
@@ -16,9 +16,8 @@ def project(**kwargs):
 
 def models(monkeypatch, defect):
     calls = []
-    expected = plan()
-
     def call(p, config, role, stage, instructions, payload, *args):
+        expected = plan_for(p)
         calls.append((role, stage, copy.deepcopy(payload)))
         attempt = int(stage.split('-')[3])
         if role == 'story_editor':
@@ -64,7 +63,7 @@ def test_contract_defects_repair_within_bound_without_independent_false_approval
 
 def test_legacy_invalid_review_draft_restarts_with_diagnostic_not_same_cached_rejection(isolated, monkeypatch):
     p = project()
-    invalid = plan()
+    invalid = plan_for(p)
     invalid['episodes'][1]['depends_on'] = [2]
     root = store.update(p['id'], {'draft_plan': invalid, 'plan_phase': 'reviewing', 'plan_cycle': 1,
         'plan_attempt': 3, 'status': 'blocked', 'error': '剧集依赖只能引用前面的集数',
@@ -85,7 +84,7 @@ def test_legacy_invalid_review_draft_restarts_with_diagnostic_not_same_cached_re
 
 def test_user_requirements_are_pinned_and_timing_means_each_episode(isolated, monkeypatch):
     p = project(episode_count=2, duration_seconds=120)
-    initial = plan(2)
+    initial = plan_for(p,2)
     p = store.update(p['id'], {'draft_plan': initial, 'plan_phase': 'exhausted', 'plan_attempt': 3,
         'plan_cycle': 1, 'plan_review': {'passed': False, 'issues': ['第二集要有新进展']}, 'status': 'blocked'})
     feedback = '保留女主的已定身份，第二集找到新的证人，不重复第一集的发现。'
@@ -113,7 +112,7 @@ def test_user_requirements_are_pinned_and_timing_means_each_episode(isolated, mo
 
 def test_invalid_user_feedback_does_not_erase_saved_work_or_enqueue(isolated):
     p = project()
-    p = store.update(p['id'], {'status': 'blocked', 'draft_plan': plan(), 'plan_phase': 'exhausted'})
+    p = store.update(p['id'], {'status': 'blocked', 'draft_plan': plan_for(p), 'plan_phase': 'exhausted'})
     for value in ({}, 'x'*4001):
         with pytest.raises(ValueError, match='4000'):
             dramas.control(p['id'], {'expected_revision': p['revision'], 'request_id': str(type(value)), 'action': 'resume', 'feedback': value})
@@ -123,7 +122,7 @@ def test_invalid_user_feedback_does_not_erase_saved_work_or_enqueue(isolated):
 
 def test_repeated_contract_failures_exhaust_and_keep_every_candidate(isolated, monkeypatch):
     p = project()
-    invalid = plan()
+    invalid = plan_for(p)
     invalid['episodes'][1]['depends_on'] = [2]
     def call(p, cfg, role, stage, instructions, payload, *args):
         if role == 'story_editor': return {k: copy.deepcopy(v) for k, v in invalid.items() if k != 'episodes'}

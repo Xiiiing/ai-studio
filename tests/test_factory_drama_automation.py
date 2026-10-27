@@ -6,7 +6,7 @@ import pytest
 
 from factory import drama_automation as automation, drama_planning, drama_runtime, dramas, store, worker
 from studio.core import fingerprint
-from test_factory_dramas import isolated, input_payload, plan, ready
+from test_factory_dramas import isolated, input_payload, plan, plan_for, ready
 
 
 CONFIG = {'enabled': True, 'episode_numbers': [1, 2, 3],
@@ -18,7 +18,7 @@ def create(**values):
 
 
 def reviewed(pid, document=None):
-    document = document or plan()
+    document = plan_for(store.get(pid, False), document=document)
     return store.update(pid, {'draft_plan': document, 'plan_review': {'passed': True, 'issues': []},
         'plan_review_sha256': fingerprint(document), 'plan_phase': 'approved', 'status': 'awaiting_plan'})
 
@@ -61,7 +61,7 @@ def test_worker_planning_review_dispatches_once_after_lease_released(isolated, m
 
 def test_independent_reviewer_emits_binding_used_by_real_worker(isolated, monkeypatch):
     p = create()
-    expected = plan()
+    expected = plan_for(p)
     def call(project, config, role, stage, instructions, payload, *args):
         if role == 'story_editor': return {k: v for k, v in expected.items() if k != 'episodes'}
         if role == 'screenwriter': return expected['episodes'][payload['number'] - 1]
@@ -105,7 +105,7 @@ def test_missing_stale_or_failed_review_never_fakes_confirmation(isolated, patch
 
 def test_uncertainties_block_without_auto_accepting_user_choice(isolated):
     p = create(); complete_jobs(p['id'])
-    document = plan(); document['uncertainties'] = ['尚不明确结尾是否接受信件']
+    document = plan_for(p); document['uncertainties'] = ['尚不明确结尾是否接受信件']
     reviewed(p['id'], document); automation.recover()
     result = dramas.snapshot(p['id'])
     assert result['plan_version'] == 0
@@ -115,7 +115,7 @@ def test_uncertainties_block_without_auto_accepting_user_choice(isolated):
 def test_scoped_dependency_never_expands_authorized_numbers(isolated):
     selected = {**CONFIG, 'episode_numbers': [2, 3]}
     p = dramas.create(input_payload(automation=selected)); complete_jobs(p['id'])
-    document = plan(); document['episodes'][1]['depends_on'] = [1]
+    document = plan_for(p); document['episodes'][1]['depends_on'] = [1]
     reviewed(p['id'], document); automation.recover()
     result = dramas.snapshot(p['id'])
     assert [e['status'] for e in result['episodes']] == ['draft', 'waiting_dependency', 'queued']
@@ -158,7 +158,7 @@ def test_legacy_enable_is_cas_idempotent_and_preserves_started_episodes(isolated
 
 def test_enabling_legacy_unconfirmed_plan_requires_real_review(isolated):
     p = dramas.create(input_payload()); complete_jobs(p['id'])
-    store.update(p['id'], {'draft_plan': plan(), 'plan_review': {'passed': True}, 'status': 'awaiting_plan'})
+    store.update(p['id'], {'draft_plan': plan_for(p), 'plan_review': {'passed': True}, 'status': 'awaiting_plan'})
     p = action(dramas.snapshot(p['id']), 'enable_automation', automation=CONFIG)
     assert p['plan_version'] == 0 and p['stage'] == 'plan_review'
     assert p['plan_review'] is None and store.claim_job()['kind'] == 'drama_plan'
@@ -197,7 +197,7 @@ def test_invalid_authorization_never_creates_project(isolated, config):
 def test_manual_plan_edit_waits_for_safe_pause_and_independent_review(isolated, monkeypatch):
     p = create(); complete_jobs(p['id']); reviewed(p['id']); automation.recover()
     p = dramas.snapshot(p['id'])
-    edited = copy.deepcopy(plan()); edited['episodes'][0]['ending_state'] = '发现经过确认的新线索'
+    edited = copy.deepcopy(plan_for(p)); edited['episodes'][0]['ending_state'] = '发现经过确认的新线索'
     with pytest.raises(ValueError, match='先暂停'):
         dramas.confirm(p['id'], {'expected_revision': p['revision'], 'request_id': 'unsafe', 'plan': edited})
     running = store.claim_job()
@@ -357,7 +357,7 @@ def test_paused_initial_plan_edit_reviews_while_automation_stays_suspended(isola
     p = create(); complete_jobs(p['id']); reviewed(p['id'])
     p = action(dramas.snapshot(p['id']), 'pause')
     assert p['episodes'] == []
-    edited = copy.deepcopy(plan()); edited['episodes'][0]['ending_state'] = '用户确认的新结尾状态'
+    edited = copy.deepcopy(plan_for(p)); edited['episodes'][0]['ending_state'] = '用户确认的新结尾状态'
     p = dramas.confirm(p['id'], {'expected_revision': p['revision'], 'request_id': 'edit-initial', 'plan': edited})
     assert p['automation']['suspended'] and not p['pause_requested']
     assert p['plan_version'] == 0 and p['stage'] == 'plan_review'
@@ -390,7 +390,7 @@ def test_changed_planning_feedback_restarts_bounded_writing_and_reaches_all_role
     assert p['plan_feedback_history'][-1]['request_id'] == 'new-feedback'
     assert dramas.control(p['id'], body)['plan_cycle'] == 3
     calls = []
-    expected = plan()
+    expected = plan_for(p)
     def call(project, config, role, stage, instructions, payload, *args):
         calls.append((role, stage, payload))
         assert payload['producer_feedback'] == feedback
@@ -410,7 +410,7 @@ def test_changed_planning_feedback_restarts_bounded_writing_and_reaches_all_role
 def test_same_feedback_resume_keeps_review_cycle_and_no_duplicate_history(isolated):
     p = create(); complete_jobs(p['id'])
     p = store.update(p['id'], {'plan_cycle': 2, 'plan_attempt': 2, 'plan_phase': 'reviewing',
-        'draft_plan': plan(), 'plan_feedback': '保留车站结尾', 'status': 'paused', 'pause_requested': True})
+        'draft_plan': plan_for(p), 'plan_feedback': '保留车站结尾', 'status': 'paused', 'pause_requested': True})
     result = action(p, 'resume', feedback='  保留车站结尾  ')
     assert result['plan_cycle'] == 2 and result['plan_attempt'] == 2 and result['plan_phase'] == 'reviewing'
     assert result.get('plan_feedback_history', []) == []
