@@ -27,7 +27,11 @@ def initialize(project, parent=None):
         return project
     project.setdefault('creative_quality_contract', copy.deepcopy((parent or {}).get(
         'creative_quality_contract') or {'version': VERSION}))
-    from .story_coverage import freeze_source
+    from .story_coverage import freeze_source, VERSION as COVERAGE_VERSION
+    from .shot_continuity import VERSION as CONTINUITY_VERSION
+    if parent is None:
+        project['creative_quality_contract'].setdefault('coverage_version', COVERAGE_VERSION)
+        project['creative_quality_contract'].setdefault('continuity_version', CONTINUITY_VERSION)
     freeze_source(project, parent)
     return project
 
@@ -58,9 +62,9 @@ def review_call(project, role, system, payload, schema):
         return system, payload, schema
     schema = copy.deepcopy(schema)
     changed = False
-    from .story_coverage import required_events
+    from .story_coverage import required_events, enabled as coverage_enabled
     event_project = {**project, **({'resolved_story_brief': payload['resolved_story_brief']} if payload.get('resolved_story_brief') else {})}
-    events = required_events(event_project) if isinstance(payload.get('episode'), dict) else []
+    events = required_events(event_project) if coverage_enabled(project) and isinstance(payload.get('episode'), dict) else []
     if events:
         schema['properties']['coverage_checks'] = {'type': 'object', 'additionalProperties': False,
             'properties': {event['id']: {'type': 'object', 'additionalProperties': False, 'properties': {
@@ -116,7 +120,10 @@ def normalize(project, review, episode, structural=()):
     for issue in value.get('issues', []):
         entry = copy.deepcopy(issue)
         refs = entry.get('evidence_refs', [])
-        valid = bool(refs and len(refs) == len(set(refs)) and all(r in catalog for r in refs))
+        targets = entry.get('shot_ids') or refs
+        valid_targets = bool(targets and all(isinstance(sid, str) and sid in catalog for sid in targets) and set(targets) <= set(refs))
+        entry['shot_ids'] = list(targets)
+        valid = bool(refs and len(refs) == len(set(refs)) and all(r in catalog for r in refs) and valid_targets)
         entry['source_signature'] = source
         entry['evidence_origin'] = 'independent_review'
         entry['evidence_sources'] = [copy.deepcopy(catalog[r]) for r in refs if r in catalog]

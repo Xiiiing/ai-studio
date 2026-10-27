@@ -4,11 +4,15 @@ import copy
 import json
 from pathlib import Path
 from studio import core
-from .creative_contracts import enabled
+from .creative_contracts import enabled as editorial_enabled
 from .schemas import object_schema, text_schema, array_schema
 from .scheduler import ProductionNeedsDecision
 
 VERSION = 'ai-studio.shot-continuity.v1'
+
+
+def enabled(project):
+    return editorial_enabled(project) and (project.get('creative_quality_contract') or {}).get('continuity_version') == VERSION
 STATE_SCHEMA = object_schema({'mode': {'type': 'string', 'enum': ['continuous', 'scene_cut', 'time_skip']},
     'opening_state': text_schema(1, 1200), 'ending_state': text_schema(1, 1200),
     'allowed_changes': array_schema(text_schema(1, 500), 0, 12)})
