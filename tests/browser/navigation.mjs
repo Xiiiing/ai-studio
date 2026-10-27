@@ -3,7 +3,16 @@ import { expect } from "@playwright/test";
 export async function openProjectPage(page, tab) {
   const navigation = page.locator(".project-navigation");
   await expect(navigation).toBeVisible();
-  if (["team", "prompts", "generation", "agent", "costs"].includes(tab)) {
+  if (
+    [
+      "team",
+      "prompts",
+      "generation",
+      "agent",
+      "costs",
+      "model-capabilities",
+    ].includes(tab)
+  ) {
     const more = page.locator(".project-more").getByRole("button");
     if ((await more.getAttribute("aria-expanded")) !== "true")
       await more.click();
@@ -13,6 +22,7 @@ export async function openProjectPage(page, tab) {
       generation: "生成提示词流水线",
       agent: "Agent 执行循环",
       costs: "云任务与费用",
+      "model-capabilities": "模型能力与版本",
     };
     await page
       .getByRole("menuitem", { name: labels[tab], exact: true })
@@ -22,7 +32,13 @@ export async function openProjectPage(page, tab) {
     return;
   }
   const group =
-    tab === "series" ? "materials" : tab === "quality" ? "decisions" : tab;
+    tab === "series"
+      ? "materials"
+      : ["quality", "comparison", "creative-quality"].includes(tab)
+        ? "decisions"
+        : tab === "timeline"
+          ? "delivery"
+          : tab;
   await navigation.locator(`[data-tab="${group}"]`).click();
   if (tab !== group)
     await page
