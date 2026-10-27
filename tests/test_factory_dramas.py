@@ -70,9 +70,9 @@ def ready():
 
 def test_create_confirm_generate_are_idempotent_and_private(isolated):
     p = ready()
-    from factory import creative_contracts, model_capabilities
+    from factory import creative_contracts, story_coverage
     current = store.get(p['id'], False)
-    assert creative_contracts.enabled(current) and model_capabilities.enabled(current)
+    assert creative_contracts.enabled(current) and story_coverage.enabled(current)
     assert all(len(e['beats']) == 2 for e in current['draft_plan']['episodes'])
     assert len(p['episodes']) == 3 and p['plan_version'] == 1
     assert dramas.create(input_payload())['id'] == p['id']
