@@ -407,7 +407,7 @@ def preview(project):
         try:
             plans.append({'shot_id': shot.get('id'), 'source': source(project, shot), 'state': 'approved_spec_only',
                           'note': '批准规格预览；不代表已执行模型编译或首帧观察'})
-        except ValueError as exc:
+        except (ValueError, ProductionNeedsDecision) as exc:
             plans.append({'shot_id': shot.get('id', '?'), 'state': 'spec_invalid', 'error': str(exc)})
     return {'schema': VERSION, 'enabled': enabled(project), 'snapshot': project.get('generation_pipeline'), 'revision': project['revision'],
         'shots': plans, 'records': inventory(project), 'record_limit': 300, 'quality_conclusion': 'not_established'}

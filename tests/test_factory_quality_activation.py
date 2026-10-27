@@ -64,3 +64,12 @@ def test_coverage_upgrade_does_not_change_children_of_older_editorial_contract()
     assert quality.enabled(child) and not story_coverage.enabled(child)
     new = quality.initialize({'id': 'aaaabbbbcccc'})
     assert story_coverage.enabled(new)
+
+
+def test_incomplete_current_spec_is_projected_as_invalid_without_generation(database):
+    from factory.generation_pipeline import preview
+    p = store.create({'brief': '两位成年人在车站归还一封遗失的信件', 'prepare_materials': True})
+    p = store.update(p['id'], {'script': {'shots': [{'id': 'S01', 'seconds': 5, 'action': '归还信件'}]}})
+    result = preview(p)
+    assert result['shots'][0]['state'] == 'spec_invalid'
+    assert '跨镜状态' in result['shots'][0]['error']
