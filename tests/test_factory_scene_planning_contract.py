@@ -12,6 +12,10 @@ from test_factory_dramas import isolated, input_payload, plan
 
 def episode():
     root = dramas.create(input_payload(duration_seconds=120, episode_count=2))
+    # Exercise persisted0.2.5 scene contracts: candidate() intentionally has no
+    # later beat/source/continuity evidence. New-contract scene coverage has its
+    # own current-schema integration cases; do not invent it in this fixture.
+    root = store.update(root['id'], {'creative_quality_contract': None, 'model_capability_snapshot': None})
     document = plan(2)
     document['relationships'] = ['主角与搭档共同寻找信件']
     document['scenes'] = [{'entity_id': 'station', 'name': '车站', 'description': '唯一车站'}]
