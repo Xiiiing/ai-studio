@@ -103,6 +103,8 @@ def verify_delivery(project, delivery, config, control=None):
     episode = project.get('episode') or project.get('script') or {}
     shots = episode.get('shots', [])
     if len(shots) < 2: return {'version': VERSION, 'status': 'not_applicable', 'scope': 'adjacent_endpoint_frames'}
+    if not isinstance(delivery, dict) or not isinstance(delivery.get('artifacts'), list):
+        raise ProductionNeedsDecision('当前成片缺少可验证的媒体文件，跨镜结果待复核', 'shot_continuity_missing_media')
     from .episode_assembly import verified_artifact, boundary
     from .drama_continuity import frame
     from .config import llm_identity

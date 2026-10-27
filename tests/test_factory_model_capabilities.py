@@ -239,3 +239,57 @@ def test_one_sentence_h3_pin_uses_selected_frozen_connections_without_copying_gr
     c.adopt(child, {**cfg, 'video_connection': {**cfg['video_connection'], 'enabled': False}})
     assert p['model_capability_snapshot'] == saved
     assert child['model_capability_snapshot'] != saved
+
+
+@pytest.mark.parametrize('provider', ['legacy', 'comfyui_local'])
+@pytest.mark.parametrize('invalid,field', [('references', 'references'), ('disabled', 'enabled'),
+                                         ('dimensions', 'dimensions'), ('changed', 'snapshot')])
+def test_cloud_repair_checks_pinned_image_contract_before_any_image_work(monkeypatch, tmp_path, provider, invalid, field):
+    from factory import team_control
+    monkeypatch.setattr(team_control, 'is_locked', lambda *args: False)
+    run = object.__new__(production._Run)
+    run.project, run.config = project(), configuration()
+    run.config['image_connection'] = {'provider': provider, 'model': 'FLUX.2-klein-4B', 'enabled': invalid != 'disabled'}
+    c.pin(run.project, run.config)
+    if invalid == 'changed':
+        run.config['image_connection']['revision'] = 'different-image-revision'
+    run.ident = run.project['id']
+    run.image_size = (129, 128) if invalid == 'dimensions' else (576, 1024)
+    run.video_size = (576, 1024)
+    run.style_prompt = 'Approved watercolor.'
+    count = 4 if invalid == 'references' else 0
+    run.assets = {'characters': {str(i): tmp_path / f'character-{i}.png' for i in range(count)}}
+    run.receipt_path = Path
+    unexpected = lambda *args, **kwargs: pytest.fail('Invalid repair reached an image adapter or worker')
+    run.scheduler = SimpleNamespace(worker=unexpected)
+    run._target = run._render_targets = unexpected
+    target = {'key': 'S01', 'folder': tmp_path, 'references': [tmp_path / 'frame.png'],
+              'shot': {'id': 'S01', 'prompt': 'Approved adult beside a cup.'}}
+    record = {'take': 'take_002', 'seed': 1, 'repair': {'regenerate_keyframe': True}}
+    with pytest.raises(ProductionNeedsDecision) as error:
+        run._remote_first_frame(target, record)
+    assert error.value.reason == 'model_capability'
+    assert error.value.details['field'] == field
+    assert len(target['references']) == 1 and len(run.assets['characters']) == count
+
+
+@pytest.mark.parametrize('invalid', ['references', 'prepared_prompt'])
+def test_resumed_cloud_target_is_checked_before_repair_or_paid_intent(tmp_path, invalid):
+    run = object.__new__(production._Run)
+    run.project, run.config = project(), configuration()
+    run.config['video_connection'] = {'provider': 'minimax', 'model': 'MiniMax-Hailuo-2.3',
+                                      'enabled': True, 'duration': 6, 'resolution': '768P'}
+    c.pin(run.project, run.config)
+    run.image_size = run.video_size = (384, 512)
+    frame = tmp_path / 'frame.png'
+    Image.new('RGB', (384, 512), 'gray').save(frame)
+    unexpected = lambda *args, **kwargs: pytest.fail('Invalid resumed request reached repair or paid intent preparation')
+    run.boundary = lambda: None
+    run._remote_first_frame = run._new_attempt = unexpected
+    target = {'kind': 'video', 'prompt': 'Approved turn.', 'seconds': 4,
+              'references': [frame] * (2 if invalid == 'references' else 1),
+              'resume_attempt': {'prompt': 'x' * 2001 if invalid == 'prepared_prompt' else 'Approved turn.'}}
+    with pytest.raises(ProductionNeedsDecision) as error:
+        run._prepare_cloud_targets([target])
+    assert error.value.reason == 'model_capability'
+    assert error.value.details['field'] == ('references' if invalid == 'references' else 'prompt')

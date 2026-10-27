@@ -329,7 +329,7 @@ def test_frozen_graph_profile_cannot_ignore_changed_saved_settings(isolated, tmp
 
 
 def test_real_production_gate_and_unknown_result_keep_one_take(isolated, tmp_path, monkeypatch):
-    from factory import production
+    from factory import model_capabilities, production
     p, profile, frame = isolated
     monkeypatch.setattr(core, "ROOT", tmp_path)
     monkeypatch.setattr(production, "ROOT", tmp_path)
@@ -341,6 +341,12 @@ def test_real_production_gate_and_unknown_result_keep_one_take(isolated, tmp_pat
     monkeypatch.setattr(video, "video_request", uncertain)
     settings = {"video_connection": profile, "image_width": 384, "image_height": 512,
                 "video_width": 384, "video_height": 512, "semantic_enabled": False}
+    # This isolated renderer selects MiniMax explicitly, rather than the
+    # installation's disabled default connection. Keep the actual request guard.
+    model_capabilities.adopt(p, settings)
+    p = store.update(p["id"], {"model_capability_snapshot": p["model_capability_snapshot"],
+                              "model_capability_history": p.get("model_capability_history", [])})
+    assert model_capabilities.active(p, settings, "video")["provider"] == "minimax"
     def run_once():
         run = production._Run(store.get(p["id"]), settings, lambda patch: store.update(p["id"], patch), None)
         target = run._target("S01", run.folder / "renders/S01", "An adult person turns", [frame],

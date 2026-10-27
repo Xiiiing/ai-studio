@@ -167,6 +167,8 @@ def can_repair(project, review):
 
 
 def repair_feedback(project, review):
+    if not review:
+        return {}
     if not enabled(project): return copy.deepcopy(review)
     return {**copy.deepcopy(review), 'issues': [copy.deepcopy(i) for i in review.get('issues', []) if i.get('auto_repair')],
         'instruction': '只修改有证据的修订目标及必要衔接；其他已批准内容保持原样。'}
