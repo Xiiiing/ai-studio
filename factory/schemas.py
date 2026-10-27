@@ -375,6 +375,12 @@ def project_context(project):
     if "creative_contract" in project:
         from .creative_contract import resolve as resolve_contract
         context["creative_contract"] = resolve_contract(project)
+    from .drama_intent import enabled
+    if enabled(project):
+        context["narrative_scope"] = copy.deepcopy(project.get("narrative_scope"))
+        context["production_spec"] = copy.deepcopy(project["production_spec"])
+        context["dependency_context"] = copy.deepcopy(project.get("dependency_context", []))
+        context["previous_unit_state"] = copy.deepcopy(project.get("previous_unit_state", {}))
     if project.get("series_bible"):
         context["series_bible"] = copy.deepcopy(project["series_bible"])
     if project.get("prompt_snapshot") and (project["prompt_snapshot"].get("versions") or any(project["prompt_snapshot"].get("overrides", {}).values())):
@@ -439,6 +445,8 @@ def cached_json_call(project, config, role, stage, system, payload, schema,
         observe_call({'call_id': ((reuse or {}).get('origin') or {}).get('call_id')}, reused=True)
         report(checkpoint, message="复用已完成的创作步骤：" + stage)
         return copy.deepcopy(hit["value"])
+    from .drama_resources import ensure
+    ensure(project, config, role=role)
     from .context_manifest import capture, cache_origin
     with capture(project, stage) as context:
         if use_agent:
@@ -475,6 +483,7 @@ def review_passes(review):
 
 
 def technical_issues(episode, project):
+    from .drama_intent import enabled as whole_drama
     issues = []
     def add(code, description, shot_ids=None):
         issues.append({"severity": "blocking", "code": code,
@@ -499,7 +508,8 @@ def technical_issues(episode, project):
                 add("shot_duration", "单镜时长不符合固定规格", [sid])
         elif shot.get("seconds") not in (4, 5, 6):
             add("shot_duration", "单镜须为 4 至 6 秒", [sid])
-        if len(shot.get("dialogue", [])) > 1:
+        from .drama_intent import enabled as whole_drama
+        if len(shot.get("dialogue", [])) > (4 if whole_drama(project) else 1):
             add("voice_overlap", "当前制作配置每镜最多一条画外音", [sid])
         for line in shot.get("dialogue", []):
             maximum = speech_limit(project, shot.get("seconds")) if explicit(project) else 10 if project.get("format") == "motion_comic" else 12
@@ -513,6 +523,11 @@ def technical_issues(episode, project):
         prompt = shot.get("prompt", "")
         if len(re.findall(r"[A-Za-z]", prompt)) < 25:
             add("image_prompt_language", "图片提示词缺少可执行的英文画面描述", [sid])
+    if whole_drama(project):
+        beats = {b["id"] for b in project.get("outline", {}).get("beats", [])}
+        covered = {b for shot in shots for b in shot.get("beat_ids", [])}
+        if beats - covered or covered - beats:
+            add("story_beat_coverage", "必要事件缺少镜头承载或引用了未知事件：" + str(sorted(beats ^ covered)))
     from .production_profiles import validate_episode
     try:
         validate_episode(episode, project)

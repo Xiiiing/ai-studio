@@ -55,6 +55,8 @@ class SpeechMixin:
 
     def _speech_sources_impl(self, lines, voices):
         """Match the installed driver's real per-line source digest, without loading a model."""
+        from .drama_resources import ensure
+        ensure(self.project, self.config, media="audio")
         if self.config.get("audio_connection", {}).get("enabled") is False:
             raise ProductionNeedsDecision("请先配置并启用配音连接", "audio_unconfigured")
         if self.config.get("audio_connection", {}).get("provider") == "dashscope_tts":

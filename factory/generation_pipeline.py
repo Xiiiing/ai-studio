@@ -17,6 +17,7 @@ from . import store
 from .creative_evidence_io import digest, read_json
 from .prompt_registry import load_prompt, prompt_receipt
 from .scheduler import ProductionNeedsDecision
+from .drama_intent import closed_mouths
 from .reference_identity import generation_identity
 
 VERSION = 'ai-studio.generation-pipeline.v1'
@@ -77,6 +78,11 @@ def source(project, shot, references=(), *, style='', cast=None):
         refs.append(value)
     episode = project.get('episode') or project.get('script') or {}
     goal = {k: copy.deepcopy(project[k]) for k in ('brief', 'story_feedback', 'script_feedback', 'creative_contract', 'resolved_story_brief') if k in project}
+    from .drama_intent import enabled as whole_drama
+    if whole_drama(project):
+        feedback = goal.get('script_feedback')
+        if not feedback or (isinstance(feedback, dict) and 'shot_ids' in feedback and shot['id'] not in feedback['shot_ids']):
+            goal.pop('script_feedback', None)  # Scoped returns cannot invalidate unrelated approved media.
     goal['synopsis'] = episode.get('synopsis')
     goal['ending'] = episode.get('ending')
     return {'schema': VERSION, 'project_id': project['id'], 'shot_id': shot['id'], 'story_goal': goal,
@@ -265,6 +271,7 @@ def prepare(project, shot, references, *, config, phase, style='', cast=None, re
         raise ValueError('请先显式启用生成提示词流水线')
     if phase not in ('image', 'video'):
         raise ValueError('未知生成媒介')
+    from .drama_intent import enabled as whole_drama
     caps = capabilities(config, project, phase)
     if not caps['enabled'] or len(references) > caps['reference_limit'] or len(references) not in caps['reference_counts']:
         raise ProductionNeedsDecision('当前适配器未启用或参考图超过实际支持数量，请先准备组合参考', 'generation_capability')
@@ -313,10 +320,23 @@ def prepare(project, shot, references, *, config, phase, style='', cast=None, re
                 'implementation': sha256(Path(__file__))}
     def compile_plan():
         payload = {'project': base, 'capabilities': caps, 'frame_evidence': evidence, 'phase': phase}
-        candidate = cached_json_call(project, llm_config, ROLE, 'generation-' + phase + '-' + shot['id'],
-                                     load_prompt(ROLE, PROMPT_VERSION), payload, PLAN_SCHEMA, max_tokens=4200, temperature=.2)
-        # Image compilation does not assert that its future video is executable.
-        _check(candidate, base, caps if phase == 'video' else {'continuous_action': True})
+        # Repair known candidate-contract mistakes before submitting any media.
+        # Each round is cached and bounded; unknown requests never reach here.
+        rounds = min(3, project.get('budget', {}).get('max_attempts', 3)) if whole_drama(project) else 1
+        for index in range(rounds):
+            stage = 'generation-' + phase + '-' + shot['id'] + (('-repair-' + str(index)) if index else '')
+            candidate = cached_json_call(project, llm_config, ROLE, stage,
+                                         load_prompt(ROLE, PROMPT_VERSION), payload, PLAN_SCHEMA, max_tokens=4200, temperature=.2)
+            try:
+                _check(candidate, base, caps if phase == 'video' else {'continuous_action': True})
+                break
+            except ProductionNeedsDecision as exc:
+                if index + 1 == rounds or exc.reason not in {'generation_plan_blocked', 'generation_plan_changed_facts',
+                        'generation_image_not_instant', 'generation_missing_action'}:
+                    raise
+                payload = {**payload, 'project': {**base, 'compile_feedback': {
+                    'previous_candidate': candidate, 'code': exc.reason, 'message': str(exc),
+                    'rule': '仅修正编译候选，逐字保留批准动作、相机和参考；不得改变剧情、身份、时长或权限'}}}
         if phase == 'image':
             prompt = base['style'] + '\nSingle starting instant: ' + candidate['image']['description']
         else:
@@ -328,10 +348,10 @@ def prepare(project, shot, references, *, config, phase, style='', cast=None, re
                 from .h3_prompting import _render
                 prompt = _render({'visual_description': candidate['image']['description'], 'initial_state': video['initial_state'],
                     'timeline': [{'start_seconds': 0, 'end_seconds': shot['seconds'], 'action': video['action'] + ' ' + action}],
-                    'end_state': video['end_state'], 'camera': camera, 'continuity': base['approved_shot'].get('continuity', ''), 'audio': 'silent'}, shot['seconds'])
+                    'end_state': video['end_state'], 'camera': camera, 'continuity': base['approved_shot'].get('continuity', ''), 'audio': 'silent'}, shot['seconds'], closed_mouths=closed_mouths(project))
             else:
                 prompt = (base['style'] + '\nInitial state: ' + video['initial_state'] + '\nAction: ' + video['action'] + '\n' + action +
-                          '\nEnd state: ' + video['end_state'] + '\nCamera: ' + camera + '\nExternal voiceover; naturally closed mouths; no generated speech, music, text or watermark.')
+                          '\nEnd state: ' + video['end_state'] + '\nCamera: ' + camera + ('\nExternal voiceover; no lip sync required; no generated speech, music, text or watermark.' if whole_drama(project) else '\nExternal voiceover; naturally closed mouths; no generated speech, music, text or watermark.'))
         prompt += '\nKeep the approved identities, wardrobe, props and reference correspondence. '
         if phase == 'image':
             prompt += '\nActual reference correspondence (1-based image order): ' + json.dumps(_image_reference_projection(base['reference_map']), ensure_ascii=False)

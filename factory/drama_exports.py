@@ -21,11 +21,19 @@ def archive(pid,batch_id=None):
     manifest={'drama_id':pid,'title':drama['title'],'batch_id':batch_id,'episodes':[]}
     files=[]
     documents=[]
+    from .drama_intent import enabled
+    if enabled(drama):
+        manifest['series_review_sha256'] = fingerprint(drama.get('series_review'))
+        manifest['evidence_scope'] = 'sampled_episode_reviews_and_measured_audio_not_human_approval'
+        documents.append(('series-review.json', store.encoded(drama.get('series_review'))))
     for e in sorted(episodes,key=lambda v:v['episode_number']):
         delivery=e.get('delivery')
         item={'episode_number':e['episode_number'],'id':e['id'],'title':e['title'],'status':e['status'],
               'plan_version':e['plan_version'],'reason':e.get('error') or ('尚未完成制作' if not delivery else '待用户验收' if e['status']!='approved' else None)}
         if delivery:
+            if enabled(drama):
+                item['episode_review_sha256'] = fingerprint(e.get('episode_review'))
+                documents.append((f"E{e['episode_number']:03d}/episode-review.json",store.encoded(e.get('episode_review'))))
             documents.append((f"E{e['episode_number']:03d}/manifest.json",store.encoded(delivery)))
             item['delivery_signature']=fingerprint(delivery)
             artifacts=delivery.get('artifacts',[])

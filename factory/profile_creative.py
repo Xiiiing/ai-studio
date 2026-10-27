@@ -10,6 +10,7 @@ from .production_profiles import explicit, resolve, roles, speech_limit
 def adapt_schema(schema, project):
     if not explicit(project):
         return schema
+    from .drama_intent import enabled as whole_drama
     identifiers = roles(project)
     def adapt(node):
         if isinstance(node, list):
@@ -36,15 +37,28 @@ def adapt_schema(schema, project):
                                                        "minItems": 0, "maxItems": len(identifiers), "uniqueItems": True}
                 value["required"] = list(dict.fromkeys([*value.get("required", []), "characters"]))
             value["properties"]["dialogue"]["items"]["properties"]["text"]["maxLength"] = speech_limit(project)
+            if whole_drama(project):
+                value["properties"]["dialogue"]["maxItems"] = 4
+                value["properties"]["dialogue"]["items"]["properties"]["start"] = {"type": "number", "minimum": 0, "maximum": max(resolve(project)["shot_seconds"])}
+                value["properties"]["beat_ids"] = {"type": "array", "items": {"type": "string", "maxLength": 64}, "uniqueItems": True, "maxItems": 8}
+                value["required"] = list(dict.fromkeys([*value.get("required", []), "beat_ids"]))
         return value
     return adapt(copy.deepcopy(schema))
 
 
 def _adapt_profile_system(system, project):
     if not explicit(project):
+        from .drama_intent import instructions
+        extra = instructions(project)
+        if extra:
+            from .prompt_registry import derive_prompt
+            return derive_prompt(system, str(system) + extra, "whole_drama")
         return system
     from .prompt_registry import derive_prompt
     source = system
+    from .drama_intent import enabled as whole_drama
+    if whole_drama(project):
+        system = str(system).replace("一集能独立观看、结尾闭合的完整制作稿", "符合本集叙事范围与批准大纲的完整制作稿").replace("每镜最多一条短中文画外音，text包括标点在内最多10个字符，start固定0.2秒", "每镜最多四条顺序画外音，start为本镜内实际起点，文字总量按镜头秒数分配").replace("所有可见人物嘴始终闭合", "明确要求闭口的镜头须闭口")
     profile = resolve(project)
     system = system.split("\nCREATIVE_PROFILE_JSON:")[0]
     ids = "/".join(roles(project))
@@ -68,7 +82,8 @@ def _adapt_profile_system(system, project):
         "\n严格遵循此规格的镜头数量、逐镜秒数、稳定人物ID及声线映射。不要添加角色或扩展片长。"
         "对新规格，characters明确列出每镜可见的角色；reference_group仅为概要，不替代人物列表。"
         "逐镜服装、手持物、位置和剧情状态独立于不变身份。短对白仅作时长预估，实际声音须另行实测。")
-    return derive_prompt(source, rendered, "production_profile")
+    from .drama_intent import instructions
+    return derive_prompt(source, rendered + instructions(project), "production_profile")
 
 
 def adapt_system(system, project):

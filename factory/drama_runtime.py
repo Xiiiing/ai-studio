@@ -9,13 +9,24 @@ from .schemas import fingerprint
 
 
 def capture_dependencies(episode):
-    if 'dependency_context' in episode: return True
+    if 'dependency_context' in episode:
+        from .drama_intent import enabled
+        if enabled(episode):
+            siblings = [store.get(eid, False) for eid in store.get(episode['drama_id'], False)['episodes']]
+            if stale_dependencies(episode, siblings):
+                from .scheduler import ProductionNeedsDecision
+                raise ProductionNeedsDecision('前集采用版本已变化，必须重新检查本集承接', 'dependency_version_changed')
+        return True
     with store.connection() as db:
         db.execute('BEGIN IMMEDIATE')
         root=dramas.require(db,episode['drama_id'])
         siblings=[store._read(db,eid) for eid in root['episodes']]
         context=[]
-        for number in episode['outline']['depends_on']:
+        from .drama_intent import enabled as whole_drama
+        numbers = set(episode['outline']['depends_on'])
+        if whole_drama(episode) and episode.get('episode_number', 1) > 1:
+            numbers.add(episode['episode_number'] - 1)
+        for number in sorted(numbers):
             dependency=next(e for e in siblings if e['episode_number']==number)
             if dependency['status'] not in {'awaiting_final','approved'}:
                 current=store._read(db,episode['id'])
@@ -25,7 +36,12 @@ def capture_dependencies(episode):
             state=dependency.get('script') or {}
             order=dependency.get('edit_unit_order') or dependency.get('unit_ids') or []
             if order: state=store._read(db,order[-1]).get('script') or {}
-            context.append({'episode_id':dependency['id'],'number':number,'plan_version':dependency['plan_version'],
+            from .drama_intent import enabled as whole_drama
+            actual = {}
+            if whole_drama(episode):
+                from .drama_delivery import adopted_end
+                actual = {'observed_end': adopted_end(dependency)}
+            context.append({**actual, 'episode_id':dependency['id'],'number':number,'plan_version':dependency['plan_version'],
                 'delivery_signature':(dependency.get('delivery') or {}).get('source_signature'),
                 'script_ending':state.get('ending'),'planned_ending':dependency['outline']['ending_state'],
                 'basis':'pinned_script_and_delivery_receipt_not_full_film_observation'})
@@ -34,6 +50,13 @@ def capture_dependencies(episode):
         store._write(db,current)
     return True
 
+
+
+def stale_dependencies(episode, siblings):
+    by_id = {e['id']: e for e in siblings}
+    return [c for c in episode.get('dependency_context', [])
+            if c['episode_id'] not in by_id or c.get('delivery_signature') !=
+            (by_id[c['episode_id']].get('delivery') or {}).get('source_signature')]
 
 def setup_episode(episode):
     if episode.get('production_profile'): return
@@ -92,5 +115,6 @@ def execute_episode(pid):
 def run_plan(pid):
     from .config import load_config
     from .drama_planning import run
-    with config_snapshot():
+    project = store.get(pid, False)
+    with config_snapshot(project.get('execution_config')):
         run(pid, load_config())

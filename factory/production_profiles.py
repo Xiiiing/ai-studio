@@ -131,6 +131,9 @@ def profile_signature(project):
 
 
 def speech_limit(project, seconds=None):
+    from .drama_intent import enabled
+    if enabled(project):
+        return min(120, max(1, math.floor(((seconds or min(resolve(project)["shot_seconds"])) - .7) * 3.5)))
     if not explicit(project) or resolve(project)["preset"] == "legacy15":
         return 10
     return min(8, max(1, math.floor(((seconds or min(resolve(project)["shot_seconds"])) - .45) * 3.5)))
@@ -171,10 +174,16 @@ def validate_episode(episode, project, video=None, *, allow_trim=False):
         present = shot.get("characters")
         if present is not None and (not isinstance(present, list) or len(present) != len(set(present)) or not set(present) <= set(roles(project))):
             raise ValueError("画中人物必须是已定义的稳定角色")
+        from .drama_intent import enabled
+        cursor = 0.0
         for line in shot.get("dialogue", []):
             if line.get("role") not in roles(project):
                 raise ValueError("对白的 character_id 未定义")
             start = _number(line.get("start", .2), "对白起点", 0, seconds)
             characters = len(re.findall(r"[\u3400-\u9fffA-Za-z0-9]", str(line.get("text", ""))))
+            if enabled(project):
+                if start < cursor:
+                    raise ValueError("画外音槽位重叠，请按镜内顺序重新分配")
+                cursor = start + characters / 3.5 + .15
             if start + characters / 3.5 + .25 > seconds + 1e-7:
                 raise ValueError("对白预估占用超过镜头槽位；实际音频仍需实测")

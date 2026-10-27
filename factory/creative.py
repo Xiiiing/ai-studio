@@ -243,7 +243,8 @@ def _canonical_episode(raw, project):
         sid = "S%02d" % (i + 1)
         shot.update({"id": sid, "seconds": plan[i], "lip_sync": False})
         for j, line in enumerate(shot["dialogue"]):
-            line.update({"id": sid + "_L%d" % (j + 1), "start": 0.2})
+            from .drama_intent import enabled
+            line.update({"id": sid + "_L%d" % (j + 1), "start": line.get("start", .2) if enabled(project) else .2})
         suffix = " No visible text, captions, logos, or watermarks."
         if project.get("format") == "motion_comic":
             suffix += " Single illustrated keyframe; every visible person's mouth is closed."
@@ -257,7 +258,8 @@ def _canonical_episode(raw, project):
             shot["motion_prompt"] = camera + " Keep all faces, bodies and closed mouths still; voice-over only."
             shot["delivery_method"] = "generated_keyframe_with_programmatic_camera"
         else:
-            suffix += " All dialogue is off-screen voice-over; visible mouths stay closed."
+            from .drama_intent import enabled
+            suffix += " All dialogue is off-screen voice-over; no lip sync is required." if enabled(project) else " All dialogue is off-screen voice-over; visible mouths stay closed."
         prompt, ending = shot["prompt"].rstrip(), suffix.strip()
         while prompt.endswith(ending):
             prompt = prompt[:-len(ending)].rstrip()
@@ -419,6 +421,9 @@ def _resolved_evidence_catalog(target):
 
 def resolve_story_brief(project, config, checkpoint=None, feedback=None):
     """Resolve global producer changes before expanding another full screenplay."""
+    from .drama_intent import enabled as whole_drama
+    if whole_drama(project):
+        return None  # Confirmed series outline already owns narrative scope and facts.
     maximum_rounds = max_review_rounds(config)
     proposal = _selected_proposal(project)
     directions = _producer_feedback(project, feedback)

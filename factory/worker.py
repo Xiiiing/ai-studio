@@ -118,6 +118,11 @@ def _handle(job):
         if before_execution(job):
             return
         episode_job = job.get('kind') == 'workflow' and store.get(pid,False).get('record_kind') == 'episode'
+        if job.get('kind') == 'drama_delivery':
+            from .drama_delivery import assemble
+            assemble(pid)
+            store.finish_job(job['id'], lease=job['lease'])
+            return
         if job.get('kind') in {'drama_plan', 'drama_episode'} or episode_job:
             from .drama_runtime import run_plan, execute_episode
             (run_plan if job['kind'] == 'drama_plan' else execute_episode)(pid)
@@ -153,6 +158,13 @@ def _handle(job):
         if not owns_job(job):return  # Late workers retain private receipts only.
         if _defer_review_transport(job, exc):
             return
+        from .drama_intent import enabled as whole_drama
+        if (whole_drama(store.get(pid, False)) and getattr(exc, 'reason', None) in {
+                'gpu_busy', 'gpu_probe_unavailable', 'resource_timeout', 'remote_gpu_unavailable', 'remote_gpu_wait'}
+                and not store.get(pid, False).get('pause_requested')):
+            if defer_job(job, ProductionDeferred(time.time() + 300, 'remote_poll',
+                    {'wait_kind': 'resources', 'reason': exc.reason, 'resume_action': 'reconcile_saved_submission'})):
+                return
         current = store.get(pid, False)
         if (isinstance(exc, ProductionNeedsDecision) and exc.reason == 'semantic_unavailable'
                 and (current.get('pause_requested') or current['status'] in {'paused','cancelled'})):

@@ -90,6 +90,9 @@ class Handler(LocalMediaHandler):
             if match:
                 from .drama_exports import archive
                 query=parse_qs(urlsplit(self.path).query,keep_blank_values=True)
+                if set(query) == {'bundle'} and len(query['bundle']) == 1 and re.fullmatch(r'[a-f0-9]{64}', query['bundle'][0]):
+                    from .drama_delivery import download_bundle
+                    return self.send_file(download_bundle(match[1], query['bundle'][0]))
                 if set(query)-{'batch_id'} or any(len(v)!=1 or not re.fullmatch(r'[a-f0-9]{12}',v[0]) for v in query.values()): raise ValueError('下载批次参数无效')
                 return self.send_file(archive(match[1],query.get('batch_id',[None])[0]))
             match = re.fullmatch(r'/api/factory/dramas/([a-f0-9]{12})(?:/(episodes|batches))?', path)
