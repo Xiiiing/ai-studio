@@ -14,6 +14,7 @@ INSTRUCTION = (
     '证据缺失不能编造。审美和创作建议不得作为重大事实错误，不得单独触发自动返修；'
     '有两种会改变作者意图的合理方向时requires_choice=true，描述具体选择。'
     '必须保留未命中内容、批准事实和已明确的用户要求；数字评分继续使用原门槛。'
+    '逐镜核对continuity_state的初末态与相邻镜头：连续动作保留身份、持物、位置；正常换场和省略时间允许已声明变化。'
 )
 
 
@@ -39,7 +40,7 @@ def evidence_catalog(payload):
         for shot in episode.get('shots', []):
             ident = shot.get('id')
             if isinstance(ident, str):
-                text = json.dumps({k: shot.get(k) for k in ('action', 'dialogue', 'continuity', 'dramatic_beat', 'character_states')}, ensure_ascii=False)
+                text = json.dumps({k: shot.get(k) for k in ('action', 'dialogue', 'continuity', 'dramatic_beat', 'character_states', 'continuity_state', 'beat_ids')}, ensure_ascii=False)
                 result.append({'id': ident, 'location': '镜头 ' + ident, 'text': text, 'sha256': fingerprint(text)})
     for proposal in payload.get('proposals', []):
         ident = proposal.get('id')
@@ -188,6 +189,7 @@ def adopt(pid, payload):
 def snapshot(project):
     review = project.get('draft_review') or (project.get('script_review') or {}).get('review') or {}
     from .story_coverage import inspect
-    return {'coverage': inspect(project), 'enabled': enabled(project), 'version': (project.get('creative_quality_contract') or {}).get('version'),
+    from .shot_continuity import snapshot as continuity
+    return {'continuity': continuity(project), 'coverage': inspect(project), 'enabled': enabled(project), 'version': (project.get('creative_quality_contract') or {}).get('version'),
         'requires_review': project.get('creative_quality_review_required', False),
         'review': copy.deepcopy(review), 'history_preserved': True}

@@ -191,8 +191,12 @@ def compile_prompt(project, shot, *, config, references, style, seconds,
         compiler = identity(config)
         fields = ("id", "action", "continuity", "prompt", "motion_prompt", "camera_motion",
                   "characters", "cast", "reference_group", "character_states", "lip_sync",
-                  "material_constraints", "render_style_prompt", "visual_direction")
+                  "material_constraints", "render_style_prompt", "visual_direction", "continuity_state")
         approved = {key: copy.deepcopy(shot[key]) for key in fields if key in shot}
+        from .shot_continuity import request_context
+        continuity_context = request_context(project, shot)
+        if continuity_context:
+            approved["shot_continuity"] = continuity_context
         payload = {"approved_shot": approved, "first_frame_references": _references(references),
                    "approved_style": copy.deepcopy(style), "seconds": seconds, "attempt": attempt,
                    "repair": _repair(repair), "previous_prompt_untrusted": previous_prompt,

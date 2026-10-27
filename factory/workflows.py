@@ -251,6 +251,11 @@ def production(state):
                               lambda:store.get(p["id"],False).get("pause_requested",False),
                               semantic_evaluator=lambda proj,shot,path,refs:review_media(proj,shot,path,refs,config),
                               dialogue_rewriter=compress_dialogue)
+    from .shot_continuity import verify_delivery
+    transition_review = verify_delivery(p, delivery, config, lambda: store.get(p["id"], False).get("pause_requested", False))
+    if transition_review:
+        delivery = {**delivery, "shot_continuity_review": transition_review}
+        store.update(p["id"], {"shot_continuity_review": transition_review})
     from .drama_intent import enabled as whole_drama
     if whole_drama(p) and p.get("record_kind") == "episode":
         from .drama_delivery import review_episode

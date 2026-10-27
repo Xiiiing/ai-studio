@@ -87,7 +87,7 @@ def _episode_context(episode):
     value.update({key: copy.deepcopy(episode[key]) for key in (
         "format", "total_seconds", "fps", "width", "height", "production_profile", "characters", "creative_contract") if key in episode})
     shot_keys = tuple(episode_schema()["properties"]["shots"]["items"]["properties"]) + (
-        "id", "seconds", "lip_sync", "delivery_method", "render_style_prompt", "characters", "character_states", "scene_id", "composition_id")
+        "id", "seconds", "lip_sync", "delivery_method", "continuity_state", "render_style_prompt", "characters", "character_states", "scene_id", "composition_id")
     value["shots"] = [{key: copy.deepcopy(shot[key]) for key in shot_keys if key in shot}
                       for shot in episode["shots"]]
     return value
@@ -137,7 +137,7 @@ def direct_storyboard(project, config, episode, checkpoint=None, *,
         "locked_shot_ids": [sid for sid in ordered if sid not in allowed],
         "editable_fields": list(DIRECTOR_FIELDS),
         "model_capabilities": model_capabilities(project, config, episode),
-        "instruction": "只编排指定镜头的四个制作字段；完整剧情与未指定镜头保持原样。",
+        "instruction": "只编排指定镜头的四个制作字段；完整剧情与未指定镜头保持原样。逐镜continuity_state是已批准的计划承接，遵守相邻初末态与允许变化，不把计划冒充观察。",
     }
     if project.get("material_package"):
         from .material_library import context

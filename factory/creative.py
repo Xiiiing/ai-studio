@@ -884,7 +884,8 @@ def _make_script(project, config, checkpoint, feedback=None):
         atomic_text(folder / "styles.md", "\n".join(lines) + "\n")
     snapshot = "episode-v%s-%s.json" % (project.get("script_generation", 1), fingerprint(episode)[:12])
     write_json(folder / snapshot, episode)
-    return {"script": episode, "episode": episode, "styles": styles,
+    return {**({"creative_quality_review_required": not passed} if editorial.enabled(project) else {}),
+        "script": episode, "episode": episode, "styles": styles,
         "resolved_story_brief": resolved,
         "shots": _shot_metadata(episode, project),
         "script_review": {"passed": passed, "rounds": history, "review": final_review,
