@@ -24,9 +24,13 @@ def enabled(project):
 def initialize(project, parent=None):
     if parent is not None and not enabled(parent):
         return project
+    if project.get('creative_quality_contract') is None:
+        project.pop('creative_quality_contract', None)
     project.setdefault('creative_quality_contract', copy.deepcopy((parent or {}).get(
         'creative_quality_contract') or {'version': VERSION}))
-    from .story_coverage import freeze_source
+    from .story_coverage import freeze_source, VERSION as COVERAGE_VERSION
+    if parent is None:
+        project['creative_quality_contract'].setdefault('coverage_version', COVERAGE_VERSION)
     freeze_source(project, parent)
     return project
 
@@ -57,9 +61,9 @@ def review_call(project, role, system, payload, schema):
         return system, payload, schema
     schema = copy.deepcopy(schema)
     changed = False
-    from .story_coverage import required_events
+    from .story_coverage import required_events, enabled as coverage_enabled
     event_project = {**project, **({'resolved_story_brief': payload['resolved_story_brief']} if payload.get('resolved_story_brief') else {})}
-    events = required_events(event_project) if isinstance(payload.get('episode'), dict) else []
+    events = required_events(event_project) if coverage_enabled(project) and isinstance(payload.get('episode'), dict) else []
     if events:
         schema['properties']['coverage_checks'] = {'type': 'object', 'additionalProperties': False,
             'properties': {event['id']: {'type': 'object', 'additionalProperties': False, 'properties': {
