@@ -436,6 +436,11 @@ def run(episode, config):
     store.update(episode['id'],{'stage':'assembly','status':'producing'})
     delivery=assemble(episode,units,lambda:bool(store.get(episode['id'],False).get('pause_requested')))
     check_parent(episode['id'])
+    from .shot_continuity import verify_episode
+    state_review = verify_episode(episode, units, delivery, config, lambda: bool(store.get(episode['id'], False).get('pause_requested')))
+    if state_review:
+        delivery = {**delivery, 'shot_continuity_review': state_review}
+        store.update(episode['id'], {'shot_continuity_review': state_review})
     history=episode.get('delivery_history',[])
     if episode.get('delivery') and episode['delivery'].get('source_signature')!=delivery['source_signature']:
         history=[*history,episode['delivery']]
