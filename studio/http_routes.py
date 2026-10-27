@@ -52,6 +52,7 @@ FACTORY_ROUTES = (
     Route("GET", PROJECT + r"/generation-pipeline", "read", "generation_plan"),
     Route("GET", PROJECT + r"/creative-quality", "read", "creative_quality"),
     Route("POST", PROJECT + r"/creative-quality", "configuration", "creative_quality_adopt", 4096),
+    Route("POST", PROJECT + r"/creative-quality/review", "task_control", "creative_quality_review", 4096),
     Route("GET", PROJECT + r"/model-capabilities", "read", "model_capability_snapshot"),
     Route("POST", PROJECT + r"/model-capabilities", "configuration", "capability_adopt", 4096),
     Route("GET", PROJECT + r"/edits", "read", "timeline_versions"),

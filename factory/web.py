@@ -367,6 +367,10 @@ class Handler(LocalMediaHandler):
             if match:
                 from .creative_contracts import adopt
                 return self.json({"project":adopt(match[1],payload)},202)
+            match=re.fullmatch(r"/api/factory/projects/([a-f0-9]{12})/creative-quality/review",route)
+            if match:
+                from .quality_recheck import configure
+                return self.json(configure(match[1],payload),202)
             match=re.fullmatch(r"/api/factory/projects/([a-f0-9]{12})/model-capabilities",route)
             if match:
                 from .capability_adoption import adopt
